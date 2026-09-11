@@ -1,6 +1,6 @@
 {
   "name": "@danhachuel/thunderbolt",
-  "version": "0.7.43",
+  "version": "0.7.45",
   "description": "Thunderbolt — interface local para operação de canais faceless e motor MoneyPrinterTurbo",
   "license": "MIT",
   "main": "scripts/cli.mjs",
