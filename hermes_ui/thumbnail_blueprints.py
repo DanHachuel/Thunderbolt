@@ -53,10 +53,12 @@ def resolve_thumbnail_blueprint(identifier: Any) -> dict[str, Any]:
 
 def _generic_thumbnail_blueprint_id(format_value: Any = "", platform: Any = "") -> str:
     raw = str(format_value or "").strip().casefold()
-    if raw in {"portrait", "portrait 9:16", "vertical", "shorts", "9:16", "tiktok", "reels"}:
-        return VERTICAL_GENERIC_THUMBNAIL_BLUEPRINT_ID
     platform_raw = str(platform or "").strip().casefold()
-    if platform_raw in {"tiktok", "instagram", "instagram reels", "shorts"} and not raw:
+    if platform_raw in {"tiktok", "instagram", "instagram reels", "instagram_reels", "reels", "shorts"}:
+        return VERTICAL_GENERIC_THUMBNAIL_BLUEPRINT_ID
+    if platform_raw in {"youtube", "youtube channel", "youtube_channels"}:
+        return HORIZONTAL_GENERIC_THUMBNAIL_BLUEPRINT_ID
+    if raw in {"portrait", "portrait 9:16", "vertical", "shorts", "9:16", "tiktok", "reels"}:
         return VERTICAL_GENERIC_THUMBNAIL_BLUEPRINT_ID
     return HORIZONTAL_GENERIC_THUMBNAIL_BLUEPRINT_ID
 
@@ -78,7 +80,6 @@ def thumbnail_blueprint_for_channel(channel: Mapping[str, Any], format_value: An
 
 def thumbnail_blueprint_for_task(channel: Mapping[str, Any], task: Mapping[str, Any]) -> dict[str, Any]:
     """Resolve a task thumbnail, replacing stale generic orientation defaults."""
-    format_value = task.get("format") or (task.get("generation_settings") or {}).get("video_aspect_ratio")
     direct = str(task.get("thumbnail_blueprint_id") or "").strip()
     if direct and direct not in {
         "Generic_Thumbnail_Blueprint",
@@ -86,7 +87,10 @@ def thumbnail_blueprint_for_task(channel: Mapping[str, Any], task: Mapping[str, 
         VERTICAL_GENERIC_THUMBNAIL_BLUEPRINT_ID,
     }:
         return resolve_thumbnail_blueprint(direct)
-    return thumbnail_blueprint_for_channel({**channel, "thumbnail_blueprint_id": ""}, format_value)
+    channel_context = {**channel, "thumbnail_blueprint_id": ""}
+    if not channel_context.get("platform") and task.get("platform"):
+        channel_context["platform"] = task.get("platform")
+    return thumbnail_blueprint_for_channel(channel_context)
 
 
 def thumbnail_blueprint_for_blueprint(blueprint_id: Any, format_value: Any = "") -> dict[str, Any]:

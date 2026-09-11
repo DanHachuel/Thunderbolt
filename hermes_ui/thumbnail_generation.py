@@ -39,10 +39,14 @@ def infer_thumbnail_aspect_ratio(
 ) -> str:
     """Resolve the requested thumbnail orientation without trusting provider defaults."""
     blueprint_content = str((blueprint or {}).get("content") or "")
-    source = f"{blueprint_content}\n{str(prompt or '')}"
-    if re.search(r"\b9\s*:\s*16\b|\bvertical\b|\bportrait\b", source, flags=re.IGNORECASE):
+    if re.search(r"\b9\s*:\s*16\b|\bvertical\b|\bportrait\b", blueprint_content, flags=re.IGNORECASE):
         return "9:16"
-    if re.search(r"\b16\s*:\s*9\b|\blandscape\b|\bwide\b", source, flags=re.IGNORECASE):
+    if re.search(r"\b16\s*:\s*9\b|\blandscape\b|\bwide\b", blueprint_content, flags=re.IGNORECASE):
+        return "16:9"
+    prompt_text = str(prompt or "")
+    if re.search(r"\b9\s*:\s*16\b|\bvertical\b|\bportrait\b", prompt_text, flags=re.IGNORECASE):
+        return "9:16"
+    if re.search(r"\b16\s*:\s*9\b|\blandscape\b|\bwide\b", prompt_text, flags=re.IGNORECASE):
         return "16:9"
     return fallback if fallback in {"16:9", "9:16"} else DEFAULT_ASPECT_RATIO
 
@@ -191,6 +195,7 @@ def generate_thumbnail_image(
     lettering_text: str = "",
     lettering_prompt: str = "",
     aspect_ratio: str = DEFAULT_ASPECT_RATIO,
+    lock_aspect_ratio: bool = False,
 ) -> Path:
     api_key = str(settings.get("gemini_image_api_key") or "").strip()
     if not api_key:
@@ -204,7 +209,10 @@ def generate_thumbnail_image(
         lettering_text=lettering_text,
         lettering_prompt=lettering_prompt,
     )
-    effective_aspect_ratio = infer_thumbnail_aspect_ratio(clean_prompt, fallback=aspect_ratio)
+    effective_aspect_ratio = (
+        aspect_ratio if lock_aspect_ratio and aspect_ratio in {"16:9", "9:16"}
+        else infer_thumbnail_aspect_ratio(clean_prompt, fallback=aspect_ratio)
+    )
 
     model = str(settings.get("gemini_image_model") or DEFAULT_GEMINI_IMAGE_MODEL).strip()
     image_size = DEFAULT_IMAGE_SIZE

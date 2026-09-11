@@ -461,6 +461,7 @@ def generate_image_for_card(
                 lettering_prompt=lettering_prompt,
                 reference_image=reference_image,
                 aspect_ratio=aspect_ratio,
+                lock_aspect_ratio=True,
             )
         except Exception as exc:
             raise MediaGenerationError(str(exc)) from exc

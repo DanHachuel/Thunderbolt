@@ -81,6 +81,13 @@ def test_vertical_prompt_infers_portrait_ratio_and_normalizes_to_vertical_size()
         assert image.size == (1024, 1792)
 
 
+def test_blueprint_orientation_overrides_conflicting_prompt_orientation():
+    assert thumbnail_generation.infer_thumbnail_aspect_ratio(
+        "vertical 9:16 composition",
+        {"content": "Landscape 16:9 YouTube thumbnail"},
+    ) == "16:9"
+
+
 def test_vertical_prompt_is_sent_to_nano_as_portrait_ratio():
     image_bytes = b"fake-jpeg-bytes"
     encoded = base64.b64encode(image_bytes).decode("ascii")
