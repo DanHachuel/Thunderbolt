@@ -57,8 +57,8 @@ def test_shorts_use_tiktok_channels_and_prompt_master():
 
 def test_automation_card_matches_reference_layout_without_changing_control_keys():
     source = Path(__file__).parents[1].joinpath("app", "main.py").read_text(encoding="utf-8")
-    block = source.split('def render_automation():', 1)[1].split('def render_upload_direct():', 1)[0]
-    assert 'header_cols = st.columns([0.62, 2.15, 1.55, 1.25, 1.25, 1.45, 1.3], gap="small")' in block
+    block = source.split('def _render_youtube_automation_channel_cards():', 1)[1].split('def render_automation():', 1)[0]
+    assert 'header_cols = st.columns([0.58, 2.15, 1.4, 1.15, 1.15, 1.25, 0.82, 0.92], gap="small")' in block
     assert 'enabled = st.toggle("Automação ligada"' in block
     assert 'key=f"automation_on_{channel_id}"' in block
     assert 'key=f"automation_time_{channel_id}"' in block

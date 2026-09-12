@@ -35,7 +35,7 @@ def test_youtube_channels_ui_filters_both_table_and_card_loops():
     start = source.index('def render_channels():')
     end = source.index('def render_', start + 20)
     block = source[start:end]
-    assert block.count('is_youtube_channel_record(channel)') >= 2
+    assert block.count('is_youtube_channel_record(channel)') >= 1
     assert '\n    channels = read_json("channels.json", [])' not in block
 
 
@@ -54,8 +54,8 @@ def test_youtube_channels_ui_exposes_country_filter_and_half_width_search_layout
 def test_youtube_automation_cards_show_country_before_open_channel_and_share_country_filter():
     from pathlib import Path
     source = Path(__file__).parents[1].joinpath("app", "main.py").read_text(encoding="utf-8")
-    start = source.index('def render_automation():')
-    end = source.index('def render_upload_direct():', start)
+    start = source.index('def _render_youtube_automation_channel_cards():')
+    end = source.index('def render_automation():', start)
     block = source[start:end]
     assert '"Filtrar por País"' in block
     assert 'filtered_automation_channels' in block

@@ -6574,21 +6574,8 @@ def render_facebook_automation() -> None:
     _render_facebook_automation_cards()
 
 
-def render_automation():
-    st.title("Automação Youtube")
-    st.caption("Agendamento diário da geração por canal. O worker verifica o relógio local do computador e coloca os lotes agendados na fila.")
-    _sync_saved_scripts_to_youtube_automation()
-    worker_status = load_worker_status()
-    local_now = datetime.now().astimezone()
-    if worker_status.get("alive"):
-        st.success(f"Worker activo · relógio local: {local_now.strftime('%d/%m/%Y %H:%M:%S %Z')}")
-    else:
-        st.warning("Worker de automação não está activo. Inicie o Thunderbolt pelo launcher (`npx.cmd --yes @danhachuel/thunderbolt`) para activar as verificações horárias.")
-    last_tick = worker_status.get("last_tick_local")
-    if last_tick:
-        st.caption(f"Última verificação do worker: {last_tick}")
-    if worker_status.get("last_error"):
-        st.error(f"Último erro do worker: {worker_status['last_error']}")
+@st.fragment
+def _render_youtube_automation_channel_cards():
     channels = [channel for channel in read_json("channels.json", []) if is_youtube_channel_record(channel)]
     if not channels:
         st.info("Nenhum canal cadastrado para configurar.")
@@ -6688,19 +6675,41 @@ def render_automation():
                         elif not valid_hhmm(average_video_time):
                             st.error("O Tempo Medio de Video deve estar no formato MM:SS, por exemplo 12:00.")
                         else:
+                            paired_id = str(paired_thumbnail.get("id") or "Youtube_Generic_Thumbnail_Blueprint")
                             update_channel(channel_id, {
                                 "automation_on": bool(enabled),
                                 "automation_time": schedule_time.strip(),
                                 "average_video_time": average_video_time.strip() or DEFAULT_AVERAGE_VIDEO_TIME,
                                 "average_video_word_count": words_from_channel_time(average_video_time),
                                 "format": automation_format,
+                                "blueprint_id": automation_blueprint,
+                                "default_blueprint_id": automation_blueprint,
+                                "voice": automation_voice,
+                                "default_voice": automation_voice,
+                                "thumbnail_blueprint_id": paired_id,
+                                "default_thumbnail_blueprint_id": paired_id,
                             })
-                            set_channel_defaults(channel_id, automation_blueprint, automation_voice)
-                            paired_id = str(paired_thumbnail.get("id") or "Youtube_Generic_Thumbnail_Blueprint")
-                            update_channel(channel_id, {"thumbnail_blueprint_id": paired_id, "default_thumbnail_blueprint_id": paired_id})
                             st.success("Agendamento guardado.")
-                            st.rerun()
+                            st.rerun(scope="fragment")
 
+
+
+def render_automation():
+    st.title("Automação Youtube")
+    st.caption("Agendamento diário da geração por canal. O worker verifica o relógio local do computador e coloca os lotes agendados na fila.")
+    _sync_saved_scripts_to_youtube_automation()
+    worker_status = load_worker_status()
+    local_now = datetime.now().astimezone()
+    if worker_status.get("alive"):
+        st.success(f"Worker activo · relógio local: {local_now.strftime('%d/%m/%Y %H:%M:%S %Z')}")
+    else:
+        st.warning("Worker de automação não está activo. Inicie o Thunderbolt pelo launcher (`npx.cmd --yes @danhachuel/thunderbolt`) para activar as verificações horárias.")
+    last_tick = worker_status.get("last_tick_local")
+    if last_tick:
+        st.caption(f"Última verificação do worker: {last_tick}")
+    if worker_status.get("last_error"):
+        st.error(f"Último erro do worker: {worker_status['last_error']}")
+    _render_youtube_automation_channel_cards()
     _render_youtube_automation_cards()
 
 def render_upload_direct():

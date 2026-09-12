@@ -29,6 +29,19 @@ class AutomationCardsTests(unittest.TestCase):
         self.assertNotIn('st.caption("Horário do canal")', MAIN_SOURCE)
         self.assertIn('st.text_input("Horário (HH:MM)"', MAIN_SOURCE)
 
+    def test_youtube_channel_settings_use_independent_fragment_and_local_rerun(self):
+        self.assertIn('@st.fragment\ndef _render_youtube_automation_channel_cards():', MAIN_SOURCE)
+        self.assertIn('st.rerun(scope="fragment")', MAIN_SOURCE)
+        page_block = MAIN_SOURCE.split('def render_automation():', 1)[1].split('def render_upload_direct():', 1)[0]
+        self.assertIn('_render_youtube_automation_channel_cards()', page_block)
+
+    def test_youtube_channel_save_consolidates_configuration_payload(self):
+        channel_block = MAIN_SOURCE.split('def _render_youtube_automation_channel_cards():', 1)[1].split('def render_automation():', 1)[0]
+        save_block = channel_block.split('if st.button("Guardar"', 1)[1].split('st.success("Agendamento guardado.")', 1)[0]
+        self.assertEqual(save_block.count('update_channel(channel_id, {'), 1)
+        for field in ('"automation_time"', '"average_video_time"', '"default_blueprint_id"', '"default_voice"', '"default_thumbnail_blueprint_id"'):
+            self.assertIn(field, save_block)
+
     def test_automation_cards_expose_remake_action_for_both_platforms(self):
         self.assertIn('"Refazer Vídeo"', MAIN_SOURCE)
         self.assertIn('tiktok_automation_remake_video_', MAIN_SOURCE)
