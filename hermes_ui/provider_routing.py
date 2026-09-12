@@ -426,11 +426,11 @@ def route_json_request(
             record_provider_attempt(record)
             if exc.retryable or exc.category in {"credential", "endpoint_or_model"}:
                 set_provider_cooldown(card, exc.retry_after or cooldown or DEFAULT_COOLDOWN_SECONDS)
-            if not exc.retryable:
+            if not exc.retryable and pool != POOL_LLM:
                 raise ProviderRoutingError(str(exc), attempts=attempts) from exc
             if exc.retry_after:
                 time.sleep(min(3600.0, exc.retry_after))
-            elif cooldown > 0 and len(attempts) < maximum:
+            elif exc.retryable and cooldown > 0 and len(attempts) < maximum:
                 time.sleep(min(cooldown, 5.0))
         except requests.RequestException as exc:
             classified = classify_request_exception(exc)

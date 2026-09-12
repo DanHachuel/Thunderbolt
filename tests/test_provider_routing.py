@@ -149,6 +149,50 @@ class ProviderRoutingTests(unittest.TestCase):
             provider_routing.route_json_request(settings, pool=provider_routing.POOL_IMAGE, cards=cards, request=request, cooldown_seconds=0)
         self.assertEqual(used, ["one"])
 
+    def test_llm_pool_fails_over_after_non_retryable_provider_error(self):
+        settings = {"provider_max_attempts": 3, "provider_cooldown_seconds": 120}
+        cards = [
+            {"id": "nim", "provider": "openai", "base_url": "https://integrate.api.nvidia.com/v1", "model": "nim-model"},
+            {"id": "openrouter", "provider": "openrouter", "model": "openrouter-model"},
+            {"id": "gemini", "provider": "gemini", "model": "gemini-model"},
+        ]
+        used = []
+
+        def request(card):
+            used.append(card["id"])
+            if card["id"] == "nim":
+                return FakeResponse(400, text="NIM rejected request format")
+            return FakeResponse(200, {"choices": [{"message": {"content": "{}"}}]})
+
+        routed = provider_routing.route_json_request(
+            settings,
+            pool=provider_routing.POOL_LLM,
+            cards=cards,
+            request=request,
+        )
+
+        self.assertEqual(routed.card["id"], "openrouter")
+        self.assertEqual(used, ["nim", "openrouter"])
+
+    def test_llm_pool_continues_after_credential_error_without_waiting(self):
+        settings = {"provider_max_attempts": 3, "provider_cooldown_seconds": 120}
+        cards = [
+            {"id": "openrouter", "provider": "openrouter", "model": "openrouter-model"},
+            {"id": "gemini", "provider": "gemini", "model": "gemini-model"},
+        ]
+        used = []
+
+        def request(card):
+            used.append(card["id"])
+            if card["id"] == "openrouter":
+                return FakeResponse(401, text="invalid key")
+            return FakeResponse(200, {"choices": [{"message": {"content": "{}"}}]})
+
+        routed = provider_routing.route_json_request(settings, pool=provider_routing.POOL_LLM, cards=cards, request=request)
+
+        self.assertEqual(routed.card["id"], "gemini")
+        self.assertEqual(used, ["openrouter", "gemini"])
+
     def test_route_fails_over_on_http_402_quota(self):
         settings = {"provider_max_attempts": 2, "provider_cooldown_seconds": 0}
         cards = [
