@@ -121,17 +121,30 @@ def _connected_account_id(client: Any, user_id: str, toolkit: str, selector: str
             toolkit_slugs=[str(toolkit).strip().lower()] if toolkit else None,
         )
         raw = _safe_value(response)
-        if isinstance(raw, dict):
-            # Composio SDK versions expose the list either directly or under
-            # ``data``; accept both shapes so aliases are never sent as IDs.
-            items = raw.get("items")
-            if items is None:
-                data = raw.get("data")
-                items = data.get("items", data) if isinstance(data, dict) else data
-            if items is None:
-                items = raw.get("connected_accounts", [])
-        else:
-            items = raw
+
+        # Composio SDK versions expose this response as a list, a paginated
+        # dict, or a model whose payload is nested under ``data``.  Walk those
+        # shapes explicitly; otherwise an alias is incorrectly passed through
+        # as the connected-account ID and Composio reports it as not found.
+        def collection(payload: Any) -> Any:
+            if isinstance(payload, list):
+                return payload
+            if not isinstance(payload, dict):
+                return []
+            for key in ("items", "connected_accounts", "connections"):
+                candidate = payload.get(key)
+                if isinstance(candidate, list):
+                    return candidate
+            data = payload.get("data")
+            if data is not None and data is not payload:
+                nested = collection(data)
+                if nested:
+                    return nested
+                if isinstance(data, list):
+                    return data
+            return []
+
+        items = collection(raw)
         if not isinstance(items, list):
             items = []
         matching_items = []
@@ -147,9 +160,22 @@ def _connected_account_id(client: Any, user_id: str, toolkit: str, selector: str
         if value:
             wanted = value.casefold()
             for item in matching_items:
-                candidates = [item.get("id"), item.get("nanoid"), item.get("alias"), item.get("name")]
+                candidates = [
+                    item.get("id"),
+                    item.get("nanoid"),
+                    item.get("connection_id"),
+                    item.get("connected_account_id"),
+                    item.get("alias"),
+                    item.get("name"),
+                ]
                 if any(str(candidate or "").strip().casefold() == wanted for candidate in candidates):
-                    technical_id = str(item.get("id") or item.get("nanoid") or "").strip()
+                    technical_id = str(
+                        item.get("id")
+                        or item.get("nanoid")
+                        or item.get("connection_id")
+                        or item.get("connected_account_id")
+                        or ""
+                    ).strip()
                     if technical_id:
                         return technical_id
             available = [str(item.get("alias") or item.get("name") or item.get("id") or "").strip() for item in matching_items]
@@ -160,7 +186,13 @@ def _connected_account_id(client: Any, user_id: str, toolkit: str, selector: str
             )
         if len(matching_items) == 1:
             item = matching_items[0]
-            return str(item.get("id") or item.get("nanoid") or "").strip()
+            return str(
+                item.get("id")
+                or item.get("nanoid")
+                or item.get("connection_id")
+                or item.get("connected_account_id")
+                or ""
+            ).strip()
     except ComposioUploadError:
         raise
     except Exception:

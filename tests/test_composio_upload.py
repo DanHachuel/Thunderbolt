@@ -108,6 +108,24 @@ def test_connected_account_v31_toolkit_slug_is_supported():
     assert composio_upload._connected_account_id(client, "user-1", "youtube", "Grace-Gospel") == "youtube_fifo-wrote"
 
 
+def test_connected_account_alias_resolves_nested_sdk_connection_id():
+    class FakeAccounts:
+        def list(self, **kwargs):
+            return SimpleNamespace(data={"items": [{
+                "connection_id": "youtube_rine-pirl",
+                "alias": "The-Financial-Mechanics",
+                "toolkit": "youtube",
+            }]})
+
+    client = SimpleNamespace(connected_accounts=FakeAccounts())
+    assert composio_upload._connected_account_id(
+        client,
+        "user-1",
+        "youtube",
+        "The-Financial-Mechanics",
+    ) == "youtube_rine-pirl"
+
+
 def test_youtube_upload_accepts_current_video_file_path(monkeypatch, tmp_path):
     video = tmp_path / "demo.mp4"
     video.write_bytes(b"video")
