@@ -44,6 +44,20 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+@st.cache_data(show_spinner=False, max_entries=256)
+def _cached_file_bytes(path_string: str, modified_ns: int, size: int) -> bytes:
+    """Cache card/download payloads while invalidating automatically after file changes."""
+    del modified_ns, size
+    return Path(path_string).read_bytes()
+
+
+def _file_bytes(path: Path | None) -> bytes:
+    if not path or not path.is_file():
+        return b""
+    stat = path.stat()
+    return _cached_file_bytes(str(path.resolve()), int(stat.st_mtime_ns), int(stat.st_size))
+
+
 def _load_local_env() -> None:
     for env_path in (ROOT / ".env", Path.cwd() / ".env"):
         try:
@@ -5957,7 +5971,7 @@ def render_thumbnails():
                     # deprecation warning can be emitted after the bootstrap
                     # stream has been closed, which masks the real page with
                     # ``ValueError: I/O operation on closed file``.
-                    image_bytes = image_path.read_bytes()
+                    image_bytes = _file_bytes(image_path)
                     st.image(image_bytes)
                     st.download_button(
                         "Descarregar thumbnail",
@@ -6163,7 +6177,7 @@ def _render_tiktok_automation_cards():
                 thumbnail_prompt = str(task.get("thumbnail_prompt") or "").strip()
                 with task_cols[0]:
                     if thumbnail_path:
-                        st.image(str(thumbnail_path), width=180, caption="Thumbnail")
+                        st.image(_file_bytes(thumbnail_path), width=180, caption="Thumbnail")
                     else:
                         st.caption("Thumbnail ainda não pronta")
                     st.write(f"**{task.get('title') or task.get('topic') or 'Vídeo TikTok'}**")
@@ -6181,7 +6195,7 @@ def _render_tiktok_automation_cards():
                     with thumbnail_download_col:
                         st.download_button(
                             "Baixar Thumbnail 9:16",
-                            data=thumbnail_path.read_bytes() if thumbnail_path else b"",
+                            data=_file_bytes(thumbnail_path),
                             file_name=_automation_download_name("Thumbnail9:16", task, thumbnail_path, ".png"),
                             mime="image/png",
                             key=f"tiktok_automation_download_thumbnail_{task_id}",
@@ -6220,7 +6234,7 @@ def _render_tiktok_automation_cards():
                     with script_download_col:
                         st.download_button(
                             "Baixar Roteiro",
-                            data=script_path.read_bytes() if script_path else b"",
+                            data=_file_bytes(script_path),
                             file_name=_automation_download_name("Script", task, script_path, ".md"),
                             mime="text/markdown",
                             key=f"tiktok_automation_download_script_{task_id}",
@@ -6230,7 +6244,7 @@ def _render_tiktok_automation_cards():
                     with video_download_col:
                         st.download_button(
                             "Baixar Vídeo9:16",
-                            data=video_path.read_bytes() if video_path else b"",
+                            data=_file_bytes(video_path),
                             file_name=_automation_download_name("Vídeo9:16", task, video_path, ".mp4"),
                             mime="video/mp4",
                             key=f"tiktok_automation_download_video_{task_id}",
@@ -6345,7 +6359,27 @@ def _render_youtube_automation_cards():
         tasks = load_automation_tasks_for_platform("youtube")
         if not tasks:
             st.info("Ainda não existem vídeos cadastrados.")
-        for task in tasks:
+        page_size = 12
+        page_count = max(1, (len(tasks) + page_size - 1) // page_size)
+        current_page = st.session_state.get("youtube_automation_page", 1)
+        try:
+            current_page = min(max(int(current_page), 1), page_count)
+        except (TypeError, ValueError):
+            current_page = 1
+        if page_count > 1:
+            current_page = st.selectbox(
+                "Página de vídeos cadastrados",
+                options=list(range(1, page_count + 1)),
+                index=current_page - 1,
+                format_func=lambda value: f"Página {value} de {page_count}",
+                key="youtube_automation_page",
+            )
+            start = (current_page - 1) * page_size
+            visible_tasks = tasks[start : start + page_size]
+            st.caption(f"A mostrar {start + 1}–{min(start + page_size, len(tasks))} de {len(tasks)} vídeos.")
+        else:
+            visible_tasks = tasks
+        for task in visible_tasks:
             with st.container(border=True):
                 task_cols = st.columns([2.25, 1.55, 1.05, 2.15], gap="small")
                 script_path = _task_artifact_path(task, "script")
@@ -6355,7 +6389,7 @@ def _render_youtube_automation_cards():
                 thumbnail_prompt = str(task.get("thumbnail_prompt") or "").strip()
                 with task_cols[0]:
                     if thumbnail_path:
-                        st.image(str(thumbnail_path), width=180, caption="Thumbnail")
+                        st.image(_file_bytes(thumbnail_path), width=180, caption="Thumbnail")
                     else:
                         st.caption("Thumbnail ainda não pronta")
                     st.write(f"**{task.get('topic', 'Sem tópico')}**")
@@ -6364,7 +6398,7 @@ def _render_youtube_automation_cards():
                     with thumbnail_download_col:
                         st.download_button(
                             "Baixar Thumbnail",
-                            data=thumbnail_path.read_bytes() if thumbnail_path else b"",
+                            data=_file_bytes(thumbnail_path),
                             file_name=_automation_download_name("Thumbnail", task, thumbnail_path, ".png"),
                             mime="image/png",
                             key=f"automation_download_thumbnail_{task['id']}",
@@ -6402,7 +6436,7 @@ def _render_youtube_automation_cards():
                     with script_download_col:
                         st.download_button(
                             "Baixar Roteiro",
-                            data=script_path.read_bytes() if script_path else b"",
+                            data=_file_bytes(script_path),
                             file_name=_automation_download_name("Script", task, script_path, ".md"),
                             mime="text/markdown",
                             key=f"automation_download_script_{task['id']}",
@@ -6412,7 +6446,7 @@ def _render_youtube_automation_cards():
                     with video_download_col:
                         st.download_button(
                             "Baixar Vídeo",
-                            data=video_path.read_bytes() if video_path else b"",
+                            data=_file_bytes(video_path),
                             file_name=_automation_download_name("Vídeo", task, video_path, ".mp4"),
                             mime="video/mp4",
                             key=f"automation_download_video_{task['id']}",
@@ -6482,7 +6516,7 @@ def _render_facebook_automation_cards() -> None:
                         image_path = Path(str(image.get("captioned_path") or image.get("path") or ""))
                         with image_col:
                             if image_path.is_file():
-                                st.image(str(image_path), use_container_width=True)
+                                st.image(_file_bytes(image_path), use_container_width=True)
                             st.caption(str(image.get("status") or "pendente"))
             with cols[1]:
                 st.caption("Estado")
