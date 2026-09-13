@@ -13,7 +13,7 @@ import streamlit as st
 
 from hermes_ui.domain import create_channel, delete_channel, update_channel
 from hermes_ui.influencers import InfluencerBackendError, STANDALONE_CONTENT_INFLUENCER_ID, get_repository
-from hermes_ui.storage import STORAGE, TIKTOK_PROMPT_MASTERS, read_json, write_json
+from hermes_ui.storage import STORAGE, TIKTOK_PROMPT_MASTERS, list_prompt_master_files, read_json, write_json
 from hermes_ui.countries import COUNTRY_OPTIONS
 from hermes_ui.languages import LANGUAGE_CODES, language_code, language_label
 from integrations.instagram_public import fetch_public_instagram_posts, fetch_public_instagram_profile, normalize_instagram_metric
@@ -43,11 +43,12 @@ INSTAGRAM_MODEL_OPTIONS = (
 def _instagram_model_options(settings: Mapping[str, Any], model_type: str) -> tuple[list[str], dict[str, str]]:
     """Return the dependent model list for an Instagram account."""
     if model_type == "Prompt-Masters Tiktok":
-        files = sorted(TIKTOK_PROMPT_MASTERS.glob("*.md")) if TIKTOK_PROMPT_MASTERS.is_dir() else []
+        files = list_prompt_master_files()
         values = [path.name for path in files]
         return values, {path.name: path.stem for path in files}
     if model_type == "Facebook Blueprint":
         root = STORAGE / "facebook" / "blueprints"
+        root.mkdir(parents=True, exist_ok=True)
         files = sorted(root.glob("*.md")) if root.is_dir() else []
         values = [path.name for path in files]
         return values, {path.name: path.stem for path in files}
@@ -763,6 +764,6 @@ def render_instagram_automation(settings: dict[str, Any]) -> None:
             st.write(f"**Modelo usado na geração:** {resolved['type']}")
             st.write(f"**Blueprint/modelo atrelado:** {resolved['label']}")
             if not resolved["id"]:
-                st.warning("Nenhum modelo está atrelado. Escolha-o em Contas Instagram para activar a geração desta conta.")
+                st.info("Nenhum modelo está atrelado. Pode continuar a trabalhar; escolha um modelo em Contas Instagram quando quiser gerar conteúdo para esta conta.")
             else:
                 st.success("A automação utilizará este modelo para gerar o conteúdo da conta.")
