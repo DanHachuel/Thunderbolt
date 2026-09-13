@@ -126,6 +126,25 @@ def test_connected_account_alias_resolves_nested_sdk_connection_id():
     ) == "youtube_rine-pirl"
 
 
+def test_connected_account_alias_uses_memory_cache():
+    calls = 0
+
+    class FakeAccounts:
+        def list(self, **kwargs):
+            nonlocal calls
+            calls += 1
+            return {"items": [{
+                "id": "youtube_cached",
+                "alias": "Cached-Account",
+                "toolkit": "youtube",
+            }]}
+
+    client = SimpleNamespace(connected_accounts=FakeAccounts())
+    assert composio_upload._connected_account_id(client, "cache-user", "youtube", "Cached-Account") == "youtube_cached"
+    assert composio_upload._connected_account_id(client, "cache-user", "youtube", "Cached-Account") == "youtube_cached"
+    assert calls == 1
+
+
 def test_youtube_upload_accepts_current_video_file_path(monkeypatch, tmp_path):
     video = tmp_path / "demo.mp4"
     video.write_bytes(b"video")

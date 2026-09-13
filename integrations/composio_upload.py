@@ -17,6 +17,11 @@ COMPOSIO_OPERATION_SEARCH = {
     "upload_instagram_media": {"query": "Upload Video Reel Photo", "toolkit": "INSTAGRAM"},
 }
 
+# O alias identifica a conta dentro do contexto do utilizador e toolkit. O
+# cache evita uma chamada de listagem a cada upload durante a execução do
+# processo, sem persistir credenciais ou dados entre reinícios.
+_CONNECTED_ACCOUNT_ID_CACHE: dict[tuple[str, str, str], str] = {}
+
 
 def _safe_value(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, float, bool)):
@@ -114,9 +119,16 @@ def _client(api_key: str, *, upload_dir: Path | None = None):
 def _connected_account_id(client: Any, user_id: str, toolkit: str, selector: str) -> str:
     """Resolve a connected-account ID from an ID, alias, or sole active account."""
     value = str(selector or "").strip()
+    normalized_user_id = _require_user_id(user_id)
+    normalized_toolkit = str(toolkit or "").strip().casefold()
+    cache_key = (normalized_user_id, normalized_toolkit, value.casefold())
+    if value:
+        cached_id = _CONNECTED_ACCOUNT_ID_CACHE.get(cache_key)
+        if cached_id:
+            return cached_id
     try:
         response = client.connected_accounts.list(
-            user_ids=[_require_user_id(user_id)],
+            user_ids=[normalized_user_id],
             statuses=["ACTIVE"],
             toolkit_slugs=[str(toolkit).strip().lower()] if toolkit else None,
         )
@@ -177,6 +189,8 @@ def _connected_account_id(client: Any, user_id: str, toolkit: str, selector: str
                         or ""
                     ).strip()
                     if technical_id:
+                        if value:
+                            _CONNECTED_ACCOUNT_ID_CACHE[cache_key] = technical_id
                         return technical_id
             available = [str(item.get("alias") or item.get("name") or item.get("id") or "").strip() for item in matching_items]
             available = [item for item in available if item]
@@ -186,13 +200,16 @@ def _connected_account_id(client: Any, user_id: str, toolkit: str, selector: str
             )
         if len(matching_items) == 1:
             item = matching_items[0]
-            return str(
+            technical_id = str(
                 item.get("id")
                 or item.get("nanoid")
                 or item.get("connection_id")
                 or item.get("connected_account_id")
                 or ""
             ).strip()
+            if technical_id and value:
+                _CONNECTED_ACCOUNT_ID_CACHE[cache_key] = technical_id
+            return technical_id
     except ComposioUploadError:
         raise
     except Exception:
