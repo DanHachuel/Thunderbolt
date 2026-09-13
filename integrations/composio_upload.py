@@ -157,6 +157,8 @@ def _connected_account_id(client: Any, user_id: str, toolkit: str, selector: str
         if len(matching_items) == 1:
             item = matching_items[0]
             return str(item.get("id") or item.get("nanoid") or "").strip()
+    except ComposioUploadError:
+        raise
     except Exception:
         # Preserve the original selector so Composio returns its actionable error.
         return value

@@ -25,8 +25,13 @@ def test_execute_upload_injects_selected_file_field(monkeypatch, tmp_path):
             captured.update(slug=slug, kwargs=kwargs)
             return SimpleNamespace(data={"remote_id": "123"}, error=None, log_id="log-123")
 
+    class FakeAccounts:
+        def list(self, **kwargs):
+            return {"items": [{"id": "youtube-test", "alias": "Demo", "toolkit": "youtube"}]}
+
     class FakeClient:
         tools = FakeTools()
+        connected_accounts = FakeAccounts()
 
     monkeypatch.setattr(composio_upload, "_client", lambda *args, **kwargs: FakeClient())
     result = composio_upload.execute_upload("ak_123456789", "user-1", "DRIVE_UPLOAD_FILE", str(video), "file", '{"title":"Demo"}')
@@ -72,6 +77,27 @@ def test_resolve_upload_video_alias_reports_missing_real_tool(monkeypatch):
         composio_upload.resolve_tool_slug("ak_123456789", "user-1", "upload_video")
 
 
+def test_connected_account_alias_resolves_to_technical_id(monkeypatch):
+    class FakeAccounts:
+        def list(self, **kwargs):
+            assert kwargs["user_ids"] == ["user-1"]
+            assert kwargs["statuses"] == ["ACTIVE"]
+            return {"items": [{"id": "youtube_fifo-wrote", "alias": "Grace-Gospel", "toolkit": "youtube"}]}
+
+    client = SimpleNamespace(connected_accounts=FakeAccounts())
+    assert composio_upload._connected_account_id(client, "user-1", "youtube", "Grace-Gospel") == "youtube_fifo-wrote"
+
+
+def test_connected_account_missing_alias_does_not_fall_through_to_invalid_selector():
+    class FakeAccounts:
+        def list(self, **kwargs):
+            return {"items": [{"id": "youtube_fifo-wrote", "alias": "Grace-Gospel", "toolkit": "youtube"}]}
+
+    client = SimpleNamespace(connected_accounts=FakeAccounts())
+    with pytest.raises(composio_upload.ComposioUploadError, match="não foi encontrada"):
+        composio_upload._connected_account_id(client, "user-1", "youtube", "Conta-Inexistente")
+
+
 def test_youtube_upload_accepts_current_video_file_path(monkeypatch, tmp_path):
     video = tmp_path / "demo.mp4"
     video.write_bytes(b"video")
@@ -82,7 +108,11 @@ def test_youtube_upload_accepts_current_video_file_path(monkeypatch, tmp_path):
             captured.update(slug=slug, kwargs=kwargs)
             return {"successful": True, "data": {"id": "video-1"}}
 
-    monkeypatch.setattr(composio_upload, "_client", lambda *args, **kwargs: SimpleNamespace(tools=FakeTools()))
+    class FakeAccounts:
+        def list(self, **kwargs):
+            return {"items": [{"id": "youtube-test", "alias": "Demo", "toolkit": "youtube"}]}
+
+    monkeypatch.setattr(composio_upload, "_client", lambda *args, **kwargs: SimpleNamespace(tools=FakeTools(), connected_accounts=FakeAccounts()))
     result = composio_upload.execute_upload("ak_123456789", "user-1", "YOUTUBE_UPLOAD_VIDEO", str(video), "videoFilePath", "{}")
     assert result["successful"] is True
     assert captured["slug"] == "YOUTUBE_UPLOAD_VIDEO"
