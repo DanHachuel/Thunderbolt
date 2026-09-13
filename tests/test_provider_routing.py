@@ -193,6 +193,34 @@ class ProviderRoutingTests(unittest.TestCase):
         self.assertEqual(routed.card["id"], "gemini")
         self.assertEqual(used, ["openrouter", "gemini"])
 
+    def test_llm_pool_fails_over_when_http_200_content_is_not_json(self):
+        settings = {
+            "provider_max_attempts": 3,
+            "provider_cooldown_seconds": 0,
+            "llm_provider_cards": [
+                {"id": "nim", "provider": "openai", "model": "nim-model", "base_url": "https://nim.example/v1"},
+                {"id": "openrouter", "provider": "openrouter", "model": "openrouter-model", "base_url": "https://openrouter.example/v1"},
+            ],
+        }
+        used = []
+
+        def post(endpoint, **_kwargs):
+            card_id = "nim" if "nim.example" in endpoint else "openrouter"
+            used.append(card_id)
+            if card_id == "nim":
+                return FakeResponse(200, {"choices": [{"message": {"content": "não é JSON"}}]})
+            return FakeResponse(200, {"choices": [{"message": {"content": "{\"ok\": true}"}}]})
+
+        with patch.object(provider_routing.requests, "post", side_effect=post):
+            routed = provider_routing.route_llm_json(settings, "system", "user")
+
+        self.assertEqual(routed.card["id"], "openrouter")
+        self.assertEqual(used, ["nim", "openrouter"])
+
+    def test_llm_pool_json_validation_helper_rejects_plain_text(self):
+        with self.assertRaises(provider_routing.ProviderCallError):
+            provider_routing._validate_llm_json_response({"choices": [{"message": {"content": "não é JSON"}}]})
+
     def test_route_fails_over_on_http_402_quota(self):
         settings = {"provider_max_attempts": 2, "provider_cooldown_seconds": 0}
         cards = [

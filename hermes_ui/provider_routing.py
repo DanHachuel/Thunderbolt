@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -274,6 +275,38 @@ def classify_response(response: Any) -> None:
     )
 
 
+def _validate_llm_json_response(response: Any) -> None:
+    """Reject HTTP-200 LLM responses that cannot satisfy the JSON pool contract."""
+    try:
+        payload = response if isinstance(response, Mapping) else response.json()
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise ProviderCallError(
+            "Provider LLM devolveu um corpo JSON de transporte inválido.",
+            category="payload",
+            retryable=False,
+        ) from exc
+    if not isinstance(payload, Mapping):
+        raise ProviderCallError("Provider LLM devolveu um payload inválido.", category="payload", retryable=False)
+    choices = payload.get("choices") or []
+    message = (choices[0] or {}).get("message") if choices and isinstance(choices[0], Mapping) else None
+    content = message.get("content") if isinstance(message, Mapping) else None
+    if isinstance(content, list):
+        content = "".join(str(item.get("text", "")) for item in content if isinstance(item, Mapping))
+    text = str(content or "").strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```$", "", text).strip()
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ProviderCallError(
+            "Provider LLM devolveu conteúdo que não é JSON válido.",
+            category="payload",
+            retryable=False,
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise ProviderCallError("Provider LLM devolveu JSON que não é um objecto.", category="payload", retryable=False)
+
+
 def enabled_cards(settings: Mapping[str, Any], pool: str) -> list[dict[str, Any]]:
     """Return cards in deterministic priority order; media pools keep active-card preference."""
     if pool == POOL_LLM:
@@ -473,6 +506,9 @@ def route_llm_json(settings: Mapping[str, Any], system_prompt: str, user_prompt:
         }
         if not body["model"]:
             raise ProviderCallError("O cartão LLM não tem modelo configurado.", category="payload", retryable=False)
-        return requests.post(endpoint, headers=headers, json=body, timeout=120)
+        response = requests.post(endpoint, headers=headers, json=body, timeout=120)
+        if 200 <= int(getattr(response, "status_code", 0) or 0) < 300:
+            _validate_llm_json_response(response.json())
+        return response
 
     return route_json_request(settings, pool=POOL_LLM, cards=None, request=request)
