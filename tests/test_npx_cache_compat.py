@@ -93,9 +93,8 @@ class NpxCacheCompatibilityTests(unittest.TestCase):
     def test_streamlit_bootstrap_owns_sigint_without_click_shutdown(self):
         bootstrap = (ROOT / "scripts" / "streamlit_bootstrap.py").read_text(encoding="utf-8")
         self.assertIn("def _custom_sigint_handler", bootstrap)
-        self.assertIn("asyncio.get_running_loop()", bootstrap)
-        self.assertIn("loop.call_soon_threadsafe(loop.stop)", bootstrap)
-        self.assertIn("os._exit(0)", bootstrap)
+        self.assertIn("SIGINT ignorado", bootstrap)
+        self.assertNotIn("os._exit(0)", bootstrap)
         self.assertIn("_original_signal(signal.SIGINT, _custom_sigint_handler)", bootstrap)
         self.assertIn("signal.signal = _protected_signal", bootstrap)
         self.assertNotIn("server.stop()", bootstrap)

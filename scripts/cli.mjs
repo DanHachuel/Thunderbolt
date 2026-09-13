@@ -454,7 +454,12 @@ const stopWorker = () => {
   if (worker && !worker.killed) worker.kill();
   stopPipelineWorker();
 };
-process.on("SIGINT", stopWorker);
+// No Windows, Ctrl+C/SIGINT pode ser propagado ao launcher e ao Streamlit ao
+// mesmo tempo. Não transformar esse sinal em desligamento durante automações;
+// o encerramento normal continua disponível via SIGTERM/fecho do processo.
+process.on("SIGINT", () => {
+  console.error("Thunderbolt: SIGINT ignorado para preservar a automação.");
+});
 process.on("SIGTERM", stopWorker);
 monitorWorkers();
 // O pipeline worker permanece disponível para recolher imediatamente tarefas
