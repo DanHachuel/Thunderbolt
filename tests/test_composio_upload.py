@@ -98,6 +98,16 @@ def test_connected_account_missing_alias_does_not_fall_through_to_invalid_select
         composio_upload._connected_account_id(client, "user-1", "youtube", "Conta-Inexistente")
 
 
+def test_connected_account_v31_toolkit_slug_is_supported():
+    class FakeAccounts:
+        def list(self, **kwargs):
+            assert kwargs["toolkit_slugs"] == ["youtube"]
+            return {"items": [{"id": "youtube_fifo-wrote", "alias": "Grace-Gospel", "toolkit_slug": "youtube"}]}
+
+    client = SimpleNamespace(connected_accounts=FakeAccounts())
+    assert composio_upload._connected_account_id(client, "user-1", "youtube", "Grace-Gospel") == "youtube_fifo-wrote"
+
+
 def test_youtube_upload_accepts_current_video_file_path(monkeypatch, tmp_path):
     video = tmp_path / "demo.mp4"
     video.write_bytes(b"video")

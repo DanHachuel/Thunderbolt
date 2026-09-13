@@ -115,7 +115,11 @@ def _connected_account_id(client: Any, user_id: str, toolkit: str, selector: str
     """Resolve a connected-account ID from an ID, alias, or sole active account."""
     value = str(selector or "").strip()
     try:
-        response = client.connected_accounts.list(user_ids=[_require_user_id(user_id)], statuses=["ACTIVE"])
+        response = client.connected_accounts.list(
+            user_ids=[_require_user_id(user_id)],
+            statuses=["ACTIVE"],
+            toolkit_slugs=[str(toolkit).strip().lower()] if toolkit else None,
+        )
         raw = _safe_value(response)
         if isinstance(raw, dict):
             # Composio SDK versions expose the list either directly or under
@@ -134,7 +138,7 @@ def _connected_account_id(client: Any, user_id: str, toolkit: str, selector: str
         for item in items:
             if not isinstance(item, dict):
                 continue
-            toolkit_value = item.get("toolkit")
+            toolkit_value = item.get("toolkit") or item.get("toolkit_slug")
             if isinstance(toolkit_value, dict):
                 toolkit_value = toolkit_value.get("slug") or toolkit_value.get("name")
             if str(toolkit or "").strip() and toolkit.casefold() not in str(toolkit_value or "").casefold():
