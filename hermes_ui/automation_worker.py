@@ -261,7 +261,7 @@ def _pending_payload(channel: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return "", payload
 
 
-def _create_channel_batch(channel: dict[str, Any], when: datetime) -> dict[str, Any]:
+def _create_channel_batch(channel: dict[str, Any], when: datetime, quantity: int | None = None, manual_create: bool = False) -> dict[str, Any]:
     channel_id = str(channel["id"])
     date_key = when.date().isoformat()
     style_wide = str(channel.get("style_wide") or "pexels")
@@ -282,12 +282,21 @@ def _create_channel_batch(channel: dict[str, Any], when: datetime) -> dict[str, 
         "topic_source": payload.get("topic_source") or "llm_pending",
         "channel_payloads": {channel_id: payload},
         "automation_worker": True,
+        "manual_create": manual_create,
         "automation_date": date_key,
         "automation_scheduled_at": _local_iso(when),
     }
-    batch = create_batch("single", [channel_id], topic, _daily_quantity(channel), options)
+    batch = create_batch("single", [channel_id], topic, max(1, int(quantity if quantity is not None else _daily_quantity(channel))), options)
     tasks = create_tasks_for_batch(batch)
     return {"batch": batch, "tasks": tasks, "channel_id": channel_id}
+
+
+def create_video_now_for_channel(channel: dict[str, Any]) -> dict[str, Any]:
+    """Create one immediately runnable video task without requiring a schedule."""
+    channel_id = str(channel.get("id") or "").strip()
+    if not channel_id:
+        raise ValueError("O canal precisa de um identificador para criar um vídeo.")
+    return _create_channel_batch(channel, _local_now(), quantity=1, manual_create=True)
 
 
 def run_once(when: datetime | None = None) -> dict[str, Any]:

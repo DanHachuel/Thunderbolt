@@ -97,7 +97,7 @@ APP_VERSION_LABEL = display_version(APP_VERSION)
 from hermes_ui.domain import STAGES, composio_connected_account_id_from_channel_name, create_batch, create_channel, create_tasks_for_batch, delete_channel, delete_task, pipeline_summary, remake_video_task, retry_task_with_current_settings, set_channel_defaults, stop_task_by_user, transition_task, update_channel, update_channel_video
 from hermes_ui.channel_import import build_channel_template_xlsx, channel_is_duplicate, find_duplicate_channel, parse_channel_workbook, resolve_blueprint, resolve_google_account, resolve_voice
 from hermes_ui.drafts import list_drafts, save_draft
-from hermes_ui.automation_worker import load_worker_status
+from hermes_ui.automation_worker import create_video_now_for_channel, load_worker_status
 from hermes_ui.pipeline_worker import load_pipeline_worker_status, recover_stale_tasks, STALE_TASK_SECONDS, WORKER_HEARTBEAT_TIMEOUT_SECONDS
 from hermes_ui.storage import BLUEPRINTS, DEFAULT_LLM_PROVIDER, MEDIA_DOWNLOADS, STORAGE, TIKTOK_PROMPT_MASTERS, atomic_write, ensure_storage, get_display_name, list_blueprint_files, list_prompt_master_files, load_blueprint_file, load_prompt_master_file, now, read_json, set_display_name, update_json, write_json
 from app.modules.niche_finder.apify import ApifyError, DEFAULT_ACTOR_ID, abort_actor_run, build_actor_input, get_dataset_items, normalize_video_items, start_actor_run, wait_for_actor_run
@@ -5638,6 +5638,20 @@ def _render_video_task_state(task: dict[str, Any]) -> None:
                     st.caption(f"Manifesto: {task.get('video_result')}")
 
 
+def _create_video_now_from_channel(channel: dict[str, Any]) -> bool:
+    """Create a single task that the active pipeline can execute immediately."""
+    try:
+        result = create_video_now_for_channel(channel)
+    except Exception as exc:
+        st.error(f"Não foi possível criar o vídeo: {exc}")
+        return False
+    tasks = result.get("tasks") or []
+    st.success(f"Vídeo criado para {channel.get('name') or 'este canal'} e adicionado à lista de Vídeos cadastrados para execução imediata.")
+    if not tasks:
+        st.warning("A tarefa foi criada, mas ainda não foi possível confirmar o card na fila.")
+    return True
+
+
 def _start_pipeline_task(task_id: str, state: str) -> bool:
     """Start or retry a video task from any platform automation card."""
     if state in {"blocked", "failed"}:
@@ -6305,6 +6319,19 @@ def render_tiktok_automation():
                 with header_cols[1]:
                     st.write(f"**{channel.get('name', 'Sem nome')}**")
                     st.caption(channel.get("handle") or channel.get("url") or "sem URL")
+                    channel_url = _tiktok_channel_url(channel)
+                    if channel_url:
+                        open_create_cols = st.columns(2, gap="small")
+                        with open_create_cols[0]:
+                            st.link_button("Abrir canal", channel_url, type="primary", width="stretch")
+                        with open_create_cols[1]:
+                            if st.button("Criar Vídeo", key=f"tiktok_automation_create_video_{channel_id}", width="stretch"):
+                                if _create_video_now_from_channel(channel):
+                                    st.rerun(scope="fragment")
+                    else:
+                        if st.button("Criar Vídeo", key=f"tiktok_automation_create_video_{channel_id}", width="stretch"):
+                            if _create_video_now_from_channel(channel):
+                                st.rerun(scope="fragment")
                 with header_cols[2]:
                     enabled = st.toggle("Automação ligada", value=bool(channel.get("automation_on", False)), key=f"tiktok_automation_on_{channel_id}")
                 with header_cols[3]:
@@ -6655,7 +6682,17 @@ def _render_youtube_automation_channel_cards():
                         elif channel_id_or_handle:
                             channel_url = f"https://www.youtube.com/@{channel_id_or_handle}"
                     if channel_url:
-                        st.link_button("Abrir canal", channel_url, type="primary", width="content")
+                        open_create_cols = st.columns(2, gap="small")
+                        with open_create_cols[0]:
+                            st.link_button("Abrir canal", channel_url, type="primary", width="stretch")
+                        with open_create_cols[1]:
+                            if st.button("Criar Vídeo", key=f"youtube_automation_create_video_{channel_id}", width="stretch"):
+                                if _create_video_now_from_channel(channel):
+                                    st.rerun(scope="fragment")
+                    else:
+                        if st.button("Criar Vídeo", key=f"youtube_automation_create_video_{channel_id}", width="stretch"):
+                            if _create_video_now_from_channel(channel):
+                                st.rerun(scope="fragment")
                 with header_cols[2]:
                     st.markdown("**Thumbnail Blueprint**")
                     st.caption(str(paired_thumbnail.get("name") or "Youtube_Generic_Thumbnail_Blueprint"))
@@ -9554,24 +9591,33 @@ def render_logs():
         st.info("Ainda não existem logs para os filtros seleccionados.")
         return
     rows = logs_to_rows(records)
-    st.dataframe(
-        rows,
-        width="stretch",
-        height=520,
-        hide_index=True,
-        column_config={
-            # Fixed minimum widths keep the long Detalhes column navigable on narrow screens.
-            "Operação": st.column_config.TextColumn("Operação", width=190),
-            "Estado": st.column_config.TextColumn("Estado", width=115),
-            "Data": st.column_config.TextColumn("Data", width=105),
-            "Hora": st.column_config.TextColumn("Hora", width=105),
-            "Registo": st.column_config.TextColumn("Registo", width=280),
-            "Origem": st.column_config.TextColumn("Origem", width=130),
-            "Progresso": st.column_config.TextColumn("Progresso", width=100),
-            "API/Provider": st.column_config.TextColumn("API/Provider", width=220),
-            "Detalhes": st.column_config.TextColumn("Detalhes", width=760),
-        },
-    )
+    def _run_log_file() -> Path | None:
+        candidates = [Path("run-codigo.log"), STORAGE / "run-codigo.log", STORAGE.parent / "run-codigo.log"]
+        return next((path for path in candidates if path.is_file()), None)
+
+    run_log = _run_log_file()
+    log_columns = ["Download", "Operação", "Estado", "Data", "Hora", "Registo", "Origem", "Progresso", "API/Provider", "Detalhes"]
+    # Keep the log list within the same vertical footprint as the previous table.
+    log_table_height = 520
+    with st.container(height=log_table_height):
+        header = st.columns([0.8, 1.4, 0.9, 0.8, 0.8, 2.0, 1.0, 0.8, 1.5, 4.0], gap="small")
+        for column, label in zip(header, log_columns):
+            column.markdown(f"**{label}**")
+        for index, row in enumerate(rows):
+            cells = st.columns([0.8, 1.4, 0.9, 0.8, 0.8, 2.0, 1.0, 0.8, 1.5, 4.0], gap="small")
+            with cells[0]:
+                st.download_button(
+                    "Baixar",
+                    data=run_log.read_bytes() if run_log else b"",
+                    file_name="run-codigo.log",
+                    mime="text/plain",
+                    key=f"logs_download_run_codigo_{index}",
+                    width="stretch",
+                    disabled=run_log is None,
+                )
+            for cell, column in zip(cells[1:], log_columns[1:]):
+                cell.write(str(row.get(column) or "—"))
+
     st.caption("A coluna API/Provider identifica a API responsável por cada falha; quando o registo é anterior a esta correcção, o sistema assinala que a API não pôde ser identificada. Quando a tabela exceder a largura disponível, utilize a barra de rolagem horizontal na parte inferior para consultar todo o conteúdo das células.")
 
 
