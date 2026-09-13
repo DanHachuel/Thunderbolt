@@ -710,6 +710,7 @@ def channel_options() -> list[dict]:
     return [c for c in read_json("channels.json", []) if c.get("active", True)]
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def blueprint_catalog() -> list[tuple[str, str]]:
     options = [("", "Sem Blueprint padrão")]
     for path in list_blueprint_files():
@@ -1205,6 +1206,7 @@ def valid_hhmm(value: str) -> bool:
     return bool(re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", str(value or "").strip()))
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def voice_catalog(current: str = "") -> list[str]:
     voices = [""]
     voice_file = ROOT / "integrations" / "data" / "azure_voices.json"
@@ -5467,14 +5469,15 @@ def _saved_script_task_matches(task: dict[str, Any], record: dict[str, Any], cha
 
 def _sync_saved_scripts_to_youtube_automation() -> None:
     """Expose every saved video script as one manual YouTube task, without duplicates."""
-    records = _backfill_saved_script_blueprints(list_script_documents())
+    source_records = list_script_documents()
     sync_signature = "|".join(
         f"{record.get('id', '')}:{record.get('created_at', '')}:{record.get('blueprint_id', '')}:{record.get('blueprint_name', '')}"
-        for record in records
+        for record in source_records
         if str(record.get("document_type") or "video_script").strip() == "video_script"
     )
     if st.session_state.get("youtube_script_sync_signature") == sync_signature:
         return
+    records = _backfill_saved_script_blueprints(source_records)
     channels = [item for item in read_json("channels.json", []) if isinstance(item, dict)]
     existing_tasks = load_video_tasks_for_catalog()
     for raw_record in records:
