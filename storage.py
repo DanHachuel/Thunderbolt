@@ -224,6 +224,7 @@ DEFAULTS: dict[str, Any] = {
         "subtitle_provider": "edge",
         "ffmpeg_path": "ffmpeg",
         "ffmpeg_version": "7.1-20240930",
+        "ffmpeg_seed_path": "",
         "video_codec": "h264_nvenc",
         "material_directory": "",
         "whisper_model_size": "large-v3",

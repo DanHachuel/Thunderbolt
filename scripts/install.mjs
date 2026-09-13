@@ -394,17 +394,36 @@ function ensurePython() {
   return found;
 }
 
-function installFfmpegWindows() {
+let seededFfmpegPath = "";
+
+function installFfmpegSeedWindows() {
   if (platform() !== "win32" || process.env.THUNDERBOLT_SKIP_FFMPEG_INSTALL === "1") return;
-  if (!commandExists("winget")) {
-    console.warn("winget não encontrado; o FFmpeg 7.1 não foi instalado automaticamente. Instale-o com: winget install --id BtbN.FFmpeg.GPL.7.1 --version 7.1-20240930 -e");
+  const seedDirectory = join(root, "seed", "ffmpeg", "7.1-20240930");
+  const archivePrefix = "ffmpeg-n7.1-win64-gpl-7.1.zip.part-";
+  const archiveParts = existsSync(seedDirectory)
+    ? readdirSync(seedDirectory).filter((filename) => filename.startsWith(archivePrefix)).sort()
+    : [];
+  if (!archiveParts.length) {
+    console.warn("O arquivo FFmpeg 7.1 não está presente no pacote; o FFmpeg actual do ambiente Python continuará disponível.");
     return;
   }
-  console.log("A instalar FFmpeg 7.1 Péter através do winget...");
-  const result = spawnSync("winget", ["install", "--id", "BtbN.FFmpeg.GPL.7.1", "--version", "7.1-20240930", "-e", "--accept-source-agreements", "--accept-package-agreements", "--silent"], { stdio: "inherit", env: pythonEnvironment });
-  if (result.status !== 0) {
-    console.warn("Não foi possível instalar o FFmpeg 7.1 automaticamente. Execute o comando winget mostrado na aba Configuração API > FFmpeg.");
+  const destination = join(thunderboltHome, "ffmpeg", "7.1-20240930");
+  mkdirSync(destination, { recursive: true });
+  const archive = join(destination, "ffmpeg-n7.1-win64-gpl-7.1.zip");
+  if (!existsSync(archive)) {
+    writeFileSync(archive, Buffer.concat(archiveParts.map((filename) => readFileSync(join(seedDirectory, filename)))));
   }
+  const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
+  const command = `Expand-Archive -LiteralPath ${quote(archive)} -DestinationPath ${quote(destination)} -Force; $bin = Get-ChildItem -LiteralPath ${quote(destination)} -Recurse -Filter ffmpeg.exe | Select-Object -First 1; if (-not $bin) { exit 2 }; $bin.FullName`;
+  console.log("A instalar o FFmpeg 7.1 incluído no pacote, sem alterar o PATH global...");
+  const result = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command], { encoding: "utf8", env: pythonEnvironment });
+  if (result.status !== 0) {
+    console.warn("Não foi possível extrair o FFmpeg 7.1 incluído no pacote; o FFmpeg actual do ambiente Python continuará disponível.");
+    return;
+  }
+  const pathLines = String(result.stdout || "").trim().split(/\r?\n/).filter(Boolean);
+  seededFfmpegPath = pathLines[pathLines.length - 1] || "";
+  if (seededFfmpegPath) console.log(`FFmpeg 7.1 instalado em ${seededFfmpegPath}`);
 }
 
 function cloneMoneyPrinter(path) {
@@ -485,8 +504,14 @@ function writeSettings(moneyprinterPath) {
     try { settings = JSON.parse(readFileSync(settingsPath, "utf8")); } catch { settings = {}; }
   }
   settings.moneyprinter_path = moneyprinterPath;
-  if (!settings.ffmpeg_path) settings.ffmpeg_path = "ffmpeg";
-  if (!settings.ffmpeg_version) settings.ffmpeg_version = "7.1-20240930";
+  if (seededFfmpegPath) {
+    settings.ffmpeg_seed_path = seededFfmpegPath;
+    settings.ffmpeg_path = seededFfmpegPath;
+    settings.ffmpeg_version = "7.1-20240930";
+  } else {
+    if (!settings.ffmpeg_path) settings.ffmpeg_path = "ffmpeg";
+    if (!settings.ffmpeg_version) settings.ffmpeg_version = "7.1-20240930";
+  }
   if (!settings.llm_provider || String(settings.llm_provider).trim().toLowerCase() === "moonshot") {
     settings.llm_provider = "openai";
   }
@@ -516,7 +541,7 @@ function main() {
   if (!skipMpt) cloneMoneyPrinter(moneyprinterPath);
   if (!skipDeps) installThunderboltDependencies(python);
   if (!skipDeps && !skipMpt) installMoneyPrinterDependencies(moneyprinterPath);
-  if (!skipDeps) installFfmpegWindows();
+  if (!skipDeps) installFfmpegSeedWindows();
   writeSettings(moneyprinterPath);
   console.log("\nInstalação do Thunderbolt concluída.");
   console.log(`Pasta Thunderbolt: ${thunderboltHome}`);

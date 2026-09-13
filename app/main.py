@@ -9323,10 +9323,18 @@ def render_settings():
 
     with ffmpeg_tab:
         st.subheader("FFmpeg")
-        st.caption("Seleccione a versão do FFmpeg usada pelo pipeline. O perfil FFmpeg 7.1 Péter é o recomendado para aceleração NVENC em GPUs modernas.")
+        st.caption("Seleccione a versão do FFmpeg usada pelo pipeline. O FFmpeg actual do pacote é o FFmpeg 7.1 Péter incluído fisicamente no seed; o imageio-ffmpeg permanece instalado como a segunda versão alternativa.")
+        seeded_ffmpeg_path = str(settings.get("ffmpeg_seed_path") or "").strip()
+        current_ffmpeg_path = str(settings.get("ffmpeg_system_path") or "").strip()
+        if not current_ffmpeg_path:
+            try:
+                import imageio_ffmpeg
+                current_ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+            except Exception:
+                current_ffmpeg_path = "ffmpeg"
         ffmpeg_options = [
-            ("7.1-20240930", "FFmpeg 7.1 Péter — compatível com API NVENC 13.0 / driver 572.00+", "ffmpeg"),
-            ("system", "FFmpeg actual do sistema — pode usar builds 7.1.5+ e exigir API NVENC 13.1", str(settings.get("ffmpeg_system_path") or "ffmpeg").strip() or "ffmpeg"),
+            ("7.1-20240930", "FFmpeg actual — 7.1 Péter, binário incluído no pacote / NVENC API 13.0", seeded_ffmpeg_path or "ffmpeg"),
+            ("system", "FFmpeg actual do sistema — imageio-ffmpeg, instalado no ambiente Python", current_ffmpeg_path),
         ]
         saved_ffmpeg_version = str(settings.get("ffmpeg_version") or "7.1-20240930").strip()
         ffmpeg_values = [item[0] for item in ffmpeg_options]
@@ -9345,9 +9353,8 @@ def render_settings():
             st.success(f"FFmpeg seleccionado disponível: `{ffmpeg_path_status}`")
         else:
             st.warning("O executável seleccionado ainda não foi encontrado no PATH. A instalação Windows abaixo pode corrigir isso.")
-        with st.expander("Instalação nativa recomendada — Windows", expanded=False):
-            st.code("winget install --id BtbN.FFmpeg.GPL.7.1 --version 7.1-20240930 -e", language="powershell")
-            st.caption("O instalador do Thunderbolt executa este comando automaticamente em instalações Windows quando o winget está disponível. Depois de instalar, reabra o terminal para actualizar o PATH.")
+        with st.expander("Instalação incluída no pacote", expanded=False):
+            st.caption("As duas versões são instaladas pelo próprio pacote: o FFmpeg 7.1 é extraído para a pasta isolada do Thunderbolt e o FFmpeg actual é instalado no ambiente Python através de imageio-ffmpeg. Nenhuma versão altera o PATH global ou substitui a outra.")
         if st.button("Guardar configuração de FFmpeg", type="primary", width="stretch", key="save_ffmpeg_settings"):
             settings.update({
                 "ffmpeg_version": ffmpeg_version,
