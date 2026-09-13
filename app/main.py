@@ -6345,7 +6345,7 @@ def render_tiktok_automation():
                             st.rerun()
     _render_tiktok_automation_cards()
 
-@st.fragment(run_every=5.0)
+@st.fragment
 def _render_youtube_automation_cards():
         st.divider()
         st.subheader("Vídeos cadastrados")

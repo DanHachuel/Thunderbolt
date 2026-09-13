@@ -29,6 +29,10 @@ class AutomationCardsTests(unittest.TestCase):
         self.assertNotIn('st.caption("Horário do canal")', MAIN_SOURCE)
         self.assertIn('st.text_input("Horário (HH:MM)"', MAIN_SOURCE)
 
+    def test_youtube_video_cards_do_not_poll_every_five_seconds(self):
+        self.assertIn('@st.fragment\ndef _render_youtube_automation_cards():', MAIN_SOURCE)
+        self.assertNotIn('@st.fragment(run_every=5.0)\ndef _render_youtube_automation_cards():', MAIN_SOURCE)
+
     def test_youtube_channel_settings_use_independent_fragment_and_local_rerun(self):
         self.assertIn('@st.fragment\ndef _render_youtube_automation_channel_cards():', MAIN_SOURCE)
         self.assertIn('st.rerun(scope="fragment")', MAIN_SOURCE)
