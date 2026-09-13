@@ -333,11 +333,12 @@ def test_run_once_persists_idle_heartbeat(tmp_path, monkeypatch):
 def test_backlog_has_live_progress_and_stale_recovery_ui():
     source = Path(__file__).resolve().parents[1].joinpath("app", "main.py").read_text(encoding="utf-8")
 
-    assert "@st.fragment(run_every=5.0)" in source
+    assert "@st.fragment(run_every=5.0)\ndef _render_pipeline_progress_panel()" in source
     assert "st.progress(progress, text=f\"{label} · {_pipeline_stage_label(task)} · {progress}%\")" in source
     assert "recover_stale_tasks()" in source
     assert "_render_pipeline_progress_panel()" in source
     assert "Worker de vídeo sem heartbeat recente" in source
+    assert 'st.rerun(scope="app")' not in source
 
 
 def test_worker_progress_is_monotonic_when_resuming_old_checkpoints():

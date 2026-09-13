@@ -5384,8 +5384,9 @@ def _render_pipeline_worker_banner(worker_status: dict[str, Any], active_count: 
         st.error(f"Último erro do worker: {worker_status['last_error']}")
 
 
-def _render_pipeline_progress_live() -> None:
-    """Render pipeline state once; refresh occurs only after user interaction."""
+@st.fragment(run_every=5.0)
+def _render_pipeline_progress_panel() -> None:
+    """Actualizar apenas o painel da pipeline enquanto existirem tarefas activas."""
     worker_status = load_pipeline_worker_status()
     tasks = read_json("tasks.json", [])
     active = [task for task in tasks if isinstance(task, dict) and str(task.get("state") or "") == "doing"]
@@ -5396,10 +5397,8 @@ def _render_pipeline_progress_live() -> None:
             active = [task for task in tasks if isinstance(task, dict) and str(task.get("state") or "") == "doing"]
             worker_status = load_pipeline_worker_status()
     if not active:
-        # A fragment that was already polling must stop itself after the worker
-        # reaches done/failed; otherwise Streamlit keeps refreshing an obsolete
-        # fragment even though the page no longer renders an active task.
-        st.rerun(scope="app")
+        # O fragmento pode executar mais uma vez após o worker terminar.
+        # Retornar mantém a actualização local e não reconstrói a página inteira.
         return
     _render_pipeline_worker_banner(worker_status, len(active))
     for task in active:
@@ -5409,14 +5408,6 @@ def _render_pipeline_progress_live() -> None:
         st.caption(f"{task.get('channel_name') or 'Canal'} · {_pipeline_time_age(task.get('updated_at'))}")
         if task.get("error"):
             st.error(str(task.get("error")))
-
-
-def _render_pipeline_progress_panel() -> None:
-    tasks = read_json("tasks.json", [])
-    if any(isinstance(task, dict) and str(task.get("state") or "") == "doing" for task in tasks):
-        _render_pipeline_progress_live()
-
-
 VIDEO_TASK_STATE_LABELS = {
     "to_do": "Pendente",
     "doing": "Em execução",
