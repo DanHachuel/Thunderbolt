@@ -394,6 +394,19 @@ function ensurePython() {
   return found;
 }
 
+function installFfmpegWindows() {
+  if (platform() !== "win32" || process.env.THUNDERBOLT_SKIP_FFMPEG_INSTALL === "1") return;
+  if (!commandExists("winget")) {
+    console.warn("winget não encontrado; o FFmpeg 7.1 não foi instalado automaticamente. Instale-o com: winget install --id BtbN.FFmpeg.GPL.7.1 --version 7.1-20240930 -e");
+    return;
+  }
+  console.log("A instalar FFmpeg 7.1 Péter através do winget...");
+  const result = spawnSync("winget", ["install", "--id", "BtbN.FFmpeg.GPL.7.1", "--version", "7.1-20240930", "-e", "--accept-source-agreements", "--accept-package-agreements", "--silent"], { stdio: "inherit", env: pythonEnvironment });
+  if (result.status !== 0) {
+    console.warn("Não foi possível instalar o FFmpeg 7.1 automaticamente. Execute o comando winget mostrado na aba Configuração API > FFmpeg.");
+  }
+}
+
 function cloneMoneyPrinter(path) {
   if (existsSync(join(path, ".git")) || existsSync(join(path, "pyproject.toml"))) {
     console.log(`MoneyPrinterTurbo já existe em ${path}; será reutilizado.`);
@@ -472,6 +485,8 @@ function writeSettings(moneyprinterPath) {
     try { settings = JSON.parse(readFileSync(settingsPath, "utf8")); } catch { settings = {}; }
   }
   settings.moneyprinter_path = moneyprinterPath;
+  if (!settings.ffmpeg_path) settings.ffmpeg_path = "ffmpeg";
+  if (!settings.ffmpeg_version) settings.ffmpeg_version = "7.1-20240930";
   if (!settings.llm_provider || String(settings.llm_provider).trim().toLowerCase() === "moonshot") {
     settings.llm_provider = "openai";
   }
@@ -501,6 +516,7 @@ function main() {
   if (!skipMpt) cloneMoneyPrinter(moneyprinterPath);
   if (!skipDeps) installThunderboltDependencies(python);
   if (!skipDeps && !skipMpt) installMoneyPrinterDependencies(moneyprinterPath);
+  if (!skipDeps) installFfmpegWindows();
   writeSettings(moneyprinterPath);
   console.log("\nInstalação do Thunderbolt concluída.");
   console.log(`Pasta Thunderbolt: ${thunderboltHome}`);

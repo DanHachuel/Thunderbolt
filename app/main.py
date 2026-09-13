@@ -8879,7 +8879,7 @@ def render_settings():
             key=f"settings_{key}",
         )
 
-    api_keys_tab, upload_api_keys_tab, subtitles_tab, ai_influencers_tab, voice_test_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "AI Influencers", "Teste de Voz"])
+    api_keys_tab, upload_api_keys_tab, subtitles_tab, ffmpeg_tab, ai_influencers_tab, voice_test_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "FFmpeg", "AI Influencers", "Teste de Voz"])
 
     with api_keys_tab:
         with st.container(border=True):
@@ -9320,6 +9320,49 @@ def render_settings():
                     st.warning(f"Configuração de legendas guardada localmente, mas não foi possível sincronizar config.toml: {exc}")
             else:
                 st.success("Configuração de legendas guardada localmente.")
+
+    with ffmpeg_tab:
+        st.subheader("FFmpeg")
+        st.caption("Seleccione a versão do FFmpeg usada pelo pipeline. O perfil FFmpeg 7.1 Péter é o recomendado para aceleração NVENC em GPUs modernas.")
+        ffmpeg_options = [
+            ("7.1-20240930", "FFmpeg 7.1 Péter — compatível com API NVENC 13.0 / driver 572.00+", "ffmpeg"),
+            ("system", "FFmpeg actual do sistema — pode usar builds 7.1.5+ e exigir API NVENC 13.1", str(settings.get("ffmpeg_system_path") or "ffmpeg").strip() or "ffmpeg"),
+        ]
+        saved_ffmpeg_version = str(settings.get("ffmpeg_version") or "7.1-20240930").strip()
+        ffmpeg_values = [item[0] for item in ffmpeg_options]
+        if saved_ffmpeg_version not in ffmpeg_values:
+            saved_ffmpeg_version = "7.1-20240930"
+        ffmpeg_version = st.radio(
+            "Versão a utilizar",
+            ffmpeg_values,
+            index=ffmpeg_values.index(saved_ffmpeg_version),
+            format_func=lambda value: next(item[1] for item in ffmpeg_options if item[0] == value),
+            key="ffmpeg_version_ui",
+        )
+        selected_ffmpeg_path = next(item[2] for item in ffmpeg_options if item[0] == ffmpeg_version)
+        ffmpeg_path_status = shutil.which(selected_ffmpeg_path) or (selected_ffmpeg_path if Path(selected_ffmpeg_path).is_file() else "")
+        if ffmpeg_path_status:
+            st.success(f"FFmpeg seleccionado disponível: `{ffmpeg_path_status}`")
+        else:
+            st.warning("O executável seleccionado ainda não foi encontrado no PATH. A instalação Windows abaixo pode corrigir isso.")
+        with st.expander("Instalação nativa recomendada — Windows", expanded=False):
+            st.code("winget install --id BtbN.FFmpeg.GPL.7.1 --version 7.1-20240930 -e", language="powershell")
+            st.caption("O instalador do Thunderbolt executa este comando automaticamente em instalações Windows quando o winget está disponível. Depois de instalar, reabra o terminal para actualizar o PATH.")
+        if st.button("Guardar configuração de FFmpeg", type="primary", width="stretch", key="save_ffmpeg_settings"):
+            settings.update({
+                "ffmpeg_version": ffmpeg_version,
+                "ffmpeg_path": selected_ffmpeg_path,
+            })
+            write_json("settings.json", settings)
+            ffmpeg_moneyprinter_path = str(settings.get("moneyprinter_path") or "").strip()
+            if ffmpeg_moneyprinter_path:
+                try:
+                    synced = sync_moneyprinter_config(settings, ffmpeg_moneyprinter_path)
+                    st.success(f"Configuração de FFmpeg guardada{f' e sincronizada com {synced}' if synced else ''}.")
+                except Exception as exc:
+                    st.warning(f"Configuração guardada localmente, mas não foi possível sincronizar config.toml: {exc}")
+            else:
+                st.success("Configuração de FFmpeg guardada localmente.")
 
     with ai_influencers_tab:
         st.subheader("AI Influencers")

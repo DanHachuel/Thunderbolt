@@ -123,7 +123,7 @@ class ApiSettingsExpandersTests(unittest.TestCase):
         self.assertIn('save_clicked = st.form_submit_button("Salvar", type="primary", width="stretch", key=f"llm_card_{card_id}_save")', MAIN_SOURCE)
 
     def test_api_keys_use_direct_tabs_and_material_sources_are_inside_api_keys(self):
-        tabs_position = MAIN_SOURCE.index('api_keys_tab, upload_api_keys_tab, subtitles_tab, ai_influencers_tab, voice_test_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "AI Influencers", "Teste de Voz"])')
+        tabs_position = MAIN_SOURCE.index('api_keys_tab, upload_api_keys_tab, subtitles_tab, ffmpeg_tab, ai_influencers_tab, voice_test_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "FFmpeg", "AI Influencers", "Teste de Voz"])')
         api_position = MAIN_SOURCE.index('    with api_keys_tab:', tabs_position)
         google_position = MAIN_SOURCE.index('    with google_accounts_tab:', tabs_position)
         tiktok_position = MAIN_SOURCE.index('    with tiktok_api_tab:', tabs_position)

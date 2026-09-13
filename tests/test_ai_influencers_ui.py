@@ -10,7 +10,7 @@ SCHEMA = (ROOT / "seed" / "references" / "ai_influencers_schema.sql").read_text(
 
 
 def test_api_configuration_adds_ai_influencers_tab_and_supabase_card():
-    assert 'render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "AI Influencers", "Teste de Voz"])' in MAIN
+    assert 'render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "FFmpeg", "AI Influencers", "Teste de Voz"])' in MAIN
     assert 'st.subheader("AI Influencers")' in MAIN
     assert 'Estado do backend usado por Personagens e Geração de Conteúdo IA. O selector e as credenciais são editados nesta aba, em Banco de Dados Influencers.' in MAIN
     assert 'key="settings_influencer_db_backend"' in MAIN
