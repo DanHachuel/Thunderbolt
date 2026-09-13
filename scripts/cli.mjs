@@ -340,6 +340,7 @@ let child;
 let workerRestartTimer = null;
 let pipelineRestartTimer = null;
 let workerMonitorTimer = null;
+let streamlitRestartTimer = null;
 
 function startAutomationWorker() {
   if (shuttingDown || worker || !hasScheduledAutomation()) return;
@@ -399,6 +400,7 @@ function monitorWorkers() {
 }
 
 function startStreamlit() {
+  if (shuttingDown || child) return;
   child = spawn(python, [streamlitBootstrap, "run", main, "--server.port", String(backendPort), "--server.address", "127.0.0.1"], {
     cwd: root,
     stdio: "inherit",
@@ -409,6 +411,7 @@ function startStreamlit() {
     console.error(`Thunderbolt: não foi possível iniciar o Streamlit: ${error.message}`);
   });
   child.on("exit", (code, signal) => {
+    child = null;
     if (shuttingDown) {
       stopWorker();
       process.exit(code ?? (signal ? 1 : 0));
@@ -426,8 +429,17 @@ function startStreamlit() {
       stopWorker();
       process.exit(0);
     }
-    stopWorker();
-    process.exit(code ?? (signal ? 1 : 0));
+    // Uma falha do Streamlit não pode terminar o launcher: os workers podem
+    // estar a gerar vídeos e devem continuar vivos enquanto a interface é
+    // recuperada. Isto também cobre encerramentos espontâneos no Windows,
+    // onde o processo filho pode terminar sem entregar um código útil.
+    console.error(`Thunderbolt: Streamlit terminou inesperadamente (código ${code ?? "-"}, sinal ${signal ?? "-"}); a tentar recuperar.`);
+    if (!streamlitRestartTimer) {
+      streamlitRestartTimer = setTimeout(() => {
+        streamlitRestartTimer = null;
+        startStreamlit();
+      }, 3000);
+    }
   });
 }
 
@@ -436,6 +448,7 @@ startStreamlit();
 const stopWorker = () => {
   shuttingDown = true;
   proxy.close();
+  if (streamlitRestartTimer) clearTimeout(streamlitRestartTimer);
   if (workerRestartTimer) clearTimeout(workerRestartTimer);
   if (workerMonitorTimer) clearInterval(workerMonitorTimer);
   if (worker && !worker.killed) worker.kill();
