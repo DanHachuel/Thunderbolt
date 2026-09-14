@@ -11,6 +11,7 @@ if getattr(sys.stderr, "buffer", None) is not None and str(getattr(sys.stderr, "
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True)
 
 import argparse
+import ctypes
 import time
 from datetime import datetime, tzinfo
 from pathlib import Path
@@ -78,13 +79,23 @@ def _write_status(status: dict[str, Any]) -> None:
 def _pid_alive(pid: int) -> bool:
     if pid <= 0:
         return False
+    if sys.platform == "win32":
+        try:
+            process_query_limited_information = 0x1000
+            handle = ctypes.windll.kernel32.OpenProcess(process_query_limited_information, False, pid)
+            if handle:
+                ctypes.windll.kernel32.CloseHandle(handle)
+                return True
+            return ctypes.windll.kernel32.GetLastError() == 5
+        except Exception:
+            return False
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
         return True
-    except OSError:
+    except (OSError, SystemError, ValueError):
         return False
     return True
 
