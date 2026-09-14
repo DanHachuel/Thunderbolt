@@ -94,7 +94,7 @@ def display_version(version: str) -> str:
 
 APP_VERSION_LABEL = display_version(APP_VERSION)
 
-from hermes_ui.domain import STAGES, composio_connected_account_id_from_channel_name, create_batch, create_channel, create_tasks_for_batch, delete_channel, delete_task, pipeline_summary, remake_video_task, retry_task_with_current_settings, set_channel_defaults, stop_task_by_user, transition_task, update_channel, update_channel_video
+from hermes_ui.domain import STAGES, create_batch, create_channel, create_tasks_for_batch, delete_channel, delete_task, pipeline_summary, remake_video_task, retry_task_with_current_settings, set_channel_defaults, stop_task_by_user, transition_task, update_channel, update_channel_video
 from hermes_ui.channel_import import build_channel_template_xlsx, channel_is_duplicate, find_duplicate_channel, parse_channel_workbook, resolve_blueprint, resolve_google_account, resolve_voice
 from hermes_ui.drafts import list_drafts, save_draft
 from hermes_ui.automation_worker import create_video_now_for_channel, load_worker_status
@@ -165,7 +165,7 @@ from integrations.upload_post import UploadPostAdapter, UPLOAD_POST_PLATFORM_OPT
 from integrations.bilibili_upload import BilibiliApiAdapter, BILIBILI_DEFAULT_TID, BILIBILI_VIDEO_EXTENSIONS, normalise_bilibili_api_cards
 from integrations.distrokid_upload import DistroKidAdapter, DISTROKID_AUDIO_EXTENSIONS, DISTROKID_COVER_EXTENSIONS, close_distrokid_session
 from integrations.music_uploads import JewelMusicAdapter, PushtunesAdapter, YTMusicApiAdapter, MUSIC_UPLOAD_EXTENSIONS, PUSHTUNES_OPERATIONS, PUSHTUNES_SOURCES, PUSHTUNES_TARGETS, YT_MUSIC_UPLOAD_EXTENSIONS
-from integrations.upload_routing import COMPOSIO_OPERATION_OPTIONS, OFFICIAL_DAILY_LIMIT, official_upload_count, resolve_youtube_account, upload_with_default_route
+from integrations.upload_routing import OFFICIAL_DAILY_LIMIT, official_upload_count, resolve_youtube_account, upload_with_default_route
 from integrations.youtube_direct_upload import YouTubeDirectUploader
 from integrations.youtube_direct_credentials import delete_credentials_document, direct_account_status, document_status, ensure_credentials_document, load_credentials_document, merge_credentials_document, parse_credentials_document, save_credentials_document, update_credentials_document_session_info
 from integrations.session_info_health import check_account_session_info_health
@@ -1669,7 +1669,6 @@ def render_channel_video_defaults(channel: dict) -> None:
 def render_channel_edit_form(channel: dict, youtube_account_ids: list[str], youtube_account_labels: dict[str, str], youtube_accounts_by_id: dict[str, dict[str, Any]]) -> None:
     channel_id = str(channel["id"])
     blueprint_ids, blueprint_labels, current_blueprint, voice_options, current_voice = channel_default_options(channel)
-    current_composio_account_id = str(channel.get("composio_connected_account_id") or composio_connected_account_id_from_channel_name(channel.get("name") or ""))
     account_ids = list(youtube_account_ids)
     current_account = str(channel.get("google_account_id") or "")
     if current_account and current_account not in account_ids:
@@ -1697,7 +1696,6 @@ def render_channel_edit_form(channel: dict, youtube_account_ids: list[str], yout
             edited_blueprint = st.selectbox("Blueprint Padrão", blueprint_ids, index=blueprint_ids.index(current_blueprint) if current_blueprint in blueprint_ids else 0, format_func=lambda item: blueprint_labels.get(item, item or "Sem Blueprint padrão"))
             edited_voice = st.selectbox("Narrador/Voz Padrão", voice_options, index=voice_options.index(current_voice) if current_voice in voice_options else 0, format_func=lambda item: item or "Sem voz padrão")
             edited_account = st.selectbox("Conta Google para Upload directo", account_ids, index=account_ids.index(current_account) if current_account in account_ids else 0, format_func=lambda item: youtube_account_labels.get(item, item or "Sem conta Google associada"))
-            edited_composio_account_id = st.text_input("Connected account ID do Composio", value=current_composio_account_id, help="Gerado automaticamente a partir do nome do canal no formato Nome-Do-Canal. Pode editar este valor para coincidir com o alias ligado no Composio.")
             edited_description = st.text_area("Descrição", value=str(channel.get("description") or ""), height=100)
             edited_automation = st.toggle("Automação ON", value=bool(channel.get("automation_on", False)), key=f"edit_automation_{channel_id}")
             edited_time = st.text_input("Horário diário (HH:MM)", value=str(channel.get("automation_time") or "00:00"))
@@ -1719,7 +1717,6 @@ def render_channel_edit_form(channel: dict, youtube_account_ids: list[str], yout
                 "default_blueprint_id": edited_blueprint.strip(), "blueprint_id": edited_blueprint.strip(),
                 "default_voice": edited_voice.strip(), "voice": edited_voice.strip(),
                 "google_account_id": edited_account.strip(), "google_account_email": str(youtube_accounts_by_id.get(edited_account, {}).get("email", "")),
-                "composio_connected_account_id": edited_composio_account_id.strip() or composio_connected_account_id_from_channel_name(edited_name),
                 "description": edited_description.strip(), "automation_on": bool(edited_automation), "automation_time": edited_time.strip(),
                 "subscriber_count": _channel_count_value(edited_subscribers) or None, "video_count": _channel_count_value(edited_videos) or None, "view_count": _channel_count_value(edited_views) or None,
             })
@@ -9213,15 +9210,11 @@ def render_settings():
             _api_status_badge("Configured" if bilibili_ready else "Missing configuration", "ready" if bilibili_ready else "missing")
             render_bilibili_api_cards(settings)
         with st.expander("Composio", expanded=False):
-            composio_operation_options = COMPOSIO_OPERATION_OPTIONS
-            composio_operation_slugs = list(composio_operation_options)
             st.caption("Os slugs e parâmetros técnicos do Composio são definidos pelo Thunderbolt conforme a operação; a autenticação da conta continua a ser feita pelo Connect Link do Composio.")
             composio_enabled = st.checkbox("Activar Composio", value=bool(settings.get("composio_enabled", False)), key="upload_composio_enabled")
             composio_auto_upload = st.checkbox("Usar Composio por defeito na Automação Youtube", value=bool(settings.get("composio_auto_upload", True)), key="upload_composio_auto_upload", help="Quando estiver configurado, Composio é tentado antes da API Oficial, Upload directo e Postiz.")
             composio_api_key = st.text_input("Composio API key", value=str(settings.get("composio_api_key") or ""), type="password", key="upload_composio_api_key", help="Use a API key de projecto do Composio Platform. Nunca coloque esta chave no GitHub, em URLs ou em mensagens.")
             composio_user_id = st.text_input("Composio user ID", value=str(settings.get("composio_user_id") or "thunderbolt-local"), key="upload_composio_user_id", help="Tem de ser o mesmo user ID usado quando as contas YouTube foram ligadas no Composio.")
-            composio_channel_field = str(settings.get("composio_channel_field") or "")
-            composio_arguments_json = str(settings.get("composio_arguments_json") or "{}")
             _render_credential_status(composio_api_key)
             composio_action_cols = st.columns(2)
             with composio_action_cols[0]:
@@ -9229,7 +9222,9 @@ def render_settings():
             with composio_action_cols[1]:
                 test_composio = st.button("Testar configuração", width="stretch", key="upload_composio_test")
             if save_composio:
-                settings.update({"composio_enabled": bool(composio_enabled), "composio_auto_upload": bool(composio_auto_upload), "composio_api_key": composio_api_key.strip(), "composio_user_id": composio_user_id.strip() or "thunderbolt-local", "composio_channel_field": composio_channel_field, "composio_arguments_json": composio_arguments_json or "{}"})
+                settings.update({"composio_enabled": bool(composio_enabled), "composio_auto_upload": bool(composio_auto_upload), "composio_api_key": composio_api_key.strip(), "composio_user_id": composio_user_id.strip() or "thunderbolt-local"})
+                settings.pop("composio_channel_field", None)
+                settings.pop("composio_arguments_json", None)
                 write_json("settings.json", settings)
                 st.success("Configuração Composio guardada.")
                 st.rerun()
