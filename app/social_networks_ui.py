@@ -652,14 +652,6 @@ def _render_instagram_card(profile: dict[str, Any], characters: list[dict[str, A
             with block_cols[3]:
                 st.markdown(f"**Idioma**\n\n{_clean(profile.get('language')) or '—'}")
 
-        character_options = [""] + [_clean(item.get("id")) for item in characters if _clean(item.get("id"))]
-        character_labels = {"": "Sem personagem associado"} | {_clean(item.get("id")): _clean(item.get("name")) or _clean(item.get("id")) for item in characters}
-        current_character = _clean(profile.get("character_id"))
-        selected_character = st.selectbox("Personagem", character_options, index=character_options.index(current_character) if current_character in character_options else 0, format_func=lambda value: character_labels.get(value, value), key=f"instagram_character_{profile_id}")
-        if st.button("Atrelar Personagem", key=f"attach_instagram_character_{profile_id}", width="stretch"):
-            update_channel(profile_id, {"character_id": selected_character})
-            st.success("Personagem associado à conta Instagram.")
-            st.rerun()
         model_type, model_id = _render_instagram_model_selector(profile, settings, key_prefix=f"instagram_{profile_id}")
         if st.button("Guardar modelo atrelado", type="primary", key=f"save_instagram_model_{profile_id}", width="stretch"):
             update_channel(profile_id, {"instagram_model_type": model_type, "instagram_model_id": model_id})
