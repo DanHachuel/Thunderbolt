@@ -12,6 +12,15 @@ def _isolated_storage(tmp_path):
     return storage
 
 
+def test_logs_download_uses_moneyprinter_agent_logs_directory():
+    source = Path(__file__).resolve().parents[1].joinpath("app", "main.py").read_text(encoding="utf-8")
+    assert 'root / ".agent-logs" / "moneyprinterturbo-video"' in source
+    assert 'path.is_dir()' in source
+    assert 'zipfile.ZipFile' in source
+    assert 'mime=log_download[2]' in source
+    assert 'disabled=log_download is None' in source
+
+
 def test_list_logs_projects_tasks_and_notifications_with_required_fields(tmp_path):
     storage = _isolated_storage(tmp_path / "projection")
     from hermes_ui.logs import list_logs, logs_to_rows
@@ -123,6 +132,6 @@ def test_logs_page_is_between_notifications_and_api_configuration():
         assert label in source
     assert "list_logs(operation=operation_filter, query=query, status=status_filter, limit=500)" in source
     assert "height=520" in source
-    assert '"API/Provider": st.column_config.TextColumn("API/Provider", width=220)' in source
-    assert '"Detalhes": st.column_config.TextColumn("Detalhes", width=760)' in source
+    assert 'log_columns = ["Download", "Operação", "Estado", "Data", "Hora", "Registo", "Origem", "Progresso", "API/Provider", "Detalhes"]' in source
+    assert 'for cell, column in zip(cells[1:], log_columns[1:])' in source
     assert "barra de rolagem horizontal na parte inferior" in source

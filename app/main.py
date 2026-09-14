@@ -29,6 +29,7 @@ import json
 import mimetypes
 import re
 import time
+import zipfile
 from contextlib import nullcontext
 from datetime import date, datetime, timezone
 import uuid
@@ -9561,15 +9562,40 @@ def render_logs():
         st.info("Ainda não existem logs para os filtros seleccionados.")
         return
     rows = logs_to_rows(records)
-    def _run_log_file() -> Path | None:
-        candidates = [Path("run-codigo.log"), STORAGE / "run-codigo.log", STORAGE.parent / "run-codigo.log"]
-        return next((path for path in candidates if path.is_file()), None)
 
-    run_log = _run_log_file()
+    def _log_source() -> Path | None:
+        settings = read_json("settings.json", {})
+        configured_root = str(settings.get("moneyprinter_path") or os.environ.get("MONEYPRINTER_PATH") or "").strip()
+        roots = [
+            Path(configured_root).expanduser() if configured_root else None,
+            STORAGE.parent / "MoneyPrinterTurbo",
+            STORAGE / "MoneyPrinterTurbo",
+            Path.cwd() / "MoneyPrinterTurbo",
+        ]
+        candidates: list[Path] = []
+        for root in roots:
+            if root:
+                candidates.append(root / ".agent-logs" / "moneyprinterturbo-video")
+        candidates.extend([Path("run-codigo.log"), STORAGE / "run-codigo.log", STORAGE.parent / "run-codigo.log"])
+        directory = next((path for path in candidates if path.is_dir() and any(path.rglob("*"))), None)
+        return directory or next((path for path in candidates if path.is_file()), None)
+
+    def _log_download(source: Path | None) -> tuple[bytes, str, str] | None:
+        if source is None:
+            return None
+        if source.is_file():
+            return source.read_bytes(), source.name, "text/plain"
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+            for file_path in sorted(path for path in source.rglob("*") if path.is_file()):
+                bundle.write(file_path, file_path.relative_to(source))
+        return archive.getvalue(), f"{source.name}-logs.zip", "application/zip"
+
+    log_source = _log_source()
+    log_download = _log_download(log_source)
     log_columns = ["Download", "Operação", "Estado", "Data", "Hora", "Registo", "Origem", "Progresso", "API/Provider", "Detalhes"]
     # Keep the log list within the same vertical footprint as the previous table.
-    log_table_height = 520
-    with st.container(height=log_table_height):
+    with st.container(height=520):
         header = st.columns([0.8, 1.4, 0.9, 0.8, 0.8, 2.0, 1.0, 0.8, 1.5, 4.0], gap="small")
         for column, label in zip(header, log_columns):
             column.markdown(f"**{label}**")
@@ -9578,12 +9604,12 @@ def render_logs():
             with cells[0]:
                 st.download_button(
                     "Baixar",
-                    data=run_log.read_bytes() if run_log else b"",
-                    file_name="run-codigo.log",
-                    mime="text/plain",
-                    key=f"logs_download_run_codigo_{index}",
+                    data=log_download[0] if log_download else b"",
+                    file_name=log_download[1] if log_download else "moneyprinterturbo-video-logs.zip",
+                    mime=log_download[2] if log_download else "application/zip",
+                    key=f"logs_download_{index}",
                     width="stretch",
-                    disabled=run_log is None,
+                    disabled=log_download is None,
                 )
             for cell, column in zip(cells[1:], log_columns[1:]):
                 cell.write(str(row.get(column) or "—"))
