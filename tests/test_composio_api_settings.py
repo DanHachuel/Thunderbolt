@@ -15,11 +15,20 @@ def test_composio_api_ui_uses_internal_operation_lists_and_defaults():
     assert '"update_video": "Update video"' in ROUTING_SOURCE
     assert '"upload_tiktok_video": "Upload TikTok Video"' in ROUTING_SOURCE
     assert '"upload_instagram_media": "Upload Instagram vídeo/Reel/foto"' in ROUTING_SOURCE
-    assert 'st.text_input("Campo do ficheiro na ferramenta", value="videoFilePath", disabled=True' in MAIN_SOURCE
-    assert 'composio_privacy_options = ["unlisted", "listed"]' in MAIN_SOURCE
-    assert 'range(1, 101)' in MAIN_SOURCE
-    assert 'composio_language_options = list(LANGUAGE_CODES)' in MAIN_SOURCE
-    assert 'settings.get("composio_language") or "en"' in MAIN_SOURCE
+    composio_ui = MAIN_SOURCE.split('with st.expander("Composio", expanded=False):', 1)[1].split('with st.expander("Upload-Post", expanded=False):', 1)[0]
+    for label in (
+        "Connected account YouTube (ID ou alias)",
+        "Slug da ferramenta para Automação Youtube",
+        "Toolkit preferido (opcional)",
+        "Campo do ficheiro na ferramenta",
+        "Campo de privacidade",
+        "Campo de categoria",
+        "Campo de idioma",
+    ):
+        assert label not in composio_ui
+    assert '"privacyStatus": privacy_value' in ROUTING_SOURCE
+    assert '"categoryId": str(category_value)' in ROUTING_SOURCE
+    assert '"defaultLanguage": language_locale(' in ROUTING_SOURCE
     assert '"composio_language": "en"' in STORAGE_SOURCE
     assert '"composio_tool_slug": "upload_video"' in STORAGE_SOURCE
     assert '"composio_privacy_status": "unlisted"' in STORAGE_SOURCE
@@ -41,14 +50,6 @@ def test_composio_backend_forces_video_file_path_and_sanitises_values(monkeypatc
         {
             "composio_api_key": "composio-test-key",
             "composio_user_id": "user-1",
-            "composio_tool_slug": "upload_video",
-            "composio_file_field": "wrongEditableField",
-            "composio_privacy_status": "invalid",
-            "composio_category_id": "999",
-            "composio_language": "en",
-            "composio_privacy_field": "privacyStatus",
-            "composio_category_field": "categoryId",
-            "composio_language_field": "defaultLanguage",
             "composio_arguments_json": "{}",
         },
         channel={"youtube_channel_id": "UC-PT"},
@@ -72,7 +73,6 @@ def test_composio_upload_video_does_not_require_a_manual_channel_field(monkeypat
         {
             "composio_api_key": "composio-test-key",
             "composio_user_id": "user-1",
-            "composio_tool_slug": "upload_video",
             "composio_arguments_json": "{}",
         },
         channel={},

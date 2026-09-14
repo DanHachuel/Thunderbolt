@@ -140,7 +140,7 @@ def upload_with_default_route(
     attempts: list[dict[str, Any]] = []
     account = account or resolve_youtube_account(settings, channel)
     composio_enabled = bool(settings.get("composio_enabled", False)) and bool(settings.get("composio_auto_upload", True))
-    composio_ready = composio_enabled and bool(settings.get("composio_api_key")) and bool(settings.get("composio_tool_slug"))
+    composio_ready = composio_enabled and bool(settings.get("composio_api_key"))
     if composio_enabled and not composio_ready:
         composio_result = IntegrationResult(False, "Composio está activo, mas falta API key ou slug da ferramenta de upload.", {})
         attempts.append(_attempt_record("Composio", composio_result, skipped=True))
@@ -271,13 +271,13 @@ def upload_with_default_route(
 
 
 def _composio_upload(settings: dict[str, Any], *, channel: dict[str, Any], **kwargs: Any) -> IntegrationResult:
-    configured_slug = str(settings.get("composio_tool_slug") or "").strip()
+    configured_slug = str(channel.get("composio_tool_slug") or channel.get("upload_operation") or "upload_video").strip()
     try:
         slug = resolve_tool_slug(
             str(settings.get("composio_api_key") or ""),
             str(settings.get("composio_user_id") or ""),
             configured_slug,
-            str(settings.get("composio_toolkit") or ""),
+            str(channel.get("composio_toolkit") or ""),
         )
     except ComposioUploadError as exc:
         return IntegrationResult(False, str(exc), {"status": "tool_resolution_failed", "configured_slug": configured_slug})
@@ -308,20 +308,13 @@ def _composio_upload(settings: dict[str, Any], *, channel: dict[str, Any], **kwa
         parsed_arguments = json.loads(arguments)
         if not isinstance(parsed_arguments, dict):
             return IntegrationResult(False, "Composio não foi executado: os argumentos JSON devem ser um objecto.", {})
-        privacy_value = str(settings.get("composio_privacy_status") or kwargs.get("privacy_status") or "unlisted").strip().lower()
-        if privacy_value not in COMPOSIO_PRIVACY_VALUES:
-            privacy_value = "unlisted"
-        try:
-            category_value = int(str(settings.get("composio_category_id") or kwargs.get("category_id") or "22").strip())
-        except ValueError:
-            category_value = 22
-        if category_value not in COMPOSIO_CATEGORY_RANGE:
-            category_value = 22
+        privacy_value = "unlisted"
+        category_value = 22
         locked_values = {
             **({channel_field: channel_id} if channel_field and not youtube_upload_tool else {}),
-            str(settings.get("composio_privacy_field") or "privacy_status").strip(): privacy_value,
-            str(settings.get("composio_category_field") or "category_id").strip(): str(category_value),
-            str(settings.get("composio_language_field") or "language").strip(): language_locale(settings.get("composio_language") or kwargs.get("language") or channel.get("language") or "en"),
+            "privacyStatus": privacy_value,
+            "categoryId": str(category_value),
+            "defaultLanguage": language_locale(kwargs.get("language") or channel.get("language") or "en"),
         }
         for field, expected in locked_values.items():
             if not field:
@@ -339,7 +332,7 @@ def _composio_upload(settings: dict[str, Any], *, channel: dict[str, Any], **kwa
             str(kwargs.get("video_path") or ""),
             file_field,
             json.dumps(parsed_arguments, ensure_ascii=False),
-            str(channel.get("composio_connected_account_id") or composio_connected_account_id_from_channel_name(channel.get("name") or "") or settings.get("composio_connected_account_id") or "").strip(),
+            str(channel.get("composio_connected_account_id") or composio_connected_account_id_from_channel_name(channel.get("name") or "") or "").strip(),
         )
     except ComposioUploadError as exc:
         return IntegrationResult(False, str(exc), {})
