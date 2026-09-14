@@ -44,13 +44,12 @@ def test_public_lookup_handles_rate_limit_without_bypass():
     assert "bloqueou ou limitou" in result.message
 
 
-def test_ui_registers_tiktok_accounts_and_uses_them_in_upload():
+def test_tiktok_accounts_backend_remains_available_without_navigation_tab():
     assert '"Contas TikTok"' in MAIN_SOURCE
-    assert '"Contas TikTok": render_tiktok_accounts' in MAIN_SOURCE
+    assert '"Contas TikTok": render_tiktok_accounts' not in MAIN_SOURCE
     assert '"TikTok": "tiktok_accounts"' in MAIN_SOURCE
     assert 'elif destination == "TikTok":' in MAIN_SOURCE
     assert '"Conta TikTok" if destination == "TikTok"' in MAIN_SOURCE
-    assert 'Pipeline TikTok > Contas TikTok' in MAIN_SOURCE
     assert '"tiktok_accounts": []' in STORAGE_SOURCE
 
 

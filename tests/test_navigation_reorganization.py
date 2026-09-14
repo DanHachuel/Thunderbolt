@@ -39,6 +39,15 @@ class NavigationReorganizationTests(unittest.TestCase):
         self.assertIn('render_nav_button(child_target, child_icon, child_label, target)', MAIN_SOURCE)
         self.assertNotIn('key=f"nav_{target}"', MAIN_SOURCE)
 
+    def test_tiktok_navigation_uses_channels_page_only(self):
+        channel_block = MAIN_SOURCE.split("    channel_profile_items = [", 1)[1].split("    blueprint_items = [", 1)[0]
+        self.assertIn('("Canais Tiktok",', channel_block)
+        self.assertNotIn('("Contas TikTok",', channel_block)
+        self.assertIn('"Canais Tiktok": "/canais-perfis-videos/canais-tiktok"', MAIN_SOURCE)
+        self.assertNotIn('"Contas TikTok": "/canais-perfis-videos/contas-tiktok"', MAIN_SOURCE)
+        self.assertIn('"Canais Tiktok": render_tiktok_channels', MAIN_SOURCE)
+        self.assertNotIn('"Contas TikTok": render_tiktok_accounts', MAIN_SOURCE)
+
     def test_niche_finder_tutorials_are_documentation_only(self):
         niche_block = MAIN_SOURCE.split("    niche_finder_items = [", 1)[1].split("    ]", 1)[0]
         documentation_block = MAIN_SOURCE.split("    documentation_items = [", 1)[1].split("    ]", 1)[0]
@@ -48,7 +57,7 @@ class NavigationReorganizationTests(unittest.TestCase):
 
     def test_requested_groups_and_children_are_present(self):
         required = (
-            "Canais/Perfis (Vídeos)", "Canais YouTube", "Blueprints Youtube", "Thumbnail Blueprints", "Brandings Youtube", "Contas TikTok", "Prompt Masters", "Facebook Pages",
+            "Canais/Perfis (Vídeos)", "Canais YouTube", "Canais Tiktok", "Blueprints Youtube", "Thumbnail Blueprints", "Brandings Youtube", "Prompt Masters", "Facebook Pages",
             "Pipeline Vídeos", "Criação de Vídeos", "Backlog Vídeos", "Roteiros", "Thumbnails", "Upload",
             "AI Influencers", "Personagens", "Geração de Conteúdo IA", "UGC Products", "Contas Instagram",
             "Pipeline Música", "Criação de Músicas", "Upload Música",
@@ -68,7 +77,6 @@ class NavigationReorganizationTests(unittest.TestCase):
             '("Blueprints Youtube",',
             '("Thumbnail Blueprints",',
             '("Brandings Youtube",',
-            '("Contas TikTok",',
             '("Prompt Masters",',
         ]
         positions = [channel_block.index(item) for item in expected_children]
@@ -176,7 +184,6 @@ def test_confirmed_video_profiles_children_are_ordered_and_base_files_is_removed
         '("Blueprints Youtube",',
         '("Thumbnail Blueprints",',
         '("Brandings Youtube",',
-        '("Contas TikTok",',
         '("Prompt Masters",',
     ]
     positions = [channel_block.index(item) for item in expected_children]
