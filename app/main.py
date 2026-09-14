@@ -9579,33 +9579,38 @@ def render_logs():
         directory = next((path for path in candidates if path.is_dir() and any(path.rglob("*"))), None)
         return directory or next((path for path in candidates if path.is_file()), None)
 
-    def _log_download(source: Path | None) -> tuple[bytes, str, str] | None:
+    def _log_download(source: Path | None, requested_filename: str = "") -> tuple[bytes, str, str] | None:
         if source is None:
             return None
-        files = [source] if source.is_file() else sorted(path for path in source.rglob("*") if path.is_file())
+        if source.is_file():
+            files = [source]
+        else:
+            files = sorted(path for path in source.rglob("*") if path.is_file() and (not requested_filename or path.name == requested_filename))
+        if not files:
+            return None
         sections = ["# Logs do MoneyPrinterTurbo", "", f"Origem: `{source}`", ""]
         for file_path in files:
             relative_name = file_path.name if source.is_file() else file_path.relative_to(source).as_posix()
             content = file_path.read_text(encoding="utf-8", errors="replace")
             sections.extend([f"## {relative_name}", "", "```text", content.rstrip("\n"), "```", ""])
         markdown = "\n".join(sections).encode("utf-8")
-        return markdown, "moneyprinterturbo-video-logs.md", "text/markdown"
+        return markdown, f"{files[0].stem}.md", "text/markdown"
 
     log_source = _log_source()
-    log_download = _log_download(log_source)
-    log_columns = ["Download", "Operação", "Estado", "Data", "Hora", "Registo", "Origem", "Progresso", "API/Provider", "Detalhes"]
+    log_columns = ["Download", "Operação", "Estado", "Data", "Hora", "Registo", "Ficheiro", "Origem", "Progresso", "API/Provider", "Detalhes"]
     # Keep the log list within the same vertical footprint as the previous table.
     with st.container(height=520):
-        header = st.columns([0.8, 1.4, 0.9, 0.8, 0.8, 2.0, 1.0, 0.8, 1.5, 4.0], gap="small")
+        header = st.columns([0.8, 1.4, 0.9, 0.8, 0.8, 2.0, 1.8, 1.0, 0.8, 1.5, 4.0], gap="small")
         for column, label in zip(header, log_columns):
             column.markdown(f"**{label}**")
         for index, row in enumerate(rows):
-            cells = st.columns([0.8, 1.4, 0.9, 0.8, 0.8, 2.0, 1.0, 0.8, 1.5, 4.0], gap="small")
+            cells = st.columns([0.8, 1.4, 0.9, 0.8, 0.8, 2.0, 1.8, 1.0, 0.8, 1.5, 4.0], gap="small")
             with cells[0]:
+                log_download = _log_download(log_source, str(row.get("Ficheiro") or "").strip() if row.get("Ficheiro") != "—" else "")
                 st.download_button(
                     "Baixar",
                     data=log_download[0] if log_download else b"",
-                    file_name=log_download[1] if log_download else "moneyprinterturbo-video-logs.md",
+                    file_name=log_download[1] if log_download else "run-codigo.md",
                     mime=log_download[2] if log_download else "text/markdown",
                     key=f"logs_download_{index}",
                     width="stretch",

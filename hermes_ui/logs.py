@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from . import storage
@@ -127,6 +128,9 @@ def _task_log(task: dict[str, Any]) -> dict[str, Any] | None:
     failure_provider = str(task.get("failure_provider") or "").strip()
     failure_service = str(task.get("failure_service") or "").strip()
     failure_fields = str(task.get("failure_config_fields") or "").strip()
+    artifacts = task.get("artifacts") if isinstance(task.get("artifacts"), dict) else {}
+    log_path = str(task.get("video_log") or artifacts.get("video_log") or task.get("log_file") or "").strip()
+    filename = Path(log_path.replace("\\", "/")).name if log_path else ""
     api_provider = failure_api
     if state in {"failed", "error"}:
         api_provider = api_provider or _fallback_task_failure_api(task)
@@ -150,6 +154,7 @@ def _task_log(task: dict[str, Any]) -> dict[str, Any] | None:
         "time": time,
         "source": "Tarefas",
         "record": title,
+        "filename": filename,
         "details": " · ".join(details),
         "api_provider": api_provider or "",
         "progress": progress_value,
@@ -180,6 +185,7 @@ def _notification_log(entry: dict[str, Any]) -> dict[str, Any] | None:
     metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
     public_metadata = [f"{key}: {value}" for key, value in metadata.items() if value not in (None, "")]
     api_provider = str(metadata.get("failure_api") or metadata.get("api_provider") or "").strip()
+    log_path = str(metadata.get("video_log") or metadata.get("log_file") or metadata.get("filename") or "").strip()
     if status_code in {"failed", "error"}:
         api_provider = api_provider or "API não identificada (falha anterior)"
     return {
@@ -193,6 +199,7 @@ def _notification_log(entry: dict[str, Any]) -> dict[str, Any] | None:
         "time": time,
         "source": "Notificações",
         "record": str(entry.get("title") or entry.get("label") or "Notificação"),
+        "filename": Path(log_path.replace("\\", "/")).name if log_path else "",
         "details": " · ".join([str(entry.get("message") or "").strip(), *public_metadata]).strip(" ·")[:1000],
         "api_provider": api_provider,
         "progress": None,
@@ -238,7 +245,7 @@ def list_logs(*, operation: str = "", query: str = "", status: str = "", limit: 
         records = [
             item
             for item in records
-            if query_filter in " ".join(str(item.get(key) or "") for key in ("operation", "status", "record", "details", "source")).casefold()
+            if query_filter in " ".join(str(item.get(key) or "") for key in ("operation", "status", "record", "filename", "details", "source")).casefold()
         ]
     records.sort(key=lambda item: _parse_datetime(item.get("occurred_at")), reverse=True)
     try:
@@ -267,6 +274,7 @@ def logs_to_rows(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "Data": item.get("date") or "—",
             "Hora": item.get("time") or "—",
             "Registo": item.get("record") or "—",
+            "Ficheiro": item.get("filename") or "—",
             "Origem": item.get("source") or "—",
             "Progresso": f"{item['progress']}%" if item.get("progress") is not None else "—",
             "API/Provider": item.get("api_provider") or "—",
