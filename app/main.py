@@ -29,7 +29,6 @@ import json
 import mimetypes
 import re
 import time
-import zipfile
 from contextlib import nullcontext
 from datetime import date, datetime, timezone
 import uuid
@@ -9583,13 +9582,14 @@ def render_logs():
     def _log_download(source: Path | None) -> tuple[bytes, str, str] | None:
         if source is None:
             return None
-        if source.is_file():
-            return source.read_bytes(), source.name, "text/plain"
-        archive = io.BytesIO()
-        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
-            for file_path in sorted(path for path in source.rglob("*") if path.is_file()):
-                bundle.write(file_path, file_path.relative_to(source))
-        return archive.getvalue(), f"{source.name}-logs.zip", "application/zip"
+        files = [source] if source.is_file() else sorted(path for path in source.rglob("*") if path.is_file())
+        sections = ["# Logs do MoneyPrinterTurbo", "", f"Origem: `{source}`", ""]
+        for file_path in files:
+            relative_name = file_path.name if source.is_file() else file_path.relative_to(source).as_posix()
+            content = file_path.read_text(encoding="utf-8", errors="replace")
+            sections.extend([f"## {relative_name}", "", "```text", content.rstrip("\n"), "```", ""])
+        markdown = "\n".join(sections).encode("utf-8")
+        return markdown, "moneyprinterturbo-video-logs.md", "text/markdown"
 
     log_source = _log_source()
     log_download = _log_download(log_source)
@@ -9605,8 +9605,8 @@ def render_logs():
                 st.download_button(
                     "Baixar",
                     data=log_download[0] if log_download else b"",
-                    file_name=log_download[1] if log_download else "moneyprinterturbo-video-logs.zip",
-                    mime=log_download[2] if log_download else "application/zip",
+                    file_name=log_download[1] if log_download else "moneyprinterturbo-video-logs.md",
+                    mime=log_download[2] if log_download else "text/markdown",
                     key=f"logs_download_{index}",
                     width="stretch",
                     disabled=log_download is None,

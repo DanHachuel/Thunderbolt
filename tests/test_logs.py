@@ -16,7 +16,9 @@ def test_logs_download_uses_moneyprinter_agent_logs_directory():
     source = Path(__file__).resolve().parents[1].joinpath("app", "main.py").read_text(encoding="utf-8")
     assert 'root / ".agent-logs" / "moneyprinterturbo-video"' in source
     assert 'path.is_dir()' in source
-    assert 'zipfile.ZipFile' in source
+    assert '"# Logs do MoneyPrinterTurbo"' in source
+    assert '"text/markdown"' in source
+    assert 'moneyprinterturbo-video-logs.md' in source
     assert 'mime=log_download[2]' in source
     assert 'disabled=log_download is None' in source
 
