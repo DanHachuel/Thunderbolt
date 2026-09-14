@@ -6369,7 +6369,7 @@ def render_tiktok_automation():
                             st.rerun()
     _render_tiktok_automation_cards()
 
-@st.fragment
+@st.fragment(run_every=5.0)
 def _render_youtube_automation_cards():
         st.divider()
         st.subheader("Vídeos cadastrados")
@@ -6445,11 +6445,11 @@ def _render_youtube_automation_cards():
                     with start_col:
                         if st.button("Start", key=f"automation_start_{task['id']}", width="stretch", disabled=state not in {"to_do", "blocked", "failed"}):
                             if _start_pipeline_task(str(task["id"]), state):
-                                st.rerun()
+                                st.rerun(scope="fragment")
                     with stop_col:
                         if st.button("Stop", key=f"automation_stop_{task['id']}", width="stretch", disabled=state != "doing"):
                             stop_task_by_user(task["id"])
-                            st.rerun()
+                            st.rerun(scope="fragment")
                     script_download_col, video_download_col = st.columns(2, gap="small")
                     with script_download_col:
                         st.download_button(
@@ -6481,12 +6481,12 @@ def _render_youtube_automation_cards():
                         help="Remonta apenas o vídeo, mantendo o mesmo roteiro, Blueprint/Prompt Master, tags, thumbnail, voz e artefactos já baixados.",
                     ):
                         if _remake_video_from_card(task):
-                            st.rerun()
+                            st.rerun(scope="fragment")
                     with delete_col:
                         confirm_delete_key = f"automation_confirm_delete_{task['id']}"
                         if st.button("Apagar", key=f"automation_delete_{task['id']}", width="stretch", disabled=state == "doing"):
                             st.session_state[confirm_delete_key] = True
-                            st.rerun()
+                            st.rerun(scope="fragment")
                         if st.session_state.get(confirm_delete_key):
                             st.warning("Remover este vídeo da fila? Os ficheiros de artefactos serão preservados.")
                             confirm_col, cancel_col = st.columns(2)
@@ -6495,13 +6495,13 @@ def _render_youtube_automation_cards():
                                     try:
                                         delete_task(task["id"])
                                         st.session_state.pop(confirm_delete_key, None)
-                                        st.rerun()
+                                        st.rerun(scope="fragment")
                                     except ValueError as exc:
                                         st.error(str(exc))
                             with cancel_col:
                                 if st.button("Cancelar", key=f"automation_cancel_delete_{task['id']}", width="stretch"):
                                     st.session_state.pop(confirm_delete_key, None)
-                                    st.rerun()
+                                    st.rerun(scope="fragment")
 
 
 def _facebook_pages_for_automation() -> list[dict[str, Any]]:

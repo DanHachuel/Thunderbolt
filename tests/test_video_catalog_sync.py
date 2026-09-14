@@ -26,3 +26,15 @@ def test_automation_video_cards_show_state_progress_and_format_like_backlog():
 def test_backlog_includes_extra_states_instead_of_dropping_them_from_the_filter():
     assert 'extra_states = sorted({str(task.get("state") or "unknown")' in MAIN_SOURCE
     assert 'state_filter = st.selectbox("Filtrar por estado", ["Todos", *known_states, *extra_states]' in MAIN_SOURCE
+
+
+def test_youtube_automation_cards_refresh_periodically_without_global_refresh():
+    block = MAIN_SOURCE.split("@st.fragment(run_every=5.0)\ndef _render_youtube_automation_cards():", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
+    assert '@st.fragment(run_every=5.0)\ndef _render_youtube_automation_cards():' in MAIN_SOURCE
+    assert 'tasks = load_automation_tasks_for_platform("youtube")' in block
+    assert 'st.rerun()' not in block
+    assert 'st.rerun(scope="fragment")' in block
+
+
+def test_facebook_automation_keeps_periodic_refresh_contract():
+    assert '@st.fragment(run_every=5.0)\ndef _render_facebook_automation_cards()' in MAIN_SOURCE
