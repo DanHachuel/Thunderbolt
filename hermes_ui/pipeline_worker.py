@@ -36,6 +36,7 @@ from hermes_ui.material_sources import material_api_keys, material_source_cards,
 from hermes_ui.thumbnail_generation import ThumbnailGenerationError, generate_thumbnail_image, infer_thumbnail_aspect_ratio
 from hermes_ui.thumbnail_blueprints import thumbnail_aspect_ratio_for_channel_task, thumbnail_blueprint_for_channel
 from hermes_ui.voice_preview import synthesize_preview
+from hermes_ui.script_voice import narration_text_from_script
 
 PIPELINE_LOCK_FILENAME = "pipeline_worker.lock"
 PIPELINE_LOG_FILENAME = "pipeline_worker.json"
@@ -951,7 +952,7 @@ def _moneyprinter_cli_args(task: dict[str, Any], route: str, settings: dict[str,
     """Build the explicit MPT CLI contract for the stock Pexels/Pixabay route."""
     generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else {}
     args: list[str] = ["--video-source", route]
-    script = str(task.get("video_script") or generation_settings.get("video_script") or "").strip()
+    script = narration_text_from_script(str(task.get("video_script") or generation_settings.get("video_script") or ""))
     if script:
         args.extend(["--video-script", script])
     keywords = task.get("video_keywords") or generation_settings.get("video_keywords") or task.get("keywords") or task.get("tags")
@@ -1073,7 +1074,7 @@ def _run_video_helper_once(
     generated_elevenlabs_audio: Path | None = None
     if voiceover_mode not in {"none", "upload"} and voiceover_service == "elevenlabs":
         elevenlabs_voice = str(task.get("voice") or generation_settings.get("voice") or "").strip()
-        script_text = str(task.get("video_script") or generation_settings.get("video_script") or "").strip()
+        script_text = narration_text_from_script(str(task.get("video_script") or generation_settings.get("video_script") or ""))
         if not elevenlabs_voice:
             raise PipelineError("Seleccione uma voz personalizada ElevenLabs antes de criar o vídeo.")
         if not str(settings.get("elevenlabs_api_key") or "").strip():
@@ -1569,7 +1570,7 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                     **task,
                     "topic": topic,
                     "title": title,
-                    "video_script": str(script.get("content") or ""),
+                    "video_script": narration_text_from_script(str(script.get("content") or "")),
                     "video_keywords": keywords,
                     "style_wide": route,
                 })
