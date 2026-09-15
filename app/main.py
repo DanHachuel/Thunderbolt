@@ -9585,7 +9585,13 @@ def render_logs():
         if source.is_file():
             files = [source]
         else:
-            files = sorted(path for path in source.rglob("*") if path.is_file() and (not requested_filename or path.name == requested_filename))
+            run_files = sorted(
+                path for path in source.rglob("*")
+                if path.is_file() and re.fullmatch(r"run-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\.[^.]+)?", path.name, re.IGNORECASE)
+            )
+            files = [path for path in run_files if not requested_filename or path.name == requested_filename]
+            if not files and not run_files and not requested_filename:
+                files = sorted(path for path in source.rglob("*") if path.is_file() and path.name != "latest-result.json")
         if not files:
             return None
         sections = ["# Logs do MoneyPrinterTurbo", "", f"Origem: `{source}`", ""]

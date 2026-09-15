@@ -4,12 +4,23 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import re
 from typing import Any
 
 from . import storage
 from .notifications import EVENTS_BY_CODE, list_notifications, reconcile_persisted_notifications
 
 MAX_LOGS = 500
+RUN_FILENAME_PATTERN = re.compile(r"^run-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\.[^.]+)?$", re.IGNORECASE)
+
+
+def _real_log_filename(path_value: Any) -> str:
+    """Return the real run-UUID filename, never exposing latest-result.*."""
+    raw = str(path_value or "").strip()
+    if not raw:
+        return ""
+    filename = Path(raw.replace("\\", "/")).name
+    return filename if RUN_FILENAME_PATTERN.fullmatch(filename) else ""
 
 STATUS_LABELS = {
     "to_do": "Pendente",
@@ -130,7 +141,7 @@ def _task_log(task: dict[str, Any]) -> dict[str, Any] | None:
     failure_fields = str(task.get("failure_config_fields") or "").strip()
     artifacts = task.get("artifacts") if isinstance(task.get("artifacts"), dict) else {}
     log_path = str(task.get("video_log") or artifacts.get("video_log") or task.get("log_file") or "").strip()
-    filename = Path(log_path.replace("\\", "/")).name if log_path else ""
+    filename = _real_log_filename(log_path)
     api_provider = failure_api
     if state in {"failed", "error"}:
         api_provider = api_provider or _fallback_task_failure_api(task)
@@ -199,7 +210,7 @@ def _notification_log(entry: dict[str, Any]) -> dict[str, Any] | None:
         "time": time,
         "source": "Notificações",
         "record": str(entry.get("title") or entry.get("label") or "Notificação"),
-        "filename": Path(log_path.replace("\\", "/")).name if log_path else "",
+        "filename": _real_log_filename(log_path),
         "details": " · ".join([str(entry.get("message") or "").strip(), *public_metadata]).strip(" ·")[:1000],
         "api_provider": api_provider,
         "progress": None,

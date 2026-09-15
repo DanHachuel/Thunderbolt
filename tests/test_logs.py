@@ -125,8 +125,15 @@ def test_log_filters_match_operation_status_and_free_text(tmp_path):
 def test_log_filename_is_searchable_when_persisted(tmp_path):
     storage = _isolated_storage(tmp_path / "filename")
     from hermes_ui.logs import list_logs
-    storage.write_json("tasks.json", [{"id": "video-run", "state": "failed", "video_log": "run-codigo.log", "updated_at": "2026-08-26T10:00:00+00:00"}])
-    assert [item["task_id"] for item in list_logs(query="run-codigo.log")] == ["video-run"]
+    filename = "run-00bbe89c-6b6c-48a3-a6b1-70aaed70ceef.log"
+    storage.write_json("tasks.json", [{"id": "video-run", "state": "failed", "video_log": filename, "updated_at": "2026-08-26T10:00:00+00:00"}])
+    assert [item["task_id"] for item in list_logs(query=filename)] == ["video-run"]
+
+
+def test_latest_result_is_not_exposed_as_the_log_filename():
+    from hermes_ui.logs import _real_log_filename
+    assert _real_log_filename("latest-result.json") == ""
+    assert _real_log_filename("run-00bbe89c-6b6c-48a3-a6b1-70aaed70ceef.log") == "run-00bbe89c-6b6c-48a3-a6b1-70aaed70ceef.log"
 
 
 def test_logs_page_is_between_notifications_and_api_configuration():
@@ -143,4 +150,6 @@ def test_logs_page_is_between_notifications_and_api_configuration():
     assert "height=520" in source
     assert 'log_columns = ["Download", "Operação", "Estado", "Data", "Hora", "Registo", "Ficheiro", "Origem", "Progresso", "API/Provider", "Detalhes"]' in source
     assert 'for cell, column in zip(cells[1:], log_columns[1:])' in source
+    assert 'path.name != "latest-result.json"' in source
+    assert 'run-[0-9a-f]{8}-[0-9a-f]{4}' in source
     assert "barra de rolagem horizontal na parte inferior" in source
