@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import tomllib
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -328,6 +329,39 @@ def test_run_once_persists_idle_heartbeat(tmp_path, monkeypatch):
     assert status["status"] == "idle"
     assert status["alive"] is True
     assert status["last_heartbeat_at"]
+
+
+def test_upload_with_heartbeat_refreshes_worker_and_task_until_completion(tmp_path, monkeypatch):
+    _isolate_storage(tmp_path, monkeypatch)
+    storage.write_json("tasks.json", [{"id": "upload-long", "state": "doing", "stage": "upload", "progress": 94}])
+    monkeypatch.setattr(pipeline_worker, "UPLOAD_HEARTBEAT_INTERVAL_SECONDS", 0.05)
+    worker_heartbeats: list[dict] = []
+    monkeypatch.setattr(pipeline_worker, "_worker_heartbeat", lambda **updates: worker_heartbeats.append(updates))
+    release = threading.Event()
+
+    result = pipeline_worker._upload_with_heartbeat(
+        "upload-long",
+        lambda: (release.wait(0.18), {"ok": True})[1],
+    )
+
+    assert result == {"ok": True}
+    assert len(worker_heartbeats) >= 2
+    assert all(item["stage"] == "upload" and item["status"] == "running" for item in worker_heartbeats)
+    task = storage.read_json("tasks.json")[0]
+    assert task["upload_status"] == "running"
+    assert task["upload_heartbeat_at"]
+    assert task["upload_elapsed_seconds"] >= 0
+
+
+def test_upload_with_heartbeat_propagates_provider_exception(tmp_path, monkeypatch):
+    _isolate_storage(tmp_path, monkeypatch)
+    storage.write_json("tasks.json", [{"id": "upload-error", "state": "doing", "stage": "upload", "progress": 94}])
+
+    def fail_upload():
+        raise RuntimeError("falha do provider")
+
+    with pytest.raises(RuntimeError, match="falha do provider"):
+        pipeline_worker._upload_with_heartbeat("upload-error", fail_upload)
 
 
 def test_backlog_has_live_progress_and_stale_recovery_ui():

@@ -47,6 +47,7 @@ VIDEO_IDLE_TIMEOUT_SECONDS = 10 * 60
 STOCK_VIDEO_IDLE_TIMEOUT_SECONDS = 30 * 60
 STALE_TASK_SECONDS = VIDEO_TIMEOUT_SECONDS + 5 * 60
 WORKER_HEARTBEAT_TIMEOUT_SECONDS = 15
+UPLOAD_HEARTBEAT_INTERVAL_SECONDS = 5
 CASCADE_STAGE_ORDER = ("topic", "script", "title", "keywords", "video", "thumbnail_prompt", "thumbnail", "upload")
 
 
@@ -311,6 +312,57 @@ def _update(task_id: str, **updates: Any) -> dict[str, Any]:
         orchestration=updated.get("orchestration") or {},
     )
     return updated
+
+
+def _upload_with_heartbeat(task_id: str, upload_call: Any) -> Any:
+    """Run a blocking upload while keeping the task and worker heartbeats alive."""
+    result: list[Any] = []
+    failure: list[BaseException] = []
+    finished = threading.Event()
+
+    def _run_upload() -> None:
+        try:
+            result.append(upload_call())
+        except BaseException as exc:  # propagate the provider's original failure in the worker thread's caller
+            failure.append(exc)
+        finally:
+            finished.set()
+
+    upload_thread = threading.Thread(target=_run_upload, name=f"upload-{task_id}", daemon=True)
+    upload_thread.start()
+    started_at = time.monotonic()
+    last_heartbeat = 0.0
+    wait_interval = min(0.5, max(0.05, UPLOAD_HEARTBEAT_INTERVAL_SECONDS / 2))
+    while not finished.wait(timeout=wait_interval):
+        elapsed = time.monotonic() - started_at
+        if elapsed - last_heartbeat < UPLOAD_HEARTBEAT_INTERVAL_SECONDS:
+            continue
+        current_task = _task_by_id(task_id)
+        if current_task and str(current_task.get("state") or "") not in {"blocked", "cancelled", "failed", "done"}:
+            from hermes_ui.domain import update_task
+            update_task(
+                task_id,
+                {
+                    "upload_heartbeat_at": _now(),
+                    "upload_elapsed_seconds": int(elapsed),
+                    "upload_status": "running",
+                },
+            )
+        _worker_heartbeat(
+            task_id=task_id,
+            status="running",
+            stage="upload",
+            progress=int((current_task or {}).get("progress") or 94),
+            upload_elapsed_seconds=int(elapsed),
+            upload_status="running",
+        )
+        last_heartbeat = elapsed
+    upload_thread.join()
+    if failure:
+        raise failure[0]
+    if not result:
+        raise PipelineError("O upload terminou sem devolver um resultado.")
+    return result[0]
 
 
 def _next_runnable_task(tasks: Any) -> dict[str, Any] | None:
@@ -1628,19 +1680,22 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
         return _update(task_id, stage="upload", state="done", progress=100, artifacts=artifacts, video_ready=True, error=None)
 
     _update(task_id, stage="upload", state="doing", progress=max(94, int(task.get("progress") or 0)), error=None)
-    result = upload_with_default_route(
-        settings,
-        storage_root=STORAGE,
-        channel=channel,
-        account=resolve_youtube_account(settings, channel),
-        video_path=str(video_path),
-        title=title,
-        description=str(script.get("summary") or "") + "\n\n" + str(script.get("content") or "")[:5000],
-        tags=keywords,
-        language=str(task.get("language") or channel.get("language") or "pt-BR"),
-        privacy_status="unlisted",
-        thumbnail_path=str(thumbnail_path),
-        captions_path=str(artifacts.get("captions") or ""),
+    result = _upload_with_heartbeat(
+        task_id,
+        lambda: upload_with_default_route(
+            settings,
+            storage_root=STORAGE,
+            channel=channel,
+            account=resolve_youtube_account(settings, channel),
+            video_path=str(video_path),
+            title=title,
+            description=str(script.get("summary") or "") + "\n\n" + str(script.get("content") or "")[:5000],
+            tags=keywords,
+            language=str(task.get("language") or channel.get("language") or "pt-BR"),
+            privacy_status="unlisted",
+            thumbnail_path=str(thumbnail_path),
+            captions_path=str(artifacts.get("captions") or ""),
+        ),
     )
     if not result.ok:
         attempts = (result.data or {}).get("attempts") if isinstance(result.data, dict) else None
