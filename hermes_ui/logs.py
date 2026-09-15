@@ -12,6 +12,7 @@ from .notifications import EVENTS_BY_CODE, list_notifications, reconcile_persist
 
 MAX_LOGS = 500
 RUN_FILENAME_PATTERN = re.compile(r"^run-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\.[^.]+)?$", re.IGNORECASE)
+RUN_LOG_FILENAME_PATTERN = re.compile(r"^run-[A-Za-z0-9][A-Za-z0-9._-]*\.log$", re.IGNORECASE)
 
 
 def _real_log_filename(path_value: Any) -> str:
@@ -20,7 +21,7 @@ def _real_log_filename(path_value: Any) -> str:
     if not raw:
         return ""
     filename = Path(raw.replace("\\", "/")).name
-    if RUN_FILENAME_PATTERN.fullmatch(filename):
+    if RUN_FILENAME_PATTERN.fullmatch(filename) or RUN_LOG_FILENAME_PATTERN.fullmatch(filename):
         return filename
     if filename.casefold() == "latest-result.json":
         parent = Path(raw.replace("\\", "/")).parent
@@ -149,8 +150,7 @@ def _task_log(task: dict[str, Any]) -> dict[str, Any] | None:
     failure_provider = str(task.get("failure_provider") or "").strip()
     failure_service = str(task.get("failure_service") or "").strip()
     failure_fields = str(task.get("failure_config_fields") or "").strip()
-    artifacts = task.get("artifacts") if isinstance(task.get("artifacts"), dict) else {}
-    log_path = str(task.get("video_log") or artifacts.get("video_log") or task.get("log_file") or "").strip()
+    log_path = _task_log_path(task)
     filename = _real_log_filename(log_path)
     api_provider = failure_api
     if state in {"failed", "error"}:
@@ -183,6 +183,11 @@ def _task_log(task: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _task_log_path(task: dict[str, Any]) -> str:
+    artifacts = task.get("artifacts") if isinstance(task.get("artifacts"), dict) else {}
+    return str(task.get("video_log") or artifacts.get("video_log") or task.get("log_file") or "").strip()
+
+
 def _notification_status(entry: dict[str, Any]) -> str:
     metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
     explicit = metadata.get("status") or entry.get("status")
@@ -193,7 +198,7 @@ def _notification_status(entry: dict[str, Any]) -> str:
     return "failed" if event_type.endswith("_failed") or "falhou" in label or "erro" in label else "completed"
 
 
-def _notification_log(entry: dict[str, Any]) -> dict[str, Any] | None:
+def _notification_log(entry: dict[str, Any], task_logs: dict[str, str] | None = None) -> dict[str, Any] | None:
     entry_id = str(entry.get("id") or "").strip()
     if not entry_id:
         return None
@@ -207,6 +212,10 @@ def _notification_log(entry: dict[str, Any]) -> dict[str, Any] | None:
     public_metadata = [f"{key}: {value}" for key, value in metadata.items() if value not in (None, "")]
     api_provider = str(metadata.get("failure_api") or metadata.get("api_provider") or "").strip()
     log_path = str(metadata.get("video_log") or metadata.get("log_file") or metadata.get("filename") or "").strip()
+    task_id = str(metadata.get("task_id") or "").strip()
+    filename = _real_log_filename(log_path)
+    if not filename and task_logs and task_id:
+        filename = _real_log_filename(task_logs.get(task_id, ""))
     if status_code in {"failed", "error"}:
         api_provider = api_provider or "API não identificada (falha anterior)"
     return {
@@ -220,11 +229,11 @@ def _notification_log(entry: dict[str, Any]) -> dict[str, Any] | None:
         "time": time,
         "source": "Notificações",
         "record": str(entry.get("title") or entry.get("label") or "Notificação"),
-        "filename": _real_log_filename(log_path),
+        "filename": filename,
         "details": " · ".join([str(entry.get("message") or "").strip(), *public_metadata]).strip(" ·")[:1000],
         "api_provider": api_provider,
         "progress": None,
-        "task_id": str(metadata.get("task_id") or ""),
+        "task_id": task_id,
     }
 
 
@@ -246,13 +255,14 @@ def list_logs(*, operation: str = "", query: str = "", status: str = "", limit: 
     tasks = storage.read_json("tasks.json", [])
     tasks = [item for item in tasks if isinstance(item, dict)] if isinstance(tasks, list) else []
     task_ids = {str(item.get("id") or "") for item in tasks if item.get("id")}
+    task_logs = {str(item.get("id")): _task_log_path(item) for item in tasks if item.get("id")}
     records = [item for item in (_task_log(task) for task in tasks) if item]
     notifications = list_notifications(limit=MAX_LOGS)
     records.extend(
         item
         for entry in notifications
         if not _should_skip_notification(entry, task_ids)
-        for item in [_notification_log(entry)]
+        for item in [_notification_log(entry, task_logs)]
         if item
     )
     operation_filter = str(operation or "").strip().casefold()

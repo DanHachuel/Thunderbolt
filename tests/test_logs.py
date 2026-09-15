@@ -139,6 +139,29 @@ def test_latest_result_resolves_to_the_real_run_filename(tmp_path):
     real_log.write_text("log", encoding="utf-8")
     assert _real_log_filename(str(log_dir / "latest-result.json")) == real_log.name
     assert _real_log_filename("run-00bbe89c-6b6c-48a3-a6b1-70aaed70ceef.log") == "run-00bbe89c-6b6c-48a3-a6b1-70aaed70ceef.log"
+    assert _real_log_filename("run-CODIGO.log") == "run-CODIGO.log"
+
+
+def test_notification_log_uses_task_log_when_metadata_only_has_task_id(tmp_path):
+    storage = _isolated_storage(tmp_path / "notification-fallback")
+    from hermes_ui.logs import list_logs
+    from hermes_ui.notifications import record_notification
+
+    filename = "run-CODIGO.log"
+    storage.write_json(
+        "tasks.json",
+        [{"id": "video-with-notification", "state": "done", "video_log": filename, "updated_at": "2026-08-26T10:00:00+00:00"}],
+    )
+    record_notification(
+        "thumbnail_generation_completed",
+        "Thumbnail concluída",
+        "A thumbnail foi gerada.",
+        metadata={"task_id": "video-with-notification"},
+        dedupe_key="thumbnail:notification-fallback",
+    )
+
+    notification = next(item for item in list_logs(limit=20) if item["id"].startswith("notification:"))
+    assert notification["filename"] == filename
 
 
 def test_logs_page_is_between_notifications_and_api_configuration():
