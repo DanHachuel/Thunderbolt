@@ -155,8 +155,8 @@ def build_download_options(
     }
     deno_path = _deno_runtime_path()
     if deno_path:
-        # Equivalent to the CLI argument --js-runtimes deno:<path>.
-        options["js_runtimes"] = {"deno": deno_path}
+        # yt-dlp's Python API expects {runtime: {config}}, not runtime:path.
+        options["js_runtimes"] = {"deno": {"path": deno_path}}
     if progress_hook is not None:
         options["progress_hooks"] = [progress_hook]
     if normalized_mode == "audio":

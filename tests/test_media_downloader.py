@@ -35,7 +35,7 @@ def test_build_options_are_constrained_for_video_and_audio(tmp_path, monkeypatch
     assert video["writesubtitles"] is True
     assert video["addmetadata"] is True
     assert "%(title).200B" in video["outtmpl"]
-    assert video["js_runtimes"] == {"deno": str(fake_deno)}
+    assert video["js_runtimes"] == {"deno": {"path": str(fake_deno)}}
     audio = media_downloader.build_download_options(mode="audio", audio_format="mp3", allow_playlist=True)
     assert audio["noplaylist"] is False
     assert audio["format"] == "bestaudio/best"
