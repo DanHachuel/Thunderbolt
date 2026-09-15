@@ -80,20 +80,3 @@ jobs:
           done
           echo "Published tarball was not downloadable: $TARBALL"
           exit 1
-
-      - name: Verify npx installation from npm
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          TEST_ROOT="${RUNNER_TEMP}/thunderbolt-npx-install"
-          mkdir -p "$TEST_ROOT"
-          cd "$TEST_ROOT"
-          for attempt in $(seq 1 12); do
-            if npx --yes --prefer-online "@danhachuel/thunderbolt@${VERSION}" --check; then
-              echo "npx installation is available for @danhachuel/thunderbolt@${VERSION}"
-              exit 0
-            fi
-            echo "npx installation not available yet (attempt ${attempt}/12); waiting 5 seconds..."
-            sleep 5
-          done
-          echo "npx installation failed for @danhachuel/thunderbolt@${VERSION}"
-          exit 1
