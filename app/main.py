@@ -6406,7 +6406,7 @@ def _render_youtube_automation_cards():
                 thumbnail_prompt = str(task.get("thumbnail_prompt") or "").strip()
                 with task_cols[0]:
                     if thumbnail_path:
-                        st.image(_file_bytes(thumbnail_path), width=180, caption="Thumbnail")
+                        st.image(str(thumbnail_path), width=180, caption="Thumbnail")
                     else:
                         st.caption("Thumbnail ainda não pronta")
                     st.write(f"**{task.get('topic', 'Sem tópico')}**")

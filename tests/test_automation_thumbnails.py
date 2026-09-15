@@ -21,5 +21,5 @@ def test_automation_cards_render_thumbnail_before_video_metadata():
     source = Path(__file__).parents[1].joinpath("app", "main.py").read_text(encoding="utf-8")
     automation = source.split('st.subheader("Vídeos cadastrados")', 1)[1].split("def render_upload_direct", 1)[0]
     assert "thumbnail_path = _task_thumbnail_path(task)" in automation
-    assert 'st.image(thumbnail_path, width=180, caption="Thumbnail")' in automation
+    assert 'st.image(str(thumbnail_path), width=180, caption="Thumbnail")' in automation
     assert 'st.caption("Thumbnail ainda não pronta")' in automation
