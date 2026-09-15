@@ -9605,7 +9605,7 @@ def render_logs():
     log_source = _log_source()
     log_columns = ["Download", "Operação", "Estado", "Data", "Hora", "Registo", "Ficheiro", "Origem", "Progresso", "API/Provider", "Detalhes"]
     # Keep the log list within the same vertical footprint as the previous table.
-    with st.container(height=520):
+    with st.container(height=520, horizontal=True):
         header = st.columns([0.8, 1.4, 0.9, 0.8, 0.8, 2.0, 1.8, 1.0, 0.8, 1.5, 4.0], gap="small")
         for column, label in zip(header, log_columns):
             column.markdown(f"**{label}**")
