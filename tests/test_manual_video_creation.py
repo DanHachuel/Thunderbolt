@@ -42,6 +42,6 @@ def test_automation_ui_has_create_video_and_log_download_column():
     source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
     assert 'st.button("Criar Vídeo", key=f"youtube_automation_create_video_{channel_id}"' in source
     assert 'st.button("Criar Vídeo", key=f"tiktok_automation_create_video_{channel_id}"' in source
-    assert 'file_name="run-codigo.log"' in source
+    assert 'file_name=log_download[1] if log_download else "run-codigo.md"' in source
     assert 'log_columns = ["Download", "Operação"' in source
     assert "create_video_now_for_channel" in source

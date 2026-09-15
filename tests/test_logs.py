@@ -153,7 +153,8 @@ def test_logs_page_is_between_notifications_and_api_configuration():
         assert label in source
     assert "list_logs(operation=operation_filter, query=query, status=status_filter, limit=500)" in source
     assert "height=520" in source
-    assert "with st.container(height=520, horizontal=True):" in source
+    assert "with st.container(height=520):" in source
+    assert "with st.container(height=520, horizontal=True):" not in source
     assert 'log_columns = ["Download", "Operação", "Estado", "Data", "Hora", "Registo", "Ficheiro", "Origem", "Progresso", "API/Provider", "Detalhes"]' in source
     assert 'for cell, column in zip(cells[1:], log_columns[1:])' in source
     assert 'path.name != "latest-result.json"' in source
