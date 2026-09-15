@@ -45,8 +45,8 @@ def test_youtube_downloads_use_the_same_requested_name_patterns():
 def test_automation_download_title_uses_original_topic_without_losing_letters():
     name_block = SOURCE.split("def _download_title", 1)[1].split("def _automation_download_name", 1)[0]
     assert 'task.get("topic") or task.get("title")' in name_block
-    assert 're.sub(r"\\s+", "_", cleaned)' in name_block
-    assert 're.sub(r"_+", "_", cleaned)' in name_block
+    assert 're.sub(r"\\s+", " ", cleaned)' in name_block
+    assert 'return f"{prefix}_{_download_title(task)}{suffix}"' in SOURCE
 
 
 def test_tiktok_automation_start_uses_shared_pipeline_start_helper():

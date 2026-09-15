@@ -5560,11 +5560,10 @@ def _task_artifact_path(task: dict[str, Any], *names: str) -> Path | None:
 
 
 def _download_title(task: dict[str, Any]) -> str:
-    """Return the original video name, safely normalised for downloaded files."""
+    """Return the original video name, preserving its spaces in downloaded files."""
     raw_title = str(task.get("topic") or task.get("title") or task.get("name") or "Vídeo").strip()
-    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", raw_title)
-    cleaned = re.sub(r"\s+", "_", cleaned)
-    cleaned = re.sub(r"_+", "_", cleaned).strip(" ._")
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', " ", raw_title)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
     return cleaned or "Vídeo"
 
 
