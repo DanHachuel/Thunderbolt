@@ -130,9 +130,14 @@ def test_log_filename_is_searchable_when_persisted(tmp_path):
     assert [item["task_id"] for item in list_logs(query=filename)] == ["video-run"]
 
 
-def test_latest_result_is_not_exposed_as_the_log_filename():
+def test_latest_result_resolves_to_the_real_run_filename(tmp_path):
     from hermes_ui.logs import _real_log_filename
-    assert _real_log_filename("latest-result.json") == ""
+    log_dir = tmp_path / "moneyprinterturbo-video"
+    log_dir.mkdir()
+    (log_dir / "latest-result.json").write_text("{}", encoding="utf-8")
+    real_log = log_dir / "run-00bbe89c-6b6c-48a3-a6b1-70aaed70ceef.log"
+    real_log.write_text("log", encoding="utf-8")
+    assert _real_log_filename(str(log_dir / "latest-result.json")) == real_log.name
     assert _real_log_filename("run-00bbe89c-6b6c-48a3-a6b1-70aaed70ceef.log") == "run-00bbe89c-6b6c-48a3-a6b1-70aaed70ceef.log"
 
 

@@ -20,7 +20,17 @@ def _real_log_filename(path_value: Any) -> str:
     if not raw:
         return ""
     filename = Path(raw.replace("\\", "/")).name
-    return filename if RUN_FILENAME_PATTERN.fullmatch(filename) else ""
+    if RUN_FILENAME_PATTERN.fullmatch(filename):
+        return filename
+    if filename.casefold() == "latest-result.json":
+        parent = Path(raw.replace("\\", "/")).parent
+        try:
+            candidates = [path for path in parent.glob("run-*") if path.is_file() and RUN_FILENAME_PATTERN.fullmatch(path.name)]
+            if candidates:
+                return max(candidates, key=lambda path: path.stat().st_mtime).name
+        except OSError:
+            pass
+    return ""
 
 STATUS_LABELS = {
     "to_do": "Pendente",
