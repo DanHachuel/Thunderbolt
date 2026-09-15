@@ -149,3 +149,10 @@ def test_launcher_disables_browser_cache_for_streamlit_proxy_responses():
     assert 'responseHeaders["cache-control"] = "no-store, no-cache, must-revalidate, max-age=0"' in source
     assert "delete responseHeaders.etag" in source
     assert 'delete responseHeaders["last-modified"]' in source
+
+
+def test_launcher_closes_all_proxy_sockets_before_streamlit_restart():
+    source = (Path(__file__).resolve().parents[1] / "scripts" / "cli.mjs").read_text(encoding="utf-8")
+    assert "const proxySockets = new Set();" in source
+    assert 'proxy.on("connection"' in source
+    assert "for (const socket of proxySockets) socket.destroy();" in source

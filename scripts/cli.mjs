@@ -204,6 +204,7 @@ const backendPort = await new Promise((resolve, reject) => {
   });
 });
 const supportedLanguages = new Set(["en", "zh", "de", "vi", "tr", "pt", "ru", "es", "id", "it"]);
+const proxySockets = new Set();
 const dynamicChunkRecoveryScript = `<script data-thunderbolt-recovery="${packageVersion}">
 (() => {
   const key = "thunderbolt-dynamic-chunk-recovery";
@@ -300,6 +301,10 @@ const proxy = http.createServer((request, response) => {
   });
   request.pipe(upstream);
 });
+proxy.on("connection", (socket) => {
+  proxySockets.add(socket);
+  socket.on("close", () => proxySockets.delete(socket));
+});
 
 proxy.on("upgrade", (request, clientSocket, head) => {
   // Clientes remotos podem encerrar o WebSocket antes de o Streamlit concluir
@@ -307,7 +312,11 @@ proxy.on("upgrade", (request, clientSocket, head) => {
   clientSocket.on("error", () => {
     if (!clientSocket.destroyed) clientSocket.destroy();
   });
+  proxySockets.add(clientSocket);
+  clientSocket.on("close", () => proxySockets.delete(clientSocket));
   const upstreamSocket = net.connect(backendPort, "127.0.0.1", () => {
+    proxySockets.add(upstreamSocket);
+    upstreamSocket.on("close", () => proxySockets.delete(upstreamSocket));
     const headers = Object.entries(request.headers)
       .map(([name, value]) => `${name}: ${Array.isArray(value) ? value.join(", ") : value}`)
       .join("\r\n");
@@ -447,6 +456,7 @@ startStreamlit();
 
 const stopWorker = () => {
   shuttingDown = true;
+  for (const socket of proxySockets) socket.destroy();
   proxy.close();
   if (streamlitRestartTimer) clearTimeout(streamlitRestartTimer);
   if (workerRestartTimer) clearTimeout(workerRestartTimer);
