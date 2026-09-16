@@ -396,6 +396,19 @@ function ensurePython() {
 
 let seededFfmpegPath = "";
 
+function findFileRecursive(directory, filename) {
+  if (!existsSync(directory)) return "";
+  for (const entry of readdirSync(directory)) {
+    const candidate = join(directory, entry);
+    if (entry.toLowerCase() === filename.toLowerCase() && statSync(candidate).isFile()) return candidate;
+    if (statSync(candidate).isDirectory()) {
+      const found = findFileRecursive(candidate, filename);
+      if (found) return found;
+    }
+  }
+  return "";
+}
+
 function installFfmpegSeedWindows() {
   if (platform() !== "win32" || process.env.THUNDERBOLT_SKIP_FFMPEG_INSTALL === "1") return;
   const seedDirectory = join(root, "seed", "ffmpeg", "7.1-20240930");
@@ -408,6 +421,12 @@ function installFfmpegSeedWindows() {
     return;
   }
   const destination = join(thunderboltHome, "ffmpeg", "7.1-20240930");
+  const existingBinary = findFileRecursive(destination, "ffmpeg.exe");
+  if (existingBinary) {
+    seededFfmpegPath = existingBinary;
+    console.log(`FFmpeg 7.1 já instalado; será reutilizado em ${existingBinary}.`);
+    return;
+  }
   mkdirSync(destination, { recursive: true });
   const archive = join(destination, "ffmpeg-n7.1-win64-gpl-7.1.zip");
   if (!existsSync(archive)) {

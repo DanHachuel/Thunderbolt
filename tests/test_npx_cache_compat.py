@@ -55,6 +55,13 @@ class NpxCacheCompatibilityTests(unittest.TestCase):
         self.assertIn('"yt_dlp"', source)
         self.assertIn('"youtube_transcript_api"', source)
 
+    def test_ffmpeg_seed_install_reuses_existing_binary(self):
+        source = (ROOT / "scripts" / "install.mjs").read_text(encoding="utf-8")
+        self.assertIn("function findFileRecursive(directory, filename)", source)
+        self.assertIn('const existingBinary = findFileRecursive(destination, "ffmpeg.exe");', source)
+        self.assertIn("FFmpeg 7.1 já instalado; será reutilizado", source)
+        self.assertIn("if (existingBinary) {", source)
+
     def test_npx_storage_migration_is_one_time(self):
         source = (ROOT / "scripts" / "install.mjs").read_text(encoding="utf-8")
         self.assertIn('npx-storage-migration-v1.json', source)
