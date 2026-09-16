@@ -8969,21 +8969,6 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
     st.markdown("#### Vídeos modelo")
     selected_video_id = st.radio("Vídeo de teste", [item["id"] for item in TEST_UPLOAD_VIDEOS], format_func=lambda value: next(item["name"] for item in TEST_UPLOAD_VIDEOS if item["id"] == value), horizontal=True, key="test_upload_video")
     selected_video = next(item for item in TEST_UPLOAD_VIDEOS if item["id"] == selected_video_id)
-    video_columns = st.columns(2, gap="small")
-    for index, video in enumerate(TEST_UPLOAD_VIDEOS):
-        with video_columns[index]:
-            with st.container(border=True):
-                st.write(f"**{video['name']}** · duração: {video['duration']}")
-                st.caption(video["description"])
-                video_path = Path(video["path"]).resolve()
-                if video_path.is_file():
-                    media_slot = st.columns([1, 2, 1])[1] if video["id"] == "vertical" else st.container()
-                    with media_slot:
-                        st.video(str(video_path), width="stretch")
-                        st.download_button("Download vídeo modelo", video_path.read_bytes(), file_name=video["filename"], mime="video/mp4", key=f"download_test_upload_{video['id']}", width="stretch")
-                else:
-                    st.error(f"Asset de teste não encontrado: {video_path}")
-
     if st.button("Testar Upload", type="primary", width="stretch", key="test_upload_execute"):
         video_path = Path(selected_video["path"]).resolve()
         if not destination:
@@ -9010,7 +8995,20 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
                 (st.success if result.ok else st.error)(result.message)
             except Exception as exc:
                 st.error(f"O teste de upload falhou: {type(exc).__name__}: {exc}")
-
+    video_columns = st.columns(2, gap="small")
+    for index, video in enumerate(TEST_UPLOAD_VIDEOS):
+        with video_columns[index]:
+            with st.container(border=True):
+                st.write(f"**{video['name']}** · duração: {video['duration']}")
+                st.caption(video["description"])
+                video_path = Path(video["path"]).resolve()
+                if video_path.is_file():
+                    media_slot = st.columns([1, 2, 1])[1] if video["id"] == "vertical" else st.container()
+                    with media_slot:
+                        st.video(str(video_path), width="stretch")
+                        st.download_button("Download vídeo modelo", video_path.read_bytes(), file_name=video["filename"], mime="video/mp4", key=f"download_test_upload_{video['id']}", width="stretch")
+                else:
+                    st.error(f"Asset de teste não encontrado: {video_path}")
 
 def render_settings():
     st.title("Configuração API")
