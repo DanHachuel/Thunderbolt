@@ -8967,11 +8967,11 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
     destination = destinations[destination_labels.index(selected_destination)] if selected_destination in destination_labels else {}
 
     st.markdown("#### Vídeos modelo")
-    selector_column, status_column = st.columns([1, 2], gap="small")
+    selector_column, status_column = st.columns([1, 1], gap="small")
     with selector_column:
         selected_video_id = st.radio("Vídeo de teste", [item["id"] for item in TEST_UPLOAD_VIDEOS], format_func=lambda value: next(item["name"] for item in TEST_UPLOAD_VIDEOS if item["id"] == value), key="test_upload_video")
     with status_column:
-        with st.container(height=150, border=True):
+        with st.container(height=188, border=True):
             st.caption("Resultado do teste de upload")
             status_panel = st.empty()
     selected_video = next(item for item in TEST_UPLOAD_VIDEOS if item["id"] == selected_video_id)

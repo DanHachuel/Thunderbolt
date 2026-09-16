@@ -35,9 +35,9 @@ def test_test_upload_button_is_between_selector_and_video_cards():
 
 def test_upload_status_panel_is_reserved_next_to_video_selector():
     block = SOURCE.split("def _render_test_upload_videos", 1)[1].split("def ", 1)[0]
-    assert 'selector_column, status_column = st.columns([1, 2], gap="small")' in block
+    assert 'selector_column, status_column = st.columns([1, 1], gap="small")' in block
     assert 'with status_column:' in block
-    assert 'st.container(height=150, border=True)' in block
+    assert 'st.container(height=188, border=True)' in block
     assert 'status_panel.error(' in block
     assert 'status_panel.warning(' in block
     assert 'status_panel.success(' in block
