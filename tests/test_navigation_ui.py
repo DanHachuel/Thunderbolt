@@ -7,7 +7,7 @@ MAIN_SOURCE = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_tex
 def test_automation_is_an_expander_with_youtube_child_page():
     assert 'automation_items = [' in MAIN_SOURCE
     assert '("Automação Youtube", ":material/schedule:", "Automação Youtube")' in MAIN_SOURCE
-    assert 'with st.expander(ui_text(label, ui_language), expanded=current_page in child_targets, icon=icon):' in MAIN_SOURCE
+    assert 'def render_nav_children(parent: str, children: list[tuple[str, str, str]]):' in MAIN_SOURCE
     assert '"Automação Youtube": render_automation' in MAIN_SOURCE
     assert 'st.title("Automação Youtube")' in MAIN_SOURCE
 
@@ -17,7 +17,7 @@ def test_navigation_highlights_only_the_exact_current_item():
     assert 'return current_path == nav_paths.get(target)' in MAIN_SOURCE
     assert '[data-testid="stSidebar"] [data-testid="stBaseButton-primary"] { background:#7c3aed !important;' in MAIN_SOURCE
     assert '[data-testid="stSidebar"] [data-testid="stExpander"] summary strong' not in MAIN_SOURCE
-    assert 'expanded=current_page in child_targets' in MAIN_SOURCE
+    assert 'expanded=has_active_descendant(target)' in MAIN_SOURCE
     assert 'startsWith' not in MAIN_SOURCE
 
 
@@ -61,8 +61,8 @@ def test_settings_children_include_logs_between_notifications_and_api():
 
 
 def test_models_ai_has_meta_tutorial_renderer():
-    assert '("Tutorial Meta", ":material/menu_book:", "Tutorial Meta")' in MAIN_SOURCE
-    assert '"Tutorial Meta": render_models_ai_tutorial' in MAIN_SOURCE
+    assert '("Meta", ":material/menu_book:", "Meta")' in MAIN_SOURCE
+    assert '"Meta": render_models_ai_tutorial' in MAIN_SOURCE
     assert 'https://github.com/gyoridavid/ai_agents_az/blob/main/episode_8/guide-instagram.md' in MAIN_SOURCE
     assert 'ROOT / "seed" / "references" / "guide-instagram.md"' in MAIN_SOURCE
 
@@ -99,7 +99,7 @@ def test_tutorial_reference_is_packaged_and_contains_meta_setup_sections():
 
 def test_ai_influencers_is_visible_with_real_character_and_content_renderers():
     assert '("AI Influencers", ":material/smart_toy:", "AI Influencers")' in MAIN_SOURCE
-    assert 'with st.expander(ui_text(label, ui_language), expanded=current_page in child_targets, icon=icon):' in MAIN_SOURCE
+    assert 'with st.expander(ui_text(label, ui_language), expanded=has_active_descendant(target), icon=icon):' in MAIN_SOURCE
     assert '"Personagens": lambda: render_ai_influencer_characters' in MAIN_SOURCE
     assert '"Geração de Conteúdo IA": lambda: render_ai_influencer_content' in MAIN_SOURCE
     assert '("Motion Control", ":material/motion_photos_on:", "Motion Control")' in MAIN_SOURCE
@@ -113,7 +113,7 @@ def test_edition_contains_media_download_page_and_controls():
     assert '("Download Mídia", ":material/download:", "Download Mídia")' in MAIN_SOURCE
     assert '"Download Mídia": render_media_download' in MAIN_SOURCE
     assert 'def render_media_download()' in MAIN_SOURCE
-    for label in ("URLs para descarregar", "Tipo de mídia", "Qualidade", "Contentor", "Formato de áudio", "Permitir playlist", "Descarregar legendas", "Incorporar metadados", "Iniciar download", "Histórico de downloads"):
+    for label in ("URLs para descarregar", "Tipo de mídia", "Qualidade", "Contentor", "Formato de áudio", "Permitir playlist", "Descarregar legendas", "Incorporar metadados", "Iniciar Download", "Histórico de downloads"):
         assert label in MAIN_SOURCE
     assert 'from hermes_ui.media_downloader import' in MAIN_SOURCE
 
@@ -162,7 +162,7 @@ def test_supabase_tutorial_is_packaged_and_added_to_ai_influencers():
     assert "Join our Skool community" not in tutorial
     assert "Be part of a growing community" not in tutorial
     assert '("Tutorial Supabase", ":material/storage:", "Tutorial Supabase")' in MAIN_SOURCE
-    assert '"Tutorial Supabase": render_supabase_tutorial' in MAIN_SOURCE
+    assert '"Supabase": render_supabase_tutorial' in MAIN_SOURCE
     assert 'guide-supabase.md' in MAIN_SOURCE
 
 

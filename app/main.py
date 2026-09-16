@@ -9743,7 +9743,7 @@ def render_notifications():
 
 def render_models_ai_tutorial():
     tutorial_path = ROOT / "seed" / "references" / "guide-instagram.md"
-    st.title("Tutorial Meta")
+    st.title("Meta")
     st.caption("Guia de configuração de uma conta Instagram profissional e das credenciais Meta para automações com n8n.")
     try:
         tutorial_content = tutorial_path.read_text(encoding="utf-8").strip()
@@ -9764,7 +9764,7 @@ def render_niche_tutorial(tutorial_kind: str):
 def render_supabase_tutorial():
     tutorial_path = ROOT / "seed" / "references" / "guide-supabase.md"
     ui_language = current_ui_language()
-    st.title(ui_text("Tutorial Supabase", ui_language))
+    st.title(ui_text("Supabase", ui_language))
     st.caption(ui_text("Guia de configuração do Supabase para automações com n8n.", ui_language))
     try:
         tutorial_content = tutorial_path.read_text(encoding="utf-8").strip()
@@ -9779,7 +9779,7 @@ def render_supabase_tutorial():
 def render_google_oauth_tutorial():
     """Render the Google OAuth setup guide supplied for Thunderbolt."""
     tutorial_path = ROOT / "seed" / "references" / "tutorial-oauth-google.md"
-    st.title("Tutorial OAuth do Google")
+    st.title("OAuth do Google")
     st.caption("Guia completo para configurar a autenticação OAuth do Google e o acesso à YouTube Data API v3.")
     try:
         tutorial_content = tutorial_path.read_text(encoding="utf-8").strip()
@@ -9794,7 +9794,7 @@ def render_google_oauth_tutorial():
 def render_youtube_frontend_upload_tutorial():
     """Render the safe operational guide for the YouTube direct-upload workflow."""
     tutorial_path = ROOT / "seed" / "references" / "youtube-video-upload-frontend.md"
-    st.title("Tutorial YouTube Video-Upload Frontend")
+    st.title("YouTube Video-Upload Frontend")
     st.caption("Guia prático e seguro para rever metadados, sessão e envio directo de vídeos concluídos.")
     try:
         tutorial_content = tutorial_path.read_text(encoding="utf-8").strip()
@@ -9809,7 +9809,7 @@ def render_youtube_frontend_upload_tutorial():
 def render_youtube_data_api_key_tutorial():
     """Render the YouTube Data API key guide for public data workflows."""
     tutorial_path = ROOT / "seed" / "references" / "tutorial-youtube-data-api-key.md"
-    st.title("Tutorial YouTube Data API Key (Public Data)")
+    st.title("YouTube Data API Key (Public Data)")
     st.caption("Guia para criar e configurar uma YouTube Data API Key para consultas de dados públicos.")
     try:
         tutorial_content = tutorial_path.read_text(encoding="utf-8").strip()
@@ -10218,14 +10218,17 @@ def main():
         ("Analista Facebook Pages", ":material/analytics:", "Analista Facebook Pages"),
         ("Analista Bilibili", ":material/analytics:", "Analista Bilibili"),
     ]
+    tutorial_items = [
+        ("Meta", ":material/menu_book:", "Meta"),
+        ("Supabase", ":material/storage:", "Supabase"),
+        ("Kaggle", ":material/menu_book:", "Kaggle"),
+        ("Apify", ":material/menu_book:", "Apify"),
+        ("YouTube Video-Upload Frontend", ":material/video_library:", "YouTube Video-Upload Frontend"),
+        ("OAuth do Google", ":material/key:", "OAuth do Google"),
+        ("YouTube Data API Key (Public Data)", ":material/vpn_key:", "YouTube Data API Key (Public Data)"),
+    ]
     documentation_items = [
-        ("Tutorial Meta", ":material/menu_book:", "Tutorial Meta"),
-        ("Tutorial Supabase", ":material/storage:", "Tutorial Supabase"),
-        ("Tutorial Kaggle", ":material/menu_book:", "Tutorial Kaggle"),
-        ("Tutorial Apify", ":material/menu_book:", "Tutorial Apify"),
-        ("Tutorial YouTube Video-Upload Frontend", ":material/video_library:", "Tutorial YouTube Video-Upload Frontend"),
-        ("Tutorial OAuth do Google", ":material/key:", "Tutorial OAuth do Google"),
-        ("Tutorial YouTube Data API Key (Public Data)", ":material/vpn_key:", "Tutorial YouTube Data API Key (Public Data)"),
+        ("Tutoriais", ":material/menu_book:", "Tutoriais"),
     ]
     settings_items = [
         ("MCP", ":material/hub:", "MCP"),
@@ -10278,6 +10281,7 @@ def main():
         "Edição": edition_items,
         "Growth": growth_items,
         "Documentação": documentation_items,
+        "Tutoriais": tutorial_items,
         "Configurações": settings_items,
     }
     nav_paths = {
@@ -10289,7 +10293,7 @@ def main():
         "AI Influencers": "/ai-influencers", "Personagens": "/ai-influencers/personagens", "Geração de Conteúdo IA": "/ai-influencers/geracao-conteudo", "Motion Control": "/ai-influencers/motion-control", "UGC Products": "/ai-influencers/ugc-products",
         "Edição": "/edicao", "Limpador de Metadados": "/edicao/limpador-metadados", "Cortes": "/edicao/cortes", "Editor Python": "/edicao/editor-python", "Download Mídia": "/edicao/download-midia",
         "Growth": "/growth", "Analista Growth Youtube": "/growth/youtube", "Analista Growth Tiktok": "/growth/tiktok", "Analista Growth Instagram": "/growth/instagram", "Analista Facebook Pages": "/growth/facebook-pages", "Analista Bilibili": "/growth/bilibili",
-        "Documentação": "/documentacao", "Tutorial Meta": "/documentacao/meta", "Tutorial Supabase": "/documentacao/supabase", "Tutorial Kaggle": "/documentacao/kaggle", "Tutorial Apify": "/documentacao/apify", "Tutorial YouTube Video-Upload Frontend": "/documentacao/youtube-video-upload-frontend", "Tutorial OAuth do Google": "/documentacao/oauth-google", "Tutorial YouTube Data API Key (Public Data)": "/documentacao/youtube-data-api-key",
+        "Documentação": "/documentacao", "Tutoriais": "/documentacao/tutoriais", "Meta": "/documentacao/tutoriais/meta", "Supabase": "/documentacao/tutoriais/supabase", "Kaggle": "/documentacao/tutoriais/kaggle", "Apify": "/documentacao/tutoriais/apify", "YouTube Video-Upload Frontend": "/documentacao/tutoriais/youtube-video-upload-frontend", "OAuth do Google": "/documentacao/tutoriais/oauth-google", "YouTube Data API Key (Public Data)": "/documentacao/tutoriais/youtube-data-api-key",
         "Configurações": "/configuracoes", "MCP": "/configuracoes/mcp", "Notificações": "/configuracoes/notificacoes", "Logs": "/configuracoes/logs", "Configuração API": "/configuracoes/api",
     }
 
@@ -10310,8 +10314,16 @@ def main():
         "Models AI": "AI Influencers",
         "Contas Google/YouTube — canais em lote": "Configuração API",
         "Contas Google": "Configuração API",
+        "Tutorial Meta": "Meta",
+        "Tutorial Supabase": "Supabase",
+        "Tutorial Kaggle": "Kaggle",
+        "Tutorial Apify": "Apify",
+        "Tutorial YouTube Video-Upload Frontend": "YouTube Video-Upload Frontend",
+        "Tutorial OAuth do Google": "OAuth do Google",
+        "Tutorial YouTube Data API Key (Public Data)": "YouTube Data API Key (Public Data)",
     }
     all_children = [item for items in groups.values() for item in items]
+    all_children.extend(item for item in tutorial_items if item not in all_children)
     valid_targets = {item[0] for item in top_pages + all_children}
     # Session state is reset by a browser refresh or an application update. Keep
     # the canonical page in the URL so the open section can be restored.
@@ -10347,15 +10359,29 @@ def main():
     with st.sidebar:
         version_markup = f'<span class="tb-brand-version">{APP_VERSION_LABEL}</span>' if APP_VERSION_LABEL else ""
         st.markdown(f'<div class="tb-brand"><span class="tb-brand-name">Thunderbolt</span>{version_markup}</div>', unsafe_allow_html=True)
+        def has_active_descendant(target: str) -> bool:
+            children = groups.get(target, [])
+            for child_target, _child_icon, _child_label in children:
+                if current_page == child_target or has_active_descendant(child_target):
+                    return True
+            return False
+
+        def render_nav_children(parent: str, children: list[tuple[str, str, str]]):
+            for child_target, child_icon, child_label in children:
+                nested = groups.get(child_target)
+                if nested is None:
+                    render_nav_button(child_target, child_icon, child_label, parent)
+                else:
+                    with st.expander(ui_text(child_label, ui_language), expanded=has_active_descendant(child_target), icon=child_icon):
+                        render_nav_children(child_target, nested)
+
         for target, icon, label in top_pages:
             children = groups.get(target)
             if children is None:
                 render_nav_button(target, icon, label, "top")
                 continue
-            child_targets = {item[0] for item in children}
-            with st.expander(ui_text(label, ui_language), expanded=current_page in child_targets, icon=icon):
-                for child_target, child_icon, child_label in children:
-                    render_nav_button(child_target, child_icon, child_label, target)
+            with st.expander(ui_text(label, ui_language), expanded=has_active_descendant(target), icon=icon):
+                render_nav_children(target, children)
 
     renderers = {
         "Início": render_dashboard,
@@ -10388,9 +10414,9 @@ def main():
         "Automação Influencer Content": lambda: None,
         "Automação Bilibili": lambda: None,
         "Niche Finder Kaggle": render_niche_finder,
-        "Tutorial Kaggle": lambda: render_niche_tutorial("kaggle"),
+        "Kaggle": lambda: render_niche_tutorial("kaggle"),
         "Niche Finder Apify": render_niche_finder_apify,
-        "Tutorial Apify": lambda: render_niche_tutorial("apify"),
+        "Apify": lambda: render_niche_tutorial("apify"),
         "Edição": lambda: render_edit_placeholder("Edição", "Seleccione uma das abas de edição no menu expansível."),
         "Limpador de Metadados": render_metadata_cleaner,
         "Cortes": render_cuts,
@@ -10413,11 +10439,11 @@ def main():
         "Analista Facebook Pages": render_growth_facebook_pages,
         "Analista Bilibili": render_growth_bilibili,
         "Documentação": lambda: render_edit_placeholder("Documentação", "Seleccione um tutorial no menu expansível."),
-        "Tutorial Meta": render_models_ai_tutorial,
-        "Tutorial Supabase": render_supabase_tutorial,
-        "Tutorial YouTube Video-Upload Frontend": render_youtube_frontend_upload_tutorial,
-        "Tutorial OAuth do Google": render_google_oauth_tutorial,
-        "Tutorial YouTube Data API Key (Public Data)": render_youtube_data_api_key_tutorial,
+        "Meta": render_models_ai_tutorial,
+        "Supabase": render_supabase_tutorial,
+        "YouTube Video-Upload Frontend": render_youtube_frontend_upload_tutorial,
+        "OAuth do Google": render_google_oauth_tutorial,
+        "YouTube Data API Key (Public Data)": render_youtube_data_api_key_tutorial,
         "Configurações": lambda: render_edit_placeholder("Configurações", "Seleccione uma opção no menu expansível."),
         "MCP": render_mcp,
         "Contas Google": render_google_accounts,

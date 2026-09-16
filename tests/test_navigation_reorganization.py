@@ -36,7 +36,7 @@ class NavigationReorganizationTests(unittest.TestCase):
 
     def test_navigation_widget_keys_are_scoped_by_group(self):
         self.assertIn('key=f"nav_{scope}_{target}"', MAIN_SOURCE)
-        self.assertIn('render_nav_button(child_target, child_icon, child_label, target)', MAIN_SOURCE)
+        self.assertIn('render_nav_children(target, children)', MAIN_SOURCE)
         self.assertNotIn('key=f"nav_{target}"', MAIN_SOURCE)
 
     def test_tiktok_navigation_uses_channels_page_only(self):
@@ -50,8 +50,8 @@ class NavigationReorganizationTests(unittest.TestCase):
 
     def test_niche_finder_tutorials_are_documentation_only(self):
         niche_block = MAIN_SOURCE.split("    niche_finder_items = [", 1)[1].split("    ]", 1)[0]
-        documentation_block = MAIN_SOURCE.split("    documentation_items = [", 1)[1].split("    ]", 1)[0]
-        for label in ("Tutorial Kaggle", "Tutorial Apify"):
+        documentation_block = MAIN_SOURCE.split("    tutorial_items = [", 1)[1].split("    ]", 1)[0]
+        for label in ("Kaggle", "Apify"):
             self.assertNotIn(f'("{label}"', niche_block)
             self.assertIn(f'("{label}"', documentation_block)
 
@@ -62,7 +62,7 @@ class NavigationReorganizationTests(unittest.TestCase):
             "AI Influencers", "Personagens", "Geração de Conteúdo IA", "UGC Products", "Contas Instagram",
             "Pipeline Música", "Criação de Músicas", "Upload Música",
             "Growth", "Analista Growth Youtube", "Analista Growth Tiktok", "Analista Growth Instagram", "Analista Facebook Pages", "Analista Bilibili",
-            "Documentação", "Tutorial Meta", "Tutorial Supabase", "Tutorial Kaggle", "Tutorial Apify",
+            "Documentação", "Tutoriais", "Meta", "Supabase", "Kaggle", "Apify",
         )
         for label in required:
             self.assertIn(f'"{label}"', MAIN_SOURCE)

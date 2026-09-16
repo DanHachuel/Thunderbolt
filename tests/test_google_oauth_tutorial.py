@@ -7,9 +7,9 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_google_oauth_tutorial_is_registered_in_documentation_menu():
     source = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 
-    assert '("Tutorial OAuth do Google", ":material/key:", "Tutorial OAuth do Google")' in source
-    assert '"Tutorial OAuth do Google": "/documentacao/oauth-google"' in source
-    assert '"Tutorial OAuth do Google": render_google_oauth_tutorial' in source
+    assert '("OAuth do Google", ":material/key:", "OAuth do Google")' in source
+    assert '"OAuth do Google": "/documentacao/tutoriais/oauth-google"' in source
+    assert '"OAuth do Google": render_google_oauth_tutorial' in source
 
 
 def test_google_oauth_tutorial_contains_required_setup_sections_and_safe_secret_guidance():

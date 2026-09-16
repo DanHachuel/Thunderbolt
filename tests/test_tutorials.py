@@ -42,8 +42,8 @@ class TutorialContentTests(unittest.TestCase):
 
     def test_main_routes_render_real_tutorials(self):
         main_source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
-        self.assertIn('"Tutorial Kaggle": lambda: render_niche_tutorial("kaggle")', main_source)
-        self.assertIn('"Tutorial Apify": lambda: render_niche_tutorial("apify")', main_source)
+        self.assertIn('"Kaggle": lambda: render_niche_tutorial("kaggle")', main_source)
+        self.assertIn('"Apify": lambda: render_niche_tutorial("apify")', main_source)
         self.assertNotIn('"Tutorial Kaggle": lambda: render_edit_placeholder("Tutorial Kaggle", "")', main_source)
         self.assertNotIn('"Tutorial Apify": lambda: render_edit_placeholder("Tutorial Apify", "")', main_source)
 

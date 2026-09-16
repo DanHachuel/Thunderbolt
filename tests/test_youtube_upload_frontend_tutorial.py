@@ -9,8 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_youtube_frontend_upload_tutorial_is_registered_in_documentation_menu():
     source = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 
-    assert '("Tutorial YouTube Video-Upload Frontend", ":material/video_library:", "Tutorial YouTube Video-Upload Frontend")' in source
-    assert '"Tutorial YouTube Video-Upload Frontend": render_youtube_frontend_upload_tutorial' in source
+    assert '("YouTube Video-Upload Frontend", ":material/video_library:", "YouTube Video-Upload Frontend")' in source
+    assert '"YouTube Video-Upload Frontend": render_youtube_frontend_upload_tutorial' in source
 
 
 def test_youtube_frontend_upload_tutorial_keeps_sensitive_session_material_out_of_content():

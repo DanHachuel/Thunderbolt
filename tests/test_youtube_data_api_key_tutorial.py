@@ -6,9 +6,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_youtube_data_api_key_tutorial_is_registered_in_documentation_menu():
     source = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
-    label = "Tutorial YouTube Data API Key (Public Data)"
+    label = "YouTube Data API Key (Public Data)"
     assert f'("{label}", ":material/vpn_key:", "{label}")' in source
-    assert f'"{label}": "/documentacao/youtube-data-api-key"' in source
+    assert f'"{label}": "/documentacao/tutoriais/youtube-data-api-key"' in source
     assert f'"{label}": render_youtube_data_api_key_tutorial' in source
 
 
