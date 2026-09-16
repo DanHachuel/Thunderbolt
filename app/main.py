@@ -8942,16 +8942,18 @@ TEST_UPLOAD_VIDEOS = (
 
 def _test_upload_destinations(settings: dict[str, Any], operation: str) -> list[dict[str, Any]]:
     channels = [item for item in read_json("channels.json", []) if isinstance(item, dict) and item.get("active", True)]
-    platform_map = {
-        "Canais YouTube": {"youtube", "yt", "youtube_channel"},
-        "Canais Tiktok": {"tiktok", "tiktok_channel"},
-        "Contas Instagram": {"instagram", "instagram_account"},
-        "Facebook Pages": {"facebook", "facebook_pages", "facebook page"},
-    }
     if operation == "Contas Bilibili":
         return [dict(item, _source="bilibili") for item in settings.get("bilibili_api_cards", []) if isinstance(item, dict)]
-    accepted = platform_map.get(operation, set())
-    return [item for item in channels if str(item.get("platform") or "").strip().casefold() in accepted]
+    platform_by_operation = {
+        "Canais YouTube": "youtube",
+        "Canais Tiktok": "tiktok",
+        "Contas Instagram": "instagram",
+        "Facebook Pages": "facebook",
+    }
+    accepted_platform = platform_by_operation.get(operation)
+    if not accepted_platform:
+        return []
+    return [item for item in channels if classify_channel_platform(item) == accepted_platform]
 
 
 def _render_test_upload_videos(settings: dict[str, Any]) -> None:
@@ -8967,16 +8969,18 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
     st.markdown("#### Vídeos modelo")
     selected_video_id = st.radio("Vídeo de teste", [item["id"] for item in TEST_UPLOAD_VIDEOS], format_func=lambda value: next(item["name"] for item in TEST_UPLOAD_VIDEOS if item["id"] == value), horizontal=True, key="test_upload_video")
     selected_video = next(item for item in TEST_UPLOAD_VIDEOS if item["id"] == selected_video_id)
-    for video in TEST_UPLOAD_VIDEOS:
-        with st.container(border=True):
-            st.write(f"**{video['name']}** · duração: {video['duration']}")
-            st.caption(video["description"])
-            video_path = Path(video["path"]).resolve()
-            if video_path.is_file():
-                st.video(str(video_path))
-                st.download_button("Download vídeo modelo", video_path.read_bytes(), file_name=video["filename"], mime="video/mp4", key=f"download_test_upload_{video['id']}")
-            else:
-                st.error(f"Asset de teste não encontrado: {video_path}")
+    video_columns = st.columns(2, gap="small")
+    for index, video in enumerate(TEST_UPLOAD_VIDEOS):
+        with video_columns[index]:
+            with st.container(border=True):
+                st.write(f"**{video['name']}** · duração: {video['duration']}")
+                st.caption(video["description"])
+                video_path = Path(video["path"]).resolve()
+                if video_path.is_file():
+                    st.video(str(video_path), width="stretch")
+                    st.download_button("Download vídeo modelo", video_path.read_bytes(), file_name=video["filename"], mime="video/mp4", key=f"download_test_upload_{video['id']}", width="stretch")
+                else:
+                    st.error(f"Asset de teste não encontrado: {video_path}")
 
     if st.button("Testar Upload", type="primary", width="stretch", key="test_upload_execute"):
         video_path = Path(selected_video["path"]).resolve()
