@@ -108,6 +108,21 @@ def test_connected_account_v31_toolkit_slug_is_supported():
     assert composio_upload._connected_account_id(client, "user-1", "youtube", "Grace-Gospel") == "youtube_fifo-wrote"
 
 
+def test_connected_account_sdk_model_with_camel_case_id_and_omitted_toolkit_resolves_brick_by_brick_wealth():
+    class FakeAccounts:
+        def list(self, **kwargs):
+            return {"items": [{
+                "connectionId": "youtube_brick-by-brick-wealth",
+                "alias": "Brick-by-Brick-Wealth",
+                "status": "ACTIVE",
+            }]}
+
+    client = SimpleNamespace(connected_accounts=FakeAccounts())
+    assert composio_upload._connected_account_id(
+        client, "user-1", "youtube", "Brick-by-Brick-Wealth"
+    ) == "youtube_brick-by-brick-wealth"
+
+
 def test_connected_account_alias_resolves_nested_sdk_connection_id():
     class FakeAccounts:
         def list(self, **kwargs):

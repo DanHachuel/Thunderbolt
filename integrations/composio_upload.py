@@ -75,6 +75,16 @@ def _tool_item(tool: Any) -> dict[str, Any]:
     return {"slug": "", "name": "", "description": "", "toolkit": "", "schema": {}}
 
 
+def _account_field(item: dict[str, Any], *names: str) -> Any:
+    """Read account fields across SDK 0.21 response/model naming styles."""
+    lowered = {str(key).casefold().replace("_", ""): value for key, value in item.items()}
+    for name in names:
+        value = lowered.get(name.casefold().replace("_", ""))
+        if value not in (None, ""):
+            return value
+    return None
+
+
 def _response(result: Any) -> dict[str, Any]:
     raw = _safe_value(result)
     if not isinstance(raw, dict):
@@ -170,10 +180,13 @@ def _connected_account_id(client: Any, user_id: str, toolkit: str, selector: str
         for item in items:
             if not isinstance(item, dict):
                 continue
-            toolkit_value = item.get("toolkit") or item.get("toolkit_slug")
+            toolkit_value = _account_field(item, "toolkit", "toolkit_slug", "toolkitSlug")
             if isinstance(toolkit_value, dict):
-                toolkit_value = toolkit_value.get("slug") or toolkit_value.get("name")
-            if str(toolkit or "").strip() and toolkit.casefold() not in str(toolkit_value or "").casefold():
+                toolkit_value = _account_field(toolkit_value, "slug", "name", "id")
+            # The request is already filtered by toolkit_slugs. Some SDK
+            # response models omit toolkit metadata, so absence is not a
+            # reason to discard an otherwise valid connected account.
+            if str(toolkit or "").strip() and toolkit_value and toolkit.casefold() not in str(toolkit_value).casefold():
                 continue
             matching_items.append(item)
         if value:
@@ -181,12 +194,8 @@ def _connected_account_id(client: Any, user_id: str, toolkit: str, selector: str
             matched_items = []
             for item in matching_items:
                 candidates = [
-                    item.get("id"),
-                    item.get("nanoid"),
-                    item.get("connection_id"),
-                    item.get("connected_account_id"),
-                    item.get("alias"),
-                    item.get("name"),
+                    _account_field(item, "id", "nanoid", "connection_id", "connectionId", "connected_account_id", "connectedAccountId"),
+                    _account_field(item, "alias", "name", "label"),
                 ]
                 if any(str(candidate or "").strip().casefold() == wanted for candidate in candidates):
                     matched_items.append(item)
@@ -198,10 +207,7 @@ def _connected_account_id(client: Any, user_id: str, toolkit: str, selector: str
             if matched_items:
                 item = matched_items[0]
                 technical_id = str(
-                    item.get("id")
-                    or item.get("nanoid")
-                    or item.get("connection_id")
-                    or item.get("connected_account_id")
+                    _account_field(item, "id", "nanoid", "connection_id", "connectionId", "connected_account_id", "connectedAccountId")
                     or ""
                 ).strip()
                 if technical_id:
@@ -216,13 +222,7 @@ def _connected_account_id(client: Any, user_id: str, toolkit: str, selector: str
             )
         if len(matching_items) == 1:
             item = matching_items[0]
-            technical_id = str(
-                item.get("id")
-                or item.get("nanoid")
-                or item.get("connection_id")
-                or item.get("connected_account_id")
-                or ""
-            ).strip()
+            technical_id = str(_account_field(item, "id", "nanoid", "connection_id", "connectionId", "connected_account_id", "connectedAccountId") or "").strip()
             if technical_id:
                 if value:
                     _CONNECTED_ACCOUNT_ID_CACHE[cache_key] = technical_id
