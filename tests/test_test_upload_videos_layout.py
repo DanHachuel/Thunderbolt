@@ -41,3 +41,8 @@ def test_upload_status_panel_is_after_selector_and_button():
     status_position = block.index('st.container(height=188, border=True)')
     cards_position = block.index('video_columns = st.columns(2, gap="small")')
     assert selector_position < button_position < status_position < cards_position
+
+
+def test_test_video_options_remain_horizontal():
+    block = SOURCE.split("def _render_test_upload_videos", 1)[1].split("def ", 1)[0]
+    assert 'key="test_upload_video", horizontal=True' in block

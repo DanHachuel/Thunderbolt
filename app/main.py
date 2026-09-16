@@ -8967,7 +8967,7 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
     destination = destinations[destination_labels.index(selected_destination)] if selected_destination in destination_labels else {}
 
     st.markdown("#### Vídeos modelo")
-    selected_video_id = st.radio("Vídeo de teste", [item["id"] for item in TEST_UPLOAD_VIDEOS], format_func=lambda value: next(item["name"] for item in TEST_UPLOAD_VIDEOS if item["id"] == value), key="test_upload_video")
+    selected_video_id = st.radio("Vídeo de teste", [item["id"] for item in TEST_UPLOAD_VIDEOS], format_func=lambda value: next(item["name"] for item in TEST_UPLOAD_VIDEOS if item["id"] == value), key="test_upload_video", horizontal=True)
     selected_video = next(item for item in TEST_UPLOAD_VIDEOS if item["id"] == selected_video_id)
     upload_status: tuple[str, str] | None = None
     if st.button("Testar Upload", type="primary", width="stretch", key="test_upload_execute"):
