@@ -58,24 +58,24 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           TARBALL=""
-          for attempt in $(seq 1 36); do
+          for attempt in $(seq 1 72); do
             TARBALL=$(npm view "@danhachuel/thunderbolt@${VERSION}" dist.tarball 2>/dev/null || true)
             if [ -n "$TARBALL" ]; then
               break
             fi
-            echo "Published metadata not available yet (attempt ${attempt}/36); waiting 5 seconds..."
+            echo "Published metadata not available yet (attempt ${attempt}/72); waiting 5 seconds..."
             sleep 5
           done
           if [ -z "$TARBALL" ]; then
             echo "Published metadata was not available for @danhachuel/thunderbolt@${VERSION}"
             exit 1
           fi
-          for attempt in $(seq 1 36); do
+          for attempt in $(seq 1 72); do
             if curl --fail --location --silent --show-error --output /dev/null "$TARBALL"; then
               echo "Published tarball is available: $TARBALL"
               exit 0
             fi
-            echo "Tarball not available yet (attempt ${attempt}/36); waiting 5 seconds..."
+            echo "Tarball not available yet (attempt ${attempt}/72); waiting 5 seconds..."
             sleep 5
           done
           echo "Published tarball was not downloadable: $TARBALL"
