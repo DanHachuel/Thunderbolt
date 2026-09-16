@@ -33,11 +33,11 @@ def test_test_upload_button_is_between_selector_and_video_cards():
     assert selector_position < button_position < cards_position
 
 
-def test_upload_status_panel_is_reserved_next_to_video_selector():
+def test_upload_status_panel_is_after_selector_and_button():
     block = SOURCE.split("def _render_test_upload_videos", 1)[1].split("def ", 1)[0]
-    assert 'selector_column, status_column = st.columns([1, 1], gap="small")' in block
-    assert 'with status_column:' in block
     assert 'st.container(height=188, border=True)' in block
-    assert 'status_panel.error(' in block
-    assert 'status_panel.warning(' in block
-    assert 'status_panel.success(' in block
+    selector_position = block.index('key="test_upload_video"')
+    button_position = block.index('key="test_upload_execute"')
+    status_position = block.index('st.container(height=188, border=True)')
+    cards_position = block.index('video_columns = st.columns(2, gap="small")')
+    assert selector_position < button_position < status_position < cards_position

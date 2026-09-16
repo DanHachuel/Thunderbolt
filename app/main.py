@@ -8967,20 +8967,15 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
     destination = destinations[destination_labels.index(selected_destination)] if selected_destination in destination_labels else {}
 
     st.markdown("#### Vídeos modelo")
-    selector_column, status_column = st.columns([1, 1], gap="small")
-    with selector_column:
-        selected_video_id = st.radio("Vídeo de teste", [item["id"] for item in TEST_UPLOAD_VIDEOS], format_func=lambda value: next(item["name"] for item in TEST_UPLOAD_VIDEOS if item["id"] == value), key="test_upload_video")
-    with status_column:
-        with st.container(height=188, border=True):
-            st.caption("Resultado do teste de upload")
-            status_panel = st.empty()
+    selected_video_id = st.radio("Vídeo de teste", [item["id"] for item in TEST_UPLOAD_VIDEOS], format_func=lambda value: next(item["name"] for item in TEST_UPLOAD_VIDEOS if item["id"] == value), key="test_upload_video")
     selected_video = next(item for item in TEST_UPLOAD_VIDEOS if item["id"] == selected_video_id)
+    upload_status: tuple[str, str] | None = None
     if st.button("Testar Upload", type="primary", width="stretch", key="test_upload_execute"):
         video_path = Path(selected_video["path"]).resolve()
         if not destination:
-            status_panel.warning("Não existe um canal/conta configurado para a operação seleccionada. Configure um destino ou escolha outra operação.")
+            upload_status = ("warning", "Não existe um canal/conta configurado para a operação seleccionada. Configure um destino ou escolha outra operação.")
         elif not video_path.is_file():
-            status_panel.error(f"Vídeo de teste não encontrado: {video_path}")
+            upload_status = ("error", f"Vídeo de teste não encontrado: {video_path}")
         else:
             title = f"Thunderbolt — {selected_video['name']}"
             channel = destination if operation == "Canais YouTube" else {}
@@ -8999,11 +8994,17 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
                     response = execute_upload(str(settings.get("composio_api_key") or ""), str(settings.get("composio_user_id") or ""), str(destination.get("composio_tool_slug") or settings.get("composio_tool_slug") or "upload_video"), str(video_path), str(settings.get("composio_file_field") or "videoFilePath"), str(settings.get("composio_arguments_json") or "{}"), str(settings.get("composio_connected_account_id") or destination.get("composio_connected_account_id") or ""))
                     result = IntegrationResult(bool(response.get("successful")), str(response.get("error") or "Upload Composio concluído."), response)
                 if result.ok:
-                    status_panel.success(result.message)
+                    upload_status = ("success", result.message)
                 else:
-                    status_panel.error(result.message)
+                    upload_status = ("error", result.message)
             except Exception as exc:
-                status_panel.error(f"O teste de upload falhou: {type(exc).__name__}: {exc}")
+                upload_status = ("error", f"O teste de upload falhou: {type(exc).__name__}: {exc}")
+    with st.container(height=188, border=True):
+        st.caption("Resultado do teste de upload")
+        if upload_status:
+            getattr(st, upload_status[0])(upload_status[1])
+        else:
+            st.caption("As mensagens de sucesso ou erro aparecerão aqui após o teste.")
     video_columns = st.columns(2, gap="small")
     for index, video in enumerate(TEST_UPLOAD_VIDEOS):
         with video_columns[index]:
