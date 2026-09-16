@@ -4883,6 +4883,9 @@ def render_media_download():
         urls_text = st.text_area("URLs para descarregar", placeholder="Uma URL http(s) por linha", height=120, key="media_download_urls")
         mode_label = st.selectbox("Tipo de mídia", ["Vídeo", "Áudio", "Imagem"], key="media_download_mode")
         option_cols = st.columns(3)
+        allow_playlist = False
+        download_subtitles = False
+        embed_metadata = False
         with option_cols[0]:
             if mode_label == "Vídeo":
                 quality_label = st.selectbox("Qualidade", list(VIDEO_QUALITY_OPTIONS), key="media_download_quality")
@@ -4896,12 +4899,20 @@ def render_media_download():
                 quality_label = st.selectbox("Qualidade", list(IMAGE_QUALITY_OPTIONS), key="media_download_image_quality")
                 video_container = st.selectbox("Contentor", list(IMAGE_CONTAINERS), key="media_download_image_container")
                 audio_format = "mp3"
-        with option_cols[1]:
-            allow_playlist = st.checkbox("Permitir playlist", value=False, key="media_download_allow_playlist")
-            download_subtitles = st.checkbox("Descarregar legendas", value=False, key="media_download_subtitles")
-        with option_cols[2]:
-            embed_metadata = st.checkbox("Incorporar metadados", value=False, key="media_download_embed_metadata")
-            st.caption("Playlist desactivada por padrão para evitar downloads acidentais em massa.")
+        if mode_label == "Vídeo":
+            with option_cols[1]:
+                allow_playlist = st.checkbox("Permitir playlist", value=False, key="media_download_allow_playlist")
+                download_subtitles = st.checkbox("Descarregar legendas", value=False, key="media_download_subtitles")
+            with option_cols[2]:
+                embed_metadata = st.checkbox("Incorporar metadados", value=False, key="media_download_embed_metadata")
+                st.caption("Playlist desactivada por padrão para evitar downloads acidentais em massa.")
+        elif mode_label == "Áudio":
+            with option_cols[1]:
+                allow_playlist = st.checkbox("Permitir playlist", value=False, key="media_download_allow_playlist")
+            with option_cols[2]:
+                embed_metadata = st.checkbox("Incorporar metadados", value=False, key="media_download_embed_metadata")
+        else:
+            st.caption("Imagens: apenas qualidade e contentor de imagem são aplicáveis.")
         start_download = st.form_submit_button("Iniciar Download", type="primary", width="stretch")
 
     if start_download:

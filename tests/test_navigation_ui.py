@@ -118,6 +118,16 @@ def test_edition_contains_media_download_page_and_controls():
     assert 'from hermes_ui.media_downloader import' in MAIN_SOURCE
 
 
+def test_media_download_options_are_conditional_by_media_type():
+    assert 'if mode_label == "Vídeo":' in MAIN_SOURCE
+    assert 'elif mode_label == "Áudio":' in MAIN_SOURCE
+    assert 'else:' in MAIN_SOURCE
+    assert 'media_download_image_quality' in MAIN_SOURCE
+    assert 'media_download_image_container' in MAIN_SOURCE
+    assert 'st.caption("Imagens: apenas qualidade e contentor de imagem são aplicáveis.")' in MAIN_SOURCE
+    assert 'media_download_subtitles' in MAIN_SOURCE
+
+
 def test_api_keys_contains_material_sources_expander_with_multi_key_controls():
     settings_start = MAIN_SOURCE.index("def render_settings():")
     settings_page = MAIN_SOURCE[settings_start:]
