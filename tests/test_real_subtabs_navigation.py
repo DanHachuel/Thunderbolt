@@ -8,19 +8,16 @@ MAIN_SOURCE = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 def test_growth_is_a_page_with_real_content_tabs():
     assert '"Growth": growth_items' in MAIN_SOURCE
     assert 'growth_items = []' in MAIN_SOURCE
-    assert 'analysis_tab, = render_localized_tabs([' in MAIN_SOURCE
-    assert '"Analise Growth"' in MAIN_SOURCE
-    assert 'with analysis_tab:' in MAIN_SOURCE
-    assert 'growth_subtabs = render_localized_tabs([' in MAIN_SOURCE
+    assert 'growth_tabs = render_localized_tabs([' in MAIN_SOURCE
+    assert 'with growth_tabs[0]:' in MAIN_SOURCE
     assert '"Growth Youtube", "Growth Tiktok", "Growth Instagram", "Facebook Pages", "Growth Bilibili"' in MAIN_SOURCE.replace("\n", " ")
 
 
 def test_documentation_is_a_page_with_real_content_tabs():
     assert '"Documentação": documentation_items' in MAIN_SOURCE
     assert 'documentation_items = []' in MAIN_SOURCE
-    assert 'tutorials_tab, = render_localized_tabs(["Tutoriais"])' in MAIN_SOURCE
-    assert 'with tutorials_tab:' in MAIN_SOURCE
-    assert 'tutorial_subtabs = render_localized_tabs([' in MAIN_SOURCE
+    assert 'documentation_tabs = render_localized_tabs([' in MAIN_SOURCE
+    assert 'with documentation_tabs[0]:' in MAIN_SOURCE
     assert '"Meta", "Supabase", "Kaggle", "Apify", "YouTube Video-Upload Frontend",' in MAIN_SOURCE.replace("\n", " ")
 
 
