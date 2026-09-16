@@ -1851,7 +1851,7 @@ def _growth_channel_metrics(channel: dict[str, Any]) -> tuple[list[dict[str, Any
 
 
 def render_growth_youtube():
-    st.title("Analista Growth Youtube")
+    st.title("Growth Youtube")
     st.caption("Auditoria pública baseada nos 3 pilares críticos e nas métricas secundárias do agente Growth.")
     growth_settings = read_json("settings.json", {})
     youtube_data_api_ready = bool(str(growth_settings.get("youtube_api_key") or os.getenv("YOUTUBE_API_KEY") or "").strip())
@@ -10211,12 +10211,15 @@ def main():
         ("Motion Control", ":material/motion_photos_on:", "Motion Control"),
         ("UGC Products", ":material/shopping_bag:", "UGC Products"),
     ]
+    growth_analysis_items = [
+        ("Growth Youtube", ":material/analytics:", "Growth Youtube"),
+        ("Growth Tiktok", ":material/analytics:", "Growth Tiktok"),
+        ("Growth Instagram", ":material/analytics:", "Growth Instagram"),
+        ("Facebook Pages", ":material/analytics:", "Facebook Pages"),
+        ("Growth Bilibili", ":material/analytics:", "Growth Bilibili"),
+    ]
     growth_items = [
-        ("Analista Growth Youtube", ":material/analytics:", "Analista Growth Youtube"),
-        ("Analista Growth Tiktok", ":material/analytics:", "Analista Growth Tiktok"),
-        ("Analista Growth Instagram", ":material/analytics:", "Analista Growth Instagram"),
-        ("Analista Facebook Pages", ":material/analytics:", "Analista Facebook Pages"),
-        ("Analista Bilibili", ":material/analytics:", "Analista Bilibili"),
+        ("Analise Growth", ":material/analytics:", "Analise Growth"),
     ]
     tutorial_items = [
         ("Meta", ":material/menu_book:", "Meta"),
@@ -10280,6 +10283,7 @@ def main():
         "Pipeline Música": music_items,
         "Edição": edition_items,
         "Growth": growth_items,
+        "Analise Growth": growth_analysis_items,
         "Documentação": documentation_items,
         "Tutoriais": tutorial_items,
         "Configurações": settings_items,
@@ -10292,7 +10296,7 @@ def main():
         "Canais/Perfis (Vídeos)": "/canais-perfis-videos", "Canais YouTube": "/canais-perfis-videos/canais-youtube", "Canais Tiktok": "/canais-perfis-videos/canais-tiktok", "Contas Instagram": "/canais-perfis-videos/contas-instagram", "Facebook Pages": "/canais-perfis-videos/facebook-pages", "Blueprints Youtube": "/blueprints/youtube", "Thumbnail Blueprints": "/blueprints/thumbnails", "Brandings Youtube": "/blueprints/brandings-youtube", "Prompt-Masters Tiktok": "/blueprints/prompt-masters-tiktok", "Facebook Blueprint": "/blueprints/facebook",
         "AI Influencers": "/ai-influencers", "Personagens": "/ai-influencers/personagens", "Geração de Conteúdo IA": "/ai-influencers/geracao-conteudo", "Motion Control": "/ai-influencers/motion-control", "UGC Products": "/ai-influencers/ugc-products",
         "Edição": "/edicao", "Limpador de Metadados": "/edicao/limpador-metadados", "Cortes": "/edicao/cortes", "Editor Python": "/edicao/editor-python", "Download Mídia": "/edicao/download-midia",
-        "Growth": "/growth", "Analista Growth Youtube": "/growth/youtube", "Analista Growth Tiktok": "/growth/tiktok", "Analista Growth Instagram": "/growth/instagram", "Analista Facebook Pages": "/growth/facebook-pages", "Analista Bilibili": "/growth/bilibili",
+        "Growth": "/growth", "Analise Growth": "/growth/analise", "Growth Youtube": "/growth/analise/youtube", "Growth Tiktok": "/growth/analise/tiktok", "Growth Instagram": "/growth/analise/instagram", "Facebook Pages": "/growth/analise/facebook-pages", "Growth Bilibili": "/growth/analise/bilibili",
         "Documentação": "/documentacao", "Tutoriais": "/documentacao/tutoriais", "Meta": "/documentacao/tutoriais/meta", "Supabase": "/documentacao/tutoriais/supabase", "Kaggle": "/documentacao/tutoriais/kaggle", "Apify": "/documentacao/tutoriais/apify", "YouTube Video-Upload Frontend": "/documentacao/tutoriais/youtube-video-upload-frontend", "OAuth do Google": "/documentacao/tutoriais/oauth-google", "YouTube Data API Key (Public Data)": "/documentacao/tutoriais/youtube-data-api-key",
         "Configurações": "/configuracoes", "MCP": "/configuracoes/mcp", "Notificações": "/configuracoes/notificacoes", "Logs": "/configuracoes/logs", "Configuração API": "/configuracoes/api",
     }
@@ -10321,6 +10325,11 @@ def main():
         "Tutorial YouTube Video-Upload Frontend": "YouTube Video-Upload Frontend",
         "Tutorial OAuth do Google": "OAuth do Google",
         "Tutorial YouTube Data API Key (Public Data)": "YouTube Data API Key (Public Data)",
+        "Analista Growth Youtube": "Growth Youtube",
+        "Analista Growth Tiktok": "Growth Tiktok",
+        "Analista Growth Instagram": "Growth Instagram",
+        "Analista Facebook Pages": "Facebook Pages",
+        "Analista Bilibili": "Growth Bilibili",
     }
     all_children = [item for items in groups.values() for item in items]
     all_children.extend(item for item in tutorial_items if item not in all_children)
@@ -10433,11 +10442,11 @@ def main():
         "Motion Control": lambda: render_motion_control(read_json("settings.json", {})),
         "UGC Products": lambda: render_ugc_products(read_json("settings.json", {})),
         "Contas Instagram": lambda: render_social_networks(read_json("settings.json", {})),
-        "Analista Growth Youtube": render_growth_youtube,
-        "Analista Growth Tiktok": render_growth_tiktok,
-        "Analista Growth Instagram": render_growth_instagram,
-        "Analista Facebook Pages": render_growth_facebook_pages,
-        "Analista Bilibili": render_growth_bilibili,
+        "Growth Youtube": render_growth_youtube,
+        "Growth Tiktok": render_growth_tiktok,
+        "Growth Instagram": render_growth_instagram,
+        "Facebook Pages": render_growth_facebook_pages,
+        "Growth Bilibili": render_growth_bilibili,
         "Documentação": lambda: render_edit_placeholder("Documentação", "Seleccione um tutorial no menu expansível."),
         "Meta": render_models_ai_tutorial,
         "Supabase": render_supabase_tutorial,
