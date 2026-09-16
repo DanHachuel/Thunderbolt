@@ -10367,7 +10367,7 @@ def main():
         ("Facebook Pages", ":material/analytics:", "Facebook Pages"),
         ("Growth Bilibili", ":material/analytics:", "Growth Bilibili"),
     ]
-    growth_items = []
+    growth_items = growth_analysis_items
     tutorial_items = [
         ("Meta", ":material/menu_book:", "Meta"),
         ("Supabase", ":material/storage:", "Supabase"),
@@ -10377,7 +10377,7 @@ def main():
         ("OAuth do Google", ":material/key:", "OAuth do Google"),
         ("YouTube Data API Key (Public Data)", ":material/vpn_key:", "YouTube Data API Key (Public Data)"),
     ]
-    documentation_items = []
+    documentation_items = tutorial_items
     settings_items = [
         ("MCP", ":material/hub:", "MCP"),
         ("Notificações", ":material/notifications:", "Notificações"),
@@ -10600,21 +10600,20 @@ def main():
         "Motion Control": lambda: render_motion_control(read_json("settings.json", {})),
         "UGC Products": lambda: render_ugc_products(read_json("settings.json", {})),
         "Contas Instagram": lambda: render_social_networks(read_json("settings.json", {})),
-        "Growth": render_growth_pages,
-        "Analise Growth": render_growth_pages,
-        "Growth Youtube": render_growth_pages,
-        "Growth Tiktok": render_growth_pages,
-        "Growth Instagram": render_growth_pages,
-        "Growth Bilibili": render_growth_pages,
-        "Documentação": render_documentation_pages,
-        "Tutoriais": render_documentation_pages,
-        "Meta": render_documentation_pages,
-        "Supabase": render_documentation_pages,
-        "Kaggle": render_documentation_pages,
-        "Apify": render_documentation_pages,
-        "YouTube Video-Upload Frontend": render_documentation_pages,
-        "OAuth do Google": render_documentation_pages,
-        "YouTube Data API Key (Public Data)": render_documentation_pages,
+        "Growth": lambda: render_edit_placeholder("Growth", "Seleccione uma subaba de Growth."),
+        "Growth Youtube": render_growth_youtube,
+        "Growth Tiktok": render_growth_tiktok,
+        "Growth Instagram": render_growth_instagram,
+        "Facebook Pages": render_growth_facebook_pages,
+        "Growth Bilibili": render_growth_bilibili,
+        "Documentação": lambda: render_edit_placeholder("Documentação", "Seleccione uma subaba de documentação."),
+        "Meta": render_models_ai_tutorial,
+        "Supabase": render_supabase_tutorial,
+        "Kaggle": lambda: render_niche_tutorial("kaggle"),
+        "Apify": lambda: render_niche_tutorial("apify"),
+        "YouTube Video-Upload Frontend": render_youtube_frontend_upload_tutorial,
+        "OAuth do Google": render_google_oauth_tutorial,
+        "YouTube Data API Key (Public Data)": render_youtube_data_api_key_tutorial,
         "Configurações": lambda: render_edit_placeholder("Configurações", "Seleccione uma opção no menu expansível."),
         "MCP": render_mcp,
         "Contas Google": render_google_accounts,
