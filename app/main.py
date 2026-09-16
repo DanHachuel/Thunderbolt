@@ -8920,6 +8920,92 @@ def render_media_provider_cards(settings: dict[str, Any], *, embedded: bool = Fa
             st.rerun()
 
 
+TEST_UPLOAD_VIDEOS = (
+    {
+        "id": "horizontal",
+        "name": "Vídeo de teste horizontal",
+        "filename": "test-horizontal.mp4",
+        "path": ROOT / "seed" / "test_upload_videos" / "test-horizontal.mp4",
+        "duration": "40,1 s",
+        "description": "Vídeo horizontal para YouTube e Bilibili (1920×1080).",
+    },
+    {
+        "id": "vertical",
+        "name": "Vídeo de teste vertical",
+        "filename": "test-vertical.mp4",
+        "path": ROOT / "seed" / "test_upload_videos" / "test-vertical.mp4",
+        "duration": "8,8 s",
+        "description": "Vídeo vertical para YouTube Shorts, TikTok, Instagram e Facebook Pages (720×1080).",
+    },
+)
+
+
+def _test_upload_destinations(settings: dict[str, Any], operation: str) -> list[dict[str, Any]]:
+    channels = [item for item in read_json("channels.json", []) if isinstance(item, dict) and item.get("active", True)]
+    platform_map = {
+        "Canais YouTube": {"youtube", "yt", "youtube_channel"},
+        "Canais Tiktok": {"tiktok", "tiktok_channel"},
+        "Contas Instagram": {"instagram", "instagram_account"},
+        "Facebook Pages": {"facebook", "facebook_pages", "facebook page"},
+    }
+    if operation == "Contas Bilibili":
+        return [dict(item, _source="bilibili") for item in settings.get("bilibili_api_cards", []) if isinstance(item, dict)]
+    accepted = platform_map.get(operation, set())
+    return [item for item in channels if str(item.get("platform") or "").strip().casefold() in accepted]
+
+
+def _render_test_upload_videos(settings: dict[str, Any]) -> None:
+    st.subheader("Test Upload Videos")
+    st.caption("Use esta área para testar as ferramentas de upload com ficheiros locais controlados, sem iniciar qualquer envio até clicar no botão.")
+    upload_mode = st.selectbox("Modo de Upload", ["Composio", "API Youtube", "YouTube Frontend API", "Postiz", "Upload-Post"], key="test_upload_mode")
+    operation = st.selectbox("Canais/Contas", ["Canais YouTube", "Canais Tiktok", "Contas Instagram", "Contas Bilibili", "Facebook Pages"], key="test_upload_operation")
+    destinations = _test_upload_destinations(settings, operation)
+    destination_labels = [str(item.get("name") or item.get("label") or item.get("title") or item.get("id") or "Destino sem nome") for item in destinations]
+    selected_destination = st.selectbox("Canal/conta alvo", ["Nenhum destino configurado"] + destination_labels, key="test_upload_destination")
+    destination = destinations[destination_labels.index(selected_destination)] if selected_destination in destination_labels else {}
+
+    st.markdown("#### Vídeos modelo")
+    selected_video_id = st.radio("Vídeo de teste", [item["id"] for item in TEST_UPLOAD_VIDEOS], format_func=lambda value: next(item["name"] for item in TEST_UPLOAD_VIDEOS if item["id"] == value), horizontal=True, key="test_upload_video")
+    selected_video = next(item for item in TEST_UPLOAD_VIDEOS if item["id"] == selected_video_id)
+    for video in TEST_UPLOAD_VIDEOS:
+        with st.container(border=True):
+            st.write(f"**{video['name']}** · duração: {video['duration']}")
+            st.caption(video["description"])
+            video_path = Path(video["path"]).resolve()
+            if video_path.is_file():
+                st.video(str(video_path))
+                st.download_button("Download vídeo modelo", video_path.read_bytes(), file_name=video["filename"], mime="video/mp4", key=f"download_test_upload_{video['id']}")
+            else:
+                st.error(f"Asset de teste não encontrado: {video_path}")
+
+    if st.button("Testar Upload", type="primary", width="stretch", key="test_upload_execute"):
+        video_path = Path(selected_video["path"]).resolve()
+        if not destination:
+            st.warning("Não existe um canal/conta configurado para a operação seleccionada. Configure um destino ou escolha outra operação.")
+        elif not video_path.is_file():
+            st.error(f"Vídeo de teste não encontrado: {video_path}")
+        else:
+            title = f"Thunderbolt — {selected_video['name']}"
+            channel = destination if operation == "Canais YouTube" else {}
+            account = resolve_youtube_account(settings, channel) if channel else None
+            try:
+                if upload_mode == "API Youtube":
+                    result = YouTubeAdapter(settings).upload_video(str(video_path), title=title, description="Vídeo de teste Thunderbolt", tags=["Thunderbolt", "teste"], category_id="22", language="pt-BR", privacy_status="unlisted", account=account)
+                elif upload_mode == "YouTube Frontend API":
+                    result = YouTubeDirectUploader(settings, channel, account=account, storage_root=STORAGE).upload(str(video_path), title=title, description="Vídeo de teste Thunderbolt", visibility="unlisted")
+                elif upload_mode == "Postiz":
+                    result = PostizAdapter(settings).publish_video(str(video_path), integration_id=str(destination.get("id") or settings.get("postiz_integration_id") or ""), title=title, description="Vídeo de teste Thunderbolt", visibility="unlisted", tags=["Thunderbolt", "teste"])
+                elif upload_mode == "Upload-Post":
+                    platform = {"Canais YouTube": "youtube", "Canais Tiktok": "tiktok", "Contas Instagram": "instagram", "Facebook Pages": "facebook", "Contas Bilibili": "bilibili"}.get(operation, "")
+                    result = UploadPostAdapter(settings).upload_video(str(video_path), title=title, description="Vídeo de teste Thunderbolt", user=str(destination.get("username") or destination.get("name") or settings.get("upload_post_username") or ""), platforms=[platform] if platform else None)
+                else:
+                    response = execute_upload(str(settings.get("composio_api_key") or ""), str(settings.get("composio_user_id") or ""), str(destination.get("composio_tool_slug") or settings.get("composio_tool_slug") or "upload_video"), str(video_path), str(settings.get("composio_file_field") or "videoFilePath"), str(settings.get("composio_arguments_json") or "{}"), str(settings.get("composio_connected_account_id") or destination.get("composio_connected_account_id") or ""))
+                    result = IntegrationResult(bool(response.get("successful")), str(response.get("error") or "Upload Composio concluído."), response)
+                (st.success if result.ok else st.error)(result.message)
+            except Exception as exc:
+                st.error(f"O teste de upload falhou: {type(exc).__name__}: {exc}")
+
+
 def render_settings():
     st.title("Configuração API")
     st.caption("Configuração das APIs, providers, serviços e ferramentas técnicas usados pelo Thunderbolt. As credenciais ficam no storage local e não são enviadas para o GitHub.")
@@ -8935,7 +9021,7 @@ def render_settings():
             key=f"settings_{key}",
         )
 
-    api_keys_tab, upload_api_keys_tab, subtitles_tab, ffmpeg_tab, ai_influencers_tab, voice_test_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "FFmpeg", "AI Influencers", "Teste de Voz"])
+    api_keys_tab, upload_api_keys_tab, subtitles_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz"])
 
     with api_keys_tab:
         with st.container(border=True):
@@ -9445,6 +9531,9 @@ def render_settings():
             st.success("Configuração do backend AI Influencers guardada.")
             st.rerun()
         render_ai_influencers_api_status(effective_settings)
+
+    with test_upload_videos_tab:
+        _render_test_upload_videos(settings)
 
     with voice_test_tab:
         st.subheader("Teste de Voz")

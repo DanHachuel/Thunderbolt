@@ -5,7 +5,7 @@ SOURCE = Path(__file__).parents[1].joinpath("app", "main.py").read_text(encoding
 
 
 def test_subtitle_tab_is_between_upload_and_ai_influencers():
-    tabs = 'api_keys_tab, upload_api_keys_tab, subtitles_tab, ai_influencers_tab, voice_test_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "AI Influencers", "Teste de Voz"])'
+    tabs = 'api_keys_tab, upload_api_keys_tab, subtitles_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz"])'
     assert tabs in SOURCE
     assert SOURCE.index("with upload_api_keys_tab:") < SOURCE.index("with subtitles_tab:") < SOURCE.index("with ai_influencers_tab:")
 

@@ -123,7 +123,7 @@ class NavigationReorganizationTests(unittest.TestCase):
     def test_google_accounts_are_moved_to_api_settings_subtab(self):
         settings_block = MAIN_SOURCE.split("    settings_items = [", 1)[1].split("    ]", 1)[0]
         self.assertNotIn('("Contas Google",', settings_block)
-        self.assertIn('api_keys_tab, upload_api_keys_tab, subtitles_tab, ai_influencers_tab, voice_test_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "AI Influencers", "Teste de Voz"])', MAIN_SOURCE)
+        self.assertIn('api_keys_tab, upload_api_keys_tab, subtitles_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz"])', MAIN_SOURCE)
         self.assertIn('with st.expander("API Instagram", expanded=False):', MAIN_SOURCE)
         self.assertIn('with st.expander("API Facebook Pages", expanded=False):', MAIN_SOURCE)
         self.assertIn('"Contas Google": "Configuração API"', MAIN_SOURCE)
