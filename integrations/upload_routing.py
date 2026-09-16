@@ -339,5 +339,5 @@ def _composio_upload(settings: dict[str, Any], *, channel: dict[str, Any], **kwa
     return IntegrationResult(
         bool(result.get("successful")),
         str(result.get("error") or "Upload via Composio concluído."),
-        {"composio_data": result.get("data") or {}, "log_id": result.get("log_id") or "", "tool_slug": result.get("tool_slug") or slug, "configured_tool_slug": configured_slug},
+        {"composio_data": result.get("data") or {}, "log_id": result.get("log_id") or "", "tool_slug": result.get("tool_slug") or slug, "configured_tool_slug": configured_slug, "connected_account_id": result.get("connected_account_id") or "", "connected_account_alias": result.get("connected_account_alias") or ""},
     )

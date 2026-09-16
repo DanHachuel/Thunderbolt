@@ -145,6 +145,29 @@ def test_connected_account_alias_uses_memory_cache():
     assert calls == 1
 
 
+def test_duplicate_connected_account_alias_is_rejected():
+    class FakeAccounts:
+        def list(self, **kwargs):
+            return {"items": [
+                {"id": "youtube-one", "alias": "Duplicated", "toolkit": "youtube"},
+                {"id": "youtube-two", "alias": "Duplicated", "toolkit": "youtube"},
+            ]}
+
+    with pytest.raises(composio_upload.ComposioUploadError, match="múltiplas"):
+        composio_upload._connected_account_id(SimpleNamespace(connected_accounts=FakeAccounts()), "duplicate-user", "youtube", "Duplicated")
+
+
+def test_youtube_upload_scope_is_required():
+    client = SimpleNamespace(connected_accounts=SimpleNamespace(get=lambda **kwargs: {"data": {"scopes": ["https://www.googleapis.com/auth/youtube.readonly"]}}))
+    with pytest.raises(composio_upload.YouTubeUploadScopeMissingError, match="youtube.force-ssl"):
+        composio_upload.ensure_youtube_upload_scope(client, "youtube-readonly", "Read-only")
+
+
+def test_youtube_upload_scope_is_accepted():
+    client = SimpleNamespace(connected_accounts=SimpleNamespace(get=lambda **kwargs: {"data": {"scopes": [composio_upload.YOUTUBE_UPLOAD_SCOPE]}}))
+    composio_upload.ensure_youtube_upload_scope(client, "youtube-writable", "Writable")
+
+
 def test_youtube_upload_accepts_current_video_file_path(monkeypatch, tmp_path):
     video = tmp_path / "demo.mp4"
     video.write_bytes(b"video")
@@ -158,6 +181,9 @@ def test_youtube_upload_accepts_current_video_file_path(monkeypatch, tmp_path):
     class FakeAccounts:
         def list(self, **kwargs):
             return {"items": [{"id": "youtube-test", "alias": "Demo", "toolkit": "youtube"}]}
+
+        def get(self, **kwargs):
+            return {"data": {"scopes": [composio_upload.YOUTUBE_UPLOAD_SCOPE]}}
 
     monkeypatch.setattr(composio_upload, "_client", lambda *args, **kwargs: SimpleNamespace(tools=FakeTools(), connected_accounts=FakeAccounts()))
     result = composio_upload.execute_upload("ak_123456789", "user-1", "YOUTUBE_UPLOAD_VIDEO", str(video), "videoFilePath", "{}")

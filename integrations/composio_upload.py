@@ -10,6 +10,13 @@ class ComposioUploadError(ValueError):
     """Safe, user-facing validation or integration error."""
 
 
+class YouTubeUploadScopeMissingError(ComposioUploadError):
+    """The connected YouTube account cannot publish videos."""
+
+
+YOUTUBE_UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"
+
+
 COMPOSIO_OPERATION_SEARCH = {
     "upload_video": {"query": "Upload Video", "toolkit": "YOUTUBE"},
     "update_video": {"query": "Update Video", "toolkit": "YOUTUBE"},
@@ -171,6 +178,7 @@ def _connected_account_id(client: Any, user_id: str, toolkit: str, selector: str
             matching_items.append(item)
         if value:
             wanted = value.casefold()
+            matched_items = []
             for item in matching_items:
                 candidates = [
                     item.get("id"),
@@ -181,17 +189,25 @@ def _connected_account_id(client: Any, user_id: str, toolkit: str, selector: str
                     item.get("name"),
                 ]
                 if any(str(candidate or "").strip().casefold() == wanted for candidate in candidates):
-                    technical_id = str(
-                        item.get("id")
-                        or item.get("nanoid")
-                        or item.get("connection_id")
-                        or item.get("connected_account_id")
-                        or ""
-                    ).strip()
-                    if technical_id:
-                        if value:
-                            _CONNECTED_ACCOUNT_ID_CACHE[cache_key] = technical_id
-                        return technical_id
+                    matched_items.append(item)
+            if len(matched_items) > 1:
+                raise ComposioUploadError(
+                    f"A connected account `{value}` aparece em múltiplas contas do toolkit {toolkit}. "
+                    "Use o ID técnico imutável para escolher uma só conta."
+                )
+            if matched_items:
+                item = matched_items[0]
+                technical_id = str(
+                    item.get("id")
+                    or item.get("nanoid")
+                    or item.get("connection_id")
+                    or item.get("connected_account_id")
+                    or ""
+                ).strip()
+                if technical_id:
+                    if value:
+                        _CONNECTED_ACCOUNT_ID_CACHE[cache_key] = technical_id
+                    return technical_id
             available = [str(item.get("alias") or item.get("name") or item.get("id") or "").strip() for item in matching_items]
             available = [item for item in available if item]
             suffix = f" Contas activas: {', '.join(available)}." if available else ""
@@ -207,15 +223,66 @@ def _connected_account_id(client: Any, user_id: str, toolkit: str, selector: str
                 or item.get("connected_account_id")
                 or ""
             ).strip()
-            if technical_id and value:
-                _CONNECTED_ACCOUNT_ID_CACHE[cache_key] = technical_id
-            return technical_id
+            if technical_id:
+                if value:
+                    _CONNECTED_ACCOUNT_ID_CACHE[cache_key] = technical_id
+                return technical_id
     except ComposioUploadError:
         raise
-    except Exception:
-        # Preserve the original selector so Composio returns its actionable error.
-        return value
-    return value
+    except Exception as exc:
+        raise ComposioUploadError(
+            f"Não foi possível resolver a connected account `{value or 'activa'}` para {toolkit}: "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+    raise ComposioUploadError(
+        f"A connected account `{value or 'activa'}` não foi encontrada para o toolkit {toolkit or 'seleccionado'}."
+    )
+
+
+def _connected_account_details(client: Any, account_id: str) -> dict[str, Any]:
+    response = client.connected_accounts.get(connected_account_id=account_id)
+    raw = _safe_value(response)
+    if isinstance(raw, dict):
+        data = raw.get("data")
+        if isinstance(data, dict):
+            return data
+        return raw
+    return {}
+
+
+def _flatten_scope_values(value: Any) -> set[str]:
+    scopes: set[str] = set()
+    if isinstance(value, str):
+        scopes.update(item.strip() for item in value.replace(",", " ").split() if item.strip())
+    elif isinstance(value, list):
+        for item in value:
+            scopes.update(_flatten_scope_values(item))
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            if str(key).casefold() in {"scope", "scopes", "granted_scopes", "grantedscopes"}:
+                scopes.update(_flatten_scope_values(item))
+            elif isinstance(item, (dict, list)):
+                scopes.update(_flatten_scope_values(item))
+    return scopes
+
+
+def ensure_youtube_upload_scope(client: Any, account_id: str, alias: str = "") -> None:
+    """Fail before upload when the connected account is read-only."""
+    try:
+        details = _connected_account_details(client, account_id)
+    except Exception as exc:
+        raise ComposioUploadError(
+            f"Não foi possível verificar os scopes da connected account `{alias or account_id}` "
+            f"(ID técnico `{account_id}`): {type(exc).__name__}: {exc}"
+        ) from exc
+    scopes = _flatten_scope_values(details)
+    if YOUTUBE_UPLOAD_SCOPE not in scopes:
+        label = alias or account_id
+        raise YouTubeUploadScopeMissingError(
+            f"A conta YouTube `{label}` (ID técnico `{account_id}`) não tem o scope de upload "
+            f"`{YOUTUBE_UPLOAD_SCOPE}`. Reautorize a conta com o comando "
+            f"`python scripts/reauth_youtube.py --account {label}` e conceda a permissão no navegador."
+        )
 
 
 def discover_tools(api_key: str, user_id: str, query: str, toolkit: str = "") -> list[dict[str, Any]]:
@@ -321,11 +388,16 @@ def execute_upload(api_key: str, user_id: str, slug: str, video_path: str, file_
                 "Use `Autorizar toolkit no Composio` ou configure o Connected account ID correcto."
             )
         execute_kwargs["connected_account_id"] = selected_account
+        normalized_slug = slug.upper().replace("-", "_")
+        if "YOUTUBE" in normalized_slug and "UPLOAD" in normalized_slug:
+            ensure_youtube_upload_scope(client, selected_account, connected_account_id)
         result = client.tools.execute(slug, **execute_kwargs)
         response = _response(result)
         if not response["successful"] and not response["error"]:
             response["error"] = f"A ferramenta `{slug}` devolveu uma resposta sem sucesso."
         response["tool_slug"] = slug
+        response["connected_account_id"] = selected_account
+        response["connected_account_alias"] = connected_account_id
         return response
     except ComposioUploadError:
         raise
