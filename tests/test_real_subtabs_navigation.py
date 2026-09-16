@@ -37,5 +37,12 @@ def test_subtab_renderers_are_wired():
     assert '"Tutoriais": render_documentation_pages' in MAIN_SOURCE
 
 
+def test_subtab_renderers_are_isolated_from_each_other():
+    assert 'def _render_navigation_subtab(label: str, renderer: Callable[[], Any])' in MAIN_SOURCE
+    assert 'except Exception as exc:' in MAIN_SOURCE
+    assert 'Não foi possível carregar {label}' in MAIN_SOURCE
+    assert '_render_navigation_subtab(label, renderer)' in MAIN_SOURCE
+
+
 def test_existing_upload_music_reference_remains_tab_based():
     assert 'render_localized_tabs(["JewelMusic", "Pushtunes", "ytmusicapi", "DistroKid"])' in MAIN_SOURCE

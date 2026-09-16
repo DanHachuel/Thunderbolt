@@ -10289,6 +10289,14 @@ def render_pipeline():
                 card(stage.title(), len(queues.get(stage, [])), "fila")
 
 
+def _render_navigation_subtab(label: str, renderer: Callable[[], Any]) -> None:
+    """Keep one broken subtab from hiding every other page in its group."""
+    try:
+        renderer()
+    except Exception as exc:
+        st.error(f"Não foi possível carregar {label}: {type(exc).__name__}: {exc}")
+
+
 def render_growth_pages() -> None:
     """Render Growth and its requested real sub-tabs in the page content."""
     st.title("Growth")
@@ -10302,9 +10310,9 @@ def render_growth_pages() -> None:
         render_growth_youtube, render_growth_tiktok, render_growth_instagram,
         render_growth_facebook_pages, render_growth_bilibili,
     ]
-    for tab, renderer in zip(growth_tabs[1:], growth_renderers):
+    for tab, label, renderer in zip(growth_tabs[1:], ["Growth Youtube", "Growth Tiktok", "Growth Instagram", "Facebook Pages", "Growth Bilibili"], growth_renderers):
         with tab:
-            renderer()
+            _render_navigation_subtab(label, renderer)
 
 
 def render_documentation_pages() -> None:
@@ -10322,9 +10330,9 @@ def render_documentation_pages() -> None:
         lambda: render_niche_tutorial("apify"), render_youtube_frontend_upload_tutorial,
         render_google_oauth_tutorial, render_youtube_data_api_key_tutorial,
     ]
-    for tab, renderer in zip(documentation_tabs[1:], tutorial_renderers):
+    for tab, label, renderer in zip(documentation_tabs[1:], ["Meta", "Supabase", "Kaggle", "Apify", "YouTube Video-Upload Frontend", "OAuth do Google", "YouTube Data API Key (Public Data)"], tutorial_renderers):
         with tab:
-            renderer()
+            _render_navigation_subtab(label, renderer)
 
 
 def main():
