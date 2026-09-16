@@ -5717,12 +5717,14 @@ def render_videos():
         return
     known_states = ["to_do", "doing", "blocked", "done", "failed", "cancelled"]
     extra_states = sorted({str(task.get("state") or "unknown") for task in tasks if str(task.get("state") or "unknown") not in known_states})
+    if "videos_state_filter" not in st.session_state:
+        st.session_state["videos_state_filter"] = "done"
     state_filter = st.selectbox("Filtrar por estado", ["Todos", *known_states, *extra_states], key="videos_state_filter")
     for task in tasks:
         if state_filter != "Todos" and task.get("state") != state_filter:
             continue
         with st.container(border=True):
-            cols = st.columns([2.2, 1, 1, 1.2, 1.8])
+            cols = st.columns([2.2, 1.5, 1, 1, 1.2, 1.8])
             with cols[0]:
                 st.write(f"**{task.get('title') or task.get('topic', 'Sem título')}**")
                 st.caption(f"Tópico: {task.get('topic', 'Sem tópico')}")
@@ -5737,8 +5739,13 @@ def render_videos():
                     st.caption(f"Thumbnail: {status}{prompt_note}")
                 video_path = str(artifacts.get('video') or '').strip()
                 if video_path and Path(video_path).is_file():
-                    video_file = Path(video_path)
                     st.success('Vídeo pronto; a thumbnail pode ser criada ou carregada depois.')
+                elif video_path:
+                    st.caption(f'Vídeo registado: {video_path}')
+            with cols[1]:
+                if video_path and Path(video_path).is_file() and str(task.get("state") or "").casefold() == "done":
+                    st.video(video_path, format="video/mp4", width="stretch")
+                    video_file = Path(video_path)
                     st.download_button(
                         'Descarregar vídeo pronto',
                         data=video_file.read_bytes(),
@@ -5747,17 +5754,15 @@ def render_videos():
                         key=f"pipeline_video_download_{task['id']}",
                         width="stretch",
                     )
-                elif video_path:
-                    st.caption(f'Vídeo registado: {video_path}')
-            with cols[1]:
+            with cols[2]:
                 st.caption("Formato")
                 st.write(_video_task_format(task))
-            with cols[2]:
-                st.write(_pipeline_stage_label(task))
             with cols[3]:
+                st.write(_pipeline_stage_label(task))
+            with cols[4]:
                 _render_video_task_state(task)
 
-            with cols[4]:
+            with cols[5]:
                 state = str(task.get("state") or "")
                 start_col, stop_col = st.columns(2)
                 with start_col:
