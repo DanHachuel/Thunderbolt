@@ -10276,6 +10276,42 @@ def render_pipeline():
                 card(stage.title(), len(queues.get(stage, [])), "fila")
 
 
+def render_growth_pages() -> None:
+    """Render Growth and its requested real sub-tabs in the page content."""
+    st.title("Growth")
+    analysis_tab, = render_localized_tabs(["Analise Growth"])
+    with analysis_tab:
+        growth_subtabs = render_localized_tabs([
+            "Growth Youtube", "Growth Tiktok", "Growth Instagram", "Facebook Pages", "Growth Bilibili",
+        ])
+        growth_renderers = [
+            render_growth_youtube, render_growth_tiktok, render_growth_instagram,
+            render_growth_facebook_pages, render_growth_bilibili,
+        ]
+        for tab, renderer in zip(growth_subtabs, growth_renderers):
+            with tab:
+                renderer()
+
+
+def render_documentation_pages() -> None:
+    """Render Documentação and its requested real sub-tabs in the page content."""
+    st.title("Documentação")
+    tutorials_tab, = render_localized_tabs(["Tutoriais"])
+    with tutorials_tab:
+        tutorial_subtabs = render_localized_tabs([
+            "Meta", "Supabase", "Kaggle", "Apify", "YouTube Video-Upload Frontend",
+            "OAuth do Google", "YouTube Data API Key (Public Data)",
+        ])
+        tutorial_renderers = [
+            render_models_ai_tutorial, render_supabase_tutorial, lambda: render_niche_tutorial("kaggle"),
+            lambda: render_niche_tutorial("apify"), render_youtube_frontend_upload_tutorial,
+            render_google_oauth_tutorial, render_youtube_data_api_key_tutorial,
+        ]
+        for tab, renderer in zip(tutorial_subtabs, tutorial_renderers):
+            with tab:
+                renderer()
+
+
 def main():
     pipeline_video_items = [
         ("Criação de Vídeos", ":material/add_circle:", "Criação de Vídeos"),
@@ -10318,9 +10354,7 @@ def main():
         ("Facebook Pages", ":material/analytics:", "Facebook Pages"),
         ("Growth Bilibili", ":material/analytics:", "Growth Bilibili"),
     ]
-    growth_items = [
-        ("Analise Growth", ":material/analytics:", "Analise Growth"),
-    ]
+    growth_items = []
     tutorial_items = [
         ("Meta", ":material/menu_book:", "Meta"),
         ("Supabase", ":material/storage:", "Supabase"),
@@ -10330,9 +10364,7 @@ def main():
         ("OAuth do Google", ":material/key:", "OAuth do Google"),
         ("YouTube Data API Key (Public Data)", ":material/vpn_key:", "YouTube Data API Key (Public Data)"),
     ]
-    documentation_items = [
-        ("Tutoriais", ":material/menu_book:", "Tutoriais"),
-    ]
+    documentation_items = []
     settings_items = [
         ("MCP", ":material/hub:", "MCP"),
         ("Notificações", ":material/notifications:", "Notificações"),
@@ -10429,7 +10461,20 @@ def main():
         "Analista Growth Tiktok": "Growth Tiktok",
         "Analista Growth Instagram": "Growth Instagram",
         "Analista Facebook Pages": "Facebook Pages",
-        "Analista Bilibili": "Growth Bilibili",
+        "Analista Bilibili": "Growth",
+        "Analise Growth": "Growth",
+        "Growth Youtube": "Growth",
+        "Growth Tiktok": "Growth",
+        "Growth Instagram": "Growth",
+        "Growth Bilibili": "Growth",
+        "Tutoriais": "Documentação",
+        "Meta": "Documentação",
+        "Supabase": "Documentação",
+        "Kaggle": "Documentação",
+        "Apify": "Documentação",
+        "YouTube Video-Upload Frontend": "Documentação",
+        "OAuth do Google": "Documentação",
+        "YouTube Data API Key (Public Data)": "Documentação",
     }
     all_children = [item for items in groups.values() for item in items]
     all_children.extend(item for item in tutorial_items if item not in all_children)
@@ -10542,17 +10587,21 @@ def main():
         "Motion Control": lambda: render_motion_control(read_json("settings.json", {})),
         "UGC Products": lambda: render_ugc_products(read_json("settings.json", {})),
         "Contas Instagram": lambda: render_social_networks(read_json("settings.json", {})),
-        "Growth Youtube": render_growth_youtube,
-        "Growth Tiktok": render_growth_tiktok,
-        "Growth Instagram": render_growth_instagram,
-        "Facebook Pages": render_growth_facebook_pages,
-        "Growth Bilibili": render_growth_bilibili,
-        "Documentação": lambda: render_edit_placeholder("Documentação", "Seleccione um tutorial no menu expansível."),
-        "Meta": render_models_ai_tutorial,
-        "Supabase": render_supabase_tutorial,
-        "YouTube Video-Upload Frontend": render_youtube_frontend_upload_tutorial,
-        "OAuth do Google": render_google_oauth_tutorial,
-        "YouTube Data API Key (Public Data)": render_youtube_data_api_key_tutorial,
+        "Growth": render_growth_pages,
+        "Analise Growth": render_growth_pages,
+        "Growth Youtube": render_growth_pages,
+        "Growth Tiktok": render_growth_pages,
+        "Growth Instagram": render_growth_pages,
+        "Growth Bilibili": render_growth_pages,
+        "Documentação": render_documentation_pages,
+        "Tutoriais": render_documentation_pages,
+        "Meta": render_documentation_pages,
+        "Supabase": render_documentation_pages,
+        "Kaggle": render_documentation_pages,
+        "Apify": render_documentation_pages,
+        "YouTube Video-Upload Frontend": render_documentation_pages,
+        "OAuth do Google": render_documentation_pages,
+        "YouTube Data API Key (Public Data)": render_documentation_pages,
         "Configurações": lambda: render_edit_placeholder("Configurações", "Seleccione uma opção no menu expansível."),
         "MCP": render_mcp,
         "Contas Google": render_google_accounts,
