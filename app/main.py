@@ -33,7 +33,7 @@ from contextlib import nullcontext
 from datetime import date, datetime, timezone
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import requests
 import streamlit as st
