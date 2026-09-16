@@ -8977,8 +8977,10 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
                 st.caption(video["description"])
                 video_path = Path(video["path"]).resolve()
                 if video_path.is_file():
-                    st.video(str(video_path), width="stretch")
-                    st.download_button("Download vídeo modelo", video_path.read_bytes(), file_name=video["filename"], mime="video/mp4", key=f"download_test_upload_{video['id']}", width="stretch")
+                    media_slot = st.columns([1, 2, 1])[1] if video["id"] == "vertical" else st.container()
+                    with media_slot:
+                        st.video(str(video_path), width="stretch")
+                        st.download_button("Download vídeo modelo", video_path.read_bytes(), file_name=video["filename"], mime="video/mp4", key=f"download_test_upload_{video['id']}", width="stretch")
                 else:
                     st.error(f"Asset de teste não encontrado: {video_path}")
 

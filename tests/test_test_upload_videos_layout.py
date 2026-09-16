@@ -17,3 +17,9 @@ def test_test_upload_videos_render_in_two_compact_columns():
     assert "video_columns = st.columns(2, gap=\"small\")" in block
     assert "with video_columns[index]:" in block
     assert 'st.video(str(video_path), width="stretch")' in block
+
+
+def test_vertical_test_video_uses_half_width_media_column():
+    block = SOURCE.split("def _render_test_upload_videos", 1)[1].split("def ", 1)[0]
+    assert 'video["id"] == "vertical"' in block
+    assert 'st.columns([1, 2, 1])[1]' in block
