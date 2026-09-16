@@ -8,16 +8,19 @@ MAIN_SOURCE = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 def test_growth_is_a_page_with_real_content_tabs():
     assert '"Growth": growth_items' in MAIN_SOURCE
     assert 'growth_items = []' in MAIN_SOURCE
-    assert 'growth_tabs = render_localized_tabs([' in MAIN_SOURCE
-    assert 'with growth_tabs[0]:' in MAIN_SOURCE
+    assert 'analysis_tab, = render_localized_tabs([' in MAIN_SOURCE
+    assert '"Analise Growth"' in MAIN_SOURCE
+    assert 'with analysis_tab:' in MAIN_SOURCE
+    assert 'growth_subtabs = render_localized_tabs([' in MAIN_SOURCE
     assert '"Growth Youtube", "Growth Tiktok", "Growth Instagram", "Facebook Pages", "Growth Bilibili"' in MAIN_SOURCE.replace("\n", " ")
 
 
 def test_documentation_is_a_page_with_real_content_tabs():
     assert '"Documentação": documentation_items' in MAIN_SOURCE
     assert 'documentation_items = []' in MAIN_SOURCE
-    assert 'documentation_tabs = render_localized_tabs([' in MAIN_SOURCE
-    assert 'with documentation_tabs[0]:' in MAIN_SOURCE
+    assert 'tutorials_tab, = render_localized_tabs(["Tutoriais"])' in MAIN_SOURCE
+    assert 'with tutorials_tab:' in MAIN_SOURCE
+    assert 'tutorial_subtabs = render_localized_tabs([' in MAIN_SOURCE
     assert '"Meta", "Supabase", "Kaggle", "Apify", "YouTube Video-Upload Frontend",' in MAIN_SOURCE.replace("\n", " ")
 
 
@@ -35,13 +38,6 @@ def test_subtab_renderers_are_wired():
     assert '"Analise Growth": render_growth_pages' in MAIN_SOURCE
     assert '"Documentação": render_documentation_pages' in MAIN_SOURCE
     assert '"Tutoriais": render_documentation_pages' in MAIN_SOURCE
-
-
-def test_subtab_renderers_are_isolated_from_each_other():
-    assert 'def _render_navigation_subtab(label: str, renderer: Callable[[], Any])' in MAIN_SOURCE
-    assert 'except Exception as exc:' in MAIN_SOURCE
-    assert 'Não foi possível carregar {label}' in MAIN_SOURCE
-    assert '_render_navigation_subtab(label, renderer)' in MAIN_SOURCE
 
 
 def test_existing_upload_music_reference_remains_tab_based():

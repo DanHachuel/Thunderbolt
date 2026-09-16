@@ -33,7 +33,7 @@ from contextlib import nullcontext
 from datetime import date, datetime, timezone
 import uuid
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import requests
 import streamlit as st
@@ -10289,50 +10289,40 @@ def render_pipeline():
                 card(stage.title(), len(queues.get(stage, [])), "fila")
 
 
-def _render_navigation_subtab(label: str, renderer: Callable[[], Any]) -> None:
-    """Keep one broken subtab from hiding every other page in its group."""
-    try:
-        renderer()
-    except Exception as exc:
-        st.error(f"Não foi possível carregar {label}: {type(exc).__name__}: {exc}")
-
-
 def render_growth_pages() -> None:
     """Render Growth and its requested real sub-tabs in the page content."""
     st.title("Growth")
-    growth_tabs = render_localized_tabs([
-        "Analise Growth", "Growth Youtube", "Growth Tiktok", "Growth Instagram", "Facebook Pages", "Growth Bilibili",
-    ])
-    with growth_tabs[0]:
-        st.subheader("Analise Growth")
-        st.caption("Seleccione uma das subabas para analisar cada plataforma de Growth.")
-    growth_renderers = [
-        render_growth_youtube, render_growth_tiktok, render_growth_instagram,
-        render_growth_facebook_pages, render_growth_bilibili,
-    ]
-    for tab, label, renderer in zip(growth_tabs[1:], ["Growth Youtube", "Growth Tiktok", "Growth Instagram", "Facebook Pages", "Growth Bilibili"], growth_renderers):
-        with tab:
-            _render_navigation_subtab(label, renderer)
+    analysis_tab, = render_localized_tabs(["Analise Growth"])
+    with analysis_tab:
+        growth_subtabs = render_localized_tabs([
+            "Growth Youtube", "Growth Tiktok", "Growth Instagram", "Facebook Pages", "Growth Bilibili",
+        ])
+        growth_renderers = [
+            render_growth_youtube, render_growth_tiktok, render_growth_instagram,
+            render_growth_facebook_pages, render_growth_bilibili,
+        ]
+        for tab, renderer in zip(growth_subtabs, growth_renderers):
+            with tab:
+                renderer()
 
 
 def render_documentation_pages() -> None:
     """Render Documentação and its requested real sub-tabs in the page content."""
     st.title("Documentação")
-    documentation_tabs = render_localized_tabs([
-        "Tutoriais", "Meta", "Supabase", "Kaggle", "Apify", "YouTube Video-Upload Frontend",
-        "OAuth do Google", "YouTube Data API Key (Public Data)",
-    ])
-    with documentation_tabs[0]:
-        st.subheader("Tutoriais")
-        st.caption("Seleccione uma das subabas para abrir a documentação correspondente.")
-    tutorial_renderers = [
-        render_models_ai_tutorial, render_supabase_tutorial, lambda: render_niche_tutorial("kaggle"),
-        lambda: render_niche_tutorial("apify"), render_youtube_frontend_upload_tutorial,
-        render_google_oauth_tutorial, render_youtube_data_api_key_tutorial,
-    ]
-    for tab, label, renderer in zip(documentation_tabs[1:], ["Meta", "Supabase", "Kaggle", "Apify", "YouTube Video-Upload Frontend", "OAuth do Google", "YouTube Data API Key (Public Data)"], tutorial_renderers):
-        with tab:
-            _render_navigation_subtab(label, renderer)
+    tutorials_tab, = render_localized_tabs(["Tutoriais"])
+    with tutorials_tab:
+        tutorial_subtabs = render_localized_tabs([
+            "Meta", "Supabase", "Kaggle", "Apify", "YouTube Video-Upload Frontend",
+            "OAuth do Google", "YouTube Data API Key (Public Data)",
+        ])
+        tutorial_renderers = [
+            render_models_ai_tutorial, render_supabase_tutorial, lambda: render_niche_tutorial("kaggle"),
+            lambda: render_niche_tutorial("apify"), render_youtube_frontend_upload_tutorial,
+            render_google_oauth_tutorial, render_youtube_data_api_key_tutorial,
+        ]
+        for tab, renderer in zip(tutorial_subtabs, tutorial_renderers):
+            with tab:
+                renderer()
 
 
 def main():
