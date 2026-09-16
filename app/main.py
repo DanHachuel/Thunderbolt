@@ -122,7 +122,7 @@ from hermes_ui.llm_providers import LLM_CARDS_KEY, LLM_PROVIDER_CATALOG, apply_l
 from hermes_ui.media_providers import FULL_IA_VIDEO_PROVIDER_CODES, KIE_MEDIA_MODEL_CATALOG, MEDIA_CARDS_KEY, MEDIA_IMAGE_ACTIVE_CARD_KEY, MEDIA_VIDEO_ACTIVE_CARD_KEY, apply_media_provider_cards_to_settings, ensure_media_provider_cards, media_cards_for_pool, media_provider_catalog, media_provider_definition, new_media_card, normalize_media_card
 from hermes_ui.music import create_music_task, list_music_files, list_music_tasks, materialize_suno_audio, request_suno_generation, run_music_task, store_music_file, store_voiceover_file, transition_music_task
 from hermes_ui.music_generation import MUSIC_GENRES, MUSIC_VOCAL_OPTIONS, generate_music_fields
-from hermes_ui.media_downloader import AUDIO_FORMATS, VIDEO_CONTAINERS, VIDEO_QUALITY_OPTIONS, MediaDownloadError, build_download_options, clear_media_download_history, dependency_status, download_media, list_media_downloads, media_download_file
+from hermes_ui.media_downloader import AUDIO_FORMATS, IMAGE_CONTAINERS, IMAGE_QUALITY_OPTIONS, VIDEO_CONTAINERS, VIDEO_QUALITY_OPTIONS, MediaDownloadError, build_download_options, clear_media_download_history, dependency_status, download_media, list_media_downloads, media_download_file
 from hermes_ui.notifications import clear_notifications, list_notifications, mark_all_notifications_read, mark_notification_read, notification_event_catalog, notification_preferences, record_notification, reconcile_persisted_notifications, save_notification_preferences, unread_notification_count
 from hermes_ui.influencers import BACKEND_OPTIONS, DOCUMENT_EXTENSIONS, IMAGE_EXTENSIONS, backend_name, backend_status, get_repository, test_backend
 from hermes_ui.logs import list_logs, logs_to_rows
@@ -4879,26 +4879,30 @@ def render_media_download():
         st.warning("yt-dlp não está instalado neste ambiente. Execute a instalação das dependências do Thunderbolt antes de iniciar um download.")
     st.info("A combinação de streams, conversão de áudio e incorporação de metadados pode exigir FFmpeg. Downloads longos permanecem nesta página até terminarem.")
 
-    with st.form("media_download_form"):
+    with st.form("media_download_form", enter_to_submit=False):
         urls_text = st.text_area("URLs para descarregar", placeholder="Uma URL http(s) por linha", height=120, key="media_download_urls")
-        mode_label = st.radio("Tipo de mídia", ["Vídeo", "Áudio"], horizontal=True, key="media_download_mode")
+        mode_label = st.selectbox("Tipo de mídia", ["Vídeo", "Áudio", "Imagem"], key="media_download_mode")
         option_cols = st.columns(3)
         with option_cols[0]:
             if mode_label == "Vídeo":
                 quality_label = st.selectbox("Qualidade", list(VIDEO_QUALITY_OPTIONS), key="media_download_quality")
                 video_container = st.selectbox("Contentor", list(VIDEO_CONTAINERS), key="media_download_container")
                 audio_format = "mp3"
-            else:
+            elif mode_label == "Áudio":
                 quality_label = "Melhor qualidade"
                 video_container = "mp4"
                 audio_format = st.selectbox("Formato de áudio", list(AUDIO_FORMATS), key="media_download_audio_format")
+            else:
+                quality_label = st.selectbox("Qualidade", list(IMAGE_QUALITY_OPTIONS), key="media_download_image_quality")
+                video_container = st.selectbox("Contentor", list(IMAGE_CONTAINERS), key="media_download_image_container")
+                audio_format = "mp3"
         with option_cols[1]:
             allow_playlist = st.checkbox("Permitir playlist", value=False, key="media_download_allow_playlist")
             download_subtitles = st.checkbox("Descarregar legendas", value=False, key="media_download_subtitles")
         with option_cols[2]:
             embed_metadata = st.checkbox("Incorporar metadados", value=False, key="media_download_embed_metadata")
             st.caption("Playlist desactivada por padrão para evitar downloads acidentais em massa.")
-        start_download = st.form_submit_button("Iniciar download", type="primary", width="stretch")
+        start_download = st.form_submit_button("Iniciar Download", type="primary", width="stretch")
 
     if start_download:
         progress = st.progress(0, text="A preparar o download…")
@@ -4912,7 +4916,7 @@ def render_media_download():
         try:
             results = download_media(
                 urls_text,
-                mode="video" if mode_label == "Vídeo" else "audio",
+                mode={"Vídeo": "video", "Áudio": "audio", "Imagem": "image"}[mode_label],
                 quality=quality_label,
                 container=video_container,
                 audio_format=audio_format,
@@ -4945,9 +4949,22 @@ def render_media_download():
                 for filename in record.get("files", []):
                     output = media_download_file(record, str(filename))
                     if output:
-                        st.download_button("Descarregar ficheiro", data=output.read_bytes(), file_name=output.name, mime="audio/*" if record.get("mode") == "audio" else "video/*", key=f"media_result_{record.get('operation_id')}_{filename}")
+                        mime = "audio/*" if record.get("mode") == "audio" else ("image/*" if record.get("mode") == "image" else "video/*")
+                        st.download_button("Descarregar ficheiro", data=output.read_bytes(), file_name=output.name, mime=mime, key=f"media_result_{record.get('operation_id')}_{filename}")
 
     st.divider()
+    if st.button("Abrir pasta de downloads", key="media_download_open_folder", width="stretch"):
+        try:
+            if os.name == "nt":
+                os.startfile(str(MEDIA_DOWNLOADS))
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(MEDIA_DOWNLOADS)])
+            else:
+                subprocess.Popen(["xdg-open", str(MEDIA_DOWNLOADS)])
+        except OSError as exc:
+            st.error(f"Não foi possível abrir a pasta de downloads: {exc}")
+        else:
+            st.success(f"Pasta de downloads aberta: `{MEDIA_DOWNLOADS}`")
     st.subheader("Histórico de downloads")
     history = list_media_downloads()
     action_cols = st.columns([1, 1, 3])
@@ -4981,7 +4998,8 @@ def render_media_download():
             for filename in record.get("files", []):
                 output = media_download_file(record, str(filename))
                 if output:
-                    st.download_button("Descarregar", data=output.read_bytes(), file_name=output.name, mime="audio/*" if record.get("mode") == "audio" else "video/*", key=f"media_history_{record.get('operation_id')}_{filename}")
+                    mime = "audio/*" if record.get("mode") == "audio" else ("image/*" if record.get("mode") == "image" else "video/*")
+                    st.download_button("Descarregar", data=output.read_bytes(), file_name=output.name, mime=mime, key=f"media_history_{record.get('operation_id')}_{filename}")
 
 
 def render_cuts():

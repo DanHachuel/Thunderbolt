@@ -42,6 +42,23 @@ def test_build_options_are_constrained_for_video_and_audio(tmp_path, monkeypatch
     assert audio["postprocessors"][0]["preferredcodec"] == "mp3"
 
 
+def test_build_options_support_image_thumbnail_containers(tmp_path, monkeypatch):
+    _isolated_storage(tmp_path)
+    fake_deno = tmp_path / "deno"
+    fake_deno.write_bytes(b"deno")
+    monkeypatch.setattr(media_downloader, "_deno_runtime_path", lambda: str(fake_deno))
+
+    image = media_downloader.build_download_options(mode="image", quality="Alta", container="webp")
+
+    assert image["writethumbnail"] is True
+    assert image["skip_download"] is True
+    assert image["postprocessors"] == [{"key": "FFmpegThumbnailsConvertor", "format": "webp"}]
+    assert image["js_runtimes"] == {"deno": {"path": str(fake_deno)}}
+
+    with pytest.raises(ValueError, match="Contentor de imagem"):
+        media_downloader.build_download_options(mode="image", container="mp4")
+
+
 def test_successful_download_persists_file_and_notification(tmp_path, monkeypatch):
     _isolated_storage(tmp_path)
     events = []

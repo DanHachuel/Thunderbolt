@@ -26,6 +26,8 @@ VIDEO_QUALITY_OPTIONS = {
     "480p ou inferior": "bv*[height<=480]+ba/b[height<=480]",
 }
 VIDEO_CONTAINERS = ("mp4", "mkv", "webm")
+IMAGE_QUALITY_OPTIONS = ("Melhor qualidade", "Alta", "Média")
+IMAGE_CONTAINERS = ("jpg", "png", "webp")
 AUDIO_FORMATS = ("mp3", "m4a", "wav", "opus")
 ProgressCallback = Callable[[dict[str, Any]], None]
 
@@ -134,11 +136,13 @@ def build_download_options(
 ) -> dict[str, Any]:
     """Build a constrained YoutubeDL options dictionary without user CLI flags."""
     normalized_mode = str(mode or "video").strip().lower()
-    if normalized_mode not in {"video", "audio"}:
-        raise ValueError("O modo deve ser Vídeo ou Áudio.")
+    if normalized_mode not in {"video", "audio", "image"}:
+        raise ValueError("O modo deve ser Vídeo, Áudio ou Imagem.")
     normalized_container = str(container or "mp4").lower()
     normalized_audio = str(audio_format or "mp3").lower()
-    if normalized_container not in VIDEO_CONTAINERS:
+    if normalized_mode == "image" and normalized_container not in IMAGE_CONTAINERS:
+        raise ValueError("Contentor de imagem não suportado.")
+    if normalized_mode != "image" and normalized_container not in VIDEO_CONTAINERS:
         raise ValueError("Contentor de vídeo não suportado.")
     if normalized_audio not in AUDIO_FORMATS:
         raise ValueError("Formato de áudio não suportado.")
@@ -159,7 +163,13 @@ def build_download_options(
         options["js_runtimes"] = {"deno": {"path": deno_path}}
     if progress_hook is not None:
         options["progress_hooks"] = [progress_hook]
-    if normalized_mode == "audio":
+    if normalized_mode == "image":
+        options.update({
+            "writethumbnail": True,
+            "skip_download": True,
+            "postprocessors": [{"key": "FFmpegThumbnailsConvertor", "format": normalized_container}],
+        })
+    elif normalized_mode == "audio":
         options.update({"format": "bestaudio/best", "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": normalized_audio, "preferredquality": "192"}]})
     else:
         options.update({"format": VIDEO_QUALITY_OPTIONS.get(quality, VIDEO_QUALITY_OPTIONS["Melhor qualidade"]), "merge_output_format": normalized_container})
