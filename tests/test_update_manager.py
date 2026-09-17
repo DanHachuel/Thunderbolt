@@ -156,3 +156,20 @@ def test_launcher_closes_all_proxy_sockets_before_streamlit_restart():
     assert "const proxySockets = new Set();" in source
     assert 'proxy.on("connection"' in source
     assert "for (const socket of proxySockets) socket.destroy();" in source
+
+
+def test_launcher_cleans_aborted_http_requests_without_affecting_other_tabs():
+    source = (Path(__file__).resolve().parents[1] / "scripts" / "cli.mjs").read_text(encoding="utf-8")
+    assert 'request.on("aborted", () => upstream.destroy())' in source
+    assert 'response.on("close", () => {' in source
+    assert 'if (response.headersSent || response.writableEnded) return;' in source
+
+
+def test_launcher_isolates_each_streamlit_websocket_and_has_handshake_timeout():
+    source = (Path(__file__).resolve().parents[1] / "scripts" / "cli.mjs").read_text(encoding="utf-8")
+    assert "let upstreamSocket;" in source
+    assert "clientSocket.setTimeout(15000, closeBridge);" in source
+    assert "upstreamSocket.setTimeout(15000, closeBridge);" in source
+    assert "clientSocket.on(\"close\", () => {" in source
+    assert "upstreamSocket.on(\"close\", () => {" in source
+    assert "clientSocket.pipe(upstreamSocket).pipe(clientSocket);" in source

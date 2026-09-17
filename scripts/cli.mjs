@@ -295,7 +295,12 @@ const proxy = http.createServer((request, response) => {
       response.end(body);
     });
   });
+  request.on("aborted", () => upstream.destroy());
+  response.on("close", () => {
+    if (!response.writableEnded) upstream.destroy();
+  });
   upstream.on("error", (error) => {
+    if (response.headersSent || response.writableEnded) return;
     response.writeHead(502, { "content-type": "text/plain; charset=utf-8" });
     response.end(`Thunderbolt backend indisponível: ${error.message}`);
   });
@@ -307,14 +312,27 @@ proxy.on("connection", (socket) => {
 });
 
 proxy.on("upgrade", (request, clientSocket, head) => {
-  // Clientes remotos podem encerrar o WebSocket antes de o Streamlit concluir
-  // a resposta. Tratar ECONNRESET impede que o Node termine o launcher.
-  clientSocket.on("error", () => {
-    if (!clientSocket.destroyed) clientSocket.destroy();
+  // Cada aba mantém uma sessão WebSocket Streamlit própria. Fechar os dois
+  // lados da ponte em qualquer encerramento evita sockets órfãos: estes
+  // sockets acumulados faziam várias abas ficarem eternamente a carregar.
+  let upstreamSocket;
+  let connected = false;
+  const closeBridge = () => {
+    if (clientSocket && !clientSocket.destroyed) clientSocket.destroy();
+    if (upstreamSocket && !upstreamSocket.destroyed) upstreamSocket.destroy();
+  };
+  clientSocket.setNoDelay(true);
+  clientSocket.setTimeout(15000, closeBridge);
+  clientSocket.on("error", closeBridge);
+  clientSocket.on("close", () => {
+    proxySockets.delete(clientSocket);
+    if (upstreamSocket && !upstreamSocket.destroyed) upstreamSocket.destroy();
   });
   proxySockets.add(clientSocket);
-  clientSocket.on("close", () => proxySockets.delete(clientSocket));
-  const upstreamSocket = net.connect(backendPort, "127.0.0.1", () => {
+  upstreamSocket = net.connect(backendPort, "127.0.0.1", () => {
+    connected = true;
+    clientSocket.setTimeout(0);
+    upstreamSocket.setNoDelay(true);
     proxySockets.add(upstreamSocket);
     upstreamSocket.on("close", () => proxySockets.delete(upstreamSocket));
     const headers = Object.entries(request.headers)
@@ -324,8 +342,10 @@ proxy.on("upgrade", (request, clientSocket, head) => {
     if (head.length) upstreamSocket.write(head);
     clientSocket.pipe(upstreamSocket).pipe(clientSocket);
   });
-  upstreamSocket.on("error", () => {
-    if (!clientSocket.destroyed) clientSocket.destroy();
+  upstreamSocket.setTimeout(15000, closeBridge);
+  upstreamSocket.on("error", closeBridge);
+  upstreamSocket.on("close", () => {
+    if (connected && !clientSocket.destroyed) clientSocket.destroy();
   });
 });
 
