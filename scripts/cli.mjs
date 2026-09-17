@@ -297,7 +297,18 @@ const proxy = http.createServer((request, response) => {
     });
     upstreamResponse.on("end", () => {
       let body = Buffer.concat(chunks, totalBytes).toString("utf8");
-      if (body.includes("</body>")) body = body.replace("</body>", `${dynamicChunkRecoveryScript}</body>`);
+      if (body.includes("</body>")) {
+        // O HTML é sempre novo após uma actualização, mas o browser pode
+        // reutilizar os bundles /static da versão anterior. Acrescentar a
+        // versão aos URLs impede que o F5 execute JavaScript incompatível
+        // com o Streamlit recém-iniciado e fique preso no carregamento.
+        const versionQuery = `tb_version=${encodeURIComponent(packageVersion)}`;
+        body = body.replace(/((?:src|href)=["'])([^"']*\/static\/[^"']*)(["'])/gi, (_match, prefix, url, suffix) => {
+          const separator = String(url).includes("?") ? "&" : "?";
+          return `${prefix}${url}${separator}${versionQuery}${suffix}`;
+        });
+        body = body.replace("</body>", `${dynamicChunkRecoveryScript}</body>`);
+      }
       delete responseHeaders["content-length"];
       response.writeHead(upstreamResponse.statusCode || 502, responseHeaders);
       response.end(body);
