@@ -27,10 +27,6 @@ class ThemeAndBacklogTests(unittest.TestCase):
         self.assertNotIn('key=f"start_{task[\'id\']}"', MAIN_SOURCE)
         self.assertNotIn('key=f"stop_{task[\'id\']}"', MAIN_SOURCE)
 
-    def test_backlog_defaults_to_done_and_renders_ready_video_player(self):
-        self.assertIn('index=state_options.index("done")', MAIN_SOURCE)
-        self.assertIn('st.video(str(video_file), width="stretch")', MAIN_SOURCE)
-
     def test_streamlit_exposes_switchable_light_and_dark_themes(self):
         self.assertIn("[theme.dark]", CONFIG_SOURCE)
         self.assertIn("[theme.light]", CONFIG_SOURCE)

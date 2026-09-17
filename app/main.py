@@ -5445,29 +5445,11 @@ VIDEO_TASK_STATE_LABELS = {
 
 
 def load_video_tasks_for_catalog() -> list[dict[str, Any]]:
-    """Return persisted tasks from current and legacy storage locations."""
-    current = read_json("tasks.json", [])
-    if not isinstance(current, list):
-        current = []
-    legacy_path = STORAGE / "tasks.json"
-    legacy: list[Any] = []
-    if legacy_path.is_file() and legacy_path != STORAGE / "state" / "tasks.json":
-        try:
-            value = json.loads(legacy_path.read_text(encoding="utf-8"))
-            legacy = value if isinstance(value, list) else []
-        except (OSError, json.JSONDecodeError):
-            legacy = []
-    result: list[dict[str, Any]] = []
-    seen_ids: set[str] = set()
-    for task in [*current, *legacy]:
-        if not isinstance(task, dict):
-            continue
-        task_id = str(task.get("id") or "").strip()
-        if not task_id or task_id in seen_ids:
-            continue
-        seen_ids.add(task_id)
-        result.append(task)
-    return result
+    """Return the complete persisted task catalog shared by Backlog and Automation."""
+    saved = read_json("tasks.json", [])
+    if not isinstance(saved, list):
+        return []
+    return [task for task in saved if isinstance(task, dict) and str(task.get("id") or "").strip()]
 
 
 def task_platform(task: dict[str, Any]) -> str:
@@ -5735,13 +5717,7 @@ def render_videos():
         return
     known_states = ["to_do", "doing", "blocked", "done", "failed", "cancelled"]
     extra_states = sorted({str(task.get("state") or "unknown") for task in tasks if str(task.get("state") or "unknown") not in known_states})
-    state_options = ["Todos", *known_states, *extra_states]
-    state_filter = st.selectbox(
-        "Filtrar por estado",
-        state_options,
-        index=state_options.index("done"),
-        key="videos_state_filter",
-    )
+    state_filter = st.selectbox("Filtrar por estado", ["Todos", *known_states, *extra_states], key="videos_state_filter")
     for task in tasks:
         if state_filter != "Todos" and task.get("state") != state_filter:
             continue
