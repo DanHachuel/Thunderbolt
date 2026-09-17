@@ -265,11 +265,19 @@ const proxy = http.createServer((request, response) => {
     const responseHeaders = { ...upstreamResponse.headers };
     const contentType = String(responseHeaders["content-type"] || "").toLowerCase();
     const isHtml = contentType.includes("text/html") && !responseHeaders["content-encoding"];
+    const isStaticAsset = requestUrl.pathname.startsWith("/static/");
     // O documento HTML contém o estado da sessão e pode mudar após uma
     // actualização via npx; os bundles estáticos do Streamlit, por outro lado,
     // devem ser reutilizados pelo browser. Desactivar cache em todos os
     // recursos tornava cada aba muito mais pesada e multiplicava downloads.
     if (isHtml) {
+      delete responseHeaders.etag;
+      delete responseHeaders["last-modified"];
+      responseHeaders["cache-control"] = "no-store, no-cache, must-revalidate, max-age=0";
+      responseHeaders.pragma = "no-cache";
+      responseHeaders.expires = "0";
+    }
+    if (isStaticAsset) {
       delete responseHeaders.etag;
       delete responseHeaders["last-modified"];
       responseHeaders["cache-control"] = "no-store, no-cache, must-revalidate, max-age=0";

@@ -151,6 +151,13 @@ def test_launcher_disables_browser_cache_for_streamlit_proxy_responses():
     assert 'delete responseHeaders["last-modified"]' in source
 
 
+def test_launcher_disables_cache_for_static_assets_without_rewriting_bundle_urls():
+    source = (Path(__file__).resolve().parents[1] / "scripts" / "cli.mjs").read_text(encoding="utf-8")
+    assert 'const isStaticAsset = requestUrl.pathname.startsWith("/static/");' in source
+    assert 'if (isStaticAsset)' in source
+    assert "tb_version" not in source
+
+
 def test_launcher_closes_all_proxy_sockets_before_streamlit_restart():
     source = (Path(__file__).resolve().parents[1] / "scripts" / "cli.mjs").read_text(encoding="utf-8")
     assert "const proxySockets = new Set();" in source
