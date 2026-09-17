@@ -5819,14 +5819,15 @@ def render_videos():
                 if video_file is not None and task_state == "done":
                     st.video(str(video_file), width=360)
                     st.success('Vídeo pronto; a thumbnail pode ser criada ou carregada depois.')
-                    st.download_button(
-                        'Descarregar vídeo pronto',
-                        data=video_file.read_bytes(),
-                        file_name=video_file.name,
-                        mime='video/mp4',
-                        key=f"pipeline_video_download_{task['id']}",
-                        width="stretch",
-                    )
+                    with video_file.open("rb") as video_stream:
+                        st.download_button(
+                            'Descarregar vídeo pronto',
+                            data=video_stream,
+                            file_name=video_file.name,
+                            mime='video/mp4',
+                            key=f"pipeline_video_download_{task['id']}",
+                            width="stretch",
+                        )
                 elif video_path:
                     st.caption(f'Vídeo registado: {video_path}')
             with cols[1]:
