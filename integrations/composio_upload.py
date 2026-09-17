@@ -358,25 +358,45 @@ def parse_arguments(arguments_json: str) -> dict[str, Any]:
     return parsed
 
 
-def _extract_s3key(uploaded_file: Any) -> str:
-    """Extract the S3 key returned by the manual Composio file upload."""
-    raw = _safe_value(uploaded_file)
-
-    def find_key(value: Any) -> str:
-        if isinstance(value, dict):
-            direct = value.get("s3key")
-            if direct not in (None, ""):
-                return str(direct).strip()
-            for nested_key in ("data", "file", "result"):
-                found = find_key(value.get(nested_key))
-                if found:
-                    return found
-        return ""
-
-    s3key = find_key(raw)
-    if not s3key:
-        raise ComposioUploadError("O upload manual do ficheiro Composio não devolveu um s3key válido.")
-    return s3key
+def _stage_file(client: Any, path: Path, slug: str) -> dict[str, Any]:
+    """Stage a local file through the Python SDK's FileUploadable API."""
+    try:
+        try:
+            from composio import FileUploadable
+        except ImportError:
+            from composio.core.models._files import FileUploadable
+    except ImportError as exc:
+        raise ComposioUploadError(
+            "A SDK Python composio não expõe FileUploadable. Execute a instalação do Thunderbolt novamente."
+        ) from exc
+    try:
+        staged = FileUploadable.from_path(
+            client=client.client,
+            file=str(path.resolve()),
+            tool=slug,
+            toolkit="youtube",
+        )
+        for method in ("model_dump", "dict"):
+            converter = getattr(staged, method, None)
+            if callable(converter):
+                payload = converter()
+                if isinstance(payload, dict):
+                    break
+        else:
+            payload = _safe_value(staged)
+        if not isinstance(payload, dict) or not str(payload.get("s3key") or "").strip():
+            raise ComposioUploadError("O staging manual do ficheiro Composio não devolveu um s3key válido.")
+        return {
+            "name": str(payload.get("name") or path.name),
+            "mimetype": str(payload.get("mimetype") or "video/mp4"),
+            "s3key": str(payload["s3key"]).strip(),
+        }
+    except ComposioUploadError:
+        raise
+    except Exception as exc:
+        raise ComposioUploadError(
+            f"Não foi possível fazer staging manual do ficheiro Composio: {type(exc).__name__}: {exc}"
+        ) from exc
 
 
 def execute_upload(api_key: str, user_id: str, slug: str, video_path: str, file_field: str, arguments_json: str = "", connected_account_id: str = "") -> dict[str, Any]:
@@ -396,14 +416,8 @@ def execute_upload(api_key: str, user_id: str, slug: str, video_path: str, file_
         raise ComposioUploadError(f"O campo `{file_field}` já contém um valor. Remova-o antes de injectar o vídeo.")
     client = _client(api_key)
     try:
-        uploaded_file = client.files.upload(str(path.resolve()))
-        raw_upload = _safe_value(uploaded_file)
-        LOGGER.info("Composio manual file upload response: %s", raw_upload)
-        arguments[file_field] = {
-            "name": path.name,
-            "mimetype": "video/mp4",
-            "s3key": _extract_s3key(raw_upload),
-        }
+        arguments[file_field] = _stage_file(client, path, slug)
+        LOGGER.info("Composio manual FileUploadable response: %s", arguments[file_field])
         LOGGER.info(
             "Composio upload file argument before tools.execute: is_dict=%s has_s3key=%s value=%r size=%d bytes",
             isinstance(arguments[file_field], dict),

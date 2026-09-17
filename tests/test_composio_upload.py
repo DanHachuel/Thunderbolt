@@ -43,22 +43,27 @@ def test_execute_upload_injects_selected_file_field(monkeypatch, tmp_path):
         def list(self, **kwargs):
             return {"items": [{"id": "youtube-test", "alias": "Demo", "toolkit": "youtube"}]}
 
-    class FakeFiles:
-        def upload(self, file_path):
-            captured["uploaded_file_path"] = file_path
-            return {"name": "demo.mp4", "mimetype": "video/mp4", "s3key": "uploads/demo.mp4"}
+    class FakeComposioModule:
+        class FileUploadable:
+            @classmethod
+            def from_path(cls, **kwargs):
+                captured["staged_kwargs"] = kwargs
+                return SimpleNamespace(model_dump=lambda: {"name": "demo.mp4", "mimetype": "video/mp4", "s3key": "uploads/demo.mp4"})
 
     class FakeClient:
         tools = FakeTools()
         connected_accounts = FakeAccounts()
-        files = FakeFiles()
+        client = object()
 
+    monkeypatch.setitem(sys.modules, "composio", FakeComposioModule)
     monkeypatch.setattr(composio_upload, "_client", lambda *args, **kwargs: FakeClient())
     result = composio_upload.execute_upload("ak_123456789", "user-1", "DRIVE_UPLOAD_FILE", str(video), "file", '{"title":"Demo"}')
     assert result["successful"] is True
     assert result["log_id"] == "log-123"
     assert captured["slug"] == "DRIVE_UPLOAD_FILE"
-    assert captured["uploaded_file_path"] == str(video.resolve())
+    assert captured["staged_kwargs"]["file"] == str(video.resolve())
+    assert captured["staged_kwargs"]["tool"] == "DRIVE_UPLOAD_FILE"
+    assert captured["staged_kwargs"]["toolkit"] == "youtube"
     assert captured["kwargs"]["arguments"]["file"] == {
         "name": "demo.mp4",
         "mimetype": "video/mp4",
@@ -237,16 +242,23 @@ def test_youtube_upload_accepts_current_video_file_path(monkeypatch, tmp_path):
             assert account_id == "youtube-test"
             return {"data": {"scopes": [composio_upload.YOUTUBE_UPLOAD_SCOPE]}}
 
-    class FakeFiles:
-        def upload(self, file_path):
-            captured["uploaded_file_path"] = file_path
-            return SimpleNamespace(s3key="composio/youtube/demo.mp4", size=5)
+    class FakeComposioModule:
+        class FileUploadable:
+            @classmethod
+            def from_path(cls, **kwargs):
+                captured["staged_kwargs"] = kwargs
+                return SimpleNamespace(model_dump=lambda: {
+                    "name": "demo.mp4", "mimetype": "video/mp4", "s3key": "composio/youtube/demo.mp4"
+                })
 
-    monkeypatch.setattr(composio_upload, "_client", lambda *args, **kwargs: SimpleNamespace(tools=FakeTools(), connected_accounts=FakeAccounts(), files=FakeFiles()))
+    monkeypatch.setitem(sys.modules, "composio", FakeComposioModule)
+    monkeypatch.setattr(composio_upload, "_client", lambda *args, **kwargs: SimpleNamespace(tools=FakeTools(), connected_accounts=FakeAccounts(), client=object()))
     result = composio_upload.execute_upload("ak_123456789", "user-1", "YOUTUBE_UPLOAD_VIDEO", str(video), "videoFilePath", "{}")
     assert result["successful"] is True
     assert captured["slug"] == "YOUTUBE_UPLOAD_VIDEO"
-    assert captured["uploaded_file_path"] == str(video.resolve())
+    assert captured["staged_kwargs"]["file"] == str(video.resolve())
+    assert captured["staged_kwargs"]["tool"] == "YOUTUBE_UPLOAD_VIDEO"
+    assert captured["staged_kwargs"]["toolkit"] == "youtube"
     assert captured["kwargs"]["arguments"]["videoFilePath"] == {
         "name": "demo.mp4",
         "mimetype": "video/mp4",
@@ -260,7 +272,9 @@ def test_composio_upload_uses_manual_file_staging():
     source = Path(__file__).parents[1].joinpath("integrations", "composio_upload.py").read_text(encoding="utf-8")
     assert '"s3key"' in source
     assert '"mimetype"' in source
-    assert "client.files.upload" in source
+    assert "FileUploadable.from_path" in source
+    assert "client=client.client" in source
+    assert "client.files.upload" not in source
     assert "dangerously_allow_auto_upload_download_files" not in source
     assert "file_upload_dirs" not in source
     assert "is_dict=%s has_s3key=%s" in source
