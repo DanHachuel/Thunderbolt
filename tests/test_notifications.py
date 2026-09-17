@@ -179,6 +179,15 @@ def test_notification_reconciliation_is_session_file_sensitive():
     assert 'reconcile_persisted_notifications()' in source
 
 
+def test_notification_reconciliation_is_centralized_per_session():
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "app" / "main.py").read_text(encoding="utf-8")
+    assert 'result_key = "_reconcile_persisted_notifications_result"' in source
+    assert 'dirty_key = "_reconcile_persisted_notifications_dirty"' in source
+    assert 'if not force and not st.session_state.get(dirty_key, False) and result_key in st.session_state:' in source
+    assert 'reconcile_persisted_notifications(force=True)' in source
+
+
 def test_notified_operations_are_inside_a_closed_expander():
     root = Path(__file__).resolve().parents[1]
     source = (root / "app" / "main.py").read_text(encoding="utf-8")

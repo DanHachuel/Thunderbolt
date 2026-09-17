@@ -123,7 +123,7 @@ from hermes_ui.media_providers import FULL_IA_VIDEO_PROVIDER_CODES, KIE_MEDIA_MO
 from hermes_ui.music import create_music_task, list_music_files, list_music_tasks, materialize_suno_audio, request_suno_generation, run_music_task, store_music_file, store_voiceover_file, transition_music_task
 from hermes_ui.music_generation import MUSIC_GENRES, MUSIC_VOCAL_OPTIONS, generate_music_fields
 from hermes_ui.media_downloader import AUDIO_FORMATS, IMAGE_CONTAINERS, IMAGE_QUALITY_OPTIONS, VIDEO_CONTAINERS, VIDEO_QUALITY_OPTIONS, MediaDownloadError, build_download_options, clear_media_download_history, dependency_status, download_media, list_media_downloads, media_download_file
-from hermes_ui.notifications import clear_notifications, list_notifications, mark_all_notifications_read, mark_notification_read, notification_event_catalog, notification_preferences, record_notification, reconcile_persisted_notifications, save_notification_preferences, unread_notification_count
+from hermes_ui.notifications import clear_notifications, list_notifications, mark_all_notifications_read, mark_notification_read, notification_event_catalog, notification_preferences, record_notification, reconcile_persisted_notifications as _do_reconcile_persisted_notifications, save_notification_preferences, unread_notification_count
 from hermes_ui.influencers import BACKEND_OPTIONS, DOCUMENT_EXTENSIONS, IMAGE_EXTENSIONS, backend_name, backend_status, get_repository, test_backend
 from hermes_ui.logs import list_logs, logs_to_rows
 from hermes_ui.languages import LANGUAGE_CODES, VIDEO_LANGUAGE_CODES, LANGUAGE_FLAG_DATA_URIS, language_code, language_label, ui_language_menu_label, ui_text, video_language_label, video_language_options
@@ -180,6 +180,18 @@ from integrations.openai_model_discovery import DEFAULT_NVIDIA_NIM_BASE_URL
 from integrations.composio_upload import ComposioUploadError, authorize_toolkit, discover_tools, execute_upload, parse_arguments, test_configuration
 
 DEFAULT_UI_LANGUAGE = "en"
+
+
+def reconcile_persisted_notifications(*, force: bool = False) -> int:
+    """Run reconciliation once per Streamlit session until a real mutation forces it."""
+    result_key = "_reconcile_persisted_notifications_result"
+    dirty_key = "_reconcile_persisted_notifications_dirty"
+    if not force and not st.session_state.get(dirty_key, False) and result_key in st.session_state:
+        return int(st.session_state[result_key] or 0)
+    result = _do_reconcile_persisted_notifications()
+    st.session_state[result_key] = int(result or 0)
+    st.session_state[dirty_key] = False
+    return int(result or 0)
 
 AI_STYLE_OPTIONS = [
     "Natural Realista",
@@ -6903,7 +6915,7 @@ def render_upload_direct():
                     uploads = read_json("uploads.json", [])
                     uploads.append(record)
                     write_json("uploads.json", uploads)
-                    reconcile_persisted_notifications()
+                    reconcile_persisted_notifications(force=True)
                     (st.success if result.ok else st.error)(result.message)
 
 
@@ -6972,7 +6984,7 @@ def _record_music_upload(destination: str, result: IntegrationResult, *, music_p
     uploads = read_json("uploads.json", [])
     uploads.append(record)
     write_json("uploads.json", uploads)
-    reconcile_persisted_notifications()
+    reconcile_persisted_notifications(force=True)
     return record
 
 
@@ -7344,7 +7356,7 @@ def render_upload_composio():
             uploads = read_json("uploads.json", [])
             uploads.append(record)
             write_json("uploads.json", uploads)
-            reconcile_persisted_notifications()
+            reconcile_persisted_notifications(force=True)
             if result.get("successful"):
                 st.success(record["message"])
             else:
@@ -7428,7 +7440,7 @@ def render_upload_postiz():
                 uploads = read_json("uploads.json", [])
                 uploads.append(record)
                 write_json("uploads.json", uploads)
-                reconcile_persisted_notifications()
+                reconcile_persisted_notifications(force=True)
                 (st.success if result.ok else st.error)(result.message)
 
 
@@ -7498,7 +7510,7 @@ def render_upload_post():
                 uploads = read_json("uploads.json", [])
                 uploads.append(record)
                 write_json("uploads.json", uploads)
-                reconcile_persisted_notifications()
+                reconcile_persisted_notifications(force=True)
                 (st.success if result.ok else st.error)(result.message)
                 if result.ok and result.data.get("request_id"):
                     st.caption(f"Request ID Upload-Post: {result.data['request_id']}")
@@ -7720,7 +7732,7 @@ def render_upload_conventional():
                     uploads = read_json("uploads.json", [])
                     uploads.append(record)
                     write_json("uploads.json", uploads)
-                    reconcile_persisted_notifications()
+                    reconcile_persisted_notifications(force=True)
                     (st.success if result.ok else st.error)(result.message)
                     if result.data.get("attempts"):
                         with st.expander("Detalhes dos mecanismos de upload"):
@@ -7740,7 +7752,7 @@ def render_upload_conventional():
                 uploads = read_json("uploads.json", [])
                 uploads.append(record)
                 write_json("uploads.json", uploads)
-                reconcile_persisted_notifications()
+                reconcile_persisted_notifications(force=True)
                 (st.success if result.ok else st.warning)(result.message)
             bilibili_target = upload_targets.get("Bilibili") if "Bilibili" in destination else None
             if "Bilibili" in destination:
@@ -7765,7 +7777,7 @@ def render_upload_conventional():
                     uploads = read_json("uploads.json", [])
                     uploads.append(record)
                     write_json("uploads.json", uploads)
-                    reconcile_persisted_notifications()
+                    reconcile_persisted_notifications(force=True)
                     (st.success if result.ok else st.error)(result.message)
             if "Instagram" in destination:
                 st.button("Preparar Instagram", key=f"upload_instagram_{task['id']}", disabled=True, help="UI preparada; publicação Instagram ainda não está activa.")
