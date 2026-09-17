@@ -183,12 +183,12 @@ def test_sigint_handlers_are_silent_to_avoid_terminal_message_loop():
     assert "return None" in bootstrap
 
 
-def test_pipeline_worker_only_runs_when_work_is_pending():
+def test_pipeline_worker_remains_available_for_progress_updates():
     source = (Path(__file__).resolve().parents[1] / "scripts" / "cli.mjs").read_text(encoding="utf-8")
     start = source.index("function startPipelineWorker()")
     end = source.index("function monitorWorkers()", start)
     block = source[start:end]
-    assert "|| !hasPendingPipelineWork()" in block
-    assert "if (hasPendingPipelineWork())" in block
+    assert "if (shuttingDown || pipelineWorker) return;" in block
+    assert "pipelineRestartTimer = setTimeout" in block
     assert "startPipelineWorker();" in source[source.index("function monitorWorkers()"):]
-    assert "else stopPipelineWorker();" in source[source.index("function monitorWorkers()"):]
+    assert "hasPendingPipelineWork()" in source
