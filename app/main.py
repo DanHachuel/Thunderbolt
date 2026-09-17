@@ -5445,15 +5445,16 @@ VIDEO_TASK_STATE_LABELS = {
 
 
 def load_video_tasks_for_catalog() -> list[dict[str, Any]]:
-    """Return the complete task catalog, including installations with legacy storage."""
-    saved = read_json("tasks.json", [])
-    current = saved if isinstance(saved, list) else []
+    """Return persisted tasks from current and legacy storage locations."""
+    current = read_json("tasks.json", [])
+    if not isinstance(current, list):
+        current = []
     legacy_path = STORAGE / "tasks.json"
     legacy: list[Any] = []
-    if legacy_path.is_file():
+    if legacy_path.is_file() and legacy_path != STORAGE / "state" / "tasks.json":
         try:
-            legacy_value = json.loads(legacy_path.read_text(encoding="utf-8"))
-            legacy = legacy_value if isinstance(legacy_value, list) else []
+            value = json.loads(legacy_path.read_text(encoding="utf-8"))
+            legacy = value if isinstance(value, list) else []
         except (OSError, json.JSONDecodeError):
             legacy = []
     result: list[dict[str, Any]] = []

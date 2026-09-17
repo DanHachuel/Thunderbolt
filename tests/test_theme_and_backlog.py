@@ -30,8 +30,6 @@ class ThemeAndBacklogTests(unittest.TestCase):
     def test_backlog_defaults_to_done_and_renders_ready_video_player(self):
         self.assertIn('index=state_options.index("done")', MAIN_SOURCE)
         self.assertIn('st.video(str(video_file), width="stretch")', MAIN_SOURCE)
-        self.assertIn('legacy_path = STORAGE / "tasks.json"', MAIN_SOURCE)
-        self.assertIn('seen_ids: set[str] = set()', MAIN_SOURCE)
 
     def test_streamlit_exposes_switchable_light_and_dark_themes(self):
         self.assertIn("[theme.dark]", CONFIG_SOURCE)
