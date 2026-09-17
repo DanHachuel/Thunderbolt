@@ -5448,7 +5448,16 @@ def load_video_tasks_for_catalog() -> list[dict[str, Any]]:
     """Return every persisted video task, including legacy completed records."""
     saved = read_json("tasks.json", [])
     if not isinstance(saved, list):
-        return []
+        saved = []
+    legacy_path = STORAGE / "tasks.json"
+    if legacy_path.is_file():
+        try:
+            legacy_saved = json.loads(legacy_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            legacy_saved = []
+        if isinstance(legacy_saved, list):
+            existing_ids = {str(item.get("id") or item.get("task_id") or "").strip() for item in saved if isinstance(item, dict)}
+            saved.extend(item for item in legacy_saved if isinstance(item, dict) and str(item.get("id") or item.get("task_id") or "").strip() not in existing_ids)
     catalog: list[dict[str, Any]] = []
     for index, raw_task in enumerate(saved):
         if not isinstance(raw_task, dict):

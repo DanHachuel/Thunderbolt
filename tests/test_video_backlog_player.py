@@ -33,6 +33,13 @@ def test_catalog_keeps_legacy_ready_video_records_without_id():
     assert 'legacy-{hashlib.sha1(identity.encode(\'utf-8\')).hexdigest()[:16]}' in block
 
 
+def test_catalog_also_reads_legacy_root_tasks_file_without_duplicates():
+    block = SOURCE.split("def load_video_tasks_for_catalog() -> list[dict[str, Any]]:", 1)[1].split("def task_platform", 1)[0]
+    assert 'legacy_path = STORAGE / "tasks.json"' in block
+    assert "legacy_saved = json.loads(legacy_path.read_text(encoding=\"utf-8\"))" in block
+    assert "existing_ids" in block
+
+
 def test_empty_destinations_do_not_gate_backlog_rendering():
     block = SOURCE.split("def render_videos():", 1)[1].split("def _music_backlog_records", 1)[0]
     assert "channels" not in block
