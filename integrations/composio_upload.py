@@ -244,7 +244,7 @@ def _connected_account_id(client: Any, user_id: str, toolkit: str, selector: str
 
 
 def _connected_account_details(client: Any, account_id: str) -> dict[str, Any]:
-    response = client.connected_accounts.get(connected_account_id=account_id)
+    response = client.connected_accounts.get(account_id)
     raw = _safe_value(response)
     if isinstance(raw, dict):
         data = raw.get("data")

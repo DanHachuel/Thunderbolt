@@ -173,13 +173,21 @@ def test_duplicate_connected_account_alias_is_rejected():
 
 
 def test_youtube_upload_scope_is_required():
-    client = SimpleNamespace(connected_accounts=SimpleNamespace(get=lambda **kwargs: {"data": {"scopes": ["https://www.googleapis.com/auth/youtube.readonly"]}}))
+    def get(account_id):
+        assert account_id == "youtube-readonly"
+        return {"data": {"scopes": ["https://www.googleapis.com/auth/youtube.readonly"]}}
+
+    client = SimpleNamespace(connected_accounts=SimpleNamespace(get=get))
     with pytest.raises(composio_upload.YouTubeUploadScopeMissingError, match="youtube.force-ssl"):
         composio_upload.ensure_youtube_upload_scope(client, "youtube-readonly", "Read-only")
 
 
 def test_youtube_upload_scope_is_accepted():
-    client = SimpleNamespace(connected_accounts=SimpleNamespace(get=lambda **kwargs: {"data": {"scopes": [composio_upload.YOUTUBE_UPLOAD_SCOPE]}}))
+    def get(account_id):
+        assert account_id == "youtube-writable"
+        return {"data": {"scopes": [composio_upload.YOUTUBE_UPLOAD_SCOPE]}}
+
+    client = SimpleNamespace(connected_accounts=SimpleNamespace(get=get))
     composio_upload.ensure_youtube_upload_scope(client, "youtube-writable", "Writable")
 
 
@@ -197,7 +205,8 @@ def test_youtube_upload_accepts_current_video_file_path(monkeypatch, tmp_path):
         def list(self, **kwargs):
             return {"items": [{"id": "youtube-test", "alias": "Demo", "toolkit": "youtube"}]}
 
-        def get(self, **kwargs):
+        def get(self, account_id):
+            assert account_id == "youtube-test"
             return {"data": {"scopes": [composio_upload.YOUTUBE_UPLOAD_SCOPE]}}
 
     monkeypatch.setattr(composio_upload, "_client", lambda *args, **kwargs: SimpleNamespace(tools=FakeTools(), connected_accounts=FakeAccounts()))
