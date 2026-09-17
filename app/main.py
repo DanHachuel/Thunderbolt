@@ -5445,11 +5445,40 @@ VIDEO_TASK_STATE_LABELS = {
 
 
 def load_video_tasks_for_catalog() -> list[dict[str, Any]]:
-    """Return the complete persisted task catalog shared by Backlog and Automation."""
-    saved = read_json("tasks.json", [])
-    if not isinstance(saved, list):
-        return []
-    return [task for task in saved if isinstance(task, dict) and str(task.get("id") or "").strip()]
+    """Return the complete task catalog, including legacy storage locations and fields."""
+    current = read_json("tasks.json", [])
+    saved = current if isinstance(current, list) else []
+    legacy_path = STORAGE / "tasks.json"
+    if legacy_path.is_file():
+        try:
+            legacy_value = json.loads(legacy_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            legacy_value = []
+        if isinstance(legacy_value, list):
+            saved = [*saved, *legacy_value]
+    catalog: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for index, raw_task in enumerate(saved):
+        if not isinstance(raw_task, dict):
+            continue
+        task = dict(raw_task)
+        artifacts = dict(task.get("artifacts") or {}) if isinstance(task.get("artifacts"), dict) else {}
+        if not artifacts.get("video"):
+            for name in ("video_path", "output_video", "video_file", "video"):
+                if task.get(name):
+                    artifacts["video"] = task.get(name)
+                    break
+        task["artifacts"] = artifacts
+        task_id = str(task.get("id") or task.get("task_id") or "").strip()
+        if not task_id:
+            identity = str(artifacts.get("video") or task.get("title") or task.get("topic") or f"legacy-{index}")
+            task_id = f"legacy-{hashlib.sha1(identity.encode('utf-8')).hexdigest()[:16]}"
+        if task_id in seen_ids:
+            continue
+        seen_ids.add(task_id)
+        task["id"] = task_id
+        catalog.append(task)
+    return catalog
 
 
 def task_platform(task: dict[str, Any]) -> str:
@@ -5706,6 +5735,15 @@ def _remake_video_from_card(task: dict[str, Any]) -> bool:
     return True
 
 
+def _catalog_task_state(task: dict[str, Any]) -> str:
+    raw_state = str(task.get("state") or task.get("status") or task.get("task_status") or "").strip().casefold()
+    if raw_state in {"completed", "complete", "published", "success", "finished"}:
+        return "done"
+    if raw_state:
+        return raw_state
+    return "done" if bool(task.get("video_ready")) and _task_artifact_path(task, "video") else "unknown"
+
+
 def render_videos():
     st.subheader("Backlog Videos")
     st.caption("Acompanhamento dos vídeos criados, estados da pipeline e controlos de execução.")
@@ -5717,9 +5755,12 @@ def render_videos():
         return
     known_states = ["to_do", "doing", "blocked", "done", "failed", "cancelled"]
     extra_states = sorted({str(task.get("state") or "unknown") for task in tasks if str(task.get("state") or "unknown") not in known_states})
+    if "videos_state_filter" not in st.session_state:
+        st.session_state["videos_state_filter"] = "done"
     state_filter = st.selectbox("Filtrar por estado", ["Todos", *known_states, *extra_states], key="videos_state_filter")
     for task in tasks:
-        if state_filter != "Todos" and task.get("state") != state_filter:
+        task_state = _catalog_task_state(task)
+        if state_filter != "Todos" and task_state != str(state_filter).strip().casefold():
             continue
         with st.container(border=True):
             cols = st.columns([2.2, 1, 1, 1.2, 1.8])
@@ -5736,9 +5777,9 @@ def render_videos():
                     prompt_note = ' · prompt pronto' if task.get('thumbnail_prompt') else ''
                     st.caption(f"Thumbnail: {status}{prompt_note}")
                 video_path = str(artifacts.get('video') or '').strip()
-                if video_path and Path(video_path).is_file():
+                if video_path and Path(video_path).is_file() and task_state == "done":
                     video_file = Path(video_path)
-                    st.video(str(video_file), width="stretch")
+                    st.video(str(video_file), width=360)
                     st.success('Vídeo pronto; a thumbnail pode ser criada ou carregada depois.')
                     st.download_button(
                         'Descarregar vídeo pronto',
