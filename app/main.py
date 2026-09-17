@@ -5445,11 +5445,28 @@ VIDEO_TASK_STATE_LABELS = {
 
 
 def load_video_tasks_for_catalog() -> list[dict[str, Any]]:
-    """Return the complete persisted task catalog shared by Backlog and Automation."""
+    """Return the complete task catalog, including installations with legacy storage."""
     saved = read_json("tasks.json", [])
-    if not isinstance(saved, list):
-        return []
-    return [task for task in saved if isinstance(task, dict) and str(task.get("id") or "").strip()]
+    current = saved if isinstance(saved, list) else []
+    legacy_path = STORAGE / "tasks.json"
+    legacy: list[Any] = []
+    if legacy_path.is_file():
+        try:
+            legacy_value = json.loads(legacy_path.read_text(encoding="utf-8"))
+            legacy = legacy_value if isinstance(legacy_value, list) else []
+        except (OSError, json.JSONDecodeError):
+            legacy = []
+    result: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for task in [*current, *legacy]:
+        if not isinstance(task, dict):
+            continue
+        task_id = str(task.get("id") or "").strip()
+        if not task_id or task_id in seen_ids:
+            continue
+        seen_ids.add(task_id)
+        result.append(task)
+    return result
 
 
 def task_platform(task: dict[str, Any]) -> str:
@@ -5717,7 +5734,13 @@ def render_videos():
         return
     known_states = ["to_do", "doing", "blocked", "done", "failed", "cancelled"]
     extra_states = sorted({str(task.get("state") or "unknown") for task in tasks if str(task.get("state") or "unknown") not in known_states})
-    state_filter = st.selectbox("Filtrar por estado", ["Todos", *known_states, *extra_states], key="videos_state_filter")
+    state_options = ["Todos", *known_states, *extra_states]
+    state_filter = st.selectbox(
+        "Filtrar por estado",
+        state_options,
+        index=state_options.index("done"),
+        key="videos_state_filter",
+    )
     for task in tasks:
         if state_filter != "Todos" and task.get("state") != state_filter:
             continue
@@ -5738,6 +5761,7 @@ def render_videos():
                 video_path = str(artifacts.get('video') or '').strip()
                 if video_path and Path(video_path).is_file():
                     video_file = Path(video_path)
+                    st.video(str(video_file), width="stretch")
                     st.success('Vídeo pronto; a thumbnail pode ser criada ou carregada depois.')
                     st.download_button(
                         'Descarregar vídeo pronto',
