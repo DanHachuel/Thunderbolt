@@ -9015,6 +9015,11 @@ TEST_UPLOAD_VIDEOS = (
         "path": ROOT / "seed" / "test_upload_videos" / "test-horizontal.mp4",
         "duration": "40,1 s",
         "description": "Vídeo horizontal para YouTube e Bilibili (1920×1080).",
+        "upload_metadata": {
+            "title": "Vídeo de teste horizontal",
+            "description": "A simple video for only test Upload configuration",
+            "tags": ["#brandnew", "#video", "#test"],
+        },
     },
     {
         "id": "vertical",
@@ -9023,6 +9028,11 @@ TEST_UPLOAD_VIDEOS = (
         "path": ROOT / "seed" / "test_upload_videos" / "test-vertical.mp4",
         "duration": "8,8 s",
         "description": "Vídeo vertical para YouTube Shorts, TikTok, Instagram e Facebook Pages (720×1080).",
+        "upload_metadata": {
+            "title": "Vídeo de teste vertical",
+            "description": "A short video for only test Upload configuration",
+            "tags": ["#brandnew", "#video", "#test"],
+        },
     },
 )
 
@@ -9041,6 +9051,25 @@ def _test_upload_destinations(settings: dict[str, Any], operation: str) -> list[
     if not accepted_platform:
         return []
     return [item for item in channels if classify_channel_platform(item) == accepted_platform]
+
+
+def _test_video_upload_metadata(video: dict[str, Any]) -> dict[str, Any]:
+    """Validate metadata seeded exclusively for the Test Upload Videos flow."""
+    video_name = str(video.get("name") or video.get("id") or "vídeo de teste")
+    metadata = video.get("upload_metadata")
+    if not isinstance(metadata, dict):
+        raise ValueError(f"Metadados obrigatórios ausentes para o vídeo de teste {video_name}: upload_metadata.")
+    missing = [field for field in ("title", "description", "tags") if not metadata.get(field)]
+    if missing:
+        raise ValueError(f"Metadados obrigatórios ausentes para o vídeo de teste {video_name}: {', '.join(missing)}.")
+    tags = metadata.get("tags")
+    if not isinstance(tags, list) or not all(isinstance(tag, str) and tag.strip() for tag in tags):
+        raise ValueError(f"Metadados inválidos para o vídeo de teste {video_name}: tags deve ser uma lista de strings não vazias.")
+    return {
+        "title": str(metadata["title"]).strip(),
+        "description": str(metadata["description"]).strip(),
+        "tags": [tag.strip() for tag in tags],
+    }
 
 
 def _render_test_upload_videos(settings: dict[str, Any]) -> None:
@@ -9069,16 +9098,19 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
         elif not video_path.is_file():
             status_panel.error(f"Vídeo de teste não encontrado: {video_path}")
         else:
-            title = f"Thunderbolt — {selected_video['name']}"
             channel = destination if operation == "Canais YouTube" else {}
             account = resolve_youtube_account(settings, channel) if channel else None
             try:
+                upload_metadata = _test_video_upload_metadata(selected_video)
+                title = upload_metadata["title"]
+                description = upload_metadata["description"]
+                tags = upload_metadata["tags"]
                 if upload_mode == "API Youtube":
-                    result = YouTubeAdapter(settings).upload_video(str(video_path), title=title, description="Vídeo de teste Thunderbolt", tags=["Thunderbolt", "teste"], category_id="22", language="pt-BR", privacy_status="unlisted", account=account)
+                    result = YouTubeAdapter(settings).upload_video(str(video_path), title=title, description=description, tags=tags, category_id="22", language="pt-BR", privacy_status="unlisted", account=account)
                 elif upload_mode == "YouTube Frontend API":
-                    result = YouTubeDirectUploader(settings, channel, account=account, storage_root=STORAGE).upload(str(video_path), title=title, description="Vídeo de teste Thunderbolt", visibility="unlisted")
+                    result = YouTubeDirectUploader(settings, channel, account=account, storage_root=STORAGE).upload(str(video_path), title=title, description=description, visibility="unlisted")
                 elif upload_mode == "Postiz":
-                    result = PostizAdapter(settings).publish_video(str(video_path), integration_id=str(destination.get("id") or settings.get("postiz_integration_id") or ""), title=title, description="Vídeo de teste Thunderbolt", visibility="unlisted", tags=["Thunderbolt", "teste"])
+                    result = PostizAdapter(settings).publish_video(str(video_path), integration_id=str(destination.get("id") or settings.get("postiz_integration_id") or ""), title=title, description=description, visibility="unlisted", tags=tags)
                 elif upload_mode == "Upload-Post":
                     platform = {"Canais YouTube": "youtube", "Canais Tiktok": "tiktok", "Contas Instagram": "instagram", "Facebook Pages": "facebook", "Contas Bilibili": "bilibili"}.get(operation, "")
                     result = UploadPostAdapter(settings).upload_video(str(video_path), title=title, description="Vídeo de teste Thunderbolt", user=str(destination.get("username") or destination.get("name") or settings.get("upload_post_username") or ""), platforms=[platform] if platform else None)
@@ -9091,8 +9123,8 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
                         language="pt-BR",
                         privacy_status="unlisted",
                         title=title,
-                        description="Vídeo de teste Thunderbolt",
-                        tags=["Thunderbolt", "teste"],
+                        description=description,
+                        tags=tags,
                     )
                 if result.ok:
                     status_panel.success(result.message)

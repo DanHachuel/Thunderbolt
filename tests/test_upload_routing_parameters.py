@@ -29,12 +29,18 @@ def test_composio_matches_official_upload_parameters(monkeypatch, tmp_path):
         category_id="22",
         language="English",
         privacy_status="unlisted",
+        title="Vídeo de teste horizontal",
+        description="A simple video for only test Upload configuration",
+        tags=["#brandnew", "#video", "#test"],
     )
     assert result.ok
     assert captured["arguments"] == {
         "privacyStatus": "unlisted",
         "categoryId": "22",
         "defaultLanguage": "en-US",
+        "title": "Vídeo de teste horizontal",
+        "description": "A simple video for only test Upload configuration",
+        "tags": ["#brandnew", "#video", "#test"],
     }
 
 

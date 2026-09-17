@@ -35,3 +35,14 @@ def test_local_video_player_preloads_metadata_without_streamlit_media_handler():
     assert 'preload="metadata"' in block
     assert 'src="data:{escape(media_type)};base64,{encoded}"' in block
     assert "st.html(" in block
+
+
+def test_test_videos_seed_upload_metadata_is_specific_and_complete():
+    assert '"title": "Vídeo de teste horizontal"' in SOURCE
+    assert '"description": "A simple video for only test Upload configuration"' in SOURCE
+    assert '"title": "Vídeo de teste vertical"' in SOURCE
+    assert '"description": "A short video for only test Upload configuration"' in SOURCE
+    assert SOURCE.count('["#brandnew", "#video", "#test"]') == 2
+    assert 'upload_metadata = _test_video_upload_metadata(selected_video)' in SOURCE
+    assert 'tags = upload_metadata["tags"]' in SOURCE
+    assert 'tags deve ser uma lista de strings não vazias' in SOURCE

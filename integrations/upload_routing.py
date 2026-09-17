@@ -371,6 +371,9 @@ def _composio_upload(settings: dict[str, Any], *, channel: dict[str, Any], **kwa
         parsed_arguments = json.loads(arguments)
         if not isinstance(parsed_arguments, dict):
             return IntegrationResult(False, "Composio não foi executado: os argumentos JSON devem ser um objecto.", {})
+        for field in ("title", "description", "tags"):
+            if field in kwargs and kwargs[field] is not None:
+                parsed_arguments[field] = kwargs[field]
         privacy_value = "unlisted"
         category_value = 22
         locked_values = {
