@@ -9088,6 +9088,45 @@ def _test_video_upload_metadata(video: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _test_upload_log_markdown(
+    *,
+    upload_mode: str,
+    operation: str,
+    selected_video: dict[str, Any],
+    destination: dict[str, Any],
+    result: Any = None,
+    diagnostics: Any = None,
+    error: Exception | None = None,
+) -> tuple[str, str]:
+    """Build the downloadable Markdown report for the latest upload test."""
+    timestamp = datetime.now().strftime("%Y%m%de%H%M%S")
+    filename = f"Log_Upload_Composio-{timestamp}.md"
+    result_data = getattr(result, "data", {}) if result is not None else {}
+    if not isinstance(result_data, dict):
+        result_data = {"value": str(result_data)}
+    successful = getattr(result, "ok", None) if result is not None else False
+    message = getattr(result, "message", "") if result is not None else ""
+    lines = [
+        "# Log Upload Composio",
+        "",
+        f"- Data e hora: {datetime.now().isoformat(timespec='seconds')}",
+        f"- Modo: {upload_mode}",
+        f"- Operação: {operation}",
+        f"- Vídeo: {selected_video.get('name') or selected_video.get('id') or ''}",
+        f"- Ficheiro: {selected_video.get('filename') or ''}",
+        f"- Destino: {destination.get('name') or destination.get('label') or destination.get('id') or 'Nenhum destino configurado'}",
+        f"- Resultado: {'sucesso' if successful else 'falha'}",
+        f"- Mensagem: {message or 'N/A'}",
+    ]
+    if error is not None:
+        lines.extend([f"- Excepção: `{type(error).__name__}: {error}`"])
+    if diagnostics:
+        lines.extend(["", "## Diagnóstico", "", "```json", json.dumps(diagnostics, ensure_ascii=False, indent=2, default=str), "```"])
+    if result_data:
+        lines.extend(["", "## Dados do resultado", "", "```json", json.dumps(result_data, ensure_ascii=False, indent=2, default=str), "```"])
+    return filename, "\n".join(lines) + "\n"
+
+
 def _render_test_upload_videos(settings: dict[str, Any]) -> None:
     st.subheader("Test Upload Videos")
     st.caption("Use esta área para testar as ferramentas de upload com ficheiros locais controlados, sem iniciar qualquer envio até clicar no botão.")
@@ -9107,12 +9146,33 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
             st.caption("Resultado do teste de upload")
             status_panel = st.empty()
     selected_video = next(item for item in TEST_UPLOAD_VIDEOS if item["id"] == selected_video_id)
-    if st.button("Testar Upload", type="primary", width="stretch", key="test_upload_execute"):
+    log_state_key = "test_upload_composio_log"
+    action_column, log_column = st.columns([3, 1], gap="small")
+    with action_column:
+        execute_upload = st.button("Testar Upload", type="primary", width="stretch", key="test_upload_execute")
+    with log_column:
+        saved_log = st.session_state.get(log_state_key)
+        st.download_button(
+            "Download Log",
+            data=saved_log.get("data", "") if isinstance(saved_log, dict) else "",
+            file_name=saved_log.get("filename", "Log_Upload_Composio.md") if isinstance(saved_log, dict) else "Log_Upload_Composio.md",
+            mime="text/markdown",
+            key="test_upload_download_log",
+            width="stretch",
+            disabled=not isinstance(saved_log, dict) or not saved_log.get("data"),
+        )
+    if execute_upload:
         video_path = Path(selected_video["path"]).resolve()
         if not destination:
             status_panel.warning("Não existe um canal/conta configurado para a operação seleccionada. Configure um destino ou escolha outra operação.")
+            if upload_mode == "Composio":
+                filename, markdown = _test_upload_log_markdown(upload_mode=upload_mode, operation=operation, selected_video=selected_video, destination=destination, error=ValueError("Nenhum destino configurado"))
+                st.session_state[log_state_key] = {"filename": filename, "data": markdown}
         elif not video_path.is_file():
             status_panel.error(f"Vídeo de teste não encontrado: {video_path}")
+            if upload_mode == "Composio":
+                filename, markdown = _test_upload_log_markdown(upload_mode=upload_mode, operation=operation, selected_video=selected_video, destination=destination, error=FileNotFoundError(str(video_path)))
+                st.session_state[log_state_key] = {"filename": filename, "data": markdown}
         else:
             channel = destination if operation == "Canais YouTube" else {}
             account = resolve_youtube_account(settings, channel) if channel else None
@@ -9150,8 +9210,16 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
                 if diagnostics:
                     with st.expander("Logs de diagnóstico Composio", expanded=True):
                         st.json(diagnostics)
+                if upload_mode == "Composio":
+                    filename, markdown = _test_upload_log_markdown(upload_mode=upload_mode, operation=operation, selected_video=selected_video, destination=destination, result=result, diagnostics=diagnostics)
+                    st.session_state[log_state_key] = {"filename": filename, "data": markdown}
             except Exception as exc:
                 status_panel.error(f"O teste de upload falhou: {type(exc).__name__}: {exc}")
+                if upload_mode == "Composio":
+                    filename, markdown = _test_upload_log_markdown(upload_mode=upload_mode, operation=operation, selected_video=selected_video, destination=destination, error=exc)
+                    st.session_state[log_state_key] = {"filename": filename, "data": markdown}
+        if upload_mode == "Composio" and st.session_state.get(log_state_key):
+            st.rerun()
     video_columns = st.columns(2, gap="small")
     for index, video in enumerate(TEST_UPLOAD_VIDEOS):
         with video_columns[index]:

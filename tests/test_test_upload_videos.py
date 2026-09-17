@@ -52,3 +52,13 @@ def test_test_upload_videos_displays_composio_diagnostics():
     assert 'diagnostics = result.data.get("diagnostics")' in SOURCE
     assert 'st.expander("Logs de diagnóstico Composio", expanded=True)' in SOURCE
     assert 'st.json(diagnostics)' in SOURCE
+
+
+def test_test_upload_videos_has_adjacent_download_log_button():
+    block = SOURCE.split("def _render_test_upload_videos", 1)[1].split("def ", 1)[0]
+    assert 'st.button("Testar Upload"' in block
+    assert 'st.download_button(' in block
+    assert '"Download Log"' in block
+    assert 'file_name=saved_log.get("filename", "Log_Upload_Composio.md")' in block
+    assert 'filename = f"Log_Upload_Composio-{timestamp}.md"' in SOURCE
+    assert 'st.session_state[log_state_key]' in block
