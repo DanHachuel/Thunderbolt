@@ -36,6 +36,12 @@ def test_backlog_starts_with_all_states_and_does_not_surface_upload_failure():
     assert 'state = task_state' in MAIN_SOURCE
 
 
+def test_backlog_player_uses_resolved_video_artifact_path():
+    assert 'video_file = _task_artifact_path(task, "video")' in MAIN_SOURCE
+    assert 'if video_file is not None and task_state == "done":' in MAIN_SOURCE
+    assert 'st.video(str(video_file), width=360)' in MAIN_SOURCE
+
+
 def test_youtube_automation_cards_refresh_periodically_without_global_refresh():
     block = MAIN_SOURCE.split("@st.fragment(run_every=5.0)\ndef _render_youtube_automation_cards():", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
     assert '@st.fragment(run_every=5.0)\ndef _render_youtube_automation_cards():' in MAIN_SOURCE

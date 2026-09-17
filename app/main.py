@@ -5815,8 +5815,8 @@ def render_videos():
                     prompt_note = ' · prompt pronto' if task.get('thumbnail_prompt') else ''
                     st.caption(f"Thumbnail: {status}{prompt_note}")
                 video_path = str(artifacts.get('video') or '').strip()
-                if video_path and Path(video_path).is_file() and task_state == "done":
-                    video_file = Path(video_path)
+                video_file = _task_artifact_path(task, "video")
+                if video_file is not None and task_state == "done":
                     st.video(str(video_file), width=360)
                     st.success('Vídeo pronto; a thumbnail pode ser criada ou carregada depois.')
                     st.download_button(
