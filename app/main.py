@@ -191,6 +191,12 @@ _NOTIFICATION_RECONCILIATION_FILES = (
     "python_editor_edits.json",
     "niche_apify_runs.json",
 )
+_NOTIFICATION_RECONCILIATION_STATE_FILE = "notification_reconciliation_state.json"
+
+
+@st.cache_resource(show_spinner=False)
+def _notification_reconciliation_cache() -> dict[str, Any]:
+    return {"signature": None, "loaded": False}
 
 
 def _notification_reconciliation_signature() -> tuple[tuple[str, int, int], ...]:
@@ -209,11 +215,18 @@ def _notification_reconciliation_signature() -> tuple[tuple[str, int, int], ...]
 def reconcile_persisted_notifications(*, force: bool = False) -> int:
     """Reconcile only when source files changed during this Streamlit session."""
     signature = _notification_reconciliation_signature()
-    previous = st.session_state.get("_thunderbolt_notification_reconciliation_signature")
+    cache = _notification_reconciliation_cache()
+    if not cache["loaded"]:
+        persisted = read_json(_NOTIFICATION_RECONCILIATION_STATE_FILE, {})
+        raw_signature = persisted.get("signature") if isinstance(persisted, dict) else None
+        cache["signature"] = tuple(tuple(item) for item in raw_signature) if isinstance(raw_signature, list) else None
+        cache["loaded"] = True
+    previous = cache.get("signature")
     if not force and previous == signature:
         return 0
     created = _reconcile_persisted_notifications()
-    st.session_state["_thunderbolt_notification_reconciliation_signature"] = signature
+    cache["signature"] = signature
+    write_json(_NOTIFICATION_RECONCILIATION_STATE_FILE, {"signature": signature})
     return created
 
 AI_STYLE_OPTIONS = [

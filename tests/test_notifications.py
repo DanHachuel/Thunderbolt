@@ -177,6 +177,8 @@ def test_notification_reconciliation_is_session_file_sensitive():
     source = (root / "app" / "main.py").read_text(encoding="utf-8")
     assert "_notification_reconciliation_signature" in source
     assert "_NOTIFICATION_RECONCILIATION_FILES" in source
+    assert '"notification_reconciliation_state.json"' in source
+    assert "_notification_reconciliation_cache" in source
     assert "reconcile_persisted_notifications(force=True)" in source
 
 
