@@ -9143,6 +9143,10 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
                     status_panel.success(result.message)
                 else:
                     status_panel.error(result.message)
+                diagnostics = result.data.get("diagnostics") if isinstance(result.data, dict) else None
+                if diagnostics:
+                    with st.expander("Logs de diagnóstico Composio", expanded=True):
+                        st.json(diagnostics)
             except Exception as exc:
                 status_panel.error(f"O teste de upload falhou: {type(exc).__name__}: {exc}")
     video_columns = st.columns(2, gap="small")

@@ -412,6 +412,14 @@ def execute_upload(api_key: str, user_id: str, slug: str, video_path: str, file_
         raw_result = _safe_value(result)
         LOGGER.info("Composio response complete (including returned s3key when available): %s", raw_result)
         response = _response(result)
+        response["diagnostics"] = {
+            "upload_file_argument": {
+                "value": arguments[file_field],
+                "type": type(arguments[file_field]).__name__,
+                "size": path.stat().st_size,
+            },
+            "composio_response": raw_result,
+        }
         LOGGER.info("Composio response normalised: %s", response)
         if not response["successful"] and not response["error"]:
             response["error"] = f"A ferramenta `{slug}` devolveu uma resposta sem sucesso."

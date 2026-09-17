@@ -46,3 +46,9 @@ def test_test_videos_seed_upload_metadata_is_specific_and_complete():
     assert 'upload_metadata = _test_video_upload_metadata(selected_video)' in SOURCE
     assert 'tags = upload_metadata["tags"]' in SOURCE
     assert 'tags deve ser uma lista de strings não vazias' in SOURCE
+
+
+def test_test_upload_videos_displays_composio_diagnostics():
+    assert 'diagnostics = result.data.get("diagnostics")' in SOURCE
+    assert 'st.expander("Logs de diagnóstico Composio", expanded=True)' in SOURCE
+    assert 'st.json(diagnostics)' in SOURCE
