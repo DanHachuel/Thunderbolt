@@ -5724,7 +5724,7 @@ def render_videos():
         if state_filter != "Todos" and task.get("state") != state_filter:
             continue
         with st.container(border=True):
-            cols = st.columns([2.2, 1.5, 1, 1, 1.2, 1.8])
+            cols = st.columns([2.2, 2.2, 1, 1, 1.2, 1.8])
             with cols[0]:
                 st.write(f"**{task.get('title') or task.get('topic', 'Sem título')}**")
                 st.caption(f"Tópico: {task.get('topic', 'Sem tópico')}")
@@ -5744,8 +5744,8 @@ def render_videos():
                     st.caption(f'Vídeo registado: {video_path}')
             with cols[1]:
                 if video_path and Path(video_path).is_file() and str(task.get("state") or "").casefold() == "done":
-                    st.video(video_path, format="video/mp4", width="stretch")
                     video_file = Path(video_path)
+                    st.video(video_file.read_bytes(), width=360)
                     st.download_button(
                         'Descarregar vídeo pronto',
                         data=video_file.read_bytes(),

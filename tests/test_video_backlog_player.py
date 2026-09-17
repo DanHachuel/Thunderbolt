@@ -12,9 +12,9 @@ def test_backlog_defaults_to_done_filter():
 
 def test_done_backlog_uses_compact_native_video_player():
     block = SOURCE.split("def render_videos():", 1)[1].split("def _music_backlog_records", 1)[0]
-    assert 'cols = st.columns([2.2, 1.5, 1, 1, 1.2, 1.8])' in block
+    assert 'cols = st.columns([2.2, 2.2, 1, 1, 1.2, 1.8])' in block
     assert 'str(task.get("state") or "").casefold() == "done"' in block
-    assert 'st.video(video_path, format="video/mp4", width="stretch")' in block
+    assert 'st.video(video_file.read_bytes(), width=360)' in block
     assert "pipeline_video_download_" in block
 
 
