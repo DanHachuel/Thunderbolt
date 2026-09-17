@@ -175,11 +175,8 @@ def test_notifications_page_reads_only_five_recent_entries():
 def test_notification_reconciliation_is_session_file_sensitive():
     root = Path(__file__).resolve().parents[1]
     source = (root / "app" / "main.py").read_text(encoding="utf-8")
-    assert "_notification_reconciliation_signature" in source
-    assert "_NOTIFICATION_RECONCILIATION_FILES" in source
-    assert '"notification_reconciliation_state.json"' in source
-    assert "_notification_reconciliation_cache" in source
-    assert "reconcile_persisted_notifications(force=True)" in source
+    assert "render_global_notification_toasts()" not in source.split("def main():", 1)[1]
+    assert 'reconcile_persisted_notifications()' in source
 
 
 def test_notified_operations_are_inside_a_closed_expander():

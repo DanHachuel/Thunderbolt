@@ -123,7 +123,7 @@ from hermes_ui.media_providers import FULL_IA_VIDEO_PROVIDER_CODES, KIE_MEDIA_MO
 from hermes_ui.music import create_music_task, list_music_files, list_music_tasks, materialize_suno_audio, request_suno_generation, run_music_task, store_music_file, store_voiceover_file, transition_music_task
 from hermes_ui.music_generation import MUSIC_GENRES, MUSIC_VOCAL_OPTIONS, generate_music_fields
 from hermes_ui.media_downloader import AUDIO_FORMATS, IMAGE_CONTAINERS, IMAGE_QUALITY_OPTIONS, VIDEO_CONTAINERS, VIDEO_QUALITY_OPTIONS, MediaDownloadError, build_download_options, clear_media_download_history, dependency_status, download_media, list_media_downloads, media_download_file
-from hermes_ui.notifications import clear_notifications, list_notifications, mark_all_notifications_read, mark_notification_read, notification_event_catalog, notification_preferences, record_notification, reconcile_persisted_notifications as _reconcile_persisted_notifications, save_notification_preferences, unread_notification_count
+from hermes_ui.notifications import clear_notifications, list_notifications, mark_all_notifications_read, mark_notification_read, notification_event_catalog, notification_preferences, record_notification, reconcile_persisted_notifications, save_notification_preferences, unread_notification_count
 from hermes_ui.influencers import BACKEND_OPTIONS, DOCUMENT_EXTENSIONS, IMAGE_EXTENSIONS, backend_name, backend_status, get_repository, test_backend
 from hermes_ui.logs import list_logs, logs_to_rows
 from hermes_ui.languages import LANGUAGE_CODES, VIDEO_LANGUAGE_CODES, LANGUAGE_FLAG_DATA_URIS, language_code, language_label, ui_language_menu_label, ui_text, video_language_label, video_language_options
@@ -180,54 +180,6 @@ from integrations.openai_model_discovery import DEFAULT_NVIDIA_NIM_BASE_URL
 from integrations.composio_upload import ComposioUploadError, authorize_toolkit, discover_tools, execute_upload, parse_arguments, test_configuration
 
 DEFAULT_UI_LANGUAGE = "en"
-
-_NOTIFICATION_RECONCILIATION_FILES = (
-    "tasks.json",
-    "uploads.json",
-    "scripts.json",
-    "automation_worker.json",
-    "cuts_runs.json",
-    "metadata_edits.json",
-    "python_editor_edits.json",
-    "niche_apify_runs.json",
-)
-_NOTIFICATION_RECONCILIATION_STATE_FILE = "notification_reconciliation_state.json"
-
-
-@st.cache_resource(show_spinner=False)
-def _notification_reconciliation_cache() -> dict[str, Any]:
-    return {"signature": None, "loaded": False}
-
-
-def _notification_reconciliation_signature() -> tuple[tuple[str, int, int], ...]:
-    signature: list[tuple[str, int, int]] = []
-    for filename in _NOTIFICATION_RECONCILIATION_FILES:
-        path = STORAGE / filename
-        try:
-            stat = path.stat()
-        except OSError:
-            signature.append((filename, 0, 0))
-        else:
-            signature.append((filename, int(stat.st_mtime_ns), int(stat.st_size)))
-    return tuple(signature)
-
-
-def reconcile_persisted_notifications(*, force: bool = False) -> int:
-    """Reconcile only when source files changed during this Streamlit session."""
-    signature = _notification_reconciliation_signature()
-    cache = _notification_reconciliation_cache()
-    if not cache["loaded"]:
-        persisted = read_json(_NOTIFICATION_RECONCILIATION_STATE_FILE, {})
-        raw_signature = persisted.get("signature") if isinstance(persisted, dict) else None
-        cache["signature"] = tuple(tuple(item) for item in raw_signature) if isinstance(raw_signature, list) else None
-        cache["loaded"] = True
-    previous = cache.get("signature")
-    if not force and previous == signature:
-        return 0
-    created = _reconcile_persisted_notifications()
-    cache["signature"] = signature
-    write_json(_NOTIFICATION_RECONCILIATION_STATE_FILE, {"signature": signature})
-    return created
 
 AI_STYLE_OPTIONS = [
     "Natural Realista",
@@ -9879,7 +9831,7 @@ def render_notifications():
                 st.rerun()
         with action_cols[1]:
             if st.button("Actualizar notificações", width="stretch"):
-                reconcile_persisted_notifications(force=True)
+                reconcile_persisted_notifications()
                 st.rerun()
         with action_cols[2]:
             confirm_clear = st.checkbox("Confirmar limpeza do histórico", key="confirm_clear_notifications")
@@ -10716,7 +10668,6 @@ def main():
         "Notificações": render_notifications,
         "Logs": render_logs,
     }
-    render_global_notification_toasts()
     renderers.get(current_page, render_dashboard)()
 
 if __name__ == "__main__":
