@@ -1,4 +1,9 @@
 # Changelog
+## 0.8.62 — 2026-09-17
+- Priorizada a ferramenta `YOUTUBE_MULTIPART_UPLOAD_VIDEO` na operação `upload_video` do Composio.
+- Adicionados logs do caminho absoluto, tamanho, tipo, valor do campo de ficheiro e resposta completa do Composio.
+- Adicionado o verificador `scripts/verify_video_media.py`, baseado em `ffprobe`, para confirmar MP4 faststart, H.264, AAC estéreo e 44.1/48 kHz.
+
 ## 0.8.61 — 2026-09-17
 - Suprimido no bootstrap apenas o aviso `missing ScriptRunContext` emitido pelo Streamlit durante o arranque bare mode, preservando os restantes warnings.
 

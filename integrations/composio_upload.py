@@ -20,7 +20,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 COMPOSIO_OPERATION_SEARCH = {
-    "upload_video": {"query": "Upload Video", "toolkit": "YOUTUBE"},
+    "upload_video": {"query": "Multipart Upload Video", "toolkit": "YOUTUBE"},
     "update_video": {"query": "Update Video", "toolkit": "YOUTUBE"},
     "upload_tiktok_video": {"query": "Upload Video", "toolkit": "TIKTOK"},
     "upload_instagram_media": {"query": "Upload Video Reel Photo", "toolkit": "INSTAGRAM"},
@@ -326,8 +326,8 @@ def resolve_tool_slug(api_key: str, user_id: str, configured_slug: str, toolkit:
         normalized = candidate.upper().replace("-", "_")
         if slug == "upload_video":
             priority = {
-                "YOUTUBE_UPLOAD_VIDEO": 0,
-                "YOUTUBE_MULTIPART_UPLOAD_VIDEO": 1,
+                "YOUTUBE_MULTIPART_UPLOAD_VIDEO": 0,
+                "YOUTUBE_UPLOAD_VIDEO": 1,
                 "YOUTUBE_UPLOAD": 2,
             }.get(normalized, 3)
         elif slug == "update_video":
@@ -405,7 +405,9 @@ def execute_upload(api_key: str, user_id: str, slug: str, video_path: str, file_
         if "YOUTUBE" in normalized_slug and "UPLOAD" in normalized_slug:
             ensure_youtube_upload_scope(client, selected_account, connected_account_id)
         result = client.tools.execute(slug, **execute_kwargs)
+        LOGGER.info("Composio response complete: %s", _safe_value(result))
         response = _response(result)
+        LOGGER.info("Composio response normalised: %s", response)
         if not response["successful"] and not response["error"]:
             response["error"] = f"A ferramenta `{slug}` devolveu uma resposta sem sucesso."
         response["tool_slug"] = slug

@@ -58,16 +58,19 @@ def test_response_reads_nested_error_and_success_flags():
 
 
 def test_resolve_upload_video_alias_uses_a_real_youtube_slug(monkeypatch):
+    captured = {}
     monkeypatch.setattr(
         composio_upload,
         "discover_tools",
-        lambda *args, **kwargs: [
+        lambda *args, **kwargs: (captured.update(query=args[2], toolkit=args[3]) or [
             {"slug": "YOUTUBE_UPLOAD_VIDEO", "name": "Upload Video", "toolkit": "youtube"},
+            {"slug": "YOUTUBE_MULTIPART_UPLOAD_VIDEO", "name": "Multipart Upload Video", "toolkit": "youtube"},
             {"slug": "YOUTUBE_UPDATE_VIDEO", "name": "Update Video", "toolkit": "youtube"},
-        ],
+        ]),
     )
 
-    assert composio_upload.resolve_tool_slug("ak_123456789", "user-1", "upload_video") == "YOUTUBE_UPLOAD_VIDEO"
+    assert composio_upload.resolve_tool_slug("ak_123456789", "user-1", "upload_video") == "YOUTUBE_MULTIPART_UPLOAD_VIDEO"
+    assert captured == {"query": "Multipart Upload Video", "toolkit": "YOUTUBE"}
 
 
 def test_resolve_upload_video_alias_reports_missing_real_tool(monkeypatch):
