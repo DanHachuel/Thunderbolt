@@ -237,6 +237,45 @@ def _notification_log(entry: dict[str, Any], task_logs: dict[str, str] | None = 
     }
 
 
+def _upload_log(upload: dict[str, Any]) -> dict[str, Any] | None:
+    upload_id = str(upload.get("id") or "").strip()
+    if not upload_id:
+        return None
+    status_code = str(upload.get("status") or "unknown").strip().lower()
+    destination = str(upload.get("destination") or "Upload").strip()
+    target = upload.get("target") if isinstance(upload.get("target"), dict) else {}
+    diagnostics = upload.get("diagnostics") if isinstance(upload.get("diagnostics"), dict) else {}
+    occurred_at = upload.get("created_at") or upload.get("updated_at") or ""
+    date, time = format_log_date_time(occurred_at)
+    file_argument = diagnostics.get("upload_file_argument") if isinstance(diagnostics.get("upload_file_argument"), dict) else {}
+    response = diagnostics.get("composio_response")
+    details = [str(upload.get("message") or "").strip(), f"Destino: {destination}"]
+    if target.get("slug"):
+        details.append(f"Ferramenta: {target['slug']}")
+    if file_argument:
+        details.append(f"Argumento: type={file_argument.get('type') or 'desconhecido'} value={file_argument.get('value')!r} size={file_argument.get('size', 'desconhecido')} bytes")
+    if response is not None:
+        details.append(f"Composio response complete: {response}")
+    operation_code = "upload_youtube_success" if destination.casefold() == "composio" and status_code in {"published", "success", "completed"} else "activity_failed"
+    return {
+        "id": f"upload:{upload_id}",
+        "operation_code": operation_code,
+        "operation": _operation_label(operation_code, "Upload Composio"),
+        "status_code": status_code,
+        "status": _status_label(status_code),
+        "occurred_at": str(occurred_at),
+        "date": date,
+        "time": time,
+        "source": "Test Upload Videos",
+        "record": str(upload.get("message") or destination or "Upload"),
+        "filename": Path(str(file_argument.get("value") or "")).name if file_argument else "",
+        "details": " · ".join(item for item in details if item)[:4000],
+        "api_provider": "Composio",
+        "progress": None,
+        "task_id": str(upload.get("task_id") or ""),
+    }
+
+
 def _should_skip_notification(entry: dict[str, Any], task_ids: set[str]) -> bool:
     """Avoid duplicating the canonical task completion/failure with its notification."""
     event_type = str(entry.get("event_type") or "")
@@ -265,6 +304,9 @@ def list_logs(*, operation: str = "", query: str = "", status: str = "", limit: 
         for item in [_notification_log(entry, task_logs)]
         if item
     )
+    uploads = storage.read_json("uploads.json", [])
+    uploads = [item for item in uploads if isinstance(item, dict)] if isinstance(uploads, list) else []
+    records.extend(item for upload in uploads for item in [_upload_log(upload)] if item)
     operation_filter = str(operation or "").strip().casefold()
     query_filter = str(query or "").strip().casefold()
     status_filter = str(status or "").strip().casefold()

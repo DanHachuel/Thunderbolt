@@ -130,6 +130,31 @@ def test_log_filename_is_searchable_when_persisted(tmp_path):
     assert [item["task_id"] for item in list_logs(query=filename)] == ["video-run"]
 
 
+def test_composio_test_upload_is_projected_with_full_diagnostics(tmp_path):
+    storage = _isolated_storage(tmp_path / "composio-upload")
+    from hermes_ui.logs import list_logs
+
+    storage.write_json("uploads.json", [{
+        "id": "upload-1",
+        "destination": "Composio",
+        "status": "published",
+        "message": "Upload Composio concluído.",
+        "target": {"slug": "YOUTUBE_UPLOAD_VIDEO"},
+        "diagnostics": {
+            "upload_file_argument": {"type": "str", "value": "/tmp/demo.mp4", "size": 752386},
+            "composio_response": {"s3key": "remote/demo.mp4", "size": 752386},
+        },
+        "created_at": "2026-09-17T16:00:00+00:00",
+    }])
+
+    records = list_logs(query="s3key")
+    assert len(records) == 1
+    assert records[0]["source"] == "Test Upload Videos"
+    assert "type=str" in records[0]["details"]
+    assert "752386" in records[0]["details"]
+    assert "remote/demo.mp4" in records[0]["details"]
+
+
 def test_latest_result_resolves_to_the_real_run_filename(tmp_path):
     from hermes_ui.logs import _real_log_filename
     log_dir = tmp_path / "moneyprinterturbo-video"

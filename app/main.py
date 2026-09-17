@@ -7393,7 +7393,7 @@ def render_upload_composio():
         try:
             parse_arguments(arguments_json)
             result = execute_upload(api_key, user_id, selected_slug, video_path, file_field, arguments_json, connected_account_id)
-            record = {"id": uuid.uuid4().hex, "task_id": task.get("id"), "destination": "Composio", "target": {"toolkit": selected_tool.get("toolkit"), "slug": selected_slug, "file_field": file_field}, "status": "published" if result.get("successful") else "failed", "message": result.get("error") or "Upload Composio concluído.", "data": result.get("data") or {}, "log_id": result.get("log_id") or "", "created_at": now()}
+            record = {"id": uuid.uuid4().hex, "task_id": task.get("id"), "destination": "Composio", "target": {"toolkit": selected_tool.get("toolkit"), "slug": selected_slug, "file_field": file_field}, "status": "published" if result.get("successful") else "failed", "message": result.get("error") or "Upload Composio concluído.", "data": result.get("data") or {}, "diagnostics": result.get("diagnostics") or {}, "log_id": result.get("log_id") or "", "created_at": now()}
             uploads = read_json("uploads.json", [])
             uploads.append(record)
             write_json("uploads.json", uploads)
@@ -7404,6 +7404,9 @@ def render_upload_composio():
                 st.error(record["message"])
             if result.get("log_id"):
                 st.caption(f"Composio log ID: {result['log_id']}")
+            if result.get("diagnostics"):
+                with st.expander("Logs de diagnóstico Composio", expanded=True):
+                    st.json(result["diagnostics"])
         except ComposioUploadError as exc:
             st.error(str(exc))
 
