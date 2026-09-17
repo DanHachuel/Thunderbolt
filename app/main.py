@@ -5706,6 +5706,18 @@ def _remake_video_from_card(task: dict[str, Any]) -> bool:
     return True
 
 
+def _catalog_task_state(task: dict[str, Any]) -> str:
+    """Normalise persisted task states so completed video cards stay visible."""
+    raw_state = str(task.get("state") or task.get("status") or task.get("task_status") or "").strip().casefold()
+    if raw_state in {"completed", "complete", "published", "success", "finished"}:
+        return "done"
+    if raw_state:
+        return raw_state
+    if bool(task.get("video_ready")) and _task_artifact_path(task, "video"):
+        return "done"
+    return "unknown"
+
+
 def render_videos():
     st.subheader("Backlog Videos")
     st.caption("Acompanhamento dos vídeos criados, estados da pipeline e controlos de execução.")
@@ -5721,7 +5733,8 @@ def render_videos():
         st.session_state["videos_state_filter"] = "done"
     state_filter = st.selectbox("Filtrar por estado", ["Todos", *known_states, *extra_states], key="videos_state_filter")
     for task in tasks:
-        if state_filter != "Todos" and task.get("state") != state_filter:
+        task_state = _catalog_task_state(task)
+        if state_filter != "Todos" and task_state != str(state_filter).strip().casefold():
             continue
         with st.container(border=True):
             cols = st.columns([2.2, 2.2, 1, 1, 1.2, 1.8])
@@ -5743,9 +5756,12 @@ def render_videos():
                 elif video_path:
                     st.caption(f'Vídeo registado: {video_path}')
             with cols[1]:
-                if video_path and Path(video_path).is_file() and str(task.get("state") or "").casefold() == "done":
+                if video_path and Path(video_path).is_file() and task_state == "done":
                     video_file = Path(video_path)
-                    st.video(video_file.read_bytes(), width=360)
+                    try:
+                        st.video(str(video_file), width=360)
+                    except Exception as exc:
+                        st.warning(f"Player indisponível para este vídeo: {exc}")
                     st.download_button(
                         'Descarregar vídeo pronto',
                         data=video_file.read_bytes(),

@@ -13,9 +13,16 @@ def test_backlog_defaults_to_done_filter():
 def test_done_backlog_uses_compact_native_video_player():
     block = SOURCE.split("def render_videos():", 1)[1].split("def _music_backlog_records", 1)[0]
     assert 'cols = st.columns([2.2, 2.2, 1, 1, 1.2, 1.8])' in block
-    assert 'str(task.get("state") or "").casefold() == "done"' in block
-    assert 'st.video(video_file.read_bytes(), width=360)' in block
+    assert 'task_state == "done"' in block
+    assert 'st.video(str(video_file), width=360)' in block
     assert "pipeline_video_download_" in block
+
+
+def test_done_filter_normalizes_persisted_state_values():
+    assert "def _catalog_task_state(task: dict[str, Any]) -> str:" in SOURCE
+    block = SOURCE.split("def render_videos():", 1)[1].split("def _music_backlog_records", 1)[0]
+    assert "task_state = _catalog_task_state(task)" in block
+    assert "str(state_filter).strip().casefold()" in block
 
 
 def test_empty_destinations_do_not_gate_backlog_rendering():
