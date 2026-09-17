@@ -29,6 +29,7 @@ from html import escape
 import json
 import mimetypes
 import re
+import inspect
 import time
 from contextlib import nullcontext
 from datetime import date, datetime, timezone
@@ -313,16 +314,15 @@ ensure_storage()
 st.set_page_config(page_title="Thunderbolt", page_icon="T", layout="wide", initial_sidebar_state="expanded")
 
 theme_base = (st.get_option("theme.base") or "dark").lower()
-st.iframe(
-    srcdoc=
-    """
+_THEME_BOOTSTRAP = """
 <script>
 (() => {
     const STYLE_ID = "thunderbolt-light-theme-style";
     const COLOR = "#7A6FE4";
+    const ROOT_WINDOW = window.parent === window ? window : window.parent;
     const getStoredTheme = () => {
         try {
-            return JSON.parse(window.parent.localStorage.getItem("stActiveTheme-/-v2") || '"System"');
+            return JSON.parse(ROOT_WINDOW.localStorage.getItem("stActiveTheme-/-v2") || '"System"');
         } catch (_error) {
             return "System";
         }
@@ -331,10 +331,10 @@ st.iframe(
         const selected = getStoredTheme();
         if (selected === "Light") return true;
         if (selected === "Dark") return false;
-        return window.parent.matchMedia("(prefers-color-scheme: light)").matches;
+        return ROOT_WINDOW.matchMedia("(prefers-color-scheme: light)").matches;
     };
     const applyTheme = () => {
-        const document = window.parent.document;
+        const document = ROOT_WINDOW.document;
         const existing = document.getElementById(STYLE_ID);
         if (!isLightTheme()) {
             if (existing) existing.remove();
@@ -361,10 +361,16 @@ html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stAppViewC
     window.setInterval(applyTheme, 500);
 })();
 </script>
-    """,
-    height=0,
-    width=0,
-)
+"""
+if hasattr(st, "html"):
+    _html_parameters = inspect.signature(st.html).parameters
+    _html_options = {}
+    if "unsafe_allow_javascript" in _html_parameters:
+        _html_options["unsafe_allow_javascript"] = True
+    st.html(_THEME_BOOTSTRAP, **_html_options)
+else:
+    import streamlit.components.v1 as components
+    components.html(_THEME_BOOTSTRAP, height=0, width=0)
 
 st.markdown("""
 <style>
