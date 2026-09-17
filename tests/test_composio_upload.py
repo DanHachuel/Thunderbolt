@@ -53,11 +53,7 @@ def test_execute_upload_injects_selected_file_field(monkeypatch, tmp_path):
     assert result["successful"] is True
     assert result["log_id"] == "log-123"
     assert captured["slug"] == "DRIVE_UPLOAD_FILE"
-    assert captured["kwargs"]["arguments"]["file"] == {
-        "name": "demo.mp4",
-        "mimetype": "video/mp4",
-        "s3key": str(video.resolve()),
-    }
+    assert captured["kwargs"]["arguments"]["file"] == str(video.resolve())
     assert captured["kwargs"]["arguments"]["title"] == "Demo"
     assert "ak_123456789" not in json.dumps(result)
 
@@ -235,20 +231,18 @@ def test_youtube_upload_builds_structured_video_file_descriptor(monkeypatch, tmp
     result = composio_upload.execute_upload("ak_123456789", "user-1", "YOUTUBE_UPLOAD_VIDEO", str(video), "videoFilePath", "{}")
     assert result["successful"] is True
     assert captured["slug"] == "YOUTUBE_UPLOAD_VIDEO"
-    assert captured["kwargs"]["arguments"]["videoFilePath"] == {
-        "name": "demo.mp4",
-        "mimetype": "video/mp4",
-        "s3key": str(video.resolve()),
-    }
+    assert captured["kwargs"]["arguments"]["videoFilePath"] == str(video.resolve())
+    assert isinstance(captured["kwargs"]["arguments"]["videoFilePath"], str)
 
 
-def test_composio_upload_never_builds_manual_s3_descriptor():
+def test_composio_upload_does_not_build_manual_file_descriptor():
     source = Path(__file__).parents[1].joinpath("integrations", "composio_upload.py").read_text(encoding="utf-8")
     assert "FileUploadable" not in source
-    assert '"s3key"' in source
-    assert '"mimetype"' in source
+    assert '"s3key"' not in source
+    assert '"mimetype"' not in source
     assert "auto_upload_download_files=True" in source
     assert "type(arguments[file_field]).__name__" in source
+    assert 'LOGGER.info("Argumento de arquivo: type=%s value=%r"' in source
 
 
 def test_discover_tools_normalises_sdk_items(monkeypatch):

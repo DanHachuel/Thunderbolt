@@ -381,17 +381,14 @@ def execute_upload(api_key: str, user_id: str, slug: str, video_path: str, file_
     client = _client(api_key, upload_dir=path.parent)
     try:
         local_video_path = str(path.resolve())
-        arguments[file_field] = {
-            "name": path.name,
-            "mimetype": "video/mp4",
-            "s3key": local_video_path,
-        }
+        arguments[file_field] = local_video_path
         LOGGER.info(
             "Composio upload file argument: value=%r type=%s size=%d bytes auto_upload_download_files=True",
             arguments[file_field],
             type(arguments[file_field]).__name__,
             path.stat().st_size,
         )
+        LOGGER.info("Argumento de arquivo: type=%s value=%r", type(arguments[file_field]).__name__, arguments[file_field])
         execute_kwargs: dict[str, Any] = {
             "arguments": arguments,
             "user_id": _require_user_id(user_id),
