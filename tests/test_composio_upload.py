@@ -8,7 +8,7 @@ import pytest
 from integrations import composio_upload
 
 
-def test_client_enables_auto_upload_and_allows_video_directory(monkeypatch, tmp_path):
+def test_client_does_not_enable_automatic_file_upload(monkeypatch):
     captured = {}
 
     class FakeComposio:
@@ -16,10 +16,9 @@ def test_client_enables_auto_upload_and_allows_video_directory(monkeypatch, tmp_
             captured.update(kwargs)
 
     monkeypatch.setitem(sys.modules, "composio", SimpleNamespace(Composio=FakeComposio))
-    composio_upload._client("ak_123456789", upload_dir=tmp_path)
+    composio_upload._client("ak_123456789")
 
-    assert captured["dangerously_allow_auto_upload_download_files"] is True
-    assert captured["file_upload_dirs"] == [str(tmp_path.resolve())]
+    assert captured == {"api_key": "ak_123456789", "allow_tracking": False}
 
 
 def test_parse_arguments_requires_object():
@@ -44,16 +43,27 @@ def test_execute_upload_injects_selected_file_field(monkeypatch, tmp_path):
         def list(self, **kwargs):
             return {"items": [{"id": "youtube-test", "alias": "Demo", "toolkit": "youtube"}]}
 
+    class FakeFiles:
+        def upload(self, file_path):
+            captured["uploaded_file_path"] = file_path
+            return {"name": "demo.mp4", "mimetype": "video/mp4", "s3key": "uploads/demo.mp4"}
+
     class FakeClient:
         tools = FakeTools()
         connected_accounts = FakeAccounts()
+        files = FakeFiles()
 
     monkeypatch.setattr(composio_upload, "_client", lambda *args, **kwargs: FakeClient())
     result = composio_upload.execute_upload("ak_123456789", "user-1", "DRIVE_UPLOAD_FILE", str(video), "file", '{"title":"Demo"}')
     assert result["successful"] is True
     assert result["log_id"] == "log-123"
     assert captured["slug"] == "DRIVE_UPLOAD_FILE"
-    assert captured["kwargs"]["arguments"]["file"] == str(video.resolve())
+    assert captured["uploaded_file_path"] == str(video.resolve())
+    assert captured["kwargs"]["arguments"]["file"] == {
+        "name": "demo.mp4",
+        "mimetype": "video/mp4",
+        "s3key": "uploads/demo.mp4",
+    }
     assert captured["kwargs"]["arguments"]["title"] == "Demo"
     assert "ak_123456789" not in json.dumps(result)
 
@@ -209,7 +219,7 @@ def test_youtube_upload_scope_is_accepted():
     composio_upload.ensure_youtube_upload_scope(client, "youtube-writable", "Writable")
 
 
-def test_youtube_upload_builds_structured_video_file_descriptor(monkeypatch, tmp_path):
+def test_youtube_upload_accepts_current_video_file_path(monkeypatch, tmp_path):
     video = tmp_path / "demo.mp4"
     video.write_bytes(b"video")
     captured = {}
@@ -227,22 +237,33 @@ def test_youtube_upload_builds_structured_video_file_descriptor(monkeypatch, tmp
             assert account_id == "youtube-test"
             return {"data": {"scopes": [composio_upload.YOUTUBE_UPLOAD_SCOPE]}}
 
-    monkeypatch.setattr(composio_upload, "_client", lambda *args, **kwargs: SimpleNamespace(tools=FakeTools(), connected_accounts=FakeAccounts()))
+    class FakeFiles:
+        def upload(self, file_path):
+            captured["uploaded_file_path"] = file_path
+            return SimpleNamespace(s3key="composio/youtube/demo.mp4", size=5)
+
+    monkeypatch.setattr(composio_upload, "_client", lambda *args, **kwargs: SimpleNamespace(tools=FakeTools(), connected_accounts=FakeAccounts(), files=FakeFiles()))
     result = composio_upload.execute_upload("ak_123456789", "user-1", "YOUTUBE_UPLOAD_VIDEO", str(video), "videoFilePath", "{}")
     assert result["successful"] is True
     assert captured["slug"] == "YOUTUBE_UPLOAD_VIDEO"
-    assert captured["kwargs"]["arguments"]["videoFilePath"] == str(video.resolve())
-    assert isinstance(captured["kwargs"]["arguments"]["videoFilePath"], str)
+    assert captured["uploaded_file_path"] == str(video.resolve())
+    assert captured["kwargs"]["arguments"]["videoFilePath"] == {
+        "name": "demo.mp4",
+        "mimetype": "video/mp4",
+        "s3key": "composio/youtube/demo.mp4",
+    }
+    assert isinstance(captured["kwargs"]["arguments"]["videoFilePath"], dict)
+    assert captured["kwargs"]["arguments"]["videoFilePath"]["s3key"]
 
 
-def test_composio_upload_does_not_build_manual_file_descriptor():
+def test_composio_upload_uses_manual_file_staging():
     source = Path(__file__).parents[1].joinpath("integrations", "composio_upload.py").read_text(encoding="utf-8")
-    assert "FileUploadable" not in source
-    assert '"s3key"' not in source
-    assert '"mimetype"' not in source
-    assert "auto_upload_download_files=True" in source
-    assert "type(arguments[file_field]).__name__" in source
-    assert 'LOGGER.info("Argumento de arquivo: type=%s value=%r"' in source
+    assert '"s3key"' in source
+    assert '"mimetype"' in source
+    assert "client.files.upload" in source
+    assert "dangerously_allow_auto_upload_download_files" not in source
+    assert "file_upload_dirs" not in source
+    assert "is_dict=%s has_s3key=%s" in source
 
 
 def test_discover_tools_normalises_sdk_items(monkeypatch):

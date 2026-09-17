@@ -121,17 +121,12 @@ def _require_user_id(user_id: str) -> str:
     return value
 
 
-def _client(api_key: str, *, upload_dir: Path | None = None):
+def _client(api_key: str):
     try:
         from composio import Composio
     except ImportError as exc:
         raise ComposioUploadError("A SDK Python composio não está instalada. Execute a instalação do Thunderbolt novamente.") from exc
     kwargs: dict[str, Any] = {"api_key": _require_api_key(api_key), "allow_tracking": False}
-    if upload_dir is not None:
-        kwargs.update({
-            "dangerously_allow_auto_upload_download_files": True,
-            "file_upload_dirs": [str(upload_dir.resolve())],
-        })
     return Composio(**kwargs)
 
 
@@ -363,6 +358,27 @@ def parse_arguments(arguments_json: str) -> dict[str, Any]:
     return parsed
 
 
+def _extract_s3key(uploaded_file: Any) -> str:
+    """Extract the S3 key returned by the manual Composio file upload."""
+    raw = _safe_value(uploaded_file)
+
+    def find_key(value: Any) -> str:
+        if isinstance(value, dict):
+            direct = value.get("s3key")
+            if direct not in (None, ""):
+                return str(direct).strip()
+            for nested_key in ("data", "file", "result"):
+                found = find_key(value.get(nested_key))
+                if found:
+                    return found
+        return ""
+
+    s3key = find_key(raw)
+    if not s3key:
+        raise ComposioUploadError("O upload manual do ficheiro Composio não devolveu um s3key válido.")
+    return s3key
+
+
 def execute_upload(api_key: str, user_id: str, slug: str, video_path: str, file_field: str, arguments_json: str = "", connected_account_id: str = "") -> dict[str, Any]:
     path = Path(str(video_path or "").strip()).expanduser()
     slug = str(slug or "").strip()
@@ -378,17 +394,23 @@ def execute_upload(api_key: str, user_id: str, slug: str, video_path: str, file_
     arguments = parse_arguments(arguments_json)
     if file_field in arguments and arguments[file_field] not in (None, "", str(path)):
         raise ComposioUploadError(f"O campo `{file_field}` já contém um valor. Remova-o antes de injectar o vídeo.")
-    client = _client(api_key, upload_dir=path.parent)
+    client = _client(api_key)
     try:
-        local_video_path = str(path.resolve())
-        arguments[file_field] = local_video_path
+        uploaded_file = client.files.upload(str(path.resolve()))
+        raw_upload = _safe_value(uploaded_file)
+        LOGGER.info("Composio manual file upload response: %s", raw_upload)
+        arguments[file_field] = {
+            "name": path.name,
+            "mimetype": "video/mp4",
+            "s3key": _extract_s3key(raw_upload),
+        }
         LOGGER.info(
-            "Composio upload file argument: value=%r type=%s size=%d bytes auto_upload_download_files=True",
+            "Composio upload file argument before tools.execute: is_dict=%s has_s3key=%s value=%r size=%d bytes",
+            isinstance(arguments[file_field], dict),
+            bool(arguments[file_field].get("s3key")),
             arguments[file_field],
-            type(arguments[file_field]).__name__,
             path.stat().st_size,
         )
-        LOGGER.info("Argumento de arquivo: type=%s value=%r", type(arguments[file_field]).__name__, arguments[file_field])
         execute_kwargs: dict[str, Any] = {
             "arguments": arguments,
             "user_id": _require_user_id(user_id),
