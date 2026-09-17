@@ -5445,11 +5445,29 @@ VIDEO_TASK_STATE_LABELS = {
 
 
 def load_video_tasks_for_catalog() -> list[dict[str, Any]]:
-    """Return the complete persisted task catalog shared by Backlog and Automation."""
+    """Return every persisted video task, including legacy completed records."""
     saved = read_json("tasks.json", [])
     if not isinstance(saved, list):
         return []
-    return [task for task in saved if isinstance(task, dict) and str(task.get("id") or "").strip()]
+    catalog: list[dict[str, Any]] = []
+    for index, raw_task in enumerate(saved):
+        if not isinstance(raw_task, dict):
+            continue
+        task = dict(raw_task)
+        artifacts = dict(task.get("artifacts") or {}) if isinstance(task.get("artifacts"), dict) else {}
+        for source_key in ("video_path", "output_video", "video_file"):
+            if not artifacts.get("video") and task.get(source_key):
+                artifacts["video"] = task.get(source_key)
+        if not artifacts.get("video") and task.get("video"):
+            artifacts["video"] = task.get("video")
+        task["artifacts"] = artifacts
+        task_id = str(task.get("id") or task.get("task_id") or "").strip()
+        if not task_id:
+            identity = str(artifacts.get("video") or task.get("title") or task.get("topic") or f"legacy-{index}")
+            task_id = f"legacy-{hashlib.sha1(identity.encode('utf-8')).hexdigest()[:16]}"
+        task["id"] = task_id
+        catalog.append(task)
+    return catalog
 
 
 def task_platform(task: dict[str, Any]) -> str:
