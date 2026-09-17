@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ class YouTubeUploadScopeMissingError(ComposioUploadError):
 
 
 YOUTUBE_UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"
+LOGGER = logging.getLogger(__name__)
 
 
 COMPOSIO_OPERATION_SEARCH = {
@@ -361,6 +363,28 @@ def parse_arguments(arguments_json: str) -> dict[str, Any]:
     return parsed
 
 
+def _file_upload_descriptor(client: Any, path: Path, slug: str) -> dict[str, str] | None:
+    """Upload a local file explicitly when the tool schema omits file metadata."""
+    http_client = getattr(client, "client", None)
+    if http_client is None:
+        return None
+    from composio.core.models._files import FileUploadable
+
+    descriptor = FileUploadable.from_path(
+        client=http_client,
+        file=path,
+        tool=slug,
+        toolkit="youtube",
+        file_upload_allowlist=[path.parent],
+    )
+    raw = descriptor.model_dump() if hasattr(descriptor, "model_dump") else dict(descriptor)
+    result = {key: str(raw[key]) for key in ("name", "mimetype", "s3key") if raw.get(key)}
+    if set(result) != {"name", "mimetype", "s3key"}:
+        raise ComposioUploadError("O SDK Composio não devolveu um descriptor S3 completo para o vídeo.")
+    LOGGER.info("Composio file descriptor preparado: %s", result)
+    return result
+
+
 def execute_upload(api_key: str, user_id: str, slug: str, video_path: str, file_field: str, arguments_json: str = "", connected_account_id: str = "") -> dict[str, Any]:
     path = Path(str(video_path or "").strip()).expanduser()
     slug = str(slug or "").strip()
@@ -376,9 +400,14 @@ def execute_upload(api_key: str, user_id: str, slug: str, video_path: str, file_
     arguments = parse_arguments(arguments_json)
     if file_field in arguments and arguments[file_field] not in (None, "", str(path)):
         raise ComposioUploadError(f"O campo `{file_field}` já contém um valor. Remova-o antes de injectar o vídeo.")
-    arguments[file_field] = str(path.resolve())
     client = _client(api_key, upload_dir=path.parent)
     try:
+        arguments[file_field] = _file_upload_descriptor(client, path.resolve(), slug) or str(path.resolve())
+        LOGGER.info(
+            "Composio upload file: path=%s size=%d bytes auto_upload_download_files=True",
+            path.name,
+            path.stat().st_size,
+        )
         execute_kwargs: dict[str, Any] = {
             "arguments": arguments,
             "user_id": _require_user_id(user_id),
