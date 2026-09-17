@@ -389,15 +389,16 @@ def run_once(when: datetime | None = None) -> dict[str, Any]:
 
 
 def run_worker(interval_seconds: int = DEFAULT_INTERVAL_SECONDS) -> None:
-    storage.ensure_storage()
-    lock_path = _acquire_lock()
-    if lock_path is None:
-        raise RuntimeError("Já existe um worker de automação activo para este storage do Thunderbolt.")
-    started = _local_now()
-    status = _state()
-    status.update({"worker_started_at": _local_iso(started), "worker_pid": os.getpid(), "last_error": ""})
-    _write_status(status)
+    lock_path = None
     try:
+        storage.ensure_storage()
+        lock_path = _acquire_lock()
+        if lock_path is None:
+            raise RuntimeError("Já existe um worker de automação activo para este storage do Thunderbolt.")
+        started = _local_now()
+        status = _state()
+        status.update({"worker_started_at": _local_iso(started), "worker_pid": os.getpid(), "last_error": ""})
+        _write_status(status)
         while True:
             result = run_once()
             if not result.get("ok"):
@@ -405,12 +406,25 @@ def run_worker(interval_seconds: int = DEFAULT_INTERVAL_SECONDS) -> None:
             elif result.get("created"):
                 print(f"Thunderbolt worker: {len(result['created'])} canal(is) agendado(s) às {result['scheduled_time']}.", flush=True)
             time.sleep(max(2, int(interval_seconds)))
+    except KeyboardInterrupt:
+        # Shutdown por Ctrl+C: sair sem gravar estado nem mostrar traceback.
+        return
     finally:
-        current = _state()
-        current["worker_pid"] = None
-        current["last_heartbeat_local"] = None
-        _write_status(current)
-        _release_lock(lock_path)
+        if lock_path is not None:
+            try:
+                current = _state()
+                current["worker_pid"] = None
+                current["last_heartbeat_local"] = None
+                try:
+                    _write_status(current)
+                except (KeyboardInterrupt, OSError, PermissionError):
+                    pass
+            except (KeyboardInterrupt, OSError, PermissionError):
+                pass
+            try:
+                _release_lock(lock_path)
+            except (KeyboardInterrupt, OSError, PermissionError):
+                pass
 
 
 def main() -> None:

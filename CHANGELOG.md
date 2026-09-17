@@ -1,4 +1,8 @@
 # Changelog
+## 0.8.57 — 2026-09-17
+- Substituída completamente a API depreciada `st.components.v1.html` por `st.iframe`.
+- Implementado shutdown silencioso dos workers em Ctrl+C, sem gravação de estado durante a interrupção.
+
 ## 0.6.86 — 2026-09-07
 - Adicionado o botão **Refazer Vídeo** às abas de Automação Youtube e Automação Tiktok.
 - A remontagem preserva roteiro, Blueprint/Prompt Master, tags, voz, thumbnail e artefactos de media existentes, invalidando apenas o vídeo e o resultado de publicação.

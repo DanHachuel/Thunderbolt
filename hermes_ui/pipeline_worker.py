@@ -1780,11 +1780,15 @@ def run_once() -> dict[str, Any]:
 
 
 def run_worker(interval_seconds: int = 5) -> None:
-    ensure_storage()
-    _worker_heartbeat(status="starting", stage="idle", progress=0, last_error="")
-    while True:
-        run_once()
-        time.sleep(max(2, int(interval_seconds)))
+    try:
+        ensure_storage()
+        _worker_heartbeat(status="starting", stage="idle", progress=0, last_error="")
+        while True:
+            run_once()
+            time.sleep(max(2, int(interval_seconds)))
+    except KeyboardInterrupt:
+        # Shutdown por Ctrl+C: sair sem gravar estado nem mostrar traceback.
+        return
 
 
 def main() -> None:

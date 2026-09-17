@@ -18,7 +18,7 @@ def test_streamlit_theme_config_defaults_to_dark_with_moneyprinter_style_semanti
 
 
 def test_package_distributes_streamlit_theme_config_and_new_release_version():
-    assert '"version": "0.7.37"' in PACKAGE_SOURCE
+    assert '"version": "0.8.57"' in PACKAGE_SOURCE
     assert '".streamlit/config.toml"' in PACKAGE_SOURCE
 
 
@@ -90,10 +90,12 @@ def test_growth_labels_have_translation_entries():
     assert source.count('"Analista Bilibili"') >= 10
 
 
-def test_theme_bootstrap_uses_legacy_compatible_components_html():
-    assert "import streamlit.components.v1 as components" in MAIN_SOURCE
-    assert "components.html(" in MAIN_SOURCE
-    assert "st.iframe(" not in MAIN_SOURCE
-    assert "srcdoc=" not in MAIN_SOURCE
+def test_theme_bootstrap_uses_native_streamlit_iframe():
+    legacy_module = "streamlit." + "components.v1"
+    legacy_call = "components." + "html("
+    assert legacy_module not in MAIN_SOURCE
+    assert legacy_call not in MAIN_SOURCE
+    assert "st.iframe(" in MAIN_SOURCE
+    assert "srcdoc=" in MAIN_SOURCE
     assert "height=0" in MAIN_SOURCE
     assert "width=0" in MAIN_SOURCE

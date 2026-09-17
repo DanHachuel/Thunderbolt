@@ -491,8 +491,15 @@ def migrate_finance_thumbnail_blueprint() -> None:
             save_state("queues.json", updated_queues)
 
 
+_MIGRATION_DONE = False
+
+
 def migrate_tiktok_thumbnail_blueprint() -> None:
     """Adopt the vertical generic thumbnail for legacy TikTok state."""
+    global _MIGRATION_DONE
+    if _MIGRATION_DONE:
+        return
+
     def load_state(name: str, default: Any) -> Any:
         try:
             return _load_json_unlocked(STATE / name)
@@ -533,6 +540,8 @@ def migrate_tiktok_thumbnail_blueprint() -> None:
                 tasks_changed = True
         if tasks_changed:
             save_state("tasks.json", tasks)
+
+    _MIGRATION_DONE = True
 
 
 def seed_prompt_masters() -> None:
