@@ -1,4 +1,7 @@
 # Changelog
+## 0.8.61 — 2026-09-17
+- Suprimido no bootstrap apenas o aviso `missing ScriptRunContext` emitido pelo Streamlit durante o arranque bare mode, preservando os restantes warnings.
+
 ## 0.8.60 — 2026-09-17
 - Corrigido o upload de vídeos via Composio para passar sempre o caminho local puro ao SDK, removendo a conversão manual duplicada para descriptors `{name, mimetype, s3key}`.
 - Mantido o auto-upload de ficheiros do SDK Composio e adicionado log explícito do valor e tipo do argumento enviado à ferramenta.

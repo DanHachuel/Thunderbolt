@@ -99,6 +99,7 @@ class NpxCacheCompatibilityTests(unittest.TestCase):
 
     def test_streamlit_bootstrap_owns_sigint_without_click_shutdown(self):
         bootstrap = (ROOT / "scripts" / "streamlit_bootstrap.py").read_text(encoding="utf-8")
+        self.assertIn('warnings.filterwarnings("ignore", message=r".*missing ScriptRunContext.*")', bootstrap)
         self.assertIn("def _custom_sigint_handler", bootstrap)
         self.assertIn("SIGINT ignorado", bootstrap)
         self.assertNotIn("os._exit(0)", bootstrap)

@@ -5,6 +5,7 @@ import logging
 import os
 import signal
 import sys
+import warnings
 
 # Este ficheiro é o primeiro módulo Python executado pelo launcher. As
 # variáveis e os streams precisam de ser corrigidos antes de qualquer import
@@ -13,6 +14,11 @@ os.environ["PYTHONIOENCODING"] = "utf-8"
 os.environ["PYTHONUTF8"] = "1"
 os.environ["PYTHONLEGACYWINDOWSSTDIO"] = "1"
 os.environ["CLICK_NO_WIN_CONSOLE"] = "1"
+
+# O Streamlit emite este aviso quando o launcher inicializa o servidor fora
+# do contexto de uma execução de script. É esperado neste modo de arranque;
+# manter a filtragem direccionada para não ocultar outros warnings úteis.
+warnings.filterwarnings("ignore", message=r".*missing ScriptRunContext.*")
 
 
 # O shutdown do Streamlit pode emitir tracebacks assíncronos depois de SIGINT.
@@ -38,7 +44,7 @@ sys.stderr = _utf8_stream(sys.stderr)
 
 
 def _custom_sigint_handler(signum: int, frame: object) -> None:
-    """Ignore Ctrl+C propagado pela consola sem reentrar no ciclo do servidor."""
+    """SIGINT ignorado: não reentrar no ciclo do servidor via Ctrl+C."""
     return None
 
 
