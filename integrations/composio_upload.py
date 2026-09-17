@@ -381,10 +381,14 @@ def execute_upload(api_key: str, user_id: str, slug: str, video_path: str, file_
     client = _client(api_key, upload_dir=path.parent)
     try:
         local_video_path = str(path.resolve())
-        arguments[file_field] = local_video_path
+        arguments[file_field] = {
+            "name": path.name,
+            "mimetype": "video/mp4",
+            "s3key": local_video_path,
+        }
         LOGGER.info(
-            "Composio upload file argument: value=%s type=%s size=%d bytes auto_upload_download_files=True",
-            local_video_path,
+            "Composio upload file argument: value=%r type=%s size=%d bytes auto_upload_download_files=True",
+            arguments[file_field],
             type(arguments[file_field]).__name__,
             path.stat().st_size,
         )
@@ -405,7 +409,8 @@ def execute_upload(api_key: str, user_id: str, slug: str, video_path: str, file_
         if "YOUTUBE" in normalized_slug and "UPLOAD" in normalized_slug:
             ensure_youtube_upload_scope(client, selected_account, connected_account_id)
         result = client.tools.execute(slug, **execute_kwargs)
-        LOGGER.info("Composio response complete: %s", _safe_value(result))
+        raw_result = _safe_value(result)
+        LOGGER.info("Composio response complete (including returned s3key when available): %s", raw_result)
         response = _response(result)
         LOGGER.info("Composio response normalised: %s", response)
         if not response["successful"] and not response["error"]:
