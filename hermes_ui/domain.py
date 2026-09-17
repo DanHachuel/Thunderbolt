@@ -39,7 +39,10 @@ def create_channel(name: str, url: str = "", metadata: dict[str, Any] | None = N
         "youtube_channel_id": "",
         "google_account_id": "",
         "google_account_email": "",
-        "composio_connected_account_id": composio_connected_account_id_from_channel_name(name),
+        # A technical Composio connected-account ID is discovered after the
+        # channel exists; a channel name/alias is never a valid fallback ID.
+        "composio_connected_account_id": "",
+        "composio": {},
         "name": name.strip(),
         "url": url.strip(),
         "platform": "youtube",

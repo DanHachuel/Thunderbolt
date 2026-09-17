@@ -136,6 +136,10 @@ def _client(api_key: str, *, upload_dir: Path | None = None):
 def _connected_account_id(client: Any, user_id: str, toolkit: str, selector: str) -> str:
     """Resolve a connected-account ID from an ID, alias, or sole active account."""
     value = str(selector or "").strip()
+    # Technical IDs are authoritative. Do not reinterpret or list them using
+    # the configured application user; Composio accounts belong to acc.user_id.
+    if value.startswith("ca_"):
+        return value
     normalized_user_id = _require_user_id(user_id)
     normalized_toolkit = str(toolkit or "").strip().casefold()
     cache_key = (normalized_user_id, normalized_toolkit, value.casefold())

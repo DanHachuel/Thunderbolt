@@ -165,7 +165,7 @@ from integrations.upload_post import UploadPostAdapter, UPLOAD_POST_PLATFORM_OPT
 from integrations.bilibili_upload import BilibiliApiAdapter, BILIBILI_DEFAULT_TID, BILIBILI_VIDEO_EXTENSIONS, normalise_bilibili_api_cards
 from integrations.distrokid_upload import DistroKidAdapter, DISTROKID_AUDIO_EXTENSIONS, DISTROKID_COVER_EXTENSIONS, close_distrokid_session
 from integrations.music_uploads import JewelMusicAdapter, PushtunesAdapter, YTMusicApiAdapter, MUSIC_UPLOAD_EXTENSIONS, PUSHTUNES_OPERATIONS, PUSHTUNES_SOURCES, PUSHTUNES_TARGETS, YT_MUSIC_UPLOAD_EXTENSIONS
-from integrations.upload_routing import OFFICIAL_DAILY_LIMIT, official_upload_count, resolve_youtube_account, upload_with_default_route
+from integrations.upload_routing import OFFICIAL_DAILY_LIMIT, _composio_upload, _resolve_channel_composio, official_upload_count, resolve_youtube_account, upload_with_default_route
 from integrations.youtube_direct_upload import YouTubeDirectUploader
 from integrations.youtube_direct_credentials import delete_credentials_document, direct_account_status, document_status, ensure_credentials_document, load_credentials_document, merge_credentials_document, parse_credentials_document, save_credentials_document, update_credentials_document_session_info
 from integrations.session_info_health import check_account_session_info_health
@@ -1708,6 +1708,9 @@ def render_channel_edit_form(channel: dict, youtube_account_ids: list[str], yout
             edited_blueprint = st.selectbox("Blueprint Padrão", blueprint_ids, index=blueprint_ids.index(current_blueprint) if current_blueprint in blueprint_ids else 0, format_func=lambda item: blueprint_labels.get(item, item or "Sem Blueprint padrão"))
             edited_voice = st.selectbox("Narrador/Voz Padrão", voice_options, index=voice_options.index(current_voice) if current_voice in voice_options else 0, format_func=lambda item: item or "Sem voz padrão")
             edited_account = st.selectbox("Conta Google para Upload directo", account_ids, index=account_ids.index(current_account) if current_account in account_ids else 0, format_func=lambda item: youtube_account_labels.get(item, item or "Sem conta Google associada"))
+            composio_data = channel.get("composio") if isinstance(channel.get("composio"), dict) else {}
+            edited_composio_account_id = st.text_input("Connected account ID do Composio", value=str(composio_data.get("connected_account_id") or channel.get("composio_connected_account_id") or ""), help="ID técnico ca_... devolvido pelo Composio; não use o nome do canal.")
+            st.text_input("YouTube Channel ID", value=str(composio_data.get("channel_id_youtube") or channel.get("youtube_channel_id") or ""), disabled=True)
             edited_description = st.text_area("Descrição", value=str(channel.get("description") or ""), height=100)
             edited_automation = st.toggle("Automação ON", value=bool(channel.get("automation_on", False)), key=f"edit_automation_{channel_id}")
             edited_time = st.text_input("Horário diário (HH:MM)", value=str(channel.get("automation_time") or "00:00"))
@@ -1729,12 +1732,21 @@ def render_channel_edit_form(channel: dict, youtube_account_ids: list[str], yout
                 "default_blueprint_id": edited_blueprint.strip(), "blueprint_id": edited_blueprint.strip(),
                 "default_voice": edited_voice.strip(), "voice": edited_voice.strip(),
                 "google_account_id": edited_account.strip(), "google_account_email": str(youtube_accounts_by_id.get(edited_account, {}).get("email", "")),
+                "composio_connected_account_id": edited_composio_account_id.strip() if edited_composio_account_id.strip().startswith("ca_") else "",
+                "composio": {**(channel.get("composio") if isinstance(channel.get("composio"), dict) else {}), "connected_account_id": edited_composio_account_id.strip()} if edited_composio_account_id.strip().startswith("ca_") else {},
                 "description": edited_description.strip(), "automation_on": bool(edited_automation), "automation_time": edited_time.strip(),
                 "subscriber_count": _channel_count_value(edited_subscribers) or None, "video_count": _channel_count_value(edited_videos) or None, "view_count": _channel_count_value(edited_views) or None,
             })
             st.session_state.pop(f"edit_channel_{channel_id}", None)
             st.success("Canal actualizado.")
             st.rerun()
+    if st.button("Descobrir automaticamente", key=f"discover_composio_{channel_id}"):
+        try:
+            resolved = _resolve_channel_composio(read_json("settings.json", {}), channel)
+            st.success(f"Connected Account ID resolvido: {resolved.get('connected_account_id')}")
+            st.rerun()
+        except ComposioUploadError as exc:
+            st.error(str(exc))
 
 
 def render_home_update_controls() -> None:
@@ -9055,8 +9067,17 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
                     platform = {"Canais YouTube": "youtube", "Canais Tiktok": "tiktok", "Contas Instagram": "instagram", "Facebook Pages": "facebook", "Contas Bilibili": "bilibili"}.get(operation, "")
                     result = UploadPostAdapter(settings).upload_video(str(video_path), title=title, description="Vídeo de teste Thunderbolt", user=str(destination.get("username") or destination.get("name") or settings.get("upload_post_username") or ""), platforms=[platform] if platform else None)
                 else:
-                    response = execute_upload(str(settings.get("composio_api_key") or ""), str(settings.get("composio_user_id") or ""), str(destination.get("composio_tool_slug") or settings.get("composio_tool_slug") or "upload_video"), str(video_path), str(settings.get("composio_file_field") or "videoFilePath"), str(settings.get("composio_arguments_json") or "{}"), str(settings.get("composio_connected_account_id") or destination.get("composio_connected_account_id") or ""))
-                    result = IntegrationResult(bool(response.get("successful")), str(response.get("error") or "Upload Composio concluído."), response)
+                    result = _composio_upload(
+                        settings,
+                        channel=destination,
+                        video_path=str(video_path),
+                        category_id="22",
+                        language="pt-BR",
+                        privacy_status="unlisted",
+                        title=title,
+                        description="Vídeo de teste Thunderbolt",
+                        tags=["Thunderbolt", "teste"],
+                    )
                 if result.ok:
                     status_panel.success(result.message)
                 else:

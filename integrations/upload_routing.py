@@ -19,9 +19,9 @@ from integrations.session_info_health import check_account_session_info_health, 
 from integrations.youtube_direct_credentials import document_status
 from integrations.youtube_direct_upload import YouTubeDirectUploader
 from integrations.youtube_session_manager import renew_account_session
-from integrations.composio_upload import ComposioUploadError, execute_upload, resolve_tool_slug
-from hermes_ui.domain import composio_connected_account_id_from_channel_name
-from hermes_ui.storage import read_json, write_json
+from integrations.composio_upload import ComposioUploadError, _client, execute_upload, resolve_tool_slug
+from integrations.composio_account_resolver import AccountDiscoveryError, candidate_message, discover_connected_account
+from hermes_ui.storage import read_json, update_json, write_json
 from hermes_ui.languages import language_locale
 
 OFFICIAL_DAILY_LIMIT = 5
@@ -115,6 +115,56 @@ def _result_with_attempts(result: IntegrationResult, attempts: list[dict[str, An
     data["route"] = route
     data["attempts"] = attempts
     return IntegrationResult(result.ok, result.message, data)
+
+
+def _channel_composio_data(channel: dict[str, Any]) -> dict[str, Any]:
+    nested = channel.get("composio")
+    if isinstance(nested, dict):
+        return nested
+    legacy_id = str(channel.get("composio_connected_account_id") or "").strip()
+    return {"connected_account_id": legacy_id} if legacy_id.startswith("ca_") else {}
+
+
+def _persist_channel_composio(channel: dict[str, Any], data: dict[str, Any]) -> None:
+    channel_id = str(channel.get("id") or "").strip()
+    if not channel_id:
+        channel.update({"composio": dict(data), "composio_connected_account_id": data.get("connected_account_id", "")})
+        return
+
+    def mutate(channels: Any) -> None:
+        if not isinstance(channels, list):
+            return
+        for item in channels:
+            if isinstance(item, dict) and str(item.get("id") or "") == channel_id:
+                item["composio"] = dict(data)
+                item["composio_connected_account_id"] = data.get("connected_account_id", "")
+                break
+
+    update_json("channels.json", [], mutate)
+    channel["composio"] = dict(data)
+    channel["composio_connected_account_id"] = data.get("connected_account_id", "")
+
+
+def _resolve_channel_composio(settings: dict[str, Any], channel: dict[str, Any]) -> dict[str, Any]:
+    cached = _channel_composio_data(channel)
+    if cached.get("connected_account_id") and cached.get("user_id"):
+        return cached
+    client = _client(str(settings.get("composio_api_key") or ""))
+    try:
+        resolved = discover_connected_account(
+            client,
+            str(channel.get("name") or channel.get("title") or ""),
+            channel_id_youtube=str(channel.get("youtube_channel_id") or channel.get("youtube_id") or ""),
+        )
+    except AccountDiscoveryError as exc:
+        raise ComposioUploadError(f"Não foi possível associar o canal ao Composio. {exc} {candidate_message(exc.candidates)}") from exc
+    if not resolved:
+        raise ComposioUploadError(
+            f"Não foi possível encontrar a conta conectada para o canal '{channel.get('name') or 'seleccionado'}'. "
+            f"{candidate_message([])} Remova o registo se o canal já não existir no YouTube."
+        )
+    _persist_channel_composio(channel, resolved)
+    return resolved
 
 
 def upload_with_default_route(
@@ -272,13 +322,26 @@ def upload_with_default_route(
 
 def _composio_upload(settings: dict[str, Any], *, channel: dict[str, Any], **kwargs: Any) -> IntegrationResult:
     configured_slug = str(channel.get("composio_tool_slug") or channel.get("upload_operation") or "upload_video").strip()
+    composio_data = _channel_composio_data(channel)
+    resolved_user_id = str(composio_data.get("user_id") or settings.get("composio_user_id") or "").strip()
+    resolved_account_id = str(composio_data.get("connected_account_id") or "").strip()
+    if (channel.get("id") or channel.get("name")) and not (resolved_account_id and composio_data.get("user_id")):
+        try:
+            composio_data = _resolve_channel_composio(settings, channel)
+            resolved_user_id = str(composio_data.get("user_id") or "").strip()
+            resolved_account_id = str(composio_data.get("connected_account_id") or "").strip()
+        except ComposioUploadError as exc:
+            return IntegrationResult(False, str(exc), {"status": "account_discovery_failed"})
     try:
-        slug = resolve_tool_slug(
-            str(settings.get("composio_api_key") or ""),
-            str(settings.get("composio_user_id") or ""),
-            configured_slug,
-            str(channel.get("composio_toolkit") or ""),
-        )
+        if configured_slug.casefold() == "upload_video" and (channel.get("platform", "youtube") or "youtube").casefold() == "youtube":
+            slug = "YOUTUBE_UPLOAD_VIDEO"
+        else:
+            slug = resolve_tool_slug(
+                str(settings.get("composio_api_key") or ""),
+                resolved_user_id,
+                configured_slug,
+                str(channel.get("composio_toolkit") or ""),
+            )
     except ComposioUploadError as exc:
         return IntegrationResult(False, str(exc), {"status": "tool_resolution_failed", "configured_slug": configured_slug})
     normalized_slug = slug.upper().replace("-", "_")
@@ -316,6 +379,8 @@ def _composio_upload(settings: dict[str, Any], *, channel: dict[str, Any], **kwa
             "categoryId": str(category_value),
             "defaultLanguage": language_locale(kwargs.get("language") or channel.get("language") or "en"),
         }
+        if "category_id" in parsed_arguments and str(parsed_arguments["category_id"]) not in {"", str(category_value)}:
+            return IntegrationResult(False, "Composio bloqueado: o campo `category_id` tem um valor diferente do upload oficial (22).", {"field": "category_id", "expected": str(category_value)})
         for field, expected in locked_values.items():
             if not field:
                 return IntegrationResult(False, "Composio não foi executado: existe um campo obrigatório vazio na configuração.", {})
@@ -325,15 +390,22 @@ def _composio_upload(settings: dict[str, Any], *, channel: dict[str, Any], **kwa
                     return IntegrationResult(False, f"Composio bloqueado: o campo `{field}` aponta para outro canal.", {"field": field, "expected": expected})
                 return IntegrationResult(False, f"Composio bloqueado: o campo `{field}` tem um valor diferente do upload oficial ({expected}).", {"field": field, "expected": expected})
             parsed_arguments[field] = expected
-        result = execute_upload(
-            str(settings.get("composio_api_key") or ""),
-            str(settings.get("composio_user_id") or ""),
-            slug,
-            str(kwargs.get("video_path") or ""),
-            file_field,
+        execute_args = (
+            str(settings.get("composio_api_key") or ""), resolved_user_id, slug,
+            str(kwargs.get("video_path") or ""), file_field,
             json.dumps(parsed_arguments, ensure_ascii=False),
-            str(channel.get("composio_connected_account_id") or composio_connected_account_id_from_channel_name(channel.get("name") or "") or "").strip(),
         )
+        result = execute_upload(*execute_args, **({"connected_account_id": resolved_account_id} if resolved_account_id else {}))
+        error_text = str(result.get("error") or "")
+        invalid_account = any(marker in error_text.casefold() for marker in ("connected account not found", "connected_account_not_found", "account not found", "conta conectada") )
+        if invalid_account and resolved_account_id and (channel.get("id") or channel.get("name")):
+            _persist_channel_composio(channel, {})
+            refreshed = _resolve_channel_composio(settings, channel)
+            result = execute_upload(
+                str(settings.get("composio_api_key") or ""),
+                str(refreshed.get("user_id") or ""), slug, str(kwargs.get("video_path") or ""), file_field,
+                json.dumps(parsed_arguments, ensure_ascii=False), connected_account_id=str(refreshed.get("connected_account_id") or ""),
+            )
     except ComposioUploadError as exc:
         return IntegrationResult(False, str(exc), {})
     return IntegrationResult(
