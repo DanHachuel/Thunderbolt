@@ -16,7 +16,7 @@ def test_test_upload_videos_render_in_two_compact_columns():
     block = SOURCE.split("def _render_test_upload_videos", 1)[1].split("def ", 1)[0]
     assert "video_columns = st.columns(2, gap=\"small\")" in block
     assert "with video_columns[index]:" in block
-    assert 'st.video(str(video_path), width="stretch")' in block
+    assert "_render_local_video_player(video_path)" in block
 
 
 def test_vertical_test_video_uses_half_width_media_column():

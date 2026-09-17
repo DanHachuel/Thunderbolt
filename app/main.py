@@ -24,6 +24,7 @@ sys.stdout = _force_utf8_stream(sys.stdout)
 sys.stderr = _force_utf8_stream(sys.stderr)
 
 import hashlib
+import base64
 from html import escape
 import json
 import mimetypes
@@ -56,6 +57,21 @@ def _file_bytes(path: Path | None) -> bytes:
         return b""
     stat = path.stat()
     return _cached_file_bytes(str(path.resolve()), int(stat.st_mtime_ns), int(stat.st_size))
+
+
+def _render_local_video_player(path: Path, *, width: int | str = "stretch") -> None:
+    """Render a local MP4 without routing it through Streamlit's media handler."""
+    if not path.is_file():
+        return
+    media_type = mimetypes.guess_type(path.name)[0] or "video/mp4"
+    encoded = base64.b64encode(_file_bytes(path)).decode("ascii")
+    width_style = "100%" if width == "stretch" else f"{int(width)}px"
+    st.html(
+        f'''<video controls preload="metadata" playsinline style="display:block;width:{width_style};max-width:100%;height:auto;">
+          <source src="data:{escape(media_type)};base64,{encoded}" type="{escape(media_type)}">
+          O navegador não suporta a reprodução deste vídeo.
+        </video>'''
+    )
 
 
 def _load_local_env() -> None:
@@ -5806,7 +5822,7 @@ def render_videos():
                 video_path = str(artifacts.get('video') or '').strip()
                 video_file = _task_artifact_path(task, "video")
                 if video_file is not None and task_state == "done":
-                    st.video(str(video_file), width=360)
+                    _render_local_video_player(video_file, width=360)
                     st.success('Vídeo pronto; a thumbnail pode ser criada ou carregada depois.')
                     with video_file.open("rb") as video_stream:
                         st.download_button(
@@ -9094,7 +9110,7 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
                 if video_path.is_file():
                     media_slot = st.columns([1, 2, 1])[1] if video["id"] == "vertical" else st.container()
                     with media_slot:
-                        st.video(str(video_path), width="stretch")
+                        _render_local_video_player(video_path)
                         st.download_button("Download vídeo modelo", video_path.read_bytes(), file_name=video["filename"], mime="video/mp4", key=f"download_test_upload_{video['id']}", width="stretch")
                 else:
                     st.error(f"Asset de teste não encontrado: {video_path}")

@@ -39,7 +39,7 @@ def test_backlog_starts_with_all_states_and_does_not_surface_upload_failure():
 def test_backlog_player_uses_resolved_video_artifact_path():
     assert 'video_file = _task_artifact_path(task, "video")' in MAIN_SOURCE
     assert 'if video_file is not None and task_state == "done":' in MAIN_SOURCE
-    assert 'st.video(str(video_file), width=360)' in MAIN_SOURCE
+    assert '_render_local_video_player(video_file, width=360)' in MAIN_SOURCE
     backlog_block = MAIN_SOURCE.split("def render_videos():", 1)[1].split("def _music_backlog_records", 1)[0]
     assert 'with video_file.open("rb") as video_stream:' in backlog_block
     assert "data=video_file.read_bytes()" not in backlog_block

@@ -28,3 +28,10 @@ def test_seed_test_videos_are_packaged_and_described():
     assert "Vídeo vertical para YouTube Shorts, TikTok, Instagram e Facebook Pages" in SOURCE
     package = (ROOT / "package.json").read_text(encoding="utf-8")
     assert '"seed/test_upload_videos/*.mp4"' in package
+
+
+def test_local_video_player_preloads_metadata_without_streamlit_media_handler():
+    block = SOURCE.split("def _render_local_video_player", 1)[1].split("def ", 1)[0]
+    assert 'preload="metadata"' in block
+    assert 'src="data:{escape(media_type)};base64,{encoded}"' in block
+    assert "st.html(" in block

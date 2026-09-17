@@ -22,5 +22,5 @@ def test_catalog_reads_both_storage_locations_and_legacy_fields():
 def test_done_cards_keep_player_and_download():
     block = SOURCE.split("def render_videos():", 1)[1].split("def _music_backlog_records", 1)[0]
     assert 'task_state == "done"' in block
-    assert 'st.video(str(video_file), width=360)' in block
+    assert '_render_local_video_player(video_file, width=360)' in block
     assert "pipeline_video_download_" in block
