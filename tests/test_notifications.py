@@ -160,6 +160,26 @@ def test_notifications_page_exposes_all_controls():
     assert "reconcile_persisted_notifications()" in source
 
 
+def test_notifications_page_reads_only_five_recent_entries():
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "app" / "main.py").read_text(encoding="utf-8")
+    start = source.index("def render_notifications():")
+    end = source.index("def render_models_ai_tutorial():", start)
+    block = source[start:end]
+    assert "list_notifications(limit=5)" in block
+    assert "list_notifications(limit=5, category=category_filter, unread_only=unread_filter)" in block
+    assert "list_notifications(limit=500" not in block
+    assert "list_notifications(limit=500" not in source
+
+
+def test_notification_reconciliation_is_session_file_sensitive():
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "app" / "main.py").read_text(encoding="utf-8")
+    assert "_notification_reconciliation_signature" in source
+    assert "_NOTIFICATION_RECONCILIATION_FILES" in source
+    assert "reconcile_persisted_notifications(force=True)" in source
+
+
 def test_notified_operations_are_inside_a_closed_expander():
     root = Path(__file__).resolve().parents[1]
     source = (root / "app" / "main.py").read_text(encoding="utf-8")
