@@ -214,6 +214,17 @@ def test_youtube_upload_accepts_current_video_file_path(monkeypatch, tmp_path):
     assert result["successful"] is True
     assert captured["slug"] == "YOUTUBE_UPLOAD_VIDEO"
     assert captured["kwargs"]["arguments"]["videoFilePath"] == str(video.resolve())
+    assert isinstance(captured["kwargs"]["arguments"]["videoFilePath"], str)
+    assert not isinstance(captured["kwargs"]["arguments"]["videoFilePath"], dict)
+
+
+def test_composio_upload_never_builds_manual_s3_descriptor():
+    source = Path(__file__).parents[1].joinpath("integrations", "composio_upload.py").read_text(encoding="utf-8")
+    assert "FileUploadable" not in source
+    assert "s3key" not in source
+    assert "mimetype" not in source
+    assert "auto_upload_download_files=True" in source
+    assert "type(arguments[file_field]).__name__" in source
 
 
 def test_discover_tools_normalises_sdk_items(monkeypatch):

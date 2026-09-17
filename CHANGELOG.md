@@ -1,4 +1,9 @@
 # Changelog
+## 0.8.60 — 2026-09-17
+- Corrigido o upload de vídeos via Composio para passar sempre o caminho local puro ao SDK, removendo a conversão manual duplicada para descriptors `{name, mimetype, s3key}`.
+- Mantido o auto-upload de ficheiros do SDK Composio e adicionado log explícito do valor e tipo do argumento enviado à ferramenta.
+- Adicionados testes regressivos para impedir o reaparecimento de descriptors S3 manuais.
+
 ## 0.8.59 — 2026-09-17
 - Tornada idempotente e tolerante a corridas a criação das pastas de storage durante arranque e shutdown concorrentes dos workers, incluindo protecção contra ficheiros com o nome esperado de uma pasta.
 - Tornada a migração do Blueprint de thumbnails TikTok executável uma única vez por processo.
