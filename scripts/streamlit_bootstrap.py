@@ -38,8 +38,8 @@ sys.stderr = _utf8_stream(sys.stderr)
 
 
 def _custom_sigint_handler(signum: int, frame: object) -> None:
-    """Ignore Ctrl+C propagado pela consola para preservar a automação."""
-    print("\nSIGINT ignorado: o Thunderbolt continua activo durante a automação.", file=sys.stderr, flush=True)
+    """Ignore Ctrl+C propagado pela consola sem reentrar no ciclo do servidor."""
+    return None
 
 
 _original_signal = signal.signal
