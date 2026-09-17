@@ -333,6 +333,10 @@ proxy.on("upgrade", (request, clientSocket, head) => {
     connected = true;
     clientSocket.setTimeout(0);
     upstreamSocket.setNoDelay(true);
+    // O timeout só protege o handshake inicial. Depois do primeiro byte do
+    // Streamlit, a sessão pode ficar legitimamente sem tráfego por mais de
+    // 15 segundos; não destruir uma aba ligada evita ciclos de reconexão.
+    upstreamSocket.once("data", () => upstreamSocket.setTimeout(0));
     proxySockets.add(upstreamSocket);
     upstreamSocket.on("close", () => proxySockets.delete(upstreamSocket));
     const headers = Object.entries(request.headers)

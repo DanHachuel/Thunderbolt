@@ -175,6 +175,11 @@ def test_launcher_isolates_each_streamlit_websocket_and_has_handshake_timeout():
     assert "clientSocket.pipe(upstreamSocket).pipe(clientSocket);" in source
 
 
+def test_websocket_timeout_is_removed_after_streamlit_handshake_data():
+    source = (Path(__file__).resolve().parents[1] / "scripts" / "cli.mjs").read_text(encoding="utf-8")
+    assert 'upstreamSocket.once("data", () => upstreamSocket.setTimeout(0));' in source
+
+
 def test_sigint_handlers_are_silent_to_avoid_terminal_message_loop():
     launcher = (Path(__file__).resolve().parents[1] / "scripts" / "cli.mjs").read_text(encoding="utf-8")
     bootstrap = (Path(__file__).resolve().parents[1] / "scripts" / "streamlit_bootstrap.py").read_text(encoding="utf-8")
