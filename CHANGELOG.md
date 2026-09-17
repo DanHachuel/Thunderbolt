@@ -1,4 +1,10 @@
 # Changelog
+## 0.8.59 — 2026-09-17
+- Tornada idempotente e tolerante a corridas a criação das pastas de storage durante arranque e shutdown concorrentes dos workers, incluindo protecção contra ficheiros com o nome esperado de uma pasta.
+- Tornada a migração do Blueprint de thumbnails TikTok executável uma única vez por processo.
+- Adicionada verificação de `ScriptRunContext` aos fragments periódicos de automação e às notificações globais, evitando acessos Streamlit fora do contexto activo.
+- Removida definitivamente a API depreciada `st.components.v1.html`; o bootstrap de tema usa exclusivamente `st.html`.
+
 ## 0.8.57 — 2026-09-17
 - Substituída completamente a API depreciada `st.components.v1.html` por `st.iframe`.
 - Implementado shutdown silencioso dos workers em Ctrl+C, sem gravação de estado durante a interrupção.

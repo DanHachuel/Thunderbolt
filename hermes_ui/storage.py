@@ -28,6 +28,20 @@ SEED_TIKTOK_PROMPT_MASTERS = ROOT / "seed" / "prompt_masters"
 _READ_CACHE_LOCK = RLock()
 _READ_CACHE: dict[str, tuple[tuple[int, int], Any]] = {}
 
+
+def _ensure_directory(path: Path) -> None:
+    """Create a storage directory safely during concurrent worker shutdown/startup."""
+    try:
+        if path.exists() and not path.is_dir():
+            try:
+                path.unlink()
+            except OSError:
+                pass
+        path.mkdir(parents=True, exist_ok=True)
+    except (FileExistsError, PermissionError, OSError):
+        # A concurrent worker or an interrupted Windows shutdown must not abort the UI.
+        pass
+
 DEFAULTS: dict[str, Any] = {
         "channels.json": [],
         "channel_videos.json": [],
@@ -377,13 +391,13 @@ def seed_blueprints() -> None:
     if not SEED_BLUEPRINTS.exists():
         return
     destination = BLUEPRINTS / "importados"
-    destination.mkdir(parents=True, exist_ok=True)
+    _ensure_directory(destination)
     for source in sorted(SEED_BLUEPRINTS.glob("*.json")):
         target = destination / source.name
         if not target.exists():
             shutil.copy2(source, target)
     thumbnail_destination = BLUEPRINTS / "thumbnails"
-    thumbnail_destination.mkdir(parents=True, exist_ok=True)
+    _ensure_directory(thumbnail_destination)
     legacy_thumbnail = thumbnail_destination / "FINANCE_Thumbnail_Blueprint.md"
     renamed_thumbnail = thumbnail_destination / "FINANCE USA_Thumbnail_Blueprint.md"
     if renamed_thumbnail.is_file() and not legacy_thumbnail.exists():
@@ -499,6 +513,7 @@ def migrate_tiktok_thumbnail_blueprint() -> None:
     global _MIGRATION_DONE
     if _MIGRATION_DONE:
         return
+    _MIGRATION_DONE = True
 
     def load_state(name: str, default: Any) -> Any:
         try:
@@ -541,14 +556,12 @@ def migrate_tiktok_thumbnail_blueprint() -> None:
         if tasks_changed:
             save_state("tasks.json", tasks)
 
-    _MIGRATION_DONE = True
-
 
 def seed_prompt_masters() -> None:
     """Copy packaged TikTok Prompt Masters without overwriting user files."""
     if not SEED_TIKTOK_PROMPT_MASTERS.exists():
         return
-    TIKTOK_PROMPT_MASTERS.mkdir(parents=True, exist_ok=True)
+    _ensure_directory(TIKTOK_PROMPT_MASTERS)
     for source in sorted(SEED_TIKTOK_PROMPT_MASTERS.glob("*.md")):
         target = TIKTOK_PROMPT_MASTERS / source.name
         if not target.exists():
@@ -584,7 +597,7 @@ def _migrate_settings(settings: Any) -> tuple[dict[str, Any], bool]:
 
 def ensure_storage() -> None:
     for path in [STATE, BLUEPRINTS / "canais", BLUEPRINTS / "nichos", BLUEPRINTS / "importados", BLUEPRINTS / "brandings", BLUEPRINTS / "thumbnails", TIKTOK_PROMPT_MASTERS, MEDIA_DOWNLOADS, STORAGE / "brand", STORAGE / "scripts", STORAGE / "thumbnails", STORAGE / "videos", STORAGE / "artifacts", STORAGE / "python_editor", STORAGE / "influencers", STORAGE / "metadata_cleaner", STORAGE / "metadata_cleaner" / "outputs", STORAGE / "music", STORAGE / "voice_previews", STORAGE / "python_editor", NICHES_DATA]:
-        path.mkdir(parents=True, exist_ok=True)
+        _ensure_directory(path)
     seed_blueprints()
     seed_prompt_masters()
     for filename, default in DEFAULTS.items():

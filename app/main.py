@@ -39,6 +39,11 @@ from typing import Any
 
 import requests
 import streamlit as st
+from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+
+def _has_script_context() -> bool:
+    return get_script_run_ctx() is not None
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -319,10 +324,9 @@ _THEME_BOOTSTRAP = """
 (() => {
     const STYLE_ID = "thunderbolt-light-theme-style";
     const COLOR = "#7A6FE4";
-    const ROOT_WINDOW = window.parent === window ? window : window.parent;
     const getStoredTheme = () => {
         try {
-            return JSON.parse(ROOT_WINDOW.localStorage.getItem("stActiveTheme-/-v2") || '"System"');
+            return JSON.parse(window.localStorage.getItem("stActiveTheme-/-v2") || '"System"');
         } catch (_error) {
             return "System";
         }
@@ -331,10 +335,9 @@ _THEME_BOOTSTRAP = """
         const selected = getStoredTheme();
         if (selected === "Light") return true;
         if (selected === "Dark") return false;
-        return ROOT_WINDOW.matchMedia("(prefers-color-scheme: light)").matches;
+        return window.matchMedia("(prefers-color-scheme: light)").matches;
     };
     const applyTheme = () => {
-        const document = ROOT_WINDOW.document;
         const existing = document.getElementById(STYLE_ID);
         if (!isLightTheme()) {
             if (existing) existing.remove();
@@ -362,15 +365,11 @@ html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stAppViewC
 })();
 </script>
 """
-if hasattr(st, "html"):
-    _html_parameters = inspect.signature(st.html).parameters
-    _html_options = {}
-    if "unsafe_allow_javascript" in _html_parameters:
-        _html_options["unsafe_allow_javascript"] = True
-    st.html(_THEME_BOOTSTRAP, **_html_options)
-else:
-    import streamlit.components.v1 as components
-    components.html(_THEME_BOOTSTRAP, height=0, width=0)
+_html_parameters = inspect.signature(st.html).parameters
+_html_options = {}
+if "unsafe_allow_javascript" in _html_parameters:
+    _html_options["unsafe_allow_javascript"] = True
+st.html(_THEME_BOOTSTRAP, **_html_options)
 
 st.markdown("""
 <style>
@@ -593,6 +592,8 @@ def _render_notification_toast_cycle() -> None:
 
 def render_global_notification_toasts() -> None:
     """Render notifications once per app run; never start a background timer."""
+    if not _has_script_context():
+        return
     _render_notification_toast_cycle()
 
 
@@ -6281,6 +6282,8 @@ def render_thumbnails():
 
 @st.fragment(run_every=5.0)
 def _render_tiktok_automation_cards():
+        if not _has_script_context():
+            return
         st.divider()
         st.subheader("Vídeos cadastrados TikTok")
         st.caption("Esta fila mostra exclusivamente tarefas associadas a canais TikTok.")
@@ -6492,6 +6495,8 @@ def render_tiktok_automation():
 
 @st.fragment(run_every=5.0)
 def _render_youtube_automation_cards():
+        if not _has_script_context():
+            return
         st.divider()
         st.subheader("Vídeos cadastrados")
         st.caption("Start retoma as etapas já concluídas e só gera novamente o que ainda não estiver pronto. Em tarefas falhadas ou bloqueadas, a nova tentativa lê as chaves, prioridades e configurações actualmente guardadas. Apagar remove o card da fila após confirmação e preserva os artefactos locais.")
@@ -6631,6 +6636,8 @@ def _facebook_pages_for_automation() -> list[dict[str, Any]]:
 
 @st.fragment(run_every=5.0)
 def _render_facebook_automation_cards() -> None:
+    if not _has_script_context():
+        return
     st.divider()
     st.subheader("Posts Facebook em produção")
     posts = list_posts()

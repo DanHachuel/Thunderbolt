@@ -18,7 +18,7 @@ def test_streamlit_theme_config_defaults_to_dark_with_moneyprinter_style_semanti
 
 
 def test_package_distributes_streamlit_theme_config_and_new_release_version():
-    assert '"version": "0.8.58"' in PACKAGE_SOURCE
+    assert '"version": "0.8.59"' in PACKAGE_SOURCE
     assert '".streamlit/config.toml"' in PACKAGE_SOURCE
 
 
@@ -90,10 +90,19 @@ def test_growth_labels_have_translation_entries():
     assert source.count('"Analista Bilibili"') >= 10
 
 
-def test_theme_bootstrap_uses_native_streamlit_iframe():
+def test_theme_bootstrap_uses_streamlit_html_without_deprecated_components():
     assert "_THEME_BOOTSTRAP =" in MAIN_SOURCE
-    assert 'if hasattr(st, "html")' in MAIN_SOURCE
     assert "st.html(_THEME_BOOTSTRAP" in MAIN_SOURCE
-    assert "components.html(_THEME_BOOTSTRAP, height=0, width=0)" in MAIN_SOURCE
     assert "st.iframe(" not in MAIN_SOURCE
     assert "srcdoc=" not in MAIN_SOURCE
+    assert "components.html" not in MAIN_SOURCE
+    assert "components.v1.html" not in MAIN_SOURCE
+
+
+def test_no_deprecated_components_html_in_python_sources():
+    for path in Path(__file__).parents[1].rglob("*.py"):
+        if path == Path(__file__):
+            continue
+        source = path.read_text(encoding="utf-8")
+        assert "components.v1.html" not in source, f"Ocorrência em {path}"
+        assert "components.html" not in source, f"Ocorrência em {path}"

@@ -32,6 +32,8 @@ class AutomationCardsTests(unittest.TestCase):
     def test_youtube_video_cards_refresh_every_five_seconds_in_fragment(self):
         self.assertIn('@st.fragment(run_every=5.0)\ndef _render_youtube_automation_cards():', MAIN_SOURCE)
         self.assertNotIn('@st.fragment\ndef _render_youtube_automation_cards():', MAIN_SOURCE)
+        youtube_block = MAIN_SOURCE.split('def _render_youtube_automation_cards():', 1)[1].split('def _facebook_pages_for_automation():', 1)[0]
+        self.assertIn('if not _has_script_context():', youtube_block)
 
     def test_youtube_channel_settings_use_independent_fragment_and_local_rerun(self):
         self.assertIn('@st.fragment\ndef _render_youtube_automation_channel_cards():', MAIN_SOURCE)
