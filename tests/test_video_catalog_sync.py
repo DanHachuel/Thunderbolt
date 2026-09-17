@@ -28,6 +28,14 @@ def test_backlog_includes_extra_states_instead_of_dropping_them_from_the_filter(
     assert 'state_filter = st.selectbox("Filtrar por estado", ["Todos", *known_states, *extra_states]' in MAIN_SOURCE
 
 
+def test_backlog_starts_with_all_states_and_does_not_surface_upload_failure():
+    assert 'st.session_state["videos_state_filter"] = "Todos"' in MAIN_SOURCE
+    assert 'if video_path is not None and (bool(task.get("video_ready"))' in MAIN_SOURCE
+    assert '_render_video_task_state(task, state_override=task_state)' in MAIN_SOURCE
+    assert 'stage_task = {**task, "stage": "video"}' in MAIN_SOURCE
+    assert 'state = task_state' in MAIN_SOURCE
+
+
 def test_youtube_automation_cards_refresh_periodically_without_global_refresh():
     block = MAIN_SOURCE.split("@st.fragment(run_every=5.0)\ndef _render_youtube_automation_cards():", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
     assert '@st.fragment(run_every=5.0)\ndef _render_youtube_automation_cards():' in MAIN_SOURCE

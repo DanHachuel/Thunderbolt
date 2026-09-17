@@ -5694,9 +5694,9 @@ def _video_task_progress(task: dict[str, Any]) -> int:
         return 0
 
 
-def _render_video_task_state(task: dict[str, Any]) -> None:
+def _render_video_task_state(task: dict[str, Any], state_override: str | None = None) -> None:
     """Show the raw state, readable label and progress consistently in both views."""
-    state = str(task.get("state") or "unknown").strip().lower()
+    state = str(state_override or task.get("state") or "unknown").strip().lower()
     progress = _video_task_progress(task)
     st.caption("Estado")
     if state == "blocked" and task.get("stop_reason") == "user":
@@ -5715,7 +5715,7 @@ def _render_video_task_state(task: dict[str, Any]) -> None:
             st.caption(f"Tempo da etapa Vídeo: {elapsed_seconds // 60}m {elapsed_seconds % 60:02d}s")
         except (TypeError, ValueError):
             pass
-    if task.get("error"):
+    if task.get("error") and state != "done":
         error_text = str(task.get("error") or "").strip()
         st.error(error_text[:700])
         if len(error_text) > 700 or task.get("video_log") or task.get("video_result"):
@@ -5772,6 +5772,9 @@ def _remake_video_from_card(task: dict[str, Any]) -> bool:
 
 def _catalog_task_state(task: dict[str, Any]) -> str:
     raw_state = str(task.get("state") or task.get("status") or task.get("task_status") or "").strip().casefold()
+    video_path = _task_artifact_path(task, "video")
+    if video_path is not None and (bool(task.get("video_ready")) or (raw_state == "failed" and str(task.get("stage") or "").strip().casefold() == "upload")):
+        return "done"
     if raw_state in {"completed", "complete", "published", "success", "finished"}:
         return "done"
     if raw_state:
@@ -5791,7 +5794,7 @@ def render_videos():
     known_states = ["to_do", "doing", "blocked", "done", "failed", "cancelled"]
     extra_states = sorted({str(task.get("state") or "unknown") for task in tasks if str(task.get("state") or "unknown") not in known_states})
     if "videos_state_filter" not in st.session_state:
-        st.session_state["videos_state_filter"] = "done"
+        st.session_state["videos_state_filter"] = "Todos"
     state_filter = st.selectbox("Filtrar por estado", ["Todos", *known_states, *extra_states], key="videos_state_filter")
     for task in tasks:
         task_state = _catalog_task_state(task)
@@ -5830,12 +5833,13 @@ def render_videos():
                 st.caption("Formato")
                 st.write(_video_task_format(task))
             with cols[2]:
-                st.write(_pipeline_stage_label(task))
+                stage_task = {**task, "stage": "video"} if task_state == "done" and str(task.get("stage") or "").strip().casefold() == "upload" else task
+                st.write(_pipeline_stage_label(stage_task))
             with cols[3]:
-                _render_video_task_state(task)
+                _render_video_task_state(task, state_override=task_state)
 
             with cols[4]:
-                state = str(task.get("state") or "")
+                state = task_state
                 start_col, stop_col = st.columns(2)
                 with start_col:
                     if st.button("Start", key=f"automation_start_{task['id']}", width="stretch", disabled=state not in {"to_do", "blocked", "failed"}):
