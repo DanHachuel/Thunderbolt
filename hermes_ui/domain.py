@@ -553,9 +553,9 @@ def remake_video_task(task_id: str) -> dict[str, Any] | None:
     """Queue a fresh video render while retaining the task's creative inputs.
 
     The persisted script, blueprint, keywords/tags, voice, thumbnail prompt/image,
-    generation settings and any non-video media artefacts are intentionally kept.
-    Only the rendered video and publication result are invalidated so the worker
-    rebuilds the video instead of regenerating the creative brief.
+    generation settings and any non-video creative artefacts are intentionally kept.
+    The rendered video, generated narration/audio and publication result are
+    invalidated so the worker rebuilds both audio and video from the script.
     """
     normalized_id = str(task_id or "").strip()
 
@@ -571,11 +571,23 @@ def remake_video_task(task_id: str) -> dict[str, Any] | None:
             artifacts = dict(task.get("artifacts") or {})
             artifacts.pop("video", None)
             artifacts.pop("upload", None)
+            for audio_key in ("audio", "narration", "voiceover", "voiceover_audio", "audio_path", "narration_audio"):
+                artifacts.pop(audio_key, None)
             try:
                 remake_count = int(task.get("remake_count") or 0)
             except (TypeError, ValueError):
                 remake_count = 0
-            for field in ("video_log", "video_result", "video_helper_status", "video_elapsed_seconds", "error"):
+            for field in (
+                "video_log",
+                "video_result",
+                "video_helper_status",
+                "video_elapsed_seconds",
+                "audio_result",
+                "audio_path",
+                "narration_path",
+                "generated_audio",
+                "error",
+            ):
                 task.pop(field, None)
             task.update({
                 "artifacts": artifacts,
@@ -583,6 +595,8 @@ def remake_video_task(task_id: str) -> dict[str, Any] | None:
                 "state": "to_do",
                 "progress": 50,
                 "video_ready": False,
+                "audio_regeneration_requested": True,
+                "audio_regeneration_requested_at": now(),
                 "remake_requested_at": now(),
                 "remake_count": remake_count + 1,
                 "error": None,

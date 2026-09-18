@@ -92,7 +92,13 @@ def test_remake_refreshes_current_channel_video_defaults(tmp_path, monkeypatch):
         },
         "thumbnail_blueprint_id": "thumb-old",
         "voice": "voice-old",
-        "artifacts": {"script": "/tmp/script.md", "video": "/tmp/old.mp4", "upload": "/tmp/upload.json"},
+        "artifacts": {
+            "script": "/tmp/script.md",
+            "audio": "/tmp/old.mp3",
+            "narration": "/tmp/old-narration.wav",
+            "video": "/tmp/old.mp4",
+            "upload": "/tmp/upload.json",
+        },
     }])
 
     remade = remake_video_task("video-remake-current-settings")
@@ -105,6 +111,8 @@ def test_remake_refreshes_current_channel_video_defaults(tmp_path, monkeypatch):
     assert remade["thumbnail_blueprint_id"] == "thumb-modern"
     assert remade["voice"] == "voice-current"
     assert remade["artifacts"] == {"script": "/tmp/script.md"}
+    assert remade["audio_regeneration_requested"] is True
+    assert "audio_regeneration_requested_at" in remade
 
 
 def test_manual_stop_marks_user_reason_but_keeps_queue_state(tmp_path, monkeypatch):
@@ -146,7 +154,7 @@ def test_seed_blueprints_are_initialized_without_overwrite(tmp_path, monkeypatch
     storage.BLUEPRINTS = storage.STORAGE / "blueprints"
     storage.ensure_storage()
     imported = sorted((storage.BLUEPRINTS / "importados").glob("*.json"))
-    assert len(imported) == 13
+    assert len(imported) == 14
 
     preserved = imported[0]
     preserved.write_text('{"name": "personalizado"}\n', encoding="utf-8")
