@@ -30,11 +30,14 @@ def test_seed_test_videos_are_packaged_and_described():
     assert '"seed/test_upload_videos/*.mp4"' in package
 
 
-def test_local_video_player_preloads_metadata_without_streamlit_media_handler():
+def test_local_video_player_uses_native_streamlit_video_without_base64():
     block = SOURCE.split("def _render_local_video_player", 1)[1].split("def ", 1)[0]
-    assert 'preload="metadata"' in block
-    assert 'src="data:{escape(media_type)};base64,{encoded}"' in block
-    assert "st.html(" in block
+    assert "if not path.is_file()" in block
+    assert 'st.warning(f"Vídeo não encontrado: {path.name}")' in block
+    assert 'st.video(path, format=mimetypes.guess_type(path.name)[0] or "video/mp4", width=width)' in block
+    assert "_file_bytes(path)" not in block
+    assert "base64" not in block
+    assert "st.html(" not in block
 
 
 def test_test_videos_seed_upload_metadata_is_specific_and_complete():

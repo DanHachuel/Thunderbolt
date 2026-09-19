@@ -24,7 +24,6 @@ sys.stdout = _force_utf8_stream(sys.stdout)
 sys.stderr = _force_utf8_stream(sys.stderr)
 
 import hashlib
-import base64
 from html import escape
 import json
 import mimetypes
@@ -65,18 +64,11 @@ def _file_bytes(path: Path | None) -> bytes:
 
 
 def _render_local_video_player(path: Path, *, width: int | str = "stretch") -> None:
-    """Render a local MP4 without routing it through Streamlit's media handler."""
+    """Render a local video through Streamlit without loading it into Python memory."""
     if not path.is_file():
+        st.warning(f"Vídeo não encontrado: {path.name}")
         return
-    media_type = mimetypes.guess_type(path.name)[0] or "video/mp4"
-    encoded = base64.b64encode(_file_bytes(path)).decode("ascii")
-    width_style = "100%" if width == "stretch" else f"{int(width)}px"
-    st.html(
-        f'''<video controls preload="metadata" playsinline style="display:block;width:{width_style};max-width:100%;height:auto;">
-          <source src="data:{escape(media_type)};base64,{encoded}" type="{escape(media_type)}">
-          O navegador não suporta a reprodução deste vídeo.
-        </video>'''
-    )
+    st.video(path, format=mimetypes.guess_type(path.name)[0] or "video/mp4", width=width)
 
 
 def _load_local_env() -> None:
