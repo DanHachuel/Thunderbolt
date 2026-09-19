@@ -67,6 +67,8 @@ class AutomationCardsTests(unittest.TestCase):
         self.assertIn('st.image(str(thumbnail_path), width=180, caption="Thumbnail")', block)
         self.assertIn('_render_local_video_player(video_path, width="stretch")', block)
         self.assertIn('if video_path is not None and _catalog_task_state(task) == "done"', block)
+        self.assertIn('with video_path.open("rb") as video_stream:', block)
+        self.assertNotIn('data=_file_bytes(video_path)', block)
 
     def test_remake_operation_preserves_creative_artifacts_and_clears_only_video_upload(self):
         domain_source = (ROOT / "hermes_ui" / "domain.py").read_text(encoding="utf-8")

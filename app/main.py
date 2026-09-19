@@ -6689,15 +6689,26 @@ def _render_youtube_automation_cards():
                             disabled=script_path is None,
                         )
                     with video_download_col:
-                        st.download_button(
-                            "Baixar Vídeo",
-                            data=_file_bytes(video_path),
-                            file_name=_automation_download_name("Vídeo", task, video_path, ".mp4"),
-                            mime="video/mp4",
-                            key=f"automation_download_video_{task['id']}",
-                            width="stretch",
-                            disabled=video_path is None,
-                        )
+                        if video_path is not None:
+                            with video_path.open("rb") as video_stream:
+                                st.download_button(
+                                    "Baixar Vídeo",
+                                    data=video_stream,
+                                    file_name=_automation_download_name("Vídeo", task, video_path, ".mp4"),
+                                    mime="video/mp4",
+                                    key=f"automation_download_video_{task['id']}",
+                                    width="stretch",
+                                )
+                        else:
+                            st.download_button(
+                                "Baixar Vídeo",
+                                data=b"",
+                                file_name="video.mp4",
+                                mime="video/mp4",
+                                key=f"automation_download_video_{task['id']}",
+                                width="stretch",
+                                disabled=True,
+                            )
                     if st.button(
                         "Refazer Vídeo",
                         key=f"automation_remake_video_{task['id']}",
