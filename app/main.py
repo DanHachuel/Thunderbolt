@@ -2580,6 +2580,8 @@ def classify_channel_platform(channel: Any) -> str:
         return "instagram"
     if value in {"facebook", "facebook_page", "facebook_pages", "fb"}:
         return "facebook"
+    if value in {"bilibili", "bili"}:
+        return "bilibili"
     def has_tiktok_marker(item: Any) -> bool:
         if isinstance(item, dict):
             return any(has_tiktok_marker(key) or has_tiktok_marker(value) for key, value in item.items())
@@ -2592,6 +2594,91 @@ def classify_channel_platform(channel: Any) -> str:
 
 def _tiktok_channel_records() -> list[dict[str, Any]]:
     return [channel for channel in read_json("channels.json", []) if classify_channel_platform(channel) == "tiktok"]
+
+
+@st.fragment(run_every=5.0)
+def _render_bilibili_automation_cards() -> None:
+    if not _has_script_context():
+        return
+    st.divider()
+    st.subheader("Vídeos cadastrados Bilibili")
+    st.caption("Esta fila mostra exclusivamente tarefas associadas a canais Bilibili.")
+    tasks = load_automation_tasks_for_platform("bilibili")
+    if not tasks:
+        st.info("Ainda não existem vídeos Bilibili cadastrados.")
+        return
+    for task in tasks:
+        task_id = str(task.get("id") or "")
+        with st.container(border=True):
+            card_cols = st.columns([2.25, 1.55, 1.05, 2.15], gap="small")
+            script_path = _task_artifact_path(task, "script")
+            video_path = _task_artifact_path(task, "video")
+            thumbnail_path = _task_thumbnail_path(task)
+            with card_cols[0]:
+                if thumbnail_path:
+                    st.image(_file_bytes(thumbnail_path), width=180, caption="Thumbnail")
+                else:
+                    st.caption("Thumbnail ainda não pronta")
+                st.write(f"**{task.get('title') or task.get('topic') or 'Vídeo Bilibili'}**")
+                st.caption(f"{task.get('channel_name') or 'Canal Bilibili'} · {task_id}")
+            with card_cols[1]:
+                _render_video_task_state(task)
+            with card_cols[2]:
+                st.caption("Plataforma")
+                st.write("Bilibili")
+            with card_cols[3]:
+                state = str(task.get("state") or "")
+                start_col, stop_col, delete_col = st.columns(3)
+                with start_col:
+                    if st.button("Start", key=f"bilibili_automation_start_{task_id}", width="stretch", disabled=state not in {"to_do", "blocked", "failed"}):
+                        if _start_pipeline_task(task_id, state):
+                            st.rerun(scope="fragment")
+                with stop_col:
+                    if st.button("Stop", key=f"bilibili_automation_stop_{task_id}", width="stretch", disabled=state != "doing"):
+                        stop_task_by_user(task_id)
+                        st.rerun(scope="fragment")
+                script_download_col, video_download_col = st.columns(2, gap="small")
+                with script_download_col:
+                    st.download_button(
+                        "Baixar Roteiro",
+                        data=_file_bytes(script_path),
+                        file_name=_automation_download_name("Script", task, script_path, ".md"),
+                        mime="text/markdown",
+                        key=f"bilibili_automation_download_script_{task_id}",
+                        width="stretch",
+                        disabled=script_path is None,
+                    )
+                with video_download_col:
+                    st.download_button(
+                        "Baixar Vídeo",
+                        data=_file_bytes(video_path),
+                        file_name=_automation_download_name("Vídeo", task, video_path, ".mp4"),
+                        mime="video/mp4",
+                        key=f"bilibili_automation_download_video_{task_id}",
+                        width="stretch",
+                        disabled=video_path is None,
+                    )
+                if st.button(
+                    "Refazer Vídeo",
+                    key=f"bilibili_automation_remake_video_{task_id}",
+                    icon=":material/refresh:",
+                    type="primary",
+                    width="stretch",
+                    disabled=state == "doing",
+                    help="Refaz o áudio e o vídeo do zero, mantendo o roteiro, tags, voz, thumbnail e demais artefactos criativos.",
+                ):
+                    if _remake_video_from_card(task):
+                        st.rerun(scope="fragment")
+                with delete_col:
+                    if st.button("Apagar", key=f"bilibili_automation_delete_{task_id}", width="stretch", disabled=state == "doing"):
+                        delete_task(task_id)
+                        st.rerun(scope="fragment")
+
+
+def render_bilibili_automation() -> None:
+    st.title("Automação Bilibili")
+    st.caption("Fila de produção Bilibili com o mesmo fluxo de regeneração de áudio e vídeo das restantes automações.")
+    _render_bilibili_automation_cards()
 
 
 def _tiktok_avatar_url(value: dict[str, Any]) -> str:
@@ -10795,7 +10882,7 @@ def main():
         "Automação Musicas": lambda: None,
         "Automação UGC": lambda: None,
         "Automação Influencer Content": lambda: None,
-        "Automação Bilibili": lambda: None,
+        "Automação Bilibili": render_bilibili_automation,
         "Niche Finder Kaggle": render_niche_finder,
         "Kaggle": lambda: render_niche_tutorial("kaggle"),
         "Niche Finder Apify": render_niche_finder_apify,

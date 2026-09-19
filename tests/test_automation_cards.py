@@ -54,6 +54,13 @@ class AutomationCardsTests(unittest.TestCase):
         self.assertIn('automation_remake_video_', MAIN_SOURCE)
         self.assertIn('remake_video_task(task_id)', MAIN_SOURCE)
 
+    def test_bilibili_automation_cards_expose_the_same_remake_action(self):
+        self.assertIn('def _render_bilibili_automation_cards()', MAIN_SOURCE)
+        self.assertIn('bilibili_automation_remake_video_', MAIN_SOURCE)
+        self.assertIn('"Automação Bilibili": render_bilibili_automation', MAIN_SOURCE)
+        self.assertIn('classify_channel_platform(channel)', MAIN_SOURCE)
+        self.assertIn('return "bilibili"', MAIN_SOURCE)
+
     def test_remake_operation_preserves_creative_artifacts_and_clears_only_video_upload(self):
         domain_source = (ROOT / "hermes_ui" / "domain.py").read_text(encoding="utf-8")
         self.assertIn('def remake_video_task(task_id: str)', domain_source)
