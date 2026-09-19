@@ -37,7 +37,7 @@ def test_local_video_player_uses_native_streamlit_video_without_base64():
     assert 'video_kwargs: dict[str, Any] = {"format": mimetypes.guess_type(path.name)[0] or "video/mp4"}' in block
     assert 'video_signature = inspect.signature(st.video)' in block
     assert 'video_kwargs["width"] = width' in block
-    assert 'st.video(path, **video_kwargs)' in block
+    assert 'st.video(str(path), **video_kwargs)' in block
     assert "_file_bytes(path)" not in block
     assert "base64" not in block
     assert "st.html(" not in block

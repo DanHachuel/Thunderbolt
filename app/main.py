@@ -68,7 +68,7 @@ def _render_local_video_player(path: Path, *, width: int | str = "stretch") -> N
     if not path.is_file():
         st.warning(f"Vídeo não encontrado: {path.name}")
         return
-    video_kwargs: dict[str, Any] = {}
+    video_kwargs: dict[str, Any] = {"format": mimetypes.guess_type(path.name)[0] or "video/mp4"}
     # ``width`` was added to st.video after the minimum Streamlit version used
     # by the launcher. Omit it on older installations so the native player
     # still renders instead of failing with an unexpected-keyword error.
@@ -78,7 +78,10 @@ def _render_local_video_player(path: Path, *, width: int | str = "stretch") -> N
         video_signature = None
     if video_signature is None or "width" in video_signature.parameters:
         video_kwargs["width"] = width
-    st.video(path, **video_kwargs)
+    # Streamlit's local media handler reliably resolves a string path. Passing
+    # Path directly can leave the browser player waiting indefinitely on some
+    # supported Streamlit versions.
+    st.video(str(path), **video_kwargs)
 
 
 def _load_local_env() -> None:
