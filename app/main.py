@@ -68,7 +68,7 @@ def _render_local_video_player(path: Path, *, width: int | str = "stretch") -> N
     if not path.is_file():
         st.warning(f"Vídeo não encontrado: {path.name}")
         return
-    video_kwargs: dict[str, Any] = {"format": mimetypes.guess_type(path.name)[0] or "video/mp4"}
+    video_kwargs: dict[str, Any] = {}
     # ``width`` was added to st.video after the minimum Streamlit version used
     # by the launcher. Omit it on older installations so the native player
     # still renders instead of failing with an unexpected-keyword error.
