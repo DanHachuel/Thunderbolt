@@ -107,11 +107,13 @@ def _acquire_lock() -> Path | None:
         descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
         try:
-            old_pid = int(lock_path.read_text(encoding="utf-8").strip())
+            lock_contents = lock_path.read_text(encoding="utf-8").strip()
+            old_pid_text = lock_contents.removeprefix("pid=").strip()
+            old_pid = int(old_pid_text)
         except (OSError, ValueError):
             old_pid = 0
         if _pid_alive(old_pid):
-            return None
+            raise RuntimeError(f"Já existe um worker de automação activo para este storage do Thunderbolt (PID {old_pid}).")
         try:
             lock_path.unlink()
         except OSError:
@@ -121,7 +123,7 @@ def _acquire_lock() -> Path | None:
         except FileExistsError:
             return None
     try:
-        os.write(descriptor, str(os.getpid()).encode("ascii"))
+        os.write(descriptor, f"pid={os.getpid()}\n".encode("ascii"))
     finally:
         os.close(descriptor)
     return lock_path

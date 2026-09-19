@@ -1,4 +1,7 @@
 # Changelog
+## 0.8.79 — 2026-09-19
+- Corrigido loop infinito de reinicialização do automation_worker com lock obsoleto. Adicionado backoff exponencial e limite de 5 tentativas.
+
 ## 0.8.62 — 2026-09-17
 - Priorizada a ferramenta `YOUTUBE_MULTIPART_UPLOAD_VIDEO` na operação `upload_video` do Composio.
 - Adicionados logs do caminho absoluto, tamanho, tipo, valor do campo de ficheiro e resposta completa do Composio.

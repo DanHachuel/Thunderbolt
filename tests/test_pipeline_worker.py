@@ -34,7 +34,7 @@ def test_pipeline_lock_recovers_after_dead_process(tmp_path, monkeypatch):
     acquired = pipeline_worker._acquire_lock()
 
     assert acquired == lock_path
-    assert lock_path.read_text(encoding="utf-8") == str(__import__("os").getpid())
+    assert lock_path.read_text(encoding="utf-8") == f"pid={__import__('os').getpid()}\n"
     lock_path.unlink()
 
 

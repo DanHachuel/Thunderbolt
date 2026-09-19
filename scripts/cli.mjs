@@ -365,7 +365,9 @@ proxy.on("upgrade", (request, clientSocket, head) => {
 // interfaces para que o encaminhamento seguro do ambiente consiga alcançá-lo.
 proxy.on("error", (error) => {
   console.error(`Thunderbolt: não foi possível abrir a interface em ${publicPort}: ${error.message}`);
-  process.exitCode = 1;
+  // A porta pública funciona como lock de instância do launcher: uma segunda
+  // instância não deve continuar a arrancar workers depois do bind falhar.
+  process.exit(1);
 });
 proxy.listen(publicPort, "127.0.0.1", () => {
   console.log(`Thunderbolt: interface disponível em http://localhost:${publicPort}/`);
@@ -382,27 +384,69 @@ let workerRestartTimer = null;
 let pipelineRestartTimer = null;
 let workerMonitorTimer = null;
 let streamlitRestartTimer = null;
+let automationFailureCount = 0;
+let automationFailureWindowStartedAt = 0;
+let automationStableTimer = null;
+let lastAutomationWorkerError = "";
+
+function scheduleAutomationWorkerRestart() {
+  const now = Date.now();
+  if (!automationFailureWindowStartedAt || now - automationFailureWindowStartedAt >= 60000) {
+    automationFailureWindowStartedAt = now;
+    automationFailureCount = 0;
+  }
+  automationFailureCount += 1;
+  if (automationFailureCount >= 5) {
+    console.error(`O worker de automação falhou 5 vezes seguidas. Última mensagem: ${lastAutomationWorkerError || "sem mensagem de erro capturada"}. Verifique o storage ou reinicie o Thunderbolt manualmente.`);
+    return;
+  }
+  const delay = Math.min(2 ** automationFailureCount, 32) * 1000;
+  console.error(`Thunderbolt worker: nova tentativa em ${delay / 1000}s (falha ${automationFailureCount}/5).`);
+  workerRestartTimer = setTimeout(() => {
+    workerRestartTimer = null;
+    startAutomationWorker();
+  }, delay);
+}
 
 function startAutomationWorker() {
   if (shuttingDown || worker || !hasScheduledAutomation()) return;
+  const startedAt = Date.now();
+  lastAutomationWorkerError = "";
   worker = spawn(python, ["-m", "hermes_ui.automation_worker"], {
     cwd: root,
-    stdio: "inherit",
+    stdio: ["ignore", "inherit", "pipe"],
     env: runtimeEnv,
     windowsHide: false,
+  });
+  worker.stderr?.setEncoding("utf8");
+  worker.stderr?.on("data", (chunk) => {
+    const message = String(chunk).trim();
+    if (message) lastAutomationWorkerError = message.slice(-1000);
   });
   worker.on("error", (error) => console.error(`Thunderbolt worker: ${error.message}`));
   worker.on("exit", (code, signal) => {
     worker = null;
     if (shuttingDown) return;
     console.error(`Thunderbolt worker: terminou (código ${code ?? "-"}, sinal ${signal ?? "-"}).`);
-    if (hasScheduledAutomation()) {
+    if (automationStableTimer) {
+      clearTimeout(automationStableTimer);
+      automationStableTimer = null;
+    }
+    const runtimeMs = Date.now() - startedAt;
+    if (code !== 0 && runtimeMs < 5000 && hasScheduledAutomation()) {
+      scheduleAutomationWorkerRestart();
+    } else if (hasScheduledAutomation()) {
       workerRestartTimer = setTimeout(() => {
         workerRestartTimer = null;
         startAutomationWorker();
       }, 5000);
     }
   });
+  automationStableTimer = setTimeout(() => {
+    automationFailureCount = 0;
+    automationFailureWindowStartedAt = 0;
+    automationStableTimer = null;
+  }, 60000);
 }
 
 function stopPipelineWorker() {
@@ -492,6 +536,7 @@ const stopWorker = () => {
   proxy.close();
   if (streamlitRestartTimer) clearTimeout(streamlitRestartTimer);
   if (workerRestartTimer) clearTimeout(workerRestartTimer);
+  if (automationStableTimer) clearTimeout(automationStableTimer);
   if (workerMonitorTimer) clearInterval(workerMonitorTimer);
   if (worker && !worker.killed) worker.kill();
   stopPipelineWorker();

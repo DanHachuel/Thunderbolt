@@ -129,3 +129,71 @@ def test_worker_creates_pending_card_without_waiting_for_creative_generation(tmp
     assert tasks[0]["stage"] == "topic"
     assert tasks[0]["topic_source"] == "llm_pending"
     assert tasks[0]["language"] == "en"
+
+
+# Regression coverage for stale automation-worker locks and shutdown cleanup.
+def _isolate_lock_storage(tmp_path, monkeypatch):
+    from hermes_ui import storage
+
+    root = tmp_path / "lock-storage"
+    monkeypatch.setattr(storage, "STORAGE", root)
+    monkeypatch.setattr(storage, "STATE", root / "state")
+    monkeypatch.setattr(storage, "BLUEPRINTS", root / "blueprints")
+    monkeypatch.setattr(storage, "TIKTOK_PROMPT_MASTERS", root / "tiktok" / "prompts_master")
+    monkeypatch.setattr(storage, "MEDIA_DOWNLOADS", root / "downloads")
+    storage.ensure_storage()
+    return root
+
+
+def test_automation_lock_recovers_after_dead_process(tmp_path, monkeypatch):
+    from hermes_ui import automation_worker
+
+    root = _isolate_lock_storage(tmp_path, monkeypatch)
+    lock_path = root / automation_worker.LOCK_FILENAME
+    lock_path.write_text("pid=999999999\n", encoding="utf-8")
+
+    acquired = automation_worker._acquire_lock()
+
+    assert acquired == lock_path
+    assert lock_path.read_text(encoding="utf-8") == f"pid={__import__('os').getpid()}\n"
+    automation_worker._release_lock(acquired)
+    assert not lock_path.exists()
+
+
+def test_automation_lock_rejects_live_process(tmp_path, monkeypatch):
+    from hermes_ui import automation_worker
+    import os
+    import pytest
+
+    root = _isolate_lock_storage(tmp_path, monkeypatch)
+    lock_path = root / automation_worker.LOCK_FILENAME
+    lock_path.write_text(f"pid={os.getpid()}\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="worker de automação activo"):
+        automation_worker._acquire_lock()
+
+    assert lock_path.exists()
+
+
+def test_automation_lock_invalid_format_is_treated_as_stale(tmp_path, monkeypatch):
+    from hermes_ui import automation_worker
+
+    root = _isolate_lock_storage(tmp_path, monkeypatch)
+    lock_path = root / automation_worker.LOCK_FILENAME
+    lock_path.write_text("not-a-pid", encoding="utf-8")
+
+    acquired = automation_worker._acquire_lock()
+
+    assert acquired == lock_path
+    automation_worker._release_lock(acquired)
+
+
+def test_run_worker_releases_lock_on_shutdown(tmp_path, monkeypatch):
+    from hermes_ui import automation_worker
+
+    root = _isolate_lock_storage(tmp_path, monkeypatch)
+    monkeypatch.setattr(automation_worker, "run_once", lambda: (_ for _ in ()).throw(KeyboardInterrupt()))
+
+    automation_worker.run_worker(interval_seconds=2)
+
+    assert not (root / automation_worker.LOCK_FILENAME).exists()
