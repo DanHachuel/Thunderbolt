@@ -81,6 +81,20 @@ def _render_local_video_player(path: Path, *, width: int | str = "stretch") -> N
     st.video(path, **video_kwargs)
 
 
+def _render_lazy_local_video_player(path: Path, *, key: str, width: int | str = "stretch") -> None:
+    """Only register a native player after the user asks to load that video."""
+    if not path.is_file():
+        st.warning(f"Vídeo não encontrado: {path.name}")
+        return
+    loaded_key = f"video_player_loaded_{key}"
+    if not st.session_state.get(loaded_key, False):
+        if st.button("Carregar player", key=f"{loaded_key}_button", width="stretch"):
+            st.session_state[loaded_key] = True
+            st.rerun()
+        return
+    _render_local_video_player(path, width=width)
+
+
 def _load_local_env() -> None:
     for env_path in (ROOT / ".env", Path.cwd() / ".env"):
         try:
@@ -5923,7 +5937,7 @@ def render_videos():
                         st.caption(f"Thumbnail: {status}{prompt_note}")
                 with media_cols[1]:
                     if video_file is not None and task_state == "done":
-                        _render_local_video_player(video_file, width="stretch")
+                        _render_lazy_local_video_player(video_file, key=f"backlog_{task['id']}", width="stretch")
                         with video_file.open("rb") as video_stream:
                             st.download_button(
                                 'Descarregar vídeo pronto',
@@ -6636,7 +6650,7 @@ def _render_youtube_automation_cards():
                             st.caption("Thumbnail ainda não pronta")
                     with media_cols[1]:
                         if video_path is not None and _catalog_task_state(task) == "done":
-                            _render_local_video_player(video_path, width="stretch")
+                            _render_lazy_local_video_player(video_path, key=f"youtube_automation_{task['id']}", width="stretch")
                     st.write(f"**{task.get('topic', 'Sem tópico')}**")
                     st.caption(f"{task.get('channel_name', 'Canal')} · {task.get('id', '')}")
                     thumbnail_download_col, prompt_download_col = st.columns(2, gap="small")
