@@ -152,7 +152,7 @@ from hermes_ui.media_downloader import AUDIO_FORMATS, IMAGE_CONTAINERS, IMAGE_QU
 from hermes_ui.notifications import clear_notifications, list_notifications, mark_all_notifications_read, mark_notification_read, notification_event_catalog, notification_preferences, record_notification, reconcile_persisted_notifications as _do_reconcile_persisted_notifications, save_notification_preferences, unread_notification_count
 from hermes_ui.influencers import BACKEND_OPTIONS, DOCUMENT_EXTENSIONS, IMAGE_EXTENSIONS, backend_name, backend_status, get_repository, test_backend
 from hermes_ui.logs import list_logs, logs_to_rows
-from hermes_ui.languages import LANGUAGE_CODES, VIDEO_LANGUAGE_CODES, LANGUAGE_FLAG_DATA_URIS, language_code, language_label, ui_language_menu_label, ui_text, video_language_label, video_language_options
+from hermes_ui.languages import FLAG_DATA_URIS_BY_ISO, LANGUAGE_CODES, VIDEO_LANGUAGE_CODES, LANGUAGE_FLAG_DATA_URIS, language_code, language_label, replace_flag_emojis, ui_language_menu_label, ui_text, video_language_label, video_language_options
 from hermes_ui.countries import COUNTRY_OPTIONS
 from hermes_ui.api_key_tests import test_apify_credentials, test_influencer_database, test_innertube_api_key, test_kaggle_credentials, test_material_source_credentials, test_media_provider_card, test_nano_banana_credentials, test_postiz_credentials, test_telegram_credentials, test_tiktok_credentials, test_upload_post_credentials, test_voice_provider
 from hermes_ui.tutorials import tutorial_body, tutorial_caption, tutorial_title
@@ -376,6 +376,65 @@ if "unsafe_allow_javascript" in _html_parameters:
     _html_options["unsafe_allow_javascript"] = True
 st.html(_THEME_BOOTSTRAP, **_html_options)
 
+_FLAG_RENDER_BOOTSTRAP = r"""
+<script>
+(() => {
+    const FLAG_DATA_URIS = %s;
+    const FLAG_PATTERN = /[\u{1F1E6}-\u{1F1FF}]{2}/gu;
+    const toIso = (pair) => [...pair].map((character) => String.fromCharCode(65 + character.codePointAt(0) - 0x1F1E6)).join("");
+    const replaceTextNode = (node) => {
+        if (!node.nodeValue || !node.parentElement || node.parentElement.closest("img,script,style,noscript,textarea,input,option")) return;
+        if (!FLAG_PATTERN.test(node.nodeValue)) {
+            FLAG_PATTERN.lastIndex = 0;
+            return;
+        }
+        FLAG_PATTERN.lastIndex = 0;
+        const fragment = document.createDocumentFragment();
+        let cursor = 0;
+        for (const match of node.nodeValue.matchAll(FLAG_PATTERN)) {
+            const iso = toIso(match[0]);
+            const source = FLAG_DATA_URIS[iso];
+            if (!source) continue;
+            if (match.index > cursor) fragment.appendChild(document.createTextNode(node.nodeValue.slice(cursor, match.index)));
+            const image = document.createElement("img");
+            image.src = source;
+            image.alt = iso;
+            image.className = "tb-flag-icon";
+            image.dataset.tbFlag = iso.toLowerCase();
+            fragment.appendChild(image);
+            cursor = match.index + match[0].length;
+        }
+        if (cursor === 0) return;
+        if (cursor < node.nodeValue.length) fragment.appendChild(document.createTextNode(node.nodeValue.slice(cursor)));
+        node.replaceWith(fragment);
+    };
+    const scan = (root = document.body) => {
+        if (!root) return;
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        let node;
+        while ((node = walker.nextNode())) nodes.push(node);
+        nodes.forEach(replaceTextNode);
+    };
+    const start = () => {
+        scan();
+        if (!document.body || window.__thunderboltFlagObserver) return;
+        let scheduled = false;
+        const observer = new MutationObserver(() => {
+            if (scheduled) return;
+            scheduled = true;
+            window.requestAnimationFrame(() => { scheduled = false; scan(); });
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        window.__thunderboltFlagObserver = observer;
+    };
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
+    else start();
+})();
+</script>
+""" % json.dumps(FLAG_DATA_URIS_BY_ISO)
+st.html(_FLAG_RENDER_BOOTSTRAP, **_html_options)
+
 st.markdown("""
 <style>
 /*
@@ -384,6 +443,7 @@ st.markdown("""
    currentColor/color-mix e nunca uma paleta escura fixa.
 */
 :root { --tb-accent:#35a7ff; --tb-gold:#c59b55; }
+.tb-flag-icon { width:1.2em; height:0.82em; object-fit:cover; vertical-align:-0.08em; margin:0 .1em; border-radius:2px; display:inline-block; }
 [data-testid="stAppViewContainer"] { background:transparent; color:inherit; }
 [data-testid="stSidebar"] { background:rgba(128,128,128,.04); border-right:1px solid rgba(128,128,128,.20); }
 [data-testid="stSidebar"] { background:color-mix(in srgb, currentColor 4%, transparent); border-right:1px solid color-mix(in srgb, currentColor 16%, transparent); }
@@ -512,6 +572,9 @@ def _translate_streamlit_arguments(method_name: str, args: tuple[Any, ...], kwar
         translated_args[0] = ui_text(translated_args[0], selected_language)
     elif isinstance(kwargs.get("label"), str):
         kwargs["label"] = ui_text(kwargs["label"], selected_language)
+    if method_name == "markdown" and translated_args and isinstance(translated_args[0], str):
+        translated_args[0] = replace_flag_emojis(translated_args[0])
+        kwargs.setdefault("unsafe_allow_html", True)
     for keyword in ("placeholder", "help"):
         if isinstance(kwargs.get(keyword), str):
             kwargs[keyword] = ui_text(kwargs[keyword], selected_language)

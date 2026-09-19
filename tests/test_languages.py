@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from hermes_ui.languages import LANGUAGE_CATALOG, LANGUAGE_CODES, LANGUAGE_FLAG_DATA_URIS, LANGUAGE_FLAG_SVGS, TAB_TRANSLATIONS, _TAB_LABELS, language_code, language_label, translate_ui_content, ui_language_menu_label, ui_text, video_language_label
+from hermes_ui.languages import FLAG_DATA_URIS_BY_ISO, LANGUAGE_CATALOG, LANGUAGE_CODES, LANGUAGE_FLAG_DATA_URIS, LANGUAGE_FLAG_SVGS, TAB_TRANSLATIONS, _TAB_LABELS, language_code, language_label, replace_flag_emojis, translate_ui_content, ui_language_menu_label, ui_text, video_language_label
 from integrations.moneyprinter_config import build_moneyprinter_config
 
 
@@ -17,6 +17,18 @@ def test_moneyprinter_language_catalog_has_requested_codes_and_flags():
     assert ui_language_menu_label("ru") == "Russian"
     assert set(LANGUAGE_FLAG_DATA_URIS) == set(LANGUAGE_CODES)
     assert all(uri.startswith("data:image/svg+xml;base64,") for uri in LANGUAGE_FLAG_DATA_URIS.values())
+
+
+def test_flag_emojis_use_local_svg_assets_and_preserve_unknown_pairs():
+    converted = replace_flag_emojis("Origem 🇧🇷 e destino 🇩🇪.")
+
+    assert 'class="tb-flag-icon"' in converted
+    assert 'alt="BR"' in converted
+    assert 'alt="DE"' in converted
+    assert converted.count("data:image/svg+xml;base64,") == 2
+    assert replace_flag_emojis("Código desconhecido 🇽🇽") == "Código desconhecido 🇽🇽"
+    assert replace_flag_emojis(123) == 123
+    assert set(FLAG_DATA_URIS_BY_ISO) == {"US", "CN", "DE", "VN", "TR", "BR", "RU", "ES", "ID", "IT", "PL", "IE", "SA", "IL"}
 
 
 def test_language_normalization_preserves_legacy_values():
@@ -39,6 +51,8 @@ def test_ui_translation_and_header_picker_are_present():
     assert "format_func=ui_language_menu_label" in MAIN_SOURCE
     assert "label_visibility=\"visible\"" in MAIN_SOURCE
     assert "LANGUAGE_FLAG_DATA_URIS" in MAIN_SOURCE
+    assert "_FLAG_RENDER_BOOTSTRAP" in MAIN_SOURCE
+    assert "tb-flag-icon" in MAIN_SOURCE
     assert 'aria-label="Language"' in MAIN_SOURCE
     assert "st.popover" not in MAIN_SOURCE
     assert "stAppDeployButton" not in MAIN_SOURCE

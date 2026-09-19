@@ -1,4 +1,7 @@
 # Changelog
+## 0.8.83 — 2026-09-19
+- Adicionada renderização consistente de emojis de bandeira como SVGs locais nos conteúdos da interface, com conversão global no Streamlit, fallback seguro e suporte aos temas claro e escuro.
+
 ## 0.8.79 — 2026-09-19
 - Corrigido loop infinito de reinicialização do automation_worker com lock obsoleto. Adicionado backoff exponencial e limite de 5 tentativas.
 

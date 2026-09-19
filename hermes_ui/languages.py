@@ -55,6 +55,38 @@ LANGUAGE_FLAG_DATA_URIS = {
     for code, svg in LANGUAGE_FLAG_SVGS.items()
 }
 
+# Keep the persisted language codes separate from the ISO country codes used by
+# regional-indicator emojis (``en`` is the US flag, not the England flag).
+LANGUAGE_FLAG_ISO_CODES = {
+    "en": "US", "zh": "CN", "de": "DE", "vi": "VN", "tr": "TR", "pt": "BR",
+    "ru": "RU", "es": "ES", "id": "ID", "it": "IT", "pl": "PL", "ga": "IE",
+    "ar": "SA", "he": "IL",
+}
+FLAG_DATA_URIS_BY_ISO = {
+    iso: LANGUAGE_FLAG_DATA_URIS[language]
+    for language, iso in LANGUAGE_FLAG_ISO_CODES.items()
+}
+_REGIONAL_INDICATOR_PATTERN = re.compile(r"[\U0001F1E6-\U0001F1FF]{2}")
+
+
+def _regional_indicator_to_iso(pair: str) -> str:
+    return "".join(chr(ord("A") + ord(character) - 0x1F1E6) for character in pair)
+
+
+def replace_flag_emojis(value: Any) -> Any:
+    """Replace known regional-indicator flags with local SVG image markup."""
+    if not isinstance(value, str):
+        return value
+
+    def replace(match: re.Match[str]) -> str:
+        iso = _regional_indicator_to_iso(match.group(0))
+        data_uri = FLAG_DATA_URIS_BY_ISO.get(iso)
+        if not data_uri:
+            return match.group(0)
+        return f'<img src="{data_uri}" alt="{iso}" class="tb-flag-icon" data-tb-flag="{iso.lower()}">'
+
+    return _REGIONAL_INDICATOR_PATTERN.sub(replace, value)
+
 # Legacy labels used by existing channels, scripts and tests. They remain
 # readable while new UI selections persist only the canonical short code.
 LEGACY_LANGUAGE_CODES = {
@@ -1167,7 +1199,7 @@ def video_language_options() -> list[str]:
 
 
 __all__ = [
-    "LANGUAGE_CATALOG", "LANGUAGE_BY_CODE", "LANGUAGE_CODES", "VIDEO_LANGUAGE_CODES", "LANGUAGE_FLAG_DATA_URIS", "language_code", "language_flag",
+    "LANGUAGE_CATALOG", "LANGUAGE_BY_CODE", "LANGUAGE_CODES", "VIDEO_LANGUAGE_CODES", "LANGUAGE_FLAG_DATA_URIS", "FLAG_DATA_URIS_BY_ISO", "replace_flag_emojis", "language_code", "language_flag",
     "language_label", "ui_language_menu_label", "language_locale", "language_option_codes", "language_option_labels",
     "ui_text", "video_language_label", "video_language_options",
 ]
