@@ -19,8 +19,16 @@ def test_catalog_reads_both_storage_locations_and_legacy_fields():
     assert 'legacy-{hashlib.sha1(identity.encode(\'utf-8\')).hexdigest()[:16]}' in block
 
 
+def test_thumbnail_resolution_accepts_current_and_legacy_paths():
+    block = SOURCE.split("def _task_thumbnail_path", 1)[1].split("def _task_artifact_path", 1)[0]
+    for field in ('artifacts.get("thumbnail")', 'artifacts.get("thumbnail_path")', 'artifacts.get("thumbnail_file")', 'task.get("thumbnail_path")', 'task.get("thumbnail_file")'):
+        assert field in block
+
+
 def test_done_cards_keep_player_and_download():
     block = SOURCE.split("def render_videos():", 1)[1].split("def _music_backlog_records", 1)[0]
     assert 'task_state == "done"' in block
-    assert '_render_local_video_player(video_file, width=360)' in block
+    assert '_render_local_video_player(video_file, width="stretch")' in block
+    assert 'media_cols = st.columns(2, gap="small")' in block
+    assert "Vídeo pronto; a thumbnail pode ser criada ou carregada depois." not in block
     assert "pipeline_video_download_" in block

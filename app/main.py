@@ -5720,8 +5720,13 @@ def _task_thumbnail_path(task: dict[str, Any]) -> Path | None:
     artifacts = task.get("artifacts") if isinstance(task.get("artifacts"), dict) else {}
     candidates = [
         artifacts.get("thumbnail"),
+        artifacts.get("thumbnail_path"),
+        artifacts.get("thumbnail_file"),
         artifacts.get("cover"),
+        artifacts.get("cover_path"),
         task.get("thumbnail_path"),
+        task.get("thumbnail_file"),
+        task.get("thumbnail"),
         task.get("thumbnail_url"),
     ]
     for candidate in candidates:
@@ -5904,33 +5909,35 @@ def render_videos():
         with st.container(border=True):
             cols = st.columns([2.2, 1, 1, 1.2, 1.8])
             with cols[0]:
+                artifacts = task.get('artifacts') or {}
+                thumbnail_file = _task_thumbnail_path(task)
+                video_path = str(artifacts.get('video') or '').strip()
+                video_file = _task_artifact_path(task, "video")
+                media_cols = st.columns(2, gap="small")
+                with media_cols[0]:
+                    if thumbnail_file is not None:
+                        st.image(str(thumbnail_file), width=180, caption="Thumbnail")
+                    else:
+                        status = task.get('thumbnail_status', 'not_generated')
+                        prompt_note = ' · prompt pronto' if task.get('thumbnail_prompt') else ''
+                        st.caption(f"Thumbnail: {status}{prompt_note}")
+                with media_cols[1]:
+                    if video_file is not None and task_state == "done":
+                        _render_local_video_player(video_file, width="stretch")
+                        with video_file.open("rb") as video_stream:
+                            st.download_button(
+                                'Descarregar vídeo pronto',
+                                data=video_stream,
+                                file_name=video_file.name,
+                                mime='video/mp4',
+                                key=f"pipeline_video_download_{task['id']}",
+                                width="stretch",
+                            )
+                    elif video_path:
+                        st.caption(f'Vídeo registado: {video_path}')
                 st.write(f"**{task.get('title') or task.get('topic', 'Sem título')}**")
                 st.caption(f"Tópico: {task.get('topic', 'Sem tópico')}")
                 st.caption(f"{task.get('channel_name')} · {task.get('id')}")
-                artifacts = task.get('artifacts') or {}
-                thumbnail_path = artifacts.get('thumbnail', '')
-                if thumbnail_path and Path(thumbnail_path).is_file():
-                    st.image(thumbnail_path, width=180)
-                else:
-                    status = task.get('thumbnail_status', 'not_generated')
-                    prompt_note = ' · prompt pronto' if task.get('thumbnail_prompt') else ''
-                    st.caption(f"Thumbnail: {status}{prompt_note}")
-                video_path = str(artifacts.get('video') or '').strip()
-                video_file = _task_artifact_path(task, "video")
-                if video_file is not None and task_state == "done":
-                    _render_local_video_player(video_file, width=360)
-                    st.success('Vídeo pronto; a thumbnail pode ser criada ou carregada depois.')
-                    with video_file.open("rb") as video_stream:
-                        st.download_button(
-                            'Descarregar vídeo pronto',
-                            data=video_stream,
-                            file_name=video_file.name,
-                            mime='video/mp4',
-                            key=f"pipeline_video_download_{task['id']}",
-                            width="stretch",
-                        )
-                elif video_path:
-                    st.caption(f'Vídeo registado: {video_path}')
             with cols[1]:
                 st.caption("Formato")
                 st.write(_video_task_format(task))
@@ -6621,10 +6628,15 @@ def _render_youtube_automation_cards():
                 thumbnail_prompt_path = _task_artifact_path(task, "thumbnail_prompt_json")
                 thumbnail_prompt = str(task.get("thumbnail_prompt") or "").strip()
                 with task_cols[0]:
-                    if thumbnail_path:
-                        st.image(str(thumbnail_path), width=180, caption="Thumbnail")
-                    else:
-                        st.caption("Thumbnail ainda não pronta")
+                    media_cols = st.columns(2, gap="small")
+                    with media_cols[0]:
+                        if thumbnail_path is not None:
+                            st.image(str(thumbnail_path), width=180, caption="Thumbnail")
+                        else:
+                            st.caption("Thumbnail ainda não pronta")
+                    with media_cols[1]:
+                        if video_path is not None and _catalog_task_state(task) == "done":
+                            _render_local_video_player(video_path, width="stretch")
                     st.write(f"**{task.get('topic', 'Sem tópico')}**")
                     st.caption(f"{task.get('channel_name', 'Canal')} · {task.get('id', '')}")
                     thumbnail_download_col, prompt_download_col = st.columns(2, gap="small")
