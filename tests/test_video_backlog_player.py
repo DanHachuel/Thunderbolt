@@ -28,14 +28,7 @@ def test_thumbnail_resolution_accepts_current_and_legacy_paths():
 def test_done_cards_keep_player_and_download():
     block = SOURCE.split("def render_videos():", 1)[1].split("def _music_backlog_records", 1)[0]
     assert 'task_state == "done"' in block
-    assert '_render_lazy_local_video_player(video_file, key=f"backlog_{task[\'id\']}", width="stretch")' in block
+    assert '_render_local_video_player(video_file, width="stretch")' in block
     assert 'media_cols = st.columns(2, gap="small")' in block
     assert "Vídeo pronto; a thumbnail pode ser criada ou carregada depois." not in block
     assert "pipeline_video_download_" in block
-
-
-def test_lazy_player_defers_streamlit_video_until_requested():
-    block = SOURCE.split("def _render_lazy_local_video_player", 1)[1].split("def _load_local_env", 1)[0]
-    assert 'st.button("Carregar player"' in block
-    assert 'st.session_state[loaded_key] = True' in block
-    assert '_render_local_video_player(path, width=width)' in block
