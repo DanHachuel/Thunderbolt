@@ -23,3 +23,11 @@ def test_automation_cards_render_thumbnail_before_video_metadata():
     assert "thumbnail_path = _task_thumbnail_path(task)" in automation
     assert 'st.image(str(thumbnail_path), width=180, caption="Thumbnail")' in automation
     assert 'st.caption("Thumbnail ainda não pronta")' in automation
+
+
+def test_thumbnail_renderers_reference_local_paths_instead_of_cached_bytes():
+    source = Path(__file__).parents[1].joinpath("app", "main.py").read_text(encoding="utf-8")
+    assert 'st.image(_file_bytes(thumbnail_path)' not in source
+    assert 'st.image(str(thumbnail_path), width=180, caption="Thumbnail")' in source
+    assert 'st.image(_file_bytes(image_path)' not in source
+    assert 'st.image(str(image_path), use_container_width=True)' in source

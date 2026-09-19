@@ -2621,7 +2621,7 @@ def _render_bilibili_automation_cards() -> None:
             thumbnail_path = _task_thumbnail_path(task)
             with card_cols[0]:
                 if thumbnail_path:
-                    st.image(_file_bytes(thumbnail_path), width=180, caption="Thumbnail")
+                    st.image(str(thumbnail_path), width=180, caption="Thumbnail")
                 else:
                     st.caption("Thumbnail ainda não pronta")
                 st.write(f"**{task.get('title') or task.get('topic') or 'Vídeo Bilibili'}**")
@@ -6405,7 +6405,7 @@ def _render_tiktok_automation_cards():
                 thumbnail_prompt = str(task.get("thumbnail_prompt") or "").strip()
                 with task_cols[0]:
                     if thumbnail_path:
-                        st.image(_file_bytes(thumbnail_path), width=180, caption="Thumbnail")
+                        st.image(str(thumbnail_path), width=180, caption="Thumbnail")
                     else:
                         st.caption("Thumbnail ainda não pronta")
                     st.write(f"**{task.get('title') or task.get('topic') or 'Vídeo TikTok'}**")
@@ -6777,7 +6777,7 @@ def _render_facebook_automation_cards() -> None:
                         image_path = Path(str(image.get("captioned_path") or image.get("path") or ""))
                         with image_col:
                             if image_path.is_file():
-                                st.image(_file_bytes(image_path), use_container_width=True)
+                                st.image(str(image_path), use_container_width=True)
                             st.caption(str(image.get("status") or "pendente"))
             with cols[1]:
                 st.caption("Estado")
