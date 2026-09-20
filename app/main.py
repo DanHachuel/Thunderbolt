@@ -6668,7 +6668,7 @@ def _render_youtube_automation_cards():
             return
         st.divider()
         st.subheader("Vídeos cadastrados")
-        st.caption("Start retoma as etapas já concluídas e só gera novamente o que ainda não estiver pronto. Em tarefas falhadas ou bloqueadas, a nova tentativa lê as chaves, prioridades e configurações actualmente guardadas. Apagar remove o card da fila após confirmação e preserva os artefactos locais.")
+        st.caption("Start retoma as etapas já concluídas e só gera novamente o que ainda não estiver pronto. Em tarefas falhadas ou bloqueadas, a nova tentativa lê as chaves, prioridades e configurações actualmente guardadas. Apagar remove o card da fila e elimina todos os artefactos locais do vídeo, incluindo áudio/voz, roteiro, vídeo, thumbnail, legendas, música, prompts e logs.")
         tasks = load_automation_tasks_for_platform("youtube")
         if not tasks:
             st.info("Ainda não existem vídeos cadastrados.")

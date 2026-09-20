@@ -322,6 +322,42 @@ def test_delete_task_removes_selected_video_from_tasks_and_queues(tmp_path, monk
     assert delete_task("video_missing") is None
 
 
+def test_delete_task_removes_all_persisted_video_artifacts(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))
+    from hermes_ui import storage
+    from hermes_ui.domain import delete_task
+
+    storage.STORAGE = tmp_path / "storage"
+    storage.STATE = storage.STORAGE / "state"
+    storage.BLUEPRINTS = storage.STORAGE / "blueprints"
+    storage.ensure_storage()
+    artifact_dir = tmp_path / "video-artifacts"
+    artifact_dir.mkdir()
+    artifacts = {
+        name: str(artifact_dir / filename)
+        for name, filename in {
+            "script": "roteiro.md",
+            "audio": "voz.wav",
+            "video": "video.mp4",
+            "thumbnail": "thumbnail.png",
+            "thumbnail_prompt_json": "thumbnail-prompt.json",
+            "captions": "legendas.srt",
+            "video_log": "video.log",
+            "video_diagnostics": "diagnostics.json",
+            "music": "music.mp3",
+        }.items()
+    }
+    for path in artifacts.values():
+        Path(path).write_text("artefacto", encoding="utf-8")
+    storage.write_json("tasks.json", [{"id": "video_remove", "state": "done", "artifacts": artifacts}])
+
+    removed = delete_task("video_remove")
+
+    assert removed["id"] == "video_remove"
+    assert all(not Path(path).exists() for path in artifacts.values())
+    assert storage.read_json("tasks.json") == []
+
+
 def test_delete_task_rejects_running_video_until_it_is_stopped(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))
     from hermes_ui import storage

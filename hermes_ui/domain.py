@@ -3,8 +3,10 @@ from __future__ import annotations
 import re
 import unicodedata
 import uuid
+from pathlib import Path
 from typing import Any
 
+from . import storage as storage_module
 from .notifications import record_notification
 from .storage import StorageIntegrityError, append_json, now, read_json, update_json, write_json
 from .thumbnail_blueprints import thumbnail_blueprint_for_channel
@@ -387,8 +389,68 @@ def update_task(task_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
     return updated
 
 
+_TASK_ARTIFACT_KEY_TOKENS = (
+    "audio",
+    "caption",
+    "cover",
+    "file",
+    "image",
+    "log",
+    "music",
+    "narration",
+    "prompt",
+    "script",
+    "thumbnail",
+    "video",
+)
+
+
+def _collect_task_artifact_paths(value: Any, *, key: str = "", paths: set[Path] | None = None) -> set[Path]:
+    """Collect only local file paths belonging to a task, never remote URLs."""
+    paths = paths if paths is not None else set()
+    if isinstance(value, dict):
+        for child_key, child_value in value.items():
+            _collect_task_artifact_paths(child_value, key=str(child_key), paths=paths)
+        return paths
+    if isinstance(value, (list, tuple, set)):
+        for child_value in value:
+            _collect_task_artifact_paths(child_value, key=key, paths=paths)
+        return paths
+    if not isinstance(value, (str, Path)) or not key:
+        return paths
+    raw = str(value).strip()
+    if not raw or raw.startswith(("http://", "https://", "s3://", "data:")):
+        return paths
+    normalized_key = key.casefold()
+    if not any(token in normalized_key for token in _TASK_ARTIFACT_KEY_TOKENS):
+        return paths
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        candidate = storage_module.STORAGE / candidate
+    paths.add(candidate)
+    return paths
+
+
+def _delete_task_artifacts(task: dict[str, Any]) -> None:
+    """Delete persisted local files for one task, tolerating already missing files."""
+    paths = _collect_task_artifact_paths(task.get("artifacts") or {}, key="artifacts")
+    for field, value in task.items():
+        if field in {"artifacts", "thumbnail_variant", "thumbnail_variants"}:
+            continue
+        _collect_task_artifact_paths(value, key=str(field), paths=paths)
+    _collect_task_artifact_paths(task.get("thumbnail_variant") or {}, key="thumbnail_variant", paths=paths)
+    _collect_task_artifact_paths(task.get("thumbnail_variants") or [], key="thumbnail_variants", paths=paths)
+    for path in paths:
+        try:
+            if path.is_file() or path.is_symlink():
+                path.unlink()
+        except OSError:
+            # A missing/locked artefact must not leave the task in the queue.
+            continue
+
+
 def delete_task(task_id: str) -> dict[str, Any] | None:
-    """Remove uma tarefa de vídeo da fila sem apagar os ficheiros dos artefactos."""
+    """Remove a task and delete all of its persisted local video artefacts."""
     normalized_id = str(task_id or "").strip()
     if not normalized_id:
         return None
@@ -411,6 +473,8 @@ def delete_task(task_id: str) -> dict[str, Any] | None:
     update_json("tasks.json", [], mutate)
     if removed is None:
         return None
+
+    _delete_task_artifacts(removed)
 
     def clean_queues(queues: Any) -> dict[str, Any]:
         if not isinstance(queues, dict):
