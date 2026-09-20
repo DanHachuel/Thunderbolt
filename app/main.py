@@ -2664,7 +2664,7 @@ def _tiktok_channel_records() -> list[dict[str, Any]]:
     return [channel for channel in read_json("channels.json", []) if classify_channel_platform(channel) == "tiktok"]
 
 
-@st.fragment(run_every=5.0)
+@st.fragment
 def _render_bilibili_automation_cards() -> None:
     if not _has_script_context():
         return
@@ -5612,7 +5612,7 @@ def _render_pipeline_worker_banner(worker_status: dict[str, Any], active_count: 
         st.error(f"Último erro do worker: {worker_status['last_error']}")
 
 
-@st.fragment(run_every=5.0)
+@st.fragment
 def _render_pipeline_progress_panel() -> None:
     """Actualizar apenas o painel da pipeline enquanto existirem tarefas activas."""
     worker_status = load_pipeline_worker_status()
@@ -5647,7 +5647,7 @@ VIDEO_TASK_STATE_LABELS = {
 
 
 def load_video_tasks_for_catalog() -> list[dict[str, Any]]:
-    """Return the complete task catalog, including legacy storage locations and fields."""
+    """Return the complete persisted task catalog shared by Backlog and Automation, including legacy storage locations and fields."""
     current = read_json("tasks.json", [])
     saved = current if isinstance(current, list) else []
     legacy_path = STORAGE / "tasks.json"
@@ -5683,7 +5683,7 @@ def load_video_tasks_for_catalog() -> list[dict[str, Any]]:
     return catalog
 
 
-def task_platform(task: dict[str, Any]) -> str:
+def task_platform(task: dict[str, Any], channels_by_id: dict[str, dict[str, Any]] | None = None) -> str:
     """Resolve a plataforma da tarefa, incluindo tarefas legadas sem platform."""
     explicit = str(task.get("platform") or "").strip().casefold()
     if explicit in {"youtube", "yt"}:
@@ -5692,7 +5692,9 @@ def task_platform(task: dict[str, Any]) -> str:
         return "tiktok"
     channel_id = str(task.get("channel_id") or "")
     if channel_id:
-        channel = next((item for item in read_json("channels.json", []) if isinstance(item, dict) and str(item.get("id")) == channel_id), None)
+        channel = (channels_by_id or {}).get(channel_id)
+        if channel is None:
+            channel = next((item for item in read_json("channels.json", []) if isinstance(item, dict) and str(item.get("id")) == channel_id), None)
         if channel:
             return classify_channel_platform(channel)
     format_value = str(task.get("format") or "").strip().casefold()
@@ -5775,8 +5777,13 @@ def _automation_created_at(task: dict[str, Any]) -> tuple[datetime, str]:
 def load_automation_tasks_for_platform(platform_name: str) -> list[dict[str, Any]]:
     """Return only automation/catalog tasks belonging to one publishing platform."""
     target = str(platform_name or "").strip().casefold()
+    channels_by_id = {
+        str(channel.get("id")): channel
+        for channel in read_json("channels.json", [])
+        if isinstance(channel, dict) and str(channel.get("id") or "").strip()
+    }
     return sorted(
-        [task for task in load_video_tasks_for_catalog() if task_platform(task) == target],
+        [task for task in load_video_tasks_for_catalog() if task_platform(task, channels_by_id) == target],
         key=_automation_created_at,
     )
 
@@ -6442,7 +6449,7 @@ def render_thumbnails():
                         st.error(str(exc))
 
 
-@st.fragment(run_every=5.0)
+@st.fragment
 def _render_tiktok_automation_cards():
         if not _has_script_context():
             return
@@ -6655,7 +6662,7 @@ def render_tiktok_automation():
                             st.rerun()
     _render_tiktok_automation_cards()
 
-@st.fragment(run_every=5.0)
+@st.fragment
 def _render_youtube_automation_cards():
         if not _has_script_context():
             return
@@ -6812,7 +6819,7 @@ def _facebook_pages_for_automation() -> list[dict[str, Any]]:
     return [channel for channel in read_json("channels.json", []) if isinstance(channel, dict) and classify_channel_platform(channel) == "facebook"]
 
 
-@st.fragment(run_every=5.0)
+@st.fragment
 def _render_facebook_automation_cards() -> None:
     if not _has_script_context():
         return
@@ -7065,6 +7072,8 @@ def _render_youtube_automation_channel_cards():
 def render_automation():
     st.title("Automação Youtube")
     st.caption("Agendamento diário da geração por canal. O worker verifica o relógio local do computador e coloca os lotes agendados na fila.")
+    if st.button("Actualizar agora", key="youtube_automation_refresh", width="content"):
+        st.rerun()
     _sync_saved_scripts_to_youtube_automation()
     worker_status = load_worker_status()
     local_now = datetime.now().astimezone()

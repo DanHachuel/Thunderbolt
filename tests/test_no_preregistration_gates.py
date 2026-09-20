@@ -15,7 +15,7 @@ def test_facebook_automation_keeps_empty_page_selector_and_does_not_return():
 
 
 def test_tiktok_automation_does_not_stop_when_destination_list_is_empty():
-    block = MAIN_SOURCE.split("def render_tiktok_automation", 1)[1].split("@st.fragment(run_every=5.0)", 1)[0]
+    block = MAIN_SOURCE.split("def render_tiktok_automation", 1)[1].split("@st.fragment\ndef _render_youtube_automation_cards", 1)[0]
     assert "Cadastre primeiro um canal TikTok." not in block
     assert 'Nenhum canal TikTok seleccionado' in block
 

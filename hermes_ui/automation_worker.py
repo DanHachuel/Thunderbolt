@@ -28,7 +28,7 @@ from integrations.session_info_health import check_all_accounts_session_info_hea
 
 WORKER_STATE_FILE = "automation_worker.json"
 LOCK_FILENAME = "automation_worker.lock"
-DEFAULT_INTERVAL_SECONDS = 10
+DEFAULT_INTERVAL_SECONDS = 30
 DEFAULT_STATE: dict[str, Any] = {
     "worker_started_at": None,
     "worker_pid": None,

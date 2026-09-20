@@ -367,7 +367,7 @@ def test_upload_with_heartbeat_propagates_provider_exception(tmp_path, monkeypat
 def test_backlog_has_live_progress_and_stale_recovery_ui():
     source = Path(__file__).resolve().parents[1].joinpath("app", "main.py").read_text(encoding="utf-8")
 
-    assert "@st.fragment(run_every=5.0)\ndef _render_pipeline_progress_panel()" in source
+    assert "@st.fragment\ndef _render_pipeline_progress_panel()" in source
     assert "st.progress(progress, text=f\"{label} · {_pipeline_stage_label(task)} · {progress}%\")" in source
     assert "recover_stale_tasks()" in source
     assert "_render_pipeline_progress_panel()" in source

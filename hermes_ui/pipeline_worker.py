@@ -1780,13 +1780,20 @@ def run_once() -> dict[str, Any]:
             pass
 
 
-def run_worker(interval_seconds: int = 5) -> None:
+ACTIVE_INTERVAL_SECONDS = 5
+IDLE_INTERVAL_SECONDS = 30
+
+
+def run_worker(interval_seconds: int = ACTIVE_INTERVAL_SECONDS) -> None:
     try:
         ensure_storage()
         _worker_heartbeat(status="starting", stage="idle", progress=0, last_error="")
         while True:
-            run_once()
-            time.sleep(max(2, int(interval_seconds)))
+            result = run_once()
+            requested_interval = max(2, int(interval_seconds))
+            idle = bool(result.get("ok")) and result.get("status") == "idle"
+            sleep_seconds = max(requested_interval, IDLE_INTERVAL_SECONDS) if idle else requested_interval
+            time.sleep(sleep_seconds)
     except KeyboardInterrupt:
         # Shutdown por Ctrl+C: sair sem gravar estado nem mostrar traceback.
         return
@@ -1797,7 +1804,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="Executor do pipeline de criação de vídeos Thunderbolt")
     parser.add_argument("--once", action="store_true")
-    parser.add_argument("--interval", type=int, default=5)
+    parser.add_argument("--interval", type=int, default=ACTIVE_INTERVAL_SECONDS)
     args = parser.parse_args()
     if args.once:
         print(json.dumps(run_once(), ensure_ascii=False), flush=True)

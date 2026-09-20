@@ -39,19 +39,22 @@ def test_backlog_starts_with_all_states_and_does_not_surface_upload_failure():
 def test_backlog_player_uses_resolved_video_artifact_path():
     assert 'video_file = _task_artifact_path(task, "video")' in MAIN_SOURCE
     assert 'if video_file is not None and task_state == "done":' in MAIN_SOURCE
-    assert '_render_local_video_player(video_file, width=360)' in MAIN_SOURCE
+    assert '_render_local_video_player(video_file, width="stretch")' in MAIN_SOURCE
     backlog_block = MAIN_SOURCE.split("def render_videos():", 1)[1].split("def _music_backlog_records", 1)[0]
     assert 'with video_file.open("rb") as video_stream:' in backlog_block
     assert "data=video_file.read_bytes()" not in backlog_block
 
 
-def test_youtube_automation_cards_refresh_periodically_without_global_refresh():
-    block = MAIN_SOURCE.split("@st.fragment(run_every=5.0)\ndef _render_youtube_automation_cards():", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
-    assert '@st.fragment(run_every=5.0)\ndef _render_youtube_automation_cards():' in MAIN_SOURCE
+def test_youtube_automation_cards_do_not_poll_each_browser_session():
+    block = MAIN_SOURCE.split("@st.fragment\ndef _render_youtube_automation_cards():", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
+    assert '@st.fragment\ndef _render_youtube_automation_cards():' in MAIN_SOURCE
+    assert '@st.fragment(run_every=5.0)\ndef _render_youtube_automation_cards():' not in MAIN_SOURCE
     assert 'tasks = load_automation_tasks_for_platform("youtube")' in block
     assert 'st.rerun()' not in block
     assert 'st.rerun(scope="fragment")' in block
+    assert 'key="youtube_automation_refresh"' in MAIN_SOURCE
 
 
-def test_facebook_automation_keeps_periodic_refresh_contract():
-    assert '@st.fragment(run_every=5.0)\ndef _render_facebook_automation_cards()' in MAIN_SOURCE
+def test_facebook_automation_does_not_poll_each_browser_session():
+    assert '@st.fragment\ndef _render_facebook_automation_cards()' in MAIN_SOURCE
+    assert '@st.fragment(run_every=5.0)\ndef _render_facebook_automation_cards()' not in MAIN_SOURCE
