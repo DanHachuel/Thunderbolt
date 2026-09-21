@@ -2997,6 +2997,44 @@ def render_tiktok_channels():
                             st.markdown("**Idioma**")
                             st.caption(video_language_label(normalize_video_language(channel.get("language") or "pt")))
                         st.caption(f"Fonte do vídeo: {channel_video_source_value(channel.get('style_wide'))} · Proporção: {channel.get('video_aspect_ratio') or 'Portrait 9:16'}")
+                        with st.expander("Configurações de vídeo", expanded=False):
+                            video_settings_cols = st.columns(3, gap="small")
+                            current_source = channel_video_source_value(channel.get("style_wide"))
+                            current_aspect = str(channel.get("video_aspect_ratio") or "Portrait 9:16")
+                            current_format = str(channel.get("format") or "Shorts")
+                            with video_settings_cols[0]:
+                                video_source = st.selectbox(
+                                    "Fonte do vídeo",
+                                    WIDE_STYLE_OPTIONS,
+                                    index=WIDE_STYLE_OPTIONS.index(current_source) if current_source in WIDE_STYLE_OPTIONS else 0,
+                                    key=f"tiktok_video_settings_source_{channel_id}",
+                                )
+                            with video_settings_cols[1]:
+                                video_aspect = st.selectbox(
+                                    "Proporção do vídeo",
+                                    CHANNEL_ASPECT_RATIO_OPTIONS,
+                                    index=CHANNEL_ASPECT_RATIO_OPTIONS.index(current_aspect) if current_aspect in CHANNEL_ASPECT_RATIO_OPTIONS else 1,
+                                    key=f"tiktok_video_settings_aspect_{channel_id}",
+                                )
+                            with video_settings_cols[2]:
+                                video_format = st.selectbox(
+                                    "Formato",
+                                    CHANNEL_FORMAT_OPTIONS,
+                                    index=CHANNEL_FORMAT_OPTIONS.index(current_format) if current_format in CHANNEL_FORMAT_OPTIONS else 1,
+                                    key=f"tiktok_video_settings_format_{channel_id}",
+                                )
+                            if st.button("Guardar configurações de vídeo", key=f"tiktok_video_settings_save_{channel_id}", width="stretch", type="primary"):
+                                update_channel(
+                                    channel_id,
+                                    {
+                                        "style_wide": channel_video_source_storage(video_source),
+                                        "video_aspect_ratio": video_aspect,
+                                        "format": video_format,
+                                        "platform": "tiktok",
+                                    },
+                                )
+                                st.success("Configurações de vídeo TikTok guardadas.")
+                                st.rerun()
                         if st.session_state.get(f"tiktok_delete_{channel_id}"):
                             st.warning("Apagar este canal TikTok e os dados locais associados?")
                             confirm_cols = st.columns(2)
