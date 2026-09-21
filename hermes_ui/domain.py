@@ -353,7 +353,7 @@ def _notify_task_completion(task: dict[str, Any], previous_state: str = "") -> N
     if current_state != "done":
         return
     artifacts = task.get("artifacts") if isinstance(task.get("artifacts"), dict) else {}
-    if bool(task.get("music_mode")) or str(task.get("style_wide") or "") == "music":
+    if bool(task.get("music_mode")) or str(task.get("style_wide") or "") in {"music", "only_music"}:
         event_type, label = "music_completed", "Música concluída"
     elif str(task.get("stage") or "") == "script" and not artifacts.get("video"):
         event_type, label = "script_stage_completed", "Roteiro concluído"

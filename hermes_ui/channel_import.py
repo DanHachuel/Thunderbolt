@@ -241,6 +241,16 @@ def _normalise_style(value: Any) -> str:
     raw = _strip_accents(_text(value)).casefold()
     if not raw:
         return ""
+    if raw in {"only_music", "only music", "apenas musica", "audio only", "so audio"}:
+        return "only_music"
+    if raw in {"text_to_images", "text-to-images", "montage: text-to-images"}:
+        return "text_to_images"
+    if raw in {"google_images", "google imagem api", "montage: google imagem api"}:
+        return "google_images"
+    if raw == "remotion":
+        return "remotion"
+    if raw in {"music_clips", "music clips", "clipes de musica"}:
+        return "music_clips"
     if any(token in raw for token in ("musica", "music", "audio only", "so audio")):
         return "music"
     if any(token in raw for token in ("full", "ia", "ai", "gerado", "artificial")):

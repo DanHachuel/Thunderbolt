@@ -37,6 +37,8 @@ from hermes_ui.thumbnail_generation import ThumbnailGenerationError, generate_th
 from hermes_ui.thumbnail_blueprints import thumbnail_aspect_ratio_for_channel_task, thumbnail_blueprint_for_channel
 from hermes_ui.voice_preview import synthesize_preview
 from hermes_ui.script_voice import narration_text_from_script
+from hermes_ui.only_music import run_only_music_task
+from hermes_ui.text_to_images import assemble_text_to_images_video, generate_image_prompts_for_scenes, split_script_into_scenes, synthesize_text_to_images_audio
 
 PIPELINE_LOCK_FILENAME = "pipeline_worker.lock"
 PIPELINE_LOG_FILENAME = "pipeline_worker.json"
@@ -754,7 +756,17 @@ def _normalise_video_route(task: dict[str, Any], settings: dict[str, Any]) -> st
     if raw in {"full_ia", "full ia", "full-ai", "ai", "ia"}:
         return "full_ia"
     if raw in {"music", "apenas música", "apenas musica", "only music"}:
-        return "music"
+        return "only_music" if raw == "only music" else "music"
+    if raw in {"only_music", "only-music"}:
+        return "only_music"
+    if raw in {"text_to_images", "text-to-images", "montage: text-to-images"}:
+        return "text_to_images"
+    if raw in {"music_clips", "music-clips", "clipes de música", "clipes de musica"}:
+        return "music_clips"
+    if raw in {"google_images", "google-images", "montage: google imagem api"}:
+        return "google_images"
+    if raw in {"remotion"}:
+        return "remotion"
     if raw in {"pixabay", "pixabay only"}:
         return "pixabay"
     if raw in {"pexels", "pexels/pixabay", "stock", "materials", "materiales"}:
@@ -1464,6 +1476,17 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
         )
         return _task_by_id(task_id) or task
 
+    if route in {"google_images", "remotion", "music_clips"}:
+        raise PipelineError(f"A fonte {route} é um placeholder e não está disponível nesta versão.")
+
+    if route == "only_music":
+        _update(task_id, stage="thumbnail", state="doing", progress=82, error=None)
+        try:
+            updates = run_only_music_task(_task_by_id(task_id) or task, settings, channel)
+        except (ValueError, MediaGenerationError, CreativeGenerationError) as exc:
+            raise PipelineError(f"Only Music falhou: {exc}") from exc
+        return _update(task_id, **updates) or task
+
     script = _read_persisted_script(task, channel, blueprint, topic)
     if script is None:
         _update(task_id, stage="script", state="doing", progress=18, error=None)
@@ -1565,6 +1588,42 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                     settings,
                     video_prompt,
                     allowed_providers=set(FULL_IA_VIDEO_PROVIDER_CODES),
+                )
+            elif route == "text_to_images":
+                target_seconds = float(generation_settings.get("text_to_images_scene_duration") or 5)
+                scenes = split_script_into_scenes(
+                    str(script.get("content") or ""),
+                    words_data=script.get("words_data") if isinstance(script.get("words_data"), list) else None,
+                    target_seconds=target_seconds,
+                    wpm=int(generation_settings.get("text_to_images_wpm") or 150),
+                )
+                scene_prompts = generate_image_prompts_for_scenes(
+                    scenes,
+                    str(generation_settings.get("text_to_images_style") or "cinematic"),
+                    settings,
+                    channel,
+                )
+                audio_path = _valid_audio_artifact(
+                    generation_settings.get("voiceover_file") or artifacts.get("audio") or artifacts.get("narration")
+                )
+                if audio_path is None:
+                    audio_path = synthesize_text_to_images_audio(
+                        narration_text_from_script(str(script.get("content") or "")),
+                        {**settings, **generation_settings},
+                        str(task.get("voice") or generation_settings.get("voice") or channel.get("default_voice") or channel.get("voice") or "pt-BR-FranciscaNeural-Female"),
+                        STORAGE / "audio" / f"{task_id}-text-to-images.mp3",
+                    )
+                    artifacts["audio"] = str(audio_path)
+                for scene in scene_prompts:
+                    scene["image_path"] = str(generate_image_from_pool(settings, scene["prompt"], topic=topic, variant_index=int(scene.get("index") or 0), aspect_ratio=str(task.get("format") or "wide")))
+                output_path = STORAGE / "videos" / f"{task_id}-text-to-images.mp4"
+                video_path = assemble_text_to_images_video(
+                    scene_prompts,
+                    audio_path,
+                    output_path,
+                    str(task.get("format") or "wide"),
+                    fps=int(generation_settings.get("text_to_images_fps") or 30),
+                    ken_burns=bool(generation_settings.get("text_to_images_ken_burns", False)),
                 )
             else:
                 video_path = _run_video_helper({

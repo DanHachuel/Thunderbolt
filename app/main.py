@@ -234,17 +234,57 @@ AI_STYLE_OPTIONS = [
     "Pixar Style",
 ]
 
-WIDE_STYLE_OPTIONS = ["Pexels/Pixabay", "full_ia", "Apenas Música"]
+WIDE_STYLE_OPTIONS = [
+    "Montage: Pexels/Pixabay",
+    "Montage: Text-to-Images",
+    "Montage: Google Imagem API",
+    "Full IA: Text-to-Video",
+    "Remotion",
+    "Only Music",
+    "Clipes de Música",
+]
+VIDEO_SOURCE_VALUES = {
+    "Montage: Pexels/Pixabay": "pexels",
+    "Montage: Text-to-Images": "text_to_images",
+    "Montage: Google Imagem API": "google_images",
+    "Full IA: Text-to-Video": "full_ia",
+    "Remotion": "remotion",
+    "Only Music": "only_music",
+    "Clipes de Música": "music_clips",
+}
+VIDEO_SOURCE_LABELS = {value: label for label, value in VIDEO_SOURCE_VALUES.items()}
+VIDEO_SOURCE_LABELS.update({"pixabay": "Montage: Pexels/Pixabay", "music": "Only Music"})
+UNAVAILABLE_VIDEO_SOURCES = {"google_images", "remotion", "music_clips"}
 CHANNEL_ASPECT_RATIO_OPTIONS = ["Landscape 16:9", "Portrait 9:16", "Square 1:1"]
 CHANNEL_FORMAT_OPTIONS = ["wide", "Shorts", "Music"]
 
 
 def channel_video_source_value(value: Any) -> str:
-    return {"pexels": "Pexels/Pixabay", "full_ia": "full_ia", "music": "Apenas Música"}.get(str(value or "").strip(), str(value or "Pexels/Pixabay") if str(value or "").strip() in set(WIDE_STYLE_OPTIONS) else "Pexels/Pixabay")
+    raw = str(value or "").strip()
+    if raw in WIDE_STYLE_OPTIONS:
+        return raw
+    if raw.casefold() == "pexels/pixabay":
+        return "Montage: Pexels/Pixabay"
+    if raw.casefold() == "apenas música" or raw.casefold() == "apenas musica":
+        return "Only Music"
+    if raw.casefold() == "full_ia":
+        return "Full IA: Text-to-Video"
+    return VIDEO_SOURCE_LABELS.get(raw.casefold(), VIDEO_SOURCE_LABELS.get(raw, WIDE_STYLE_OPTIONS[0]))
 
 
 def channel_video_source_storage(value: str) -> str:
-    return {"Pexels/Pixabay": "pexels", "full_ia": "full_ia", "Apenas Música": "music"}.get(value, value)
+    raw = str(value or "").strip()
+    if raw in VIDEO_SOURCE_VALUES:
+        return VIDEO_SOURCE_VALUES[raw]
+    if raw.casefold() in {"apenas música", "apenas musica", "music"}:
+        return "only_music"
+    if raw.casefold() == "full_ia":
+        return "full_ia"
+    if raw.casefold() == "pexels/pixabay":
+        return "pexels"
+    if raw.casefold() == "pixabay":
+        return "pexels"
+    return raw
 MATERIAL_SOURCE_OPTIONS = ["Pexels", "Pixabay"]
 
 VIDEO_LANGUAGE_OPTIONS = [
@@ -1422,8 +1462,11 @@ def render_video_generation_settings(
             st.markdown("### Video Settings")
             video_cols = st.columns(2)
             with video_cols[0]:
+                source_state_key = f"{prefix}_video_source"
+                if st.session_state.get(source_state_key) not in WIDE_STYLE_OPTIONS:
+                    st.session_state[source_state_key] = channel_video_source_value(st.session_state.get(source_state_key) or (channel or {}).get("style_wide") or WIDE_STYLE_OPTIONS[0])
                 settings["video_source"] = st.selectbox("Video Source", WIDE_STYLE_OPTIONS, key=f"{prefix}_video_source")
-                if settings["video_source"] == "Pexels/Pixabay":
+                if settings["video_source"] == "Montage: Pexels/Pixabay":
                     configured_material_source = selected_material_source(read_json("settings.json", {}))
                     material_source_labels = {"pexels": "Pexels", "pixabay": "Pixabay"}
                     configured_material_label = material_source_labels.get(configured_material_source, "Pexels")
@@ -1435,24 +1478,48 @@ def render_video_generation_settings(
                     )
                 else:
                     settings["material_source"] = ""
-                if settings["video_source"] == "full_ia":
+                if settings["video_source"] == "Full IA: Text-to-Video":
                     settings["style_ia"] = st.selectbox("Estilo IA", AI_STYLE_OPTIONS, key=f"{prefix}_style_ia")
                 else:
                     settings["style_ia"] = ""
-                settings["video_format"] = st.selectbox("Formato", VIDEO_FORMAT_OPTIONS, key=f"{prefix}_video_format")
-                settings["video_concatenation_mode"] = st.selectbox("Video Concatenation Mode", VIDEO_CONCATENATION_OPTIONS, key=f"{prefix}_video_concatenation")
-                settings["match_visuals_to_script_order"] = st.checkbox("Match Visuals to Script Order", value=False, key=f"{prefix}_match_visuals")
-                settings["video_transition_mode"] = st.selectbox("Video Transition Mode", VIDEO_TRANSITION_OPTIONS, key=f"{prefix}_video_transition")
+                if settings["video_source"] == "Montage: Text-to-Images":
+                    defaults = read_json("settings.json", {})
+                    settings["text_to_images_scene_duration"] = st.number_input("Duração alvo das cenas (segundos)", min_value=1, max_value=30, value=int(defaults.get("text_to_images_scene_duration", 5)), key=f"{prefix}_text_to_images_scene_duration")
+                    settings["text_to_images_fps"] = st.number_input("FPS Montage: Text-to-Images", min_value=1, max_value=60, value=int(defaults.get("text_to_images_fps", 30)), key=f"{prefix}_text_to_images_fps")
+                    settings["text_to_images_ken_burns"] = st.checkbox("Usar efeito Ken Burns", value=bool(defaults.get("text_to_images_ken_burns", False)), key=f"{prefix}_text_to_images_ken_burns")
+                    settings["text_to_images_style"] = st.selectbox("Estilo visual das imagens", AI_STYLE_OPTIONS, key=f"{prefix}_text_to_images_style")
+                else:
+                    settings["text_to_images_scene_duration"] = 5
+                    settings["text_to_images_fps"] = 30
+                    settings["text_to_images_ken_burns"] = False
+                    settings["text_to_images_style"] = ""
+                if settings["video_source"] != "Only Music":
+                    settings["video_format"] = st.selectbox("Formato", VIDEO_FORMAT_OPTIONS, key=f"{prefix}_video_format")
+                    settings["video_concatenation_mode"] = st.selectbox("Video Concatenation Mode", VIDEO_CONCATENATION_OPTIONS, key=f"{prefix}_video_concatenation")
+                    settings["match_visuals_to_script_order"] = st.checkbox("Match Visuals to Script Order", value=False, key=f"{prefix}_match_visuals")
+                    settings["video_transition_mode"] = st.selectbox("Video Transition Mode", VIDEO_TRANSITION_OPTIONS, key=f"{prefix}_video_transition")
+                else:
+                    settings["video_format"] = "music"
+                    settings["video_concatenation_mode"] = "none"
+                    settings["match_visuals_to_script_order"] = False
+                    settings["video_transition_mode"] = "none"
             with video_cols[1]:
-                aspect_options = ["Portrait 9:16", "Landscape 16:9", "Square 1:1"]
-                if f"{prefix}_video_aspect_ratio" not in st.session_state:
-                    st.session_state[f"{prefix}_video_aspect_ratio"] = default_aspect_ratio
-                settings["video_aspect_ratio"] = st.selectbox("Proporção do vídeo", aspect_options, index=aspect_options.index(st.session_state[f"{prefix}_video_aspect_ratio"]) if st.session_state[f"{prefix}_video_aspect_ratio"] in aspect_options else 0, key=f"{prefix}_video_aspect_ratio")
-                settings["maximum_clip_duration"] = st.selectbox("Maximum Clip Duration (seconds)", [3, 5, 8, 10, 15], key=f"{prefix}_maximum_clip_duration")
-                settings["videos_per_run"] = st.selectbox("Videos per Run", list(range(1, 11)), key=f"{prefix}_videos_per_run")
-                settings["video_encoder"] = st.selectbox("Video Encoder", VIDEO_ENCODER_OPTIONS, key=f"{prefix}_video_encoder")
+                if settings["video_source"] != "Only Music":
+                    aspect_options = ["Portrait 9:16", "Landscape 16:9", "Square 1:1"]
+                    if f"{prefix}_video_aspect_ratio" not in st.session_state:
+                        st.session_state[f"{prefix}_video_aspect_ratio"] = default_aspect_ratio
+                    settings["video_aspect_ratio"] = st.selectbox("Proporção do vídeo", aspect_options, index=aspect_options.index(st.session_state[f"{prefix}_video_aspect_ratio"]) if st.session_state[f"{prefix}_video_aspect_ratio"] in aspect_options else 0, key=f"{prefix}_video_aspect_ratio")
+                    settings["maximum_clip_duration"] = st.selectbox("Maximum Clip Duration (seconds)", [3, 5, 8, 10, 15], key=f"{prefix}_maximum_clip_duration")
+                    settings["videos_per_run"] = st.selectbox("Videos per Run", list(range(1, 11)), key=f"{prefix}_videos_per_run")
+                    settings["video_encoder"] = st.selectbox("Video Encoder", VIDEO_ENCODER_OPTIONS, key=f"{prefix}_video_encoder")
+                else:
+                    st.caption("Only Music não usa formato, clips, encoder ou áudio de narração.")
+                    settings["video_aspect_ratio"] = "Landscape 16:9"
+                    settings["maximum_clip_duration"] = 5
+                    settings["videos_per_run"] = 1
+                    settings["video_encoder"] = "default"
 
-    if "Configurações de áudio" in visible_sections:
+    if "Configurações de áudio" in visible_sections and settings.get("video_source") != "Only Music":
         with st.expander("Configurações de áudio", expanded=False):
             st.markdown("### Audio Settings")
             audio_cols = st.columns(2)
@@ -3885,8 +3952,8 @@ def _create_video_task_from_saved_script(record: dict[str, Any], channel: dict[s
         "script_language": str(settings.get("script_language") or record.get("language") or channel.get("language") or "pt"),
         "generate_script_with_ai": False,
     }
-    style_label = str(settings.get("video_source") or "Pexels/Pixabay")
-    style = {"Pexels/Pixabay": "pexels", "full_ia": "full_ia", "Apenas Música": "music"}.get(style_label, style_label)
+    style_label = str(settings.get("video_source") or WIDE_STYLE_OPTIONS[0])
+    style = channel_video_source_storage(style_label)
     blueprint_id = str(record.get("blueprint_id") or channel.get("default_blueprint_id") or channel.get("blueprint_id") or "")
     blueprint_name = str(record.get("blueprint_name") or blueprint_id or "SEM BLUEPRINT CONFIGURADO")
     payload = {
@@ -3898,8 +3965,8 @@ def _create_video_task_from_saved_script(record: dict[str, Any], channel: dict[s
         "style_wide": style,
         "style_ia": settings.get("style_ia", ""),
         "material_source": settings.get("material_source", "") if style == "pexels" else "",
-        "music_mode": style == "music",
-        "background_mode": "none" if style == "music" else ("ai" if style == "full_ia" else "stock"),
+        "music_mode": False,
+        "background_mode": "none" if style in {"only_music", "music_clips"} else ("ai" if style == "full_ia" else "stock"),
         "voice": str(settings.get("voice") or channel.get("default_voice") or channel.get("voice") or ""),
         "blueprint_id": blueprint_id,
         "blueprint_name": blueprint_name,
@@ -4156,7 +4223,7 @@ def render_new_video(page_title: str = "Criação de Vídeos", prefix: str = "ne
                     ),
                 )
             wide_style_label = generation_settings["video_source"]
-            style = {"Pexels/Pixabay": "pexels", "full_ia": "full_ia", "Apenas Música": "music"}[wide_style_label]
+            style = channel_video_source_storage(wide_style_label)
             material_source = (
                 {"Pexels": "pexels", "Pixabay": "pixabay"}.get(str(generation_settings.get("material_source") or ""), "")
                 if style == "pexels"
@@ -4165,18 +4232,18 @@ def render_new_video(page_title: str = "Criação de Vídeos", prefix: str = "ne
             style_ia = generation_settings.get("style_ia", "")
             music_path = ""
             music_source = ""
-            if wide_style_label == "Apenas Música":
-                st.caption("Apenas Música não gera Pexels/Pixabay nem fundo IA; o áudio musical será usado como elemento principal.")
-                music_source = st.radio("Fonte da música", ["Ficheiro existente", "Carregar ficheiro", "Criar via Suno API"], horizontal=True, key=f"{prefix}_music_source")
-                if music_source == "Ficheiro existente":
+            if style == "only_music":
+                st.caption("Only Music usa uma música existente e gera apenas a thumbnail; não cria vídeo, narração ou música nova.")
+                music_source = st.radio("Fonte da música", ["Música existente", "Upload de ficheiro"], horizontal=True, key=f"{prefix}_music_source")
+                if music_source == "Música existente":
                     local_music = list_music_files()
                     if local_music:
                         selected_music = st.selectbox("Música local", local_music, format_func=lambda item: item.name, key=f"{prefix}_music_existing")
                         music_path = str(selected_music)
                     else:
-                        st.warning("Ainda não existem músicas em storage/music. Escolha Carregar ficheiro ou Criar via Suno API.")
-                elif music_source == "Carregar ficheiro":
-                    uploaded_music = st.file_uploader("Carregar música", type=["mp3", "mpeg", "wav", "m4a", "aac", "flac", "ogg"], key=f"{prefix}_music_upload")
+                        st.warning("Não existem músicas disponíveis. Vá a Pipeline Música > Criação de Músicas ou faça upload de um ficheiro.")
+                elif music_source == "Upload de ficheiro":
+                    uploaded_music = st.file_uploader("Carregar música", type=[item.lstrip(".") for item in sorted(MUSIC_UPLOAD_EXTENSIONS)], key=f"{prefix}_music_upload")
                     if uploaded_music and st.button("Guardar música local", key=f"{prefix}_music_store", width="stretch"):
                         try:
                             stored_music = store_music_file(uploaded_music.name, uploaded_music.getvalue())
@@ -4185,23 +4252,12 @@ def render_new_video(page_title: str = "Criação de Vídeos", prefix: str = "ne
                         except (OSError, ValueError) as exc:
                             st.error(str(exc))
                     music_path = st.session_state.get(f"{prefix}_music_path", "")
+                music_path = music_path or st.session_state.get(f"{prefix}_music_path", "")
+            elif style in UNAVAILABLE_VIDEO_SOURCES:
+                if style == "music_clips":
+                    st.info("Clipes de Música não está disponível nesta versão porque a pipeline completa não existe no código. Nenhuma tarefa será criada.")
                 else:
-                    suno_prompt = st.text_area("Prompt musical Suno", placeholder="Instrumental cinematográfico, calmo, sem voz...", key=f"{prefix}_suno_prompt")
-                    suno_title = st.text_input("Título da música", value=st.session_state.get(f"{prefix}_topic") or "Thunderbolt music", key=f"{prefix}_suno_title")
-                    if st.button("Solicitar música no Suno", key=f"{prefix}_suno_request", width="stretch"):
-                        suno_result = request_suno_generation(read_json("settings.json", {}), suno_prompt, suno_title)
-                        (st.success if suno_result["ok"] else st.error)(suno_result["message"])
-                        if suno_result["ok"]:
-                            try:
-                                generated = materialize_suno_audio(suno_result.get("data", {}), suno_title or "suno-generated.mp3")
-                                if generated:
-                                    st.session_state[f"{prefix}_music_path"] = str(generated)
-                                    st.success(f"Música descarregada para `{generated}`")
-                                else:
-                                    st.info("O pedido foi aceite, mas o endpoint ainda não devolveu uma URL de áudio. Consulte o estado no serviço Suno e adicione o ficheiro quando estiver pronto.")
-                            except (OSError, requests.RequestException, ValueError) as exc:
-                                st.warning(f"Pedido criado, mas não foi possível descarregar o áudio: {exc}")
-                    music_path = st.session_state.get(f"{prefix}_music_path", "")
+                    st.info("Esta fonte será implementada na Etapa 2.")
 
             same_channel_quantity = max(1, min(100, int(generation_settings.get("videos_per_run") or 1))) if mode == "same_channel" else 1
             payloads: dict[str, dict[str, Any]] = {}
@@ -4360,11 +4416,13 @@ def render_new_video(page_title: str = "Criação de Vídeos", prefix: str = "ne
             with st.form(f"{prefix}_form"):
                 language = generation_settings["script_language"]
                 fmt = generation_settings["video_format"]
-                submitted = st.form_submit_button("Criar tarefas", type="primary")
+                submitted = st.form_submit_button("Criar tarefas", type="primary", disabled=style in UNAVAILABLE_VIDEO_SOURCES)
+            if style in UNAVAILABLE_VIDEO_SOURCES:
+                st.stop()
             if submitted:
                 save_video_language(language)
-                if style == "music" and not music_path:
-                    st.error("Escolha, carregue ou gere uma música antes de criar o vídeo Apenas Música.")
+                if style == "only_music" and not music_path:
+                    st.error("Escolha uma música existente ou faça upload de um ficheiro antes de criar Only Music. Se a biblioteca estiver vazia, use Pipeline Música > Criação de Músicas.")
                     st.stop()
                 if str(generation_settings.get("voiceover_mode") or "").strip().casefold() == "upload":
                     voiceover_file = Path(str(generation_settings.get("voiceover_file") or "").strip()).expanduser()
@@ -4410,8 +4468,8 @@ def render_new_video(page_title: str = "Criação de Vídeos", prefix: str = "ne
                             st.session_state[f"{prefix}_general_topics"] = {cid: {"topic": payload["topic"], "topic_source": payload.get("topic_source", "llm")} for cid, payload in payloads.items()}
                     if len(payloads) == len(selected):
                         batch_topic = "Lote geral — um vídeo independente por canal"
-                        channel_payloads = {cid: {**payload, "language": language, "format": fmt, "style_wide": style, "style_ia": style_ia, "material_source": material_source, "music_mode": style == "music", "background_mode": "none" if style == "music" else ("ai" if style == "full_ia" else "stock"), "music_path": music_path, "music_source": music_source, "generation_settings": generation_settings} for cid, payload in payloads.items()}
-                        batch = create_batch("general", selected, batch_topic, 1, {"language": language, "format": fmt, "style_wide": style, "style_ia": style_ia, "material_source": material_source, "music_mode": style == "music", "background_mode": "none" if style == "music" else ("ai" if style == "full_ia" else "stock"), "music_path": music_path, "music_source": music_source, "generation_settings": generation_settings, "topic_source": "llm", "channel_payloads": channel_payloads})
+                        channel_payloads = {cid: {**payload, "language": language, "format": fmt, "style_wide": style, "style_ia": style_ia, "material_source": material_source, "music_mode": False, "background_mode": "none" if style in {"only_music", "music_clips"} else ("ai" if style == "full_ia" else "stock"), "music_path": music_path, "music_source": music_source, "generation_settings": generation_settings} for cid, payload in payloads.items()}
+                        batch = create_batch("general", selected, batch_topic, 1, {"language": language, "format": fmt, "style_wide": style, "style_ia": style_ia, "material_source": material_source, "music_mode": False, "background_mode": "none" if style in {"only_music", "music_clips"} else ("ai" if style == "full_ia" else "stock"), "music_path": music_path, "music_source": music_source, "generation_settings": generation_settings, "topic_source": "llm", "channel_payloads": channel_payloads})
                         tasks = create_tasks_for_batch(batch)
                         st.success(f"Lote geral {batch['id']} criado com {len(tasks)} tarefas independentes, uma por canal.")
                 else:
@@ -4435,8 +4493,8 @@ def render_new_video(page_title: str = "Criação de Vídeos", prefix: str = "ne
                             except CreativeGenerationError as exc:
                                 st.warning(f"Título/keywords automáticos pendentes: {exc} A tarefa será criada com o tópico como título; o prompt e a imagem da thumbnail serão gerados depois do vídeo.")
                                 payload = {"topic": topic_value, "title": topic_value, "topic_source": "manual", "thumbnail_status": "pending_provider", "thumbnail_variants": [], "thumbnail_variant": {}, "thumbnail_prompt": "", "thumbnail_text": ""}
-                        payload.update({"topic": topic_value, "topic_source": payload.get("topic_source") or _video_topic_source(topic_value), "language": language, "format": fmt, "style_wide": style, "style_ia": style_ia, "material_source": material_source, "music_mode": style == "music", "background_mode": "none" if style == "music" else ("ai" if style == "full_ia" else "stock"), "music_path": music_path, "music_source": music_source, "generation_settings": generation_settings})
-                        batch = create_batch(mode, selected, topic_value, quantity_value, {"language": language, "format": fmt, "style_wide": style, "style_ia": style_ia, "material_source": material_source, "music_mode": style == "music", "background_mode": "none" if style == "music" else ("ai" if style == "full_ia" else "stock"), "music_path": music_path, "music_source": music_source, "generation_settings": generation_settings, "topic_source": payload.get("topic_source", "manual"), "channel_payloads": {selected[0]: payload}})
+                        payload.update({"topic": topic_value, "topic_source": payload.get("topic_source") or _video_topic_source(topic_value), "language": language, "format": fmt, "style_wide": style, "style_ia": style_ia, "material_source": material_source, "music_mode": False, "background_mode": "none" if style in {"only_music", "music_clips"} else ("ai" if style == "full_ia" else "stock"), "music_path": music_path, "music_source": music_source, "generation_settings": generation_settings})
+                        batch = create_batch(mode, selected, topic_value, quantity_value, {"language": language, "format": fmt, "style_wide": style, "style_ia": style_ia, "material_source": material_source, "music_mode": False, "background_mode": "none" if style in {"only_music", "music_clips"} else ("ai" if style == "full_ia" else "stock"), "music_path": music_path, "music_source": music_source, "generation_settings": generation_settings, "topic_source": payload.get("topic_source", "manual"), "channel_payloads": {selected[0]: payload}})
                         tasks = create_tasks_for_batch(batch)
                         st.success(f"Lote {batch['id']} criado com {len(tasks)} tarefa(s). Abra {ui_text('Backlog Vídeos', current_ui_language())} para acompanhar.")
 
