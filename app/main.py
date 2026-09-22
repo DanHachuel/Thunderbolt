@@ -240,8 +240,6 @@ WIDE_STYLE_OPTIONS = [
     "Montage: Google Imagem API",
     "Full IA: Text-to-Video",
     "Remotion",
-    "Only Music",
-    "Clipes de Música",
 ]
 VIDEO_SOURCE_VALUES = {
     "Montage: Pexels/Pixabay": "pexels",
@@ -249,11 +247,16 @@ VIDEO_SOURCE_VALUES = {
     "Montage: Google Imagem API": "google_images",
     "Full IA: Text-to-Video": "full_ia",
     "Remotion": "remotion",
-    "Only Music": "only_music",
-    "Clipes de Música": "music_clips",
 }
 VIDEO_SOURCE_LABELS = {value: label for label, value in VIDEO_SOURCE_VALUES.items()}
-VIDEO_SOURCE_LABELS.update({"pixabay": "Montage: Pexels/Pixabay", "music": "Only Music"})
+VIDEO_SOURCE_LABELS.update({
+    "pixabay": "Montage: Pexels/Pixabay",
+    "music": "Only Music",
+    "only_music": "Only Music",
+    "music_clip": "Clipes de Música",
+    "music_clips": "Clipes de Música",
+    "clips": "Clipes de Música",
+})
 UNAVAILABLE_VIDEO_SOURCES = {"google_images", "remotion", "music_clips"}
 CHANNEL_ASPECT_RATIO_OPTIONS = ["Landscape 16:9", "Portrait 9:16", "Square 1:1"]
 CHANNEL_FORMAT_OPTIONS = ["wide", "Shorts", "Music"]
@@ -276,8 +279,10 @@ def channel_video_source_storage(value: str) -> str:
     raw = str(value or "").strip()
     if raw in VIDEO_SOURCE_VALUES:
         return VIDEO_SOURCE_VALUES[raw]
-    if raw.casefold() in {"apenas música", "apenas musica", "music"}:
+    if raw.casefold() in {"apenas música", "apenas musica", "music", "only_music"}:
         return "only_music"
+    if raw.casefold() in {"music_clip", "music_clips", "clips", "clipes de música", "clipes de musica"}:
+        return "music_clips"
     if raw.casefold() == "full_ia":
         return "full_ia"
     if raw.casefold() == "pexels/pixabay":
@@ -4262,6 +4267,14 @@ def render_new_video(page_title: str = "Criação de Vídeos", prefix: str = "ne
                 )
             wide_style_label = generation_settings["video_source"]
             style = channel_video_source_storage(wide_style_label)
+            if style in UNAVAILABLE_VIDEO_SOURCES:
+                if style == "music_clips":
+                    st.info("Clipes de Música não está disponível nesta versão porque a pipeline completa não existe no código. Nenhuma tarefa será criada.")
+                else:
+                    st.info("Esta fonte será implementada na Etapa 2. Nenhuma tarefa será criada.")
+                with st.form(f"{prefix}_form"):
+                    st.form_submit_button("Criar tarefas", type="primary", disabled=True)
+                st.stop()
             material_source = (
                 {"Pexels": "pexels", "Pixabay": "pixabay"}.get(str(generation_settings.get("material_source") or ""), "")
                 if style == "pexels"
@@ -9603,6 +9616,14 @@ def render_settings():
                 render_material_source_api_keys(settings, embedded=True)
 
                 render_media_provider_cards(settings, embedded=True)
+
+                with st.expander("Remotion", expanded=False):
+                    st.caption("Integração do Remotion como provedor de vídeo será implementada na Etapa 2.")
+                    st.info("Esta seção está reservada para a configuração do Remotion (renderização local com React/@remotion/renderer).")
+
+                with st.expander("Google Imagem API", expanded=False):
+                    st.caption("Integração da API do Google Custom Search (Google Images) será implementada na Etapa 2.")
+                    st.info("Esta seção está reservada para a configuração da API Key e do Custom Search Engine ID (CX).")
 
                 with st.expander("Voz, TTS e música — Azure Speech, restantes serviços e Suno", expanded=False):
                     st.caption("Cada serviço está separado no seu próprio cartão. Os botões de teste ficam dentro do cartão correspondente e fazem apenas diagnóstico, sem gerar áudio ou música.")

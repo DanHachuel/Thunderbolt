@@ -15,17 +15,19 @@ class ApiSettingsExpandersTests(unittest.TestCase):
             "Niche Finder — Apify",
             "Imagem e Video Montagem/MoviePy",
             "Imagem e Video IA",
+            "Remotion",
+            "Google Imagem API",
             "LLM — providers e modelos",
             "Voz, TTS e música — Azure Speech, restantes serviços e Suno",
-            "Publicação através do Upload-Post",
-            "Postiz — API key, integração e MCP",
+            "Upload-Post",
+            "Postiz",
         ]
         for label in labels:
             self.assertIn(f'st.expander("{label}", expanded=False)', MAIN_SOURCE)
 
     def test_voice_services_are_split_into_provider_cards(self):
         start = MAIN_SOURCE.index('with st.expander("Voz, TTS e música — Azure Speech, restantes serviços e Suno", expanded=False):')
-        end = MAIN_SOURCE.index('with st.expander("Publicação através do Upload-Post", expanded=False):', start)
+        end = MAIN_SOURCE.index('with st.expander("Upload-Post", expanded=False):', start)
         voice_block = MAIN_SOURCE[start:end]
         for provider in ("Azure Speech", "ElevenLabs", "SiliconFlow", "MiniMax TTS", "Chatterbox", "Sonilo", "Suno — agente musical opcional"):
             self.assertIn(f'st.markdown("#### {provider}")', voice_block)
@@ -78,6 +80,14 @@ class ApiSettingsExpandersTests(unittest.TestCase):
         self.assertLess(material_position, media_position)
         self.assertIn('with st.expander("Imagem e Video Montagem/MoviePy", expanded=False)', MAIN_SOURCE)
         self.assertIn('with st.expander("Imagem e Video IA", expanded=False)', MAIN_SOURCE)
+        remotion_position = MAIN_SOURCE.index('with st.expander("Remotion", expanded=False)', settings_position)
+        google_images_position = MAIN_SOURCE.index('with st.expander("Google Imagem API", expanded=False)', settings_position)
+        voice_position = MAIN_SOURCE.index('with st.expander("Voz, TTS e música — Azure Speech, restantes serviços e Suno", expanded=False)', settings_position)
+        self.assertLess(media_position, remotion_position)
+        self.assertLess(remotion_position, google_images_position)
+        self.assertLess(google_images_position, voice_position)
+        self.assertIn('Integração do Remotion como provedor de vídeo será implementada na Etapa 2.', MAIN_SOURCE)
+        self.assertIn('Integração da API do Google Custom Search (Google Images) será implementada na Etapa 2.', MAIN_SOURCE)
         self.assertNotIn('Nano Banana — geração de thumbnails', MAIN_SOURCE)
         self.assertNotIn('Niche Finder — execução remota no Kaggle', MAIN_SOURCE)
         self.assertNotIn('Niche Finder — execução através da Apify', MAIN_SOURCE)
@@ -125,17 +135,7 @@ class ApiSettingsExpandersTests(unittest.TestCase):
     def test_api_keys_use_direct_tabs_and_material_sources_are_inside_api_keys(self):
         tabs_position = MAIN_SOURCE.index('api_keys_tab, upload_api_keys_tab, subtitles_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz"])')
         api_position = MAIN_SOURCE.index('    with api_keys_tab:', tabs_position)
-        google_position = MAIN_SOURCE.index('    with google_accounts_tab:', tabs_position)
-        tiktok_position = MAIN_SOURCE.index('    with tiktok_api_tab:', tabs_position)
-        bilibili_position = MAIN_SOURCE.index('    with bilibili_api_tab:', tabs_position)
-        influencers_position = MAIN_SOURCE.index('    with ai_influencers_tab:', tabs_position)
-        voice_position = MAIN_SOURCE.index('    with voice_test_tab:', tabs_position)
-        self.assertLess(api_position, google_position)
-        self.assertLess(google_position, tiktok_position)
-        self.assertLess(tiktok_position, bilibili_position)
-        self.assertLess(bilibili_position, influencers_position)
-        self.assertLess(influencers_position, voice_position)
-        api_block = MAIN_SOURCE[api_position:google_position]
+        api_block = MAIN_SOURCE[api_position:MAIN_SOURCE.index('    with upload_api_keys_tab:', api_position)]
         material_position = api_block.index('render_material_source_api_keys(settings, embedded=True)')
         media_position = api_block.index('render_media_provider_cards(settings, embedded=True)')
         self.assertLess(material_position, media_position)
@@ -144,21 +144,6 @@ class ApiSettingsExpandersTests(unittest.TestCase):
         self.assertIn('with st.container(border=True):', api_block)
         self.assertIn('with st.form("settings_form"):', api_block)
         self.assertNotIn('with material_sources_tab:', MAIN_SOURCE)
-        influencers_block = MAIN_SOURCE[influencers_position:voice_position]
-        self.assertIn('st.subheader("AI Influencers")', influencers_block)
-        self.assertIn('Estado do backend usado por Personagens e Geração de Conteúdo IA.', influencers_block)
-        self.assertIn('key="settings_influencer_db_backend"', influencers_block)
-        self.assertIn('st.subheader("Supabase")', influencers_block)
-        self.assertIn('Supabase Project URL', influencers_block)
-        self.assertIn('Supabase API key', influencers_block)
-        self.assertNotIn('Supabase Storage bucket', influencers_block)
-        self.assertNotIn('SQLite ficheiro local', influencers_block)
-        self.assertIn('Guardar configuração do backend', influencers_block)
-        self.assertIn('render_ai_influencers_api_status(effective_settings)', influencers_block)
-        self.assertIn('render_google_accounts()', MAIN_SOURCE[google_position:tiktok_position])
-        self.assertIn('def render_tiktok_api_cards(', MAIN_SOURCE)
-        tiktok_block = MAIN_SOURCE[tiktok_position:influencers_position]
-        self.assertIn('render_tiktok_api_cards(settings)', tiktok_block)
 
     def test_material_sources_use_individual_cards_and_add_provider_button(self):
         self.assertIn('def _render_material_source_card(', MAIN_SOURCE)
@@ -200,8 +185,6 @@ class ApiSettingsExpandersTests(unittest.TestCase):
             'widget_key="api_test_voice_suno"',
             'def render_tiktok_api_cards(',
             'test_tiktok_credentials(edited["client_id"], edited["client_secret"]',
-            'widget_key="api_test_upload_post"',
-            'widget_key="api_test_postiz"',
         )
         for control in expected_controls:
             self.assertIn(control, MAIN_SOURCE)
