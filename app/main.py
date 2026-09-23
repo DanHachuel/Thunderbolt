@@ -127,8 +127,8 @@ from hermes_ui.automation_worker import create_video_now_for_channel, load_worke
 from hermes_ui.pipeline_worker import load_pipeline_worker_status, recover_stale_tasks, STALE_TASK_SECONDS, WORKER_HEARTBEAT_TIMEOUT_SECONDS
 from hermes_ui.storage import BLUEPRINTS, DEFAULT_LLM_PROVIDER, MEDIA_DOWNLOADS, STORAGE, TIKTOK_PROMPT_MASTERS, atomic_write, ensure_storage, get_display_name, list_blueprint_files, list_prompt_master_files, load_blueprint_file, load_prompt_master_file, now, read_json, set_display_name, update_json, write_json
 from app.modules.niche_finder.apify import ApifyError, DEFAULT_ACTOR_ID, abort_actor_run, build_actor_input, get_dataset_items, normalize_video_items, start_actor_run, wait_for_actor_run
-from app.modules.niche_finder.core import NicheAnalysisError, run_niche_analysis
-from app.modules.niche_finder.data_loader import DatasetError, download_kaggle_dataset
+from app.modules.niche_finder.data_loader import DatasetError, load_analysis_data
+from app.modules.niche_finder.kaggle_runner import KaggleNicheError
 from app.modules.niche_finder.summarizer import summarize_items
 from app.modules.token_optimizer.cache_manager import clear_derived_cache
 from app.modules.token_optimizer.compressor import check_installation
@@ -4921,121 +4921,80 @@ def render_scripts():
                     st.warning("O ficheiro deste registo já não está disponível no storage.")
 
 
-@st.cache_data(show_spinner=False)
-def _cached_niche_download():
-    """Download or reuse the dataset only after the user submits the form."""
-    return str(download_kaggle_dataset())
-
-
 def render_niche_finder():
     st.title("Niche Finder Kaggle")
-    st.caption("Busca de padrões, nichos e tags para orientar canais faceless.")
-    st.info("A instalação das dependências é automática. A operação não é: defina os parâmetros abaixo e clique em **Analisar Nichos** para iniciar.")
-
-    default_start = date(2023, 9, 20)
-    default_end = date.today()
-    country_options = [
-        "Todos", "US", "BR", "GB", "CA", "AU", "DE", "FR", "ES", "IT", "JP", "KR", "IN", "MX", "AR", "PT",
-    ]
+    st.caption("Analisa o dataset no Kaggle e descarrega apenas os três CSVs de resultados para o Thunderbolt.")
+    st.info("A kernel é publicada e executada remotamente. O Thunderbolt não usa CLI, não grava kaggle.json e só valida as credenciais quando solicita uma acção.")
+    settings = read_json("settings.json", {})
+    username = str(settings.get("kaggle_username") or "").strip()
+    api_key = str(settings.get("kaggle_api_key") or "").strip()
+    kernel_slug = str(settings.get("kaggle_kernel_slug") or "thunderbolt-niche-finder").strip()
     with st.container(border=True):
-        st.subheader("Parâmetros da busca")
-        st.caption("Estes controlos pertencem a esta aba. Nenhum dataset é descarregado e nenhuma análise é executada enquanto não clicar no botão.")
+        st.subheader("Parâmetros da análise remota")
         with st.form("niche_finder_parameters", clear_on_submit=False):
-            parameter_cols = st.columns(3)
+            parameter_cols = st.columns(2)
             with parameter_cols[0]:
                 n_clusters = st.slider("Número de Clusters", 2, 10, 5, key="niche_n_clusters")
-                min_support = st.slider("Suporte Mínimo", 0.01, 0.5, 0.05, 0.01, format="%.2f", key="niche_min_support")
             with parameter_cols[1]:
-                country = st.selectbox("País", country_options, key="niche_country")
-                engagement = st.selectbox("Engagement", ["Todos", "High", "Moderate", "Low"], key="niche_engagement")
-            with parameter_cols[2]:
-                start_date = st.date_input("Data inicial", value=default_start, min_value=date(2020, 1, 1), max_value=default_end, key="niche_start_date")
-                end_date = st.date_input("Data final", value=default_end, min_value=date(2020, 1, 1), max_value=default_end, key="niche_end_date")
-            tags_text = st.text_input("Tags opcionais", key="niche_tags_text", placeholder="Ex.: history, facts, documentary")
+                min_support = st.slider("Suporte Mínimo", 0.01, 0.5, 0.05, 0.01, format="%.2f", key="niche_min_support")
+            force_rerun = st.checkbox("Forçar nova execução remota", value=False, key="niche_force_remote")
             analyse = st.form_submit_button("Analisar Nichos", type="primary", width="stretch")
-
     current_parameters = {
         "n_clusters": n_clusters,
         "min_support": min_support,
-        "country": country,
-        "engagement": engagement,
-        "start_date": start_date.isoformat() if start_date else None,
-        "end_date": end_date.isoformat() if end_date else None,
-        "tags": [tag.strip() for tag in re.split(r"[,|]", tags_text) if tag.strip()],
+        "username": username,
+        "kernel_slug": kernel_slug,
     }
     results = st.session_state.get("niche_results")
     if analyse:
         try:
-            if start_date and end_date and start_date > end_date:
-                raise NicheAnalysisError("A data inicial não pode ser posterior à data final.")
-            with st.spinner("A preparar os dados apenas porque solicitou a análise…"):
-                dataset_path = _cached_niche_download()
-            with st.spinner("A executar a análise dos nichos…"):
-                results = run_niche_analysis(
-                    str(dataset_path),
+            with st.spinner("A publicar e executar a kernel Kaggle…"):
+                results = load_analysis_data(
+                    use_remote=True,
+                    username=username,
+                    api_key=api_key,
+                    kernel_slug=kernel_slug,
+                    force_rerun=force_rerun,
                     n_clusters=n_clusters,
                     min_support=min_support,
-                    start_date=start_date.isoformat() if start_date else None,
-                    end_date=end_date.isoformat() if end_date else None,
-                    country=country,
-                    engagement=engagement,
-                    tags=current_parameters["tags"],
                 )
             st.session_state["niche_results"] = results
             st.session_state["niche_last_parameters"] = current_parameters
             niche_key = hashlib.sha1(json.dumps(current_parameters, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")).hexdigest()
             summary = results.get("summary", {}) if isinstance(results, dict) else {}
-            record_notification("niche_analysis_completed", "Análise de nicho concluída", "A análise Kaggle terminou com resultados prontos para consulta.", metadata={"source": "Kaggle", "rows_filtered": summary.get("rows_filtered", 0)}, dedupe_key=f"niche:kaggle:{niche_key}")
-            st.success("Análise concluída.")
-        except (NicheAnalysisError, DatasetError, OSError) as exc:
-            st.error("Não foi possível concluir a análise solicitada com os parâmetros actuais.")
+            record_notification("niche_analysis_completed", "Análise de nicho concluída", "A análise Kaggle remota terminou com resultados prontos para consulta.", metadata={"source": "Kaggle remote", "rows_filtered": summary.get("rows_filtered", 0)}, dedupe_key=f"niche:kaggle:{niche_key}")
+            st.success("Análise remota concluída.")
+        except (KaggleNicheError, DatasetError, OSError, ValueError) as exc:
+            st.error("Não foi possível concluir a análise Kaggle com a configuração actual.")
             with st.expander("Detalhes técnicos"):
                 st.caption(str(exc))
             return
-
     if results is None:
-        st.caption("Ainda não existe uma análise nesta sessão. Ajuste os parâmetros e clique em **Analisar Nichos**.")
+        st.caption("Ainda não existe uma análise nesta sessão. Configure os três campos Kaggle em Configurações e clique em **Analisar Nichos**.")
         return
     if st.session_state.get("niche_last_parameters") != current_parameters:
         st.warning("Os resultados apresentados pertencem à última análise executada. Clique em **Analisar Nichos** para aplicar os parâmetros actuais.")
-
     summary = results.get("summary", {})
     metric_cols = st.columns(4)
     for col, (label, value) in zip(metric_cols, [("Registos analisados", summary.get("rows_filtered", 0)), ("Clusters", summary.get("cluster_count", 0)), ("Itemsets frequentes", summary.get("frequent_item_count", 0)), ("Regras de associação", summary.get("association_rule_count", 0))]):
         with col:
             card(label, value)
-
     cluster_table = results["clusters"]
     rules_table = results["association_rules"]
     items_table = results["frequent_items"]
-    points = results["cluster_points"].copy()
-    keyword = st.text_input("Filtrar palavras-chave nos clusters", key="niche_cluster_keyword", placeholder="Ex.: música, gaming, receitas")
-    if keyword.strip():
-        cluster_table = cluster_table[cluster_table["palavras"].str.contains(keyword.strip(), case=False, na=False)]
     tab_clusters, tab_rules, tab_data = render_localized_tabs(["Clusters encontrados", "Regras de associação", "Dados analisados"])
     with tab_clusters:
         st.dataframe(cluster_table, width="stretch", hide_index=True)
-        if not points.empty:
-            try:
-                import plotly.express as px
-                points["cluster"] = points["cluster_id"].astype(str)
-                hover = [column for column in ["title", "channel_name", "country", "view_count", "engagement_rate"] if column in points.columns]
-                figure = px.scatter(points, x="x", y="y", color="cluster", hover_data=hover, title="Distribuição dos clusters")
-                figure.update_layout(legend_title_text="Cluster")
-                st.plotly_chart(figure, width="stretch")
-            except ImportError:
-                st.error("A visualização da análise não está disponível nesta instalação.")
     with tab_rules:
         if rules_table.empty:
-            st.info("Não foram encontradas regras com os filtros actuais. Reduza o suporte mínimo ou escolha outro filtro.")
+            st.info("Não foram encontradas regras com os parâmetros actuais.")
         else:
             st.dataframe(rules_table, width="stretch", hide_index=True)
         if not items_table.empty:
             st.subheader("Itemsets frequentes")
             st.dataframe(items_table, width="stretch", hide_index=True)
     with tab_data:
-        st.dataframe(results["raw_data"], width="stretch", hide_index=True)
-
+        st.info("A kernel remota devolve apenas clusters, itemsets frequentes e regras de associação; o dataset permanece no Kaggle.")
 
 def render_niche_finder_apify():
     st.title("Niche Finder Apify")

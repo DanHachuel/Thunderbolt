@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -144,3 +145,32 @@ def load_dataframe(path: str | Path) -> pd.DataFrame:
     except (OSError, UnicodeDecodeError, pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
         raise DatasetError(f"Não foi possível ler a fonte automática de dados: {exc}") from exc
     return validate_dataset(frame)
+
+
+def load_analysis_data(
+    use_remote: bool = True,
+    username: str | None = None,
+    api_key: str | None = None,
+    kernel_slug: str | None = None,
+    force_rerun: bool = False,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Load Niche Finder results from Kaggle by default or from the local path."""
+    if use_remote:
+        from .kaggle_runner import run_niche_analysis_remotely
+
+        return run_niche_analysis_remotely(
+            username=username or "",
+            api_key=api_key or "",
+            kernel_slug=kernel_slug or "",
+            output_dir=STORAGE / "data" / "niches" / "kaggle_results",
+            force_rerun=force_rerun,
+            n_clusters=int(kwargs.get("n_clusters", 5)),
+            min_support=float(kwargs.get("min_support", 0.05)),
+        )
+    dataset_path = kwargs.pop("dataset_path", None)
+    if not dataset_path:
+        raise DatasetError("Indique um dataset_path para a análise local.")
+    from .core import run_niche_analysis
+
+    return run_niche_analysis(dataset_path, **kwargs)

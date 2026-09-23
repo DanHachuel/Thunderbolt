@@ -1,4 +1,9 @@
 # Changelog
+## 0.8.96 — 2026-09-23
+- Refatorado o Niche Finder para publicar e executar a análise remotamente no Kaggle através da biblioteca Python `kaggle`.
+- Adicionada a kernel privada com o dataset Trending YouTube Videos e os três resultados CSV: clusters, itemsets frequentes e regras de associação.
+- Adicionado cache local dos resultados, sem CLI Kaggle, `subprocess` ou gravação de `kaggle.json`.
+
 ## 0.8.83 — 2026-09-19
 - Adicionada renderização consistente de emojis de bandeira como SVGs locais nos conteúdos da interface, com conversão global no Streamlit, fallback seguro e suporte aos temas claro e escuro.
 

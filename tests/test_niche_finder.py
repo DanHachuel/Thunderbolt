@@ -23,9 +23,9 @@ def test_niche_finder_requires_explicit_analysis_submit():
     assert "with st.sidebar" not in function_source
     assert 'st.form_submit_button("Analisar Nichos"' in function_source
     assert "if analyse:" in function_source
-    assert "_cached_niche_download()" in function_source
-    assert "run_niche_analysis(" in function_source
-    assert "Nenhum dataset é descarregado e nenhuma análise é executada enquanto não clicar" in function_source
+    assert "load_analysis_data(" in function_source
+    assert "use_remote=True" in function_source
+    assert "A kernel é publicada e executada remotamente" in function_source
 
 
 

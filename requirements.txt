@@ -23,6 +23,7 @@ ytmusicapi>=1.12,<2
 pushtunes>=2.15,<3
 matplotlib>=3.7,<4
 kagglehub>=0.3,<1
+kaggle>=1.6.17
 supabase>=2.4,<3
 bilibili-api-python>=17.4,<18
 playwright>=1.45,<2
