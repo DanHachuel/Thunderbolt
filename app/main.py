@@ -9547,6 +9547,9 @@ def render_settings():
     st.caption("Configuração das APIs, providers, serviços e ferramentas técnicas usados pelo Thunderbolt. As credenciais ficam no storage local e não são enviadas para o GitHub.")
     st.caption(f"Ficheiro local de todas as API keys: `{STORAGE / 'state' / 'settings.json'}`")
     settings = read_json("settings.json", {})
+    save_notice = st.session_state.pop("niche_finder_save_notice", "")
+    if save_notice:
+        st.success(save_notice)
 
     def text_setting(label: str, key: str, *, secret: bool = False, help_text: str | None = None) -> str:
         return st.text_input(
@@ -9611,7 +9614,8 @@ def render_settings():
                                     "kaggle_kernel_slug": kaggle_kernel_slug.strip(),
                                 })
                                 write_json("settings.json", settings)
-                                st.success("Configuração Kaggle guardada.")
+                                st.session_state["niche_finder_save_notice"] = "Configuração Kaggle guardada."
+                                st.rerun()
 
                     with niche_apify_tab:
                         st.caption("O token fica guardado apenas no storage local. A aba Niche Finder Apify só usa este serviço depois de clicar no botão de pesquisa.")
@@ -9642,7 +9646,8 @@ def render_settings():
                                     "apify_run_timeout_seconds": int(apify_run_timeout),
                                 })
                                 write_json("settings.json", settings)
-                                st.success("Configuração Apify guardada.")
+                                st.session_state["niche_finder_save_notice"] = "Configuração Apify guardada."
+                                st.rerun()
 
                     with niche_kalodata_tab:
                         kalodata_saved_base_url = str(settings.get("kalodata_base_url") or "").strip()
@@ -9676,7 +9681,8 @@ def render_settings():
                                     "kalodata_base_url": kalodata_base_url.strip(),
                                 })
                                 write_json("settings.json", settings)
-                                st.success("Configuração Kalodata guardada.")
+                                st.session_state["niche_finder_save_notice"] = "Configuração Kalodata guardada."
+                                st.rerun()
 
                 llm_rpm_settings = render_llm_provider_cards(settings, embedded=True)
                 llm_rpm_limit_enabled = bool(llm_rpm_settings["llm_rpm_limit_enabled"])

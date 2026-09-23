@@ -27,3 +27,8 @@ def test_kaggle_and_apify_keep_api_test_controls_in_their_configuration_cards():
     assert 'widget_key="api_test_kalodata"' in niche
     assert '"kalodata_api_key": kalodata_api_key.strip()' in settings
     assert '"kalodata_base_url": kalodata_base_url.strip()' in settings
+    assert 'key="save_niche_kaggle"' in niche
+    assert 'key="save_niche_apify"' in niche
+    assert 'key="save_niche_kalodata"' in niche
+    assert 'st.session_state["niche_finder_save_notice"]' in niche
+    assert niche.count("st.rerun()") >= 3
