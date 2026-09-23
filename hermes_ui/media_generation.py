@@ -302,6 +302,8 @@ def _image_endpoint(card: Mapping[str, Any]) -> str:
         return explicit
     if style == "openrouter":
         return f"{base}/images"
+    if style == "together_ai":
+        return f"{base}/images/generations"
     if style == "kie":
         return f"{base}/jobs/createTask"
     if style in {"openai_compatible", "huggingface", "agnes"}:
@@ -384,6 +386,21 @@ def _image_request(card: dict[str, Any], prompt: str, *, topic: str = "", letter
             endpoint,
             headers=_headers(card),
             json={"model": _model(card), "prompt": constrained_prompt, "n": 1, "aspect_ratio": resolved_aspect_ratio},
+            timeout=180,
+        )
+    if style == "together_ai":
+        return requests.post(
+            endpoint,
+            headers=_headers(card),
+            json={
+                "model": _model(card),
+                "prompt": constrained_prompt,
+                "n": 1,
+                "response_format": "b64_json",
+                "output_format": "jpeg",
+                "width": 1024 if resolved_aspect_ratio == "16:9" else 720,
+                "height": 576 if resolved_aspect_ratio == "16:9" else 1280,
+            },
             timeout=180,
         )
     body = {"model": _model(card), "prompt": constrained_prompt, "n": 1, "response_format": "b64_json"}
@@ -596,6 +613,9 @@ def _video_endpoint(card: Mapping[str, Any]) -> str:
         return f"{base}/{_model(card).lstrip('/')}"
     if style == "openrouter":
         return f"{base}/videos"
+    if style == "together_ai":
+        together_base = base[:-3] if base.endswith("/v1") else base
+        return f"{together_base}/v2/videos"
     if style == "kie":
         return f"{base}/jobs/createTask"
     if style in {"openai_compatible", "agnes"}:
@@ -629,6 +649,19 @@ def _video_request(card: dict[str, Any], prompt: str, image_url: str = "", durat
         body["aspect_ratio"] = str(aspect_ratio or card.get("aspect_ratio") or INTERNAL_VIDEO_ASPECT_RATIO)
         body["resolution"] = str(card.get("video_size") or INTERNAL_VIDEO_SIZE)
         return requests.post(endpoint, headers=_headers(card), json=body, timeout=180)
+    if style == "together_ai":
+        together_body: dict[str, Any] = {
+            "model": _model(card),
+            "prompt": body["prompt"],
+            "ratio": str(aspect_ratio or card.get("aspect_ratio") or INTERNAL_VIDEO_ASPECT_RATIO),
+            "resolution": str(card.get("video_size") or INTERNAL_VIDEO_SIZE),
+            "output_format": "MP4",
+        }
+        if duration is not None:
+            together_body["seconds"] = str(max(1, int(duration)))
+        if image_url:
+            together_body["media"] = {"reference_images": [image_url]}
+        return requests.post(endpoint, headers=_headers(card), json=together_body, timeout=180)
     if style == "kie":
         input_payload: dict[str, Any] = {
             "prompt": body["prompt"],
@@ -685,6 +718,11 @@ def _video_result(payload: Mapping[str, Any]) -> tuple[str, str]:
         direct = str(result.get("video_url") or result.get("url") or result.get("output") or "").strip()
         if direct:
             return direct, ""
+    outputs = payload.get("outputs")
+    if isinstance(outputs, Mapping):
+        direct = str(outputs.get("video_url") or outputs.get("url") or "").strip()
+        if direct.startswith(("http://", "https://")):
+            return direct, ""
     for key in ("request_id", "id", "task_id", "job_id"):
         value = str(payload.get(key) or "").strip()
         if value:
@@ -721,6 +759,9 @@ def _poll_video(card: Mapping[str, Any], request_id: str, *, attempts: int = 24,
         endpoint = f"{base}/v3/videos/{request_id}"
     elif style == "openrouter":
         endpoint = f"{base}/videos/{request_id}"
+    elif style == "together_ai":
+        together_base = base[:-3] if base.endswith("/v1") else base
+        endpoint = f"{together_base}/v2/videos/{request_id}"
     else:
         endpoint = f"{base}/videos/{request_id}"
     headers = _headers(card, fal=style == "fal_queue")

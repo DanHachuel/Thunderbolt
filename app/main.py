@@ -9197,7 +9197,12 @@ def _render_media_provider_card(settings: dict[str, Any], cards: list[dict[str, 
                 st.text_input("Base URL", value=base_url, disabled=True, key=f"media_card_{card_id}_base_url_display")
                 st.caption("Canva MCP directo: https://mcp.canva.com/mcp — a autenticação MCP é aberta pelo Thunderbolt na primeira utilização.")
             else:
-                base_url = st.text_input("Base URL", value=str(card.get("base_url") or definition.default_base_url), key=f"media_card_{card_id}_base_url")
+                base_url = st.text_input(
+                    "Base URL",
+                    value=str(card.get("base_url") or definition.default_base_url),
+                    help="Usada nas chamadas de imagem. Para Together AI, o endpoint de vídeo v2 é derivado automaticamente desta Base URL.",
+                    key=f"media_card_{card_id}_base_url",
+                )
             extra_values: dict[str, str] = {}
             if definition.extra_fields and definition.code != "canva":
                 extra_cols = st.columns(len(definition.extra_fields))

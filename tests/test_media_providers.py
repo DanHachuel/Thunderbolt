@@ -23,13 +23,21 @@ class MediaProvidersTests(unittest.TestCase):
 
     def test_catalog_contains_requested_current_providers_and_excludes_deprecated_names(self):
         codes = {item["code"] for item in media_providers.media_provider_catalog()}
-        self.assertTrue({"nano_banana", "pollinations", "agnes", "huggingface", "cloudflare_workers_ai", "inferenceport", "alibaba_cloud", "kie_ai", "fal_ai", "heygen", "openrouter"}.issubset(codes))
+        self.assertTrue({"nano_banana", "pollinations", "agnes", "huggingface", "cloudflare_workers_ai", "inferenceport", "alibaba_cloud", "kie_ai", "fal_ai", "heygen", "openrouter", "together_ai"}.issubset(codes))
         self.assertNotIn("nexaapi", codes)
         self.assertNotIn("openimagegen", codes)
         self.assertEqual(
             set(media_providers.FULL_IA_VIDEO_PROVIDER_CODES),
             {"fal_ai", "kie_ai", "agnes", "nano_banana", "replicate", "pollinations", "huggingface", "inferenceport", "heygen", "openrouter"},
         )
+
+    def test_together_ai_catalog_definition_has_image_and_video_capabilities(self):
+        definition = media_providers.media_provider_definition("together_ai")
+        self.assertEqual(definition.label, "Together AI")
+        self.assertEqual(definition.default_base_url, "https://api.together.ai/v1")
+        self.assertTrue(definition.supports_image)
+        self.assertTrue(definition.supports_video)
+        self.assertEqual(definition.api_style, "together_ai")
 
     def test_legacy_nano_settings_migrate_to_image_card(self):
         migrated, changed = media_providers.ensure_media_provider_cards(
@@ -280,6 +288,88 @@ class MediaProvidersTests(unittest.TestCase):
     def test_video_result_accepts_direct_url_or_task_id(self):
         self.assertEqual(media_generation._video_result({"url": "https://example/video.mp4"}), ("https://example/video.mp4", ""))
         self.assertEqual(media_generation._video_result({"task_id": "task-1"}), ("", "task-1"))
+
+    def test_together_image_request_uses_b64_json_and_bearer_auth(self):
+        response = Mock(status_code=200)
+        card = {
+            "provider": "together_ai",
+            "api_style": "together_ai",
+            "api_key": "together-secret",
+            "base_url": "https://api.together.ai/v1",
+            "model": "black-forest-labs/FLUX.1-schnell",
+        }
+        with patch.object(media_generation.requests, "post", return_value=response) as post:
+            media_generation._image_request(card, "clean image")
+        self.assertEqual(post.call_args.args[0], "https://api.together.ai/v1/images/generations")
+        self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer together-secret")
+        body = post.call_args.kwargs["json"]
+        self.assertEqual(body["response_format"], "b64_json")
+        self.assertEqual(body["model"], "black-forest-labs/FLUX.1-schnell")
+        self.assertNotIn("together-secret", str(body))
+
+    def test_together_video_request_uses_v2_endpoint_and_documented_fields(self):
+        response = Mock(status_code=200)
+        card = {
+            "provider": "together_ai",
+            "api_style": "together_ai",
+            "api_key": "together-secret",
+            "base_url": "https://api.together.ai/v1",
+            "model": "together/video-model",
+        }
+        with patch.object(media_generation.requests, "post", return_value=response) as post:
+            media_generation._video_request(card, "video prompt", duration=8, aspect_ratio="9:16")
+        self.assertEqual(post.call_args.args[0], "https://api.together.ai/v2/videos")
+        self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer together-secret")
+        body = post.call_args.kwargs["json"]
+        self.assertEqual(body["model"], "together/video-model")
+        self.assertEqual(body["ratio"], "9:16")
+        self.assertEqual(body["seconds"], "8")
+        self.assertEqual(body["output_format"], "MP4")
+        self.assertNotIn("together-secret", str(body))
+
+    def test_together_video_polling_waits_until_completed_and_reads_outputs_url(self):
+        in_progress = Mock(status_code=200)
+        in_progress.json.return_value = {"id": "job-123", "status": "in_progress"}
+        completed = Mock(status_code=200)
+        completed.json.return_value = {
+            "id": "job-123",
+            "status": "completed",
+            "outputs": {"video_url": "https://cdn.together.ai/job-123.mp4"},
+        }
+        card = {"provider": "together_ai", "api_style": "together_ai", "api_key": "secret", "base_url": "https://api.together.ai/v1"}
+        with patch.object(media_generation.requests, "get", side_effect=[in_progress, completed]) as get, patch.object(media_generation.time, "sleep") as sleep:
+            output = media_generation._poll_video(card, "job-123", attempts=3, interval_seconds=0.1)
+        self.assertEqual(output, "https://cdn.together.ai/job-123.mp4")
+        self.assertEqual(get.call_args_list[0].args[0], "https://api.together.ai/v2/videos/job-123")
+        self.assertEqual(get.call_count, 2)
+        sleep.assert_called_once()
+
+    def test_together_video_polling_has_bounded_timeout(self):
+        response = Mock(status_code=200)
+        response.json.return_value = {"id": "job-123", "status": "in_progress"}
+        card = {"provider": "together_ai", "api_style": "together_ai", "api_key": "secret", "base_url": "https://api.together.ai/v1"}
+        with patch.object(media_generation.requests, "get", return_value=response), patch.object(media_generation.time, "sleep"):
+            with self.assertRaises(media_generation.ProviderCallError) as raised:
+                media_generation._poll_video(card, "job-123", attempts=2, interval_seconds=0)
+        self.assertIn("não concluiu dentro do limite", str(raised.exception))
+
+    def test_together_api_error_is_reported_without_exposing_key(self):
+        response = Mock(status_code=429)
+        response.json.return_value = {"error": {"message": "quota exceeded"}}
+        card = {
+            "provider": "together_ai",
+            "api_style": "together_ai",
+            "api_key": "super-secret-key",
+            "base_url": "https://api.together.ai/v1",
+            "model": "black-forest-labs/FLUX.1-schnell",
+        }
+        with patch.object(media_generation.requests, "post", return_value=response) as post:
+            with self.assertRaises(Exception) as raised:
+                with patch.object(media_generation, "STORAGE", Path(tempfile.mkdtemp())):
+                    media_generation.generate_image_for_card({}, card, "clean image")
+        self.assertNotIn("super-secret-key", str(raised.exception))
+        if post.call_args is not None:
+            self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer super-secret-key")
 
     def test_image_pool_fails_over_only_for_retryable_provider_errors(self):
         cards = [

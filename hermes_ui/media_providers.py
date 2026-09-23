@@ -189,6 +189,15 @@ MEDIA_PROVIDER_CATALOG: tuple[MediaProviderDefinition, ...] = (
         api_style="openrouter",
         description="Gateway unificado para modelos de geração de imagem e vídeo via APIs dedicadas do OpenRouter.",
     ),
+    MediaProviderDefinition(
+        "together_ai",
+        "Together AI",
+        default_base_url="https://api.together.ai/v1",
+        supports_image=True,
+        supports_video=True,
+        api_style="together_ai",
+        description="Together AI para geração de imagens compatível com OpenAI e vídeos assíncronos.",
+    ),
 )
 
 _MEDIA_BY_CODE = {item.code: item for item in MEDIA_PROVIDER_CATALOG}
