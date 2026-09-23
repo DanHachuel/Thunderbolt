@@ -8678,10 +8678,11 @@ def _render_material_source_card(settings: dict[str, Any], cards: list[dict[str,
             selected_id = card_id if selected and enabled else active_card_id
             _persist_material_source_cards(settings, cards, selected_id)
             st.success(f"Fonte {definition['label']} guardada.")
+            st.rerun()
 
 
 def render_material_source_api_keys(settings: dict[str, Any], *, embedded: bool = False) -> None:
-    with st.expander("Imagem e Video Montagem/MoviePy", expanded=True):
+    with st.expander("Imagem e Video Montagem/MoviePy", expanded=False):
         st.caption("Configure as fontes usadas pela montagem de vídeo com MoviePy/FFmpeg num cartão independente. Pode repetir o mesmo provedor para guardar várias API keys; a fonte seleccionada será usada pela pipeline.")
         migrated, changed = ensure_material_source_cards(settings)
         cards = [dict(item) for item in migrated.get("material_source_cards", [])]
@@ -8959,6 +8960,7 @@ def _render_llm_card(settings: dict[str, Any], cards: list[dict[str, Any]], inde
         elif save_clicked:
             _persist_llm_cards(settings, cards)
             st.success("Cartão LLM guardado.")
+            st.rerun()
         elif remove_clicked:
             remaining = [item for item in cards if str(item.get("id")) != card_id]
             _persist_llm_cards(settings, remaining)
@@ -8980,7 +8982,7 @@ def render_llm_provider_cards(settings: dict[str, Any], *, embedded: bool = Fals
     if changed:
         settings.update(migrated)
         write_json("settings.json", settings)
-    with st.expander("LLM — providers e modelos", expanded=True):
+    with st.expander("LLM — providers e modelos", expanded=False):
         st.caption("Configure cada provider num cartão independente. Pode repetir o mesmo provider para manter várias API keys; a prioridade 1 é tentada primeiro. Cartões marcados como LLM Telegram ficam excluídos do pool textual e são usados apenas pelas notificações Telegram.")
         with st.container(border=True):
             st.markdown("### Limite LLM NVIDIA NIM")
@@ -9291,6 +9293,7 @@ def _render_media_provider_card(settings: dict[str, Any], cards: list[dict[str, 
         elif save_clicked:
             _persist_media_cards(settings, cards, str(settings.get(MEDIA_IMAGE_ACTIVE_CARD_KEY) or ""), str(settings.get(MEDIA_VIDEO_ACTIVE_CARD_KEY) or ""))
             st.success("Cartão de imagem/vídeo guardado.")
+            st.rerun()
         elif remove_clicked:
             remaining = [item for item in cards if str(item.get("id")) != card_id]
             _persist_media_cards(settings, remaining, str(settings.get(MEDIA_IMAGE_ACTIVE_CARD_KEY) or ""), str(settings.get(MEDIA_VIDEO_ACTIVE_CARD_KEY) or ""))
@@ -9310,7 +9313,7 @@ def render_media_provider_cards(settings: dict[str, Any], *, embedded: bool = Fa
     if changed:
         settings.update(migrated)
         write_json("settings.json", settings)
-    with st.expander("Imagem e Video IA", expanded=True):
+    with st.expander("Imagem e Video IA", expanded=False):
         full_ia_labels = ", ".join(media_provider_definition(code).label for code in FULL_IA_VIDEO_PROVIDER_CODES)
         st.caption(f"Configure providers de imagem e vídeo em cartões independentes. O router usa apenas o pool correspondente e faz failover entre providers activos. Pool Full IA: {full_ia_labels}.")
         for index in range(len(cards)):
@@ -9580,7 +9583,8 @@ def render_settings():
                 if st.button("Limpar cache derivado", key="clear_token_optimizer_cache"):
                     st.info(f"{clear_derived_cache()} artefacto(s) derivado(s) removido(s). Os originais da aplicação não foram apagados.")
             with st.form("settings_form"):
-                with st.expander("Niche Finder", expanded=True):
+                @st.fragment
+                def render_niche_finder_fragment():
                     niche_kaggle_tab, niche_apify_tab, niche_kalodata_tab = st.tabs(["Kaggle", "Apify", "Kalodata"])
                     with niche_kaggle_tab:
                         st.caption("O dataset permanece no Kaggle. O Thunderbolt usa estas credenciais apenas para publicar/executar a kernel e obter os resultados pequenos da análise.")
@@ -9674,6 +9678,8 @@ def render_settings():
                                 })
                                 write_json("settings.json", settings)
                                 st.success("Configuração Kalodata guardada.")
+                with st.expander("Niche Finder", expanded=False):
+                    render_niche_finder_fragment()
 
                 llm_rpm_settings = render_llm_provider_cards(settings, embedded=True)
                 llm_rpm_limit_enabled = bool(llm_rpm_settings["llm_rpm_limit_enabled"])
@@ -9692,7 +9698,7 @@ def render_settings():
                     st.caption("Integração da API do Google Custom Search (Google Images) será implementada na Etapa 2.")
                     st.info("Esta seção está reservada para a configuração da API Key e do Custom Search Engine ID (CX).")
 
-                with st.expander("Voz, TTS e música — Azure Speech, restantes serviços e Suno", expanded=True):
+                with st.expander("Voz, TTS e música — Azure Speech, restantes serviços e Suno", expanded=False):
                     st.caption("Cada serviço está separado no seu próprio cartão. Os botões de teste ficam dentro do cartão correspondente e fazem apenas diagnóstico, sem gerar áudio ou música.")
 
                     with st.container(border=True):

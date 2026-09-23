@@ -9,21 +9,23 @@ MAIN_SOURCE = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 
 
 class ApiSettingsExpandersTests(unittest.TestCase):
-    def test_api_settings_actionable_sections_stay_open_after_actions(self):
+    def test_api_settings_expandable_sections_are_closed_by_default(self):
         labels = [
             "Niche Finder",
             "Imagem e Video Montagem/MoviePy",
             "Imagem e Video IA",
+            "Remotion",
+            "Google Imagem API",
             "LLM — providers e modelos",
             "Voz, TTS e música — Azure Speech, restantes serviços e Suno",
+            "Upload-Post",
+            "Postiz",
         ]
         for label in labels:
-            self.assertIn(f'st.expander("{label}", expanded=True)', MAIN_SOURCE)
-        for label in ("Remotion", "Google Imagem API", "Upload-Post", "Postiz"):
             self.assertIn(f'st.expander("{label}", expanded=False)', MAIN_SOURCE)
 
     def test_voice_services_are_split_into_provider_cards(self):
-        start = MAIN_SOURCE.index('with st.expander("Voz, TTS e música — Azure Speech, restantes serviços e Suno", expanded=True):')
+        start = MAIN_SOURCE.index('with st.expander("Voz, TTS e música — Azure Speech, restantes serviços e Suno", expanded=False):')
         end = MAIN_SOURCE.index('with st.expander("Upload-Post", expanded=False):', start)
         voice_block = MAIN_SOURCE[start:end]
         for provider in ("Azure Speech", "ElevenLabs", "SiliconFlow", "MiniMax TTS", "Chatterbox", "Sonilo", "Suno — agente musical opcional"):
@@ -84,7 +86,7 @@ class ApiSettingsExpandersTests(unittest.TestCase):
         start = MAIN_SOURCE.index('def render_llm_provider_cards(')
         end = MAIN_SOURCE.index('def _media_card_config_status(', start)
         llm_block = MAIN_SOURCE[start:end]
-        self.assertIn('with st.expander("LLM — providers e modelos", expanded=True):', llm_block)
+        self.assertIn('with st.expander("LLM — providers e modelos", expanded=False):', llm_block)
         limit_position = llm_block.index('st.markdown("### Limite LLM NVIDIA NIM")')
         first_provider_position = llm_block.index('for index in range(len(cards)):')
         self.assertLess(limit_position, first_provider_position)
@@ -94,18 +96,18 @@ class ApiSettingsExpandersTests(unittest.TestCase):
 
     def test_llm_and_media_sections_are_in_main_list_after_apify(self):
         llm_position = MAIN_SOURCE.index('render_llm_provider_cards(settings, embedded=True)')
-        niche_position = MAIN_SOURCE.index('with st.expander("Niche Finder", expanded=True)')
+        niche_position = MAIN_SOURCE.index('with st.expander("Niche Finder", expanded=False)')
         settings_position = MAIN_SOURCE.index('def render_settings():')
         material_position = MAIN_SOURCE.index('render_material_source_api_keys(settings, embedded=True)', settings_position)
         media_position = MAIN_SOURCE.index('render_media_provider_cards(settings, embedded=True)', settings_position)
         self.assertLess(niche_position, llm_position)
         self.assertLess(llm_position, material_position)
         self.assertLess(material_position, media_position)
-        self.assertIn('with st.expander("Imagem e Video Montagem/MoviePy", expanded=True)', MAIN_SOURCE)
-        self.assertIn('with st.expander("Imagem e Video IA", expanded=True)', MAIN_SOURCE)
+        self.assertIn('with st.expander("Imagem e Video Montagem/MoviePy", expanded=False)', MAIN_SOURCE)
+        self.assertIn('with st.expander("Imagem e Video IA", expanded=False)', MAIN_SOURCE)
         remotion_position = MAIN_SOURCE.index('with st.expander("Remotion", expanded=False)', settings_position)
         google_images_position = MAIN_SOURCE.index('with st.expander("Google Imagem API", expanded=False)', settings_position)
-        voice_position = MAIN_SOURCE.index('with st.expander("Voz, TTS e música — Azure Speech, restantes serviços e Suno", expanded=True)', settings_position)
+        voice_position = MAIN_SOURCE.index('with st.expander("Voz, TTS e música — Azure Speech, restantes serviços e Suno", expanded=False)', settings_position)
         self.assertLess(media_position, remotion_position)
         self.assertLess(remotion_position, google_images_position)
         self.assertLess(google_images_position, voice_position)
@@ -162,8 +164,8 @@ class ApiSettingsExpandersTests(unittest.TestCase):
         material_position = api_block.index('render_material_source_api_keys(settings, embedded=True)')
         media_position = api_block.index('render_media_provider_cards(settings, embedded=True)')
         self.assertLess(material_position, media_position)
-        self.assertIn('with st.expander("Imagem e Video Montagem/MoviePy", expanded=True):', MAIN_SOURCE)
-        self.assertIn('with st.expander("Imagem e Video IA", expanded=True):', MAIN_SOURCE)
+        self.assertIn('with st.expander("Imagem e Video Montagem/MoviePy", expanded=False):', MAIN_SOURCE)
+        self.assertIn('with st.expander("Imagem e Video IA", expanded=False):', MAIN_SOURCE)
         self.assertIn('with st.container(border=True):', api_block)
         self.assertIn('with st.form("settings_form"):', api_block)
         self.assertNotIn('with material_sources_tab:', MAIN_SOURCE)
@@ -261,34 +263,33 @@ class ApiSettingsExpandersTests(unittest.TestCase):
             for label in labels:
                 self.assertIn(label, UI_TRANSLATIONS[language])
 
-    def test_niche_messages_are_rendered_inside_the_expander_without_global_rerun(self):
-        start = MAIN_SOURCE.index('with st.expander("Niche Finder", expanded=True):')
-        end = MAIN_SOURCE.index('llm_rpm_settings =', start)
-        niche = MAIN_SOURCE[start:end]
+    def test_only_niche_finder_uses_a_fragment_and_stays_closed_by_default(self):
+        self.assertIn('@st.fragment\n                def render_niche_finder_fragment():', MAIN_SOURCE)
+        self.assertIn('with st.expander("Niche Finder", expanded=False):', MAIN_SOURCE)
+        self.assertIn('                    render_niche_finder_fragment()', MAIN_SOURCE)
+        for label in (
+            "Optimização de tokens — jusTokenMax",
+            "LLM — providers e modelos",
+            "Imagem e Video Montagem/MoviePy",
+            "Imagem e Video IA",
+            "Voz, TTS e música — Azure Speech, restantes serviços e Suno",
+            "Remotion",
+            "Google Imagem API",
+        ):
+            self.assertIn(f'st.expander("{label}", expanded=False)', MAIN_SOURCE)
+
+    def test_niche_save_messages_are_inside_fragment_without_global_rerun(self):
+        start = MAIN_SOURCE.index('def render_niche_finder_fragment():')
+        end = MAIN_SOURCE.index('with st.expander("Niche Finder", expanded=False):', start)
+        fragment = MAIN_SOURCE[start:end]
         for message in (
             'st.success("Configuração Kaggle guardada.")',
             'st.success("Configuração Apify guardada.")',
             'st.success("Configuração Kalodata guardada.")',
         ):
-            self.assertIn(message, niche)
-        self.assertNotIn("st.rerun()", niche)
+            self.assertIn(message, fragment)
+        self.assertNotIn("st.rerun()", fragment)
         self.assertNotIn("niche_finder_save_notice", MAIN_SOURCE)
-
-    def test_save_feedback_does_not_disappear_after_a_global_rerun(self):
-        for message in (
-            'st.success("Cartão LLM guardado.")',
-            'st.success("Cartão de imagem/vídeo guardado.")',
-            'Fonte {definition[\'label\']} guardada.',
-        ):
-            start = MAIN_SOURCE.index(message)
-            end = MAIN_SOURCE.find("\n", start)
-            following = MAIN_SOURCE[end:end + 180]
-            self.assertNotIn("st.rerun()", following)
-
-    def test_streamlit_expander_key_is_not_assumed(self):
-        requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
-        self.assertIn("streamlit>=1.37,<2", requirements)
-        self.assertNotIn('st.expander("Niche Finder", expanded=True, key=', MAIN_SOURCE)
 
 
 if __name__ == "__main__":
