@@ -30,5 +30,8 @@ def test_kaggle_and_apify_keep_api_test_controls_in_their_configuration_cards():
     assert 'key="save_niche_kaggle"' in niche
     assert 'key="save_niche_apify"' in niche
     assert 'key="save_niche_kalodata"' in niche
-    assert 'st.session_state["niche_finder_save_notice"]' in niche
-    assert niche.count("st.rerun()") >= 3
+    assert 'with st.expander("Niche Finder", expanded=True):' in niche
+    assert 'st.success("Configuração Kaggle guardada.")' in niche
+    assert 'st.success("Configuração Apify guardada.")' in niche
+    assert 'st.success("Configuração Kalodata guardada.")' in niche
+    assert "st.rerun()" not in niche
