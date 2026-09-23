@@ -9595,12 +9595,23 @@ def render_settings():
                         with kaggle_cols[2]:
                             kaggle_kernel_slug = text_setting("Slug da kernel", "kaggle_kernel_slug", help_text="Identificador da kernel remota, por exemplo thunderbolt-niche-finder.")
                         _render_credential_status(kaggle_api_key)
-                        _render_api_test_control(
-                            settings,
-                            "kaggle",
-                            lambda: test_kaggle_credentials(kaggle_username, kaggle_api_key),
-                            widget_key="api_test_kaggle",
-                        )
+                        kaggle_action_cols = st.columns(2)
+                        with kaggle_action_cols[0]:
+                            _render_api_test_control(
+                                settings,
+                                "kaggle",
+                                lambda: test_kaggle_credentials(kaggle_username, kaggle_api_key),
+                                widget_key="api_test_kaggle",
+                            )
+                        with kaggle_action_cols[1]:
+                            if st.form_submit_button("Salvar", type="primary", width="stretch", key="save_niche_kaggle"):
+                                settings.update({
+                                    "kaggle_username": kaggle_username.strip(),
+                                    "kaggle_api_key": kaggle_api_key.strip(),
+                                    "kaggle_kernel_slug": kaggle_kernel_slug.strip(),
+                                })
+                                write_json("settings.json", settings)
+                                st.success("Configuração Kaggle guardada.")
 
                     with niche_apify_tab:
                         st.caption("O token fica guardado apenas no storage local. A aba Niche Finder Apify só usa este serviço depois de clicar no botão de pesquisa.")
@@ -9614,12 +9625,24 @@ def render_settings():
                         with apify_cols[3]:
                             apify_run_timeout = st.number_input("Limite da execução (s)", min_value=30, max_value=7200, value=int(settings.get("apify_run_timeout_seconds", 900)), step=30)
                         _render_credential_status(apify_api_token)
-                        _render_api_test_control(
-                            settings,
-                            "apify",
-                            lambda: test_apify_credentials(apify_api_token),
-                            widget_key="api_test_apify",
-                        )
+                        apify_action_cols = st.columns(2)
+                        with apify_action_cols[0]:
+                            _render_api_test_control(
+                                settings,
+                                "apify",
+                                lambda: test_apify_credentials(apify_api_token),
+                                widget_key="api_test_apify",
+                            )
+                        with apify_action_cols[1]:
+                            if st.form_submit_button("Salvar", type="primary", width="stretch", key="save_niche_apify"):
+                                settings.update({
+                                    "apify_api_token": apify_api_token.strip(),
+                                    "apify_actor_id": apify_actor_id.strip(),
+                                    "apify_poll_interval_seconds": int(apify_poll_interval),
+                                    "apify_run_timeout_seconds": int(apify_run_timeout),
+                                })
+                                write_json("settings.json", settings)
+                                st.success("Configuração Apify guardada.")
 
                     with niche_kalodata_tab:
                         kalodata_saved_base_url = str(settings.get("kalodata_base_url") or "").strip()
@@ -9638,12 +9661,22 @@ def render_settings():
                             key="settings_kalodata_base_url",
                         ).strip() or "https://www.kalodata.com/openapi/v1"
                         _render_credential_status(kalodata_api_key)
-                        _render_api_test_control(
-                            settings,
-                            "kalodata",
-                            lambda: test_kalodata_credentials(kalodata_api_key, kalodata_base_url),
-                            widget_key="api_test_kalodata",
-                        )
+                        kalodata_action_cols = st.columns(2)
+                        with kalodata_action_cols[0]:
+                            _render_api_test_control(
+                                settings,
+                                "kalodata",
+                                lambda: test_kalodata_credentials(kalodata_api_key, kalodata_base_url),
+                                widget_key="api_test_kalodata",
+                            )
+                        with kalodata_action_cols[1]:
+                            if st.form_submit_button("Salvar", type="primary", width="stretch", key="save_niche_kalodata"):
+                                settings.update({
+                                    "kalodata_api_key": kalodata_api_key.strip(),
+                                    "kalodata_base_url": kalodata_base_url.strip(),
+                                })
+                                write_json("settings.json", settings)
+                                st.success("Configuração Kalodata guardada.")
 
                 llm_rpm_settings = render_llm_provider_cards(settings, embedded=True)
                 llm_rpm_limit_enabled = bool(llm_rpm_settings["llm_rpm_limit_enabled"])

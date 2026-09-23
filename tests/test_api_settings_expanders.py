@@ -46,6 +46,32 @@ class ApiSettingsExpandersTests(unittest.TestCase):
         self.assertIn('with st.form("settings_form"):', MAIN_SOURCE)
         self.assertIn('st.form_submit_button("Guardar configurações do Thunderbolt"', MAIN_SOURCE)
 
+    def test_niche_finder_tabs_have_individual_blue_save_buttons(self):
+        expected = {
+            "kaggle": (
+                'key="save_niche_kaggle"',
+                '"kaggle_username": kaggle_username.strip()',
+                '"kaggle_api_key": kaggle_api_key.strip()',
+                '"kaggle_kernel_slug": kaggle_kernel_slug.strip()',
+            ),
+            "apify": (
+                'key="save_niche_apify"',
+                '"apify_api_token": apify_api_token.strip()',
+                '"apify_actor_id": apify_actor_id.strip()',
+                '"apify_poll_interval_seconds": int(apify_poll_interval)',
+                '"apify_run_timeout_seconds": int(apify_run_timeout)',
+            ),
+            "kalodata": (
+                'key="save_niche_kalodata"',
+                '"kalodata_api_key": kalodata_api_key.strip()',
+                '"kalodata_base_url": kalodata_base_url.strip()',
+            ),
+        }
+        for values in expected.values():
+            self.assertIn('st.form_submit_button("Salvar", type="primary", width="stretch"', MAIN_SOURCE)
+            for value in values:
+                self.assertIn(value, MAIN_SOURCE)
+
     def test_azure_speech_card_persists_values_before_diagnostic(self):
         self.assertIn('persist_callback: Any = None', MAIN_SOURCE)
         self.assertIn('if persist_callback is not None:', MAIN_SOURCE)
