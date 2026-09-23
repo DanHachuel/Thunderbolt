@@ -154,7 +154,7 @@ from hermes_ui.influencers import BACKEND_OPTIONS, DOCUMENT_EXTENSIONS, IMAGE_EX
 from hermes_ui.logs import list_logs, logs_to_rows
 from hermes_ui.languages import FLAG_DATA_URIS_BY_ISO, LANGUAGE_CODES, VIDEO_LANGUAGE_CODES, LANGUAGE_FLAG_DATA_URIS, language_code, language_label, replace_flag_emojis, ui_language_menu_label, ui_text, video_language_label, video_language_options
 from hermes_ui.countries import COUNTRY_OPTIONS
-from hermes_ui.api_key_tests import test_apify_credentials, test_influencer_database, test_innertube_api_key, test_kaggle_credentials, test_material_source_credentials, test_media_provider_card, test_nano_banana_credentials, test_postiz_credentials, test_telegram_credentials, test_tiktok_credentials, test_upload_post_credentials, test_voice_provider
+from hermes_ui.api_key_tests import test_apify_credentials, test_influencer_database, test_innertube_api_key, test_kaggle_credentials, test_kalodata_credentials, test_material_source_credentials, test_media_provider_card, test_nano_banana_credentials, test_postiz_credentials, test_telegram_credentials, test_tiktok_credentials, test_upload_post_credentials, test_voice_provider
 from hermes_ui.tutorials import tutorial_body, tutorial_caption, tutorial_title
 from hermes_ui.update_manager import check_version, restart_current_process, update_to_latest
 
@@ -9577,41 +9577,64 @@ def render_settings():
                 if st.button("Limpar cache derivado", key="clear_token_optimizer_cache"):
                     st.info(f"{clear_derived_cache()} artefacto(s) derivado(s) removido(s). Os originais da aplicação não foram apagados.")
             with st.form("settings_form"):
-                with st.expander("Niche Finder — Kaggle", expanded=False):
-                    st.caption("O dataset permanece no Kaggle. O Thunderbolt usa estas credenciais apenas para publicar/executar a kernel e obter os resultados pequenos da análise.")
-                    kaggle_cols = st.columns(3)
-                    with kaggle_cols[0]:
-                        kaggle_username = text_setting("Kaggle Username", "kaggle_username", help_text="Nome de utilizador da sua conta Kaggle, sem @ e sem URL.")
-                    with kaggle_cols[1]:
-                        kaggle_api_key = text_setting("Kaggle API Key", "kaggle_api_key", secret=True, help_text="Chave criada em Kaggle > Settings > API. Nunca é incluída no notebook ou no GitHub.")
-                    with kaggle_cols[2]:
-                        kaggle_kernel_slug = text_setting("Slug da kernel", "kaggle_kernel_slug", help_text="Identificador da kernel remota, por exemplo thunderbolt-niche-finder.")
-                    _render_credential_status(kaggle_api_key)
-                    _render_api_test_control(
-                        settings,
-                        "kaggle",
-                        lambda: test_kaggle_credentials(kaggle_username, kaggle_api_key),
-                        widget_key="api_test_kaggle",
-                    )
+                with st.expander("Niche Finder", expanded=False):
+                    niche_kaggle_tab, niche_apify_tab, niche_kalodata_tab = st.tabs(["Kaggle", "Apify", "Kalodata"])
+                    with niche_kaggle_tab:
+                        st.caption("O dataset permanece no Kaggle. O Thunderbolt usa estas credenciais apenas para publicar/executar a kernel e obter os resultados pequenos da análise.")
+                        kaggle_cols = st.columns(3)
+                        with kaggle_cols[0]:
+                            kaggle_username = text_setting("Kaggle Username", "kaggle_username", help_text="Nome de utilizador da sua conta Kaggle, sem @ e sem URL.")
+                        with kaggle_cols[1]:
+                            kaggle_api_key = text_setting("Kaggle API Key", "kaggle_api_key", secret=True, help_text="Chave criada em Kaggle > Settings > API. Nunca é incluída no notebook ou no GitHub.")
+                        with kaggle_cols[2]:
+                            kaggle_kernel_slug = text_setting("Slug da kernel", "kaggle_kernel_slug", help_text="Identificador da kernel remota, por exemplo thunderbolt-niche-finder.")
+                        _render_credential_status(kaggle_api_key)
+                        _render_api_test_control(
+                            settings,
+                            "kaggle",
+                            lambda: test_kaggle_credentials(kaggle_username, kaggle_api_key),
+                            widget_key="api_test_kaggle",
+                        )
 
-                with st.expander("Niche Finder — Apify", expanded=False):
-                    st.caption("O token fica guardado apenas no storage local. A aba Niche Finder Apify só usa este serviço depois de clicar no botão de pesquisa.")
-                    apify_cols = st.columns(4)
-                    with apify_cols[0]:
-                        apify_api_token = text_setting("Apify API Token", "apify_api_token", secret=True, help_text="Token pessoal da Apify. Não é incluído no workflow, logs ou GitHub.")
-                    with apify_cols[1]:
-                        apify_actor_id = text_setting("Apify Actor ID", "apify_actor_id", help_text="Por padrão: streamers~youtube-scraper.")
-                    with apify_cols[2]:
-                        apify_poll_interval = st.number_input("Intervalo de consulta (s)", min_value=1, max_value=120, value=int(settings.get("apify_poll_interval_seconds", 10)), step=1)
-                    with apify_cols[3]:
-                        apify_run_timeout = st.number_input("Limite da execução (s)", min_value=30, max_value=7200, value=int(settings.get("apify_run_timeout_seconds", 900)), step=30)
-                    _render_credential_status(apify_api_token)
-                    _render_api_test_control(
-                        settings,
-                        "apify",
-                        lambda: test_apify_credentials(apify_api_token),
-                        widget_key="api_test_apify",
-                    )
+                    with niche_apify_tab:
+                        st.caption("O token fica guardado apenas no storage local. A aba Niche Finder Apify só usa este serviço depois de clicar no botão de pesquisa.")
+                        apify_cols = st.columns(4)
+                        with apify_cols[0]:
+                            apify_api_token = text_setting("Apify API Token", "apify_api_token", secret=True, help_text="Token pessoal da Apify. Não é incluído no workflow, logs ou GitHub.")
+                        with apify_cols[1]:
+                            apify_actor_id = text_setting("Apify Actor ID", "apify_actor_id", help_text="Por padrão: streamers~youtube-scraper.")
+                        with apify_cols[2]:
+                            apify_poll_interval = st.number_input("Intervalo de consulta (s)", min_value=1, max_value=120, value=int(settings.get("apify_poll_interval_seconds", 10)), step=1)
+                        with apify_cols[3]:
+                            apify_run_timeout = st.number_input("Limite da execução (s)", min_value=30, max_value=7200, value=int(settings.get("apify_run_timeout_seconds", 900)), step=30)
+                        _render_credential_status(apify_api_token)
+                        _render_api_test_control(
+                            settings,
+                            "apify",
+                            lambda: test_apify_credentials(apify_api_token),
+                            widget_key="api_test_apify",
+                        )
+
+                    with niche_kalodata_tab:
+                        kalodata_api_key = text_setting(
+                            "Kalodata API Key",
+                            "kalodata_api_key",
+                            secret=True,
+                            help_text="Chave da API Kalodata. Não é incluída em logs.",
+                        )
+                        kalodata_base_url = st.text_input(
+                            "Kalodata Base URL",
+                            value=str(settings.get("kalodata_base_url") or "https://api.kalodata.com/v1"),
+                            help="Base URL usada pelo teste read-only do endpoint de créditos.",
+                            key="settings_kalodata_base_url",
+                        ).strip() or "https://api.kalodata.com/v1"
+                        _render_credential_status(kalodata_api_key)
+                        _render_api_test_control(
+                            settings,
+                            "kalodata",
+                            lambda: test_kalodata_credentials(kalodata_api_key, kalodata_base_url),
+                            widget_key="api_test_kalodata",
+                        )
 
                 llm_rpm_settings = render_llm_provider_cards(settings, embedded=True)
                 llm_rpm_limit_enabled = bool(llm_rpm_settings["llm_rpm_limit_enabled"])
@@ -9784,6 +9807,7 @@ def render_settings():
                         "moneyprinter_path": moneyprinter_path,
                         "kaggle_username": kaggle_username.strip(), "kaggle_api_key": kaggle_api_key.strip(), "kaggle_kernel_slug": kaggle_kernel_slug.strip() or "thunderbolt-niche-finder",
                         "apify_api_token": apify_api_token.strip(), "apify_actor_id": apify_actor_id.strip() or DEFAULT_ACTOR_ID, "apify_poll_interval_seconds": int(apify_poll_interval), "apify_run_timeout_seconds": int(apify_run_timeout),
+                        "kalodata_api_key": kalodata_api_key.strip(), "kalodata_base_url": kalodata_base_url.strip() or "https://api.kalodata.com/v1",
                         "llm_rpm_limit_enabled": bool(llm_rpm_limit_enabled), "llm_rpm_limit": int(llm_rpm_limit), "llm_rpm_window_seconds": int(llm_rpm_window_seconds),
                         "azure_speech_key": azure_speech_key, "azure_speech_region": azure_speech_region,
                         "siliconflow_tts_api_key": siliconflow_tts_api_key, "minimax_tts_api_key": minimax_tts_api_key,

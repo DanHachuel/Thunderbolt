@@ -96,6 +96,20 @@ def test_apify_credentials(api_token: str) -> dict[str, Any]:
     return _get(f"{APIFY_API_BASE}/users/me", headers={"Authorization": f"Bearer {api_token}"})
 
 
+def test_kalodata_credentials(api_key: str, base_url: str = "https://api.kalodata.com/v1") -> dict[str, Any]:
+    """Validate Kalodata with the read-only credits endpoint; never expose the key."""
+    api_key = str(api_key or "").strip()
+    safe_base_url = _safe_url(base_url)
+    if not api_key:
+        return _missing("A API Key do Kalodata não está configurada.")
+    if not safe_base_url:
+        return _result("error", "A Base URL do Kalodata não é válida.")
+    return _get(
+        f"{safe_base_url}/credit",
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
+
+
 def test_innertube_api_key(api_key: str) -> dict[str, Any]:
     """Validate a global InnerTube key with a public, read-only guide request."""
     api_key = str(api_key or "").strip()

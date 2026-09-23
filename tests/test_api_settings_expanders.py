@@ -11,8 +11,7 @@ MAIN_SOURCE = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 class ApiSettingsExpandersTests(unittest.TestCase):
     def test_api_settings_expandable_sections_are_closed_by_default(self):
         labels = [
-            "Niche Finder — Kaggle",
-            "Niche Finder — Apify",
+            "Niche Finder",
             "Imagem e Video Montagem/MoviePy",
             "Imagem e Video IA",
             "Remotion",
@@ -71,11 +70,11 @@ class ApiSettingsExpandersTests(unittest.TestCase):
 
     def test_llm_and_media_sections_are_in_main_list_after_apify(self):
         llm_position = MAIN_SOURCE.index('render_llm_provider_cards(settings, embedded=True)')
-        apify_position = MAIN_SOURCE.index('with st.expander("Niche Finder — Apify", expanded=False)')
+        niche_position = MAIN_SOURCE.index('with st.expander("Niche Finder", expanded=False)')
         settings_position = MAIN_SOURCE.index('def render_settings():')
         material_position = MAIN_SOURCE.index('render_material_source_api_keys(settings, embedded=True)', settings_position)
         media_position = MAIN_SOURCE.index('render_media_provider_cards(settings, embedded=True)', settings_position)
-        self.assertLess(apify_position, llm_position)
+        self.assertLess(niche_position, llm_position)
         self.assertLess(llm_position, material_position)
         self.assertLess(material_position, media_position)
         self.assertIn('with st.expander("Imagem e Video Montagem/MoviePy", expanded=False)', MAIN_SOURCE)
@@ -220,8 +219,7 @@ class ApiSettingsExpandersTests(unittest.TestCase):
 
     def test_new_api_expander_titles_have_all_language_translations(self):
         for language in LANGUAGE_CODES:
-            self.assertIn("Niche Finder — Kaggle", UI_TRANSLATIONS[language])
-            self.assertIn("Niche Finder — Apify", UI_TRANSLATIONS[language])
+            self.assertIn("Niche Finder", UI_TRANSLATIONS[language])
             self.assertIn("Imagem e Video IA", UI_TRANSLATIONS[language])
             self.assertIn("Imagem e Video Montagem/MoviePy", UI_TRANSLATIONS[language])
 

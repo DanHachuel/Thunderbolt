@@ -16,10 +16,14 @@ def test_innertube_key_has_a_safe_api_test_control():
 
 def test_kaggle_and_apify_keep_api_test_controls_in_their_configuration_cards():
     settings = MAIN_SOURCE.split("def render_settings():", 1)[1].split("def render_google_accounts():", 1)[0]
-    kaggle = settings.split('with st.expander("Niche Finder — Kaggle", expanded=False):', 1)[1].split('with st.expander("Niche Finder — Apify", expanded=False):', 1)[0]
-    apify = settings.split('with st.expander("Niche Finder — Apify", expanded=False):', 1)[1].split('llm_rpm_settings =', 1)[0]
+    niche = settings.split('with st.expander("Niche Finder", expanded=False):', 1)[1].split('llm_rpm_settings =', 1)[0]
 
-    assert 'test_kaggle_credentials(kaggle_username, kaggle_api_key)' in kaggle
-    assert 'widget_key="api_test_kaggle"' in kaggle
-    assert 'test_apify_credentials(apify_api_token)' in apify
-    assert 'widget_key="api_test_apify"' in apify
+    assert 'st.tabs(["Kaggle", "Apify", "Kalodata"])' in niche
+    assert 'test_kaggle_credentials(kaggle_username, kaggle_api_key)' in niche
+    assert 'widget_key="api_test_kaggle"' in niche
+    assert 'test_apify_credentials(apify_api_token)' in niche
+    assert 'widget_key="api_test_apify"' in niche
+    assert 'test_kalodata_credentials(kalodata_api_key, kalodata_base_url)' in niche
+    assert 'widget_key="api_test_kalodata"' in niche
+    assert '"kalodata_api_key": kalodata_api_key.strip()' in settings
+    assert '"kalodata_base_url": kalodata_base_url.strip()' in settings

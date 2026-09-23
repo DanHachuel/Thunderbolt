@@ -30,6 +30,37 @@ class ApiKeyDiagnosticsTests(unittest.TestCase):
         )
         self.assertNotIn("SECRET-KEY-123", result["message"])
 
+    def test_kalodata_missing_key_does_not_call_network(self):
+        with patch.object(api_key_tests.requests, "get") as get:
+            result = api_key_tests.test_kalodata_credentials("")
+        self.assertEqual(result["status"], "missing")
+        get.assert_not_called()
+
+    def test_kalodata_uses_read_only_credit_endpoint_and_bearer_auth(self):
+        with patch.object(api_key_tests.requests, "get", return_value=self.response(200)) as get:
+            result = api_key_tests.test_kalodata_credentials("SECRET-KEY-123")
+        self.assertEqual(result["status"], "success")
+        get.assert_called_once_with(
+            "https://api.kalodata.com/v1/credit",
+            timeout=api_key_tests.DEFAULT_TIMEOUT,
+            headers={"Authorization": "Bearer SECRET-KEY-123"},
+        )
+        self.assertNotIn("SECRET-KEY-123", str(result))
+
+    def test_kalodata_invalid_credentials_are_reported_without_response_body(self):
+        with patch.object(api_key_tests.requests, "get", return_value=self.response(401)) as get:
+            result = api_key_tests.test_kalodata_credentials("SECRET-KEY-123", "https://api.kalodata.com/v1")
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["status_code"], 401)
+        self.assertNotIn("provider error", str(result))
+        self.assertEqual(get.call_args.args[0], "https://api.kalodata.com/v1/credit")
+
+    def test_kalodata_rejects_invalid_base_url_without_network(self):
+        with patch.object(api_key_tests.requests, "get") as get:
+            result = api_key_tests.test_kalodata_credentials("SECRET-KEY-123", "not a url")
+        self.assertEqual(result["status"], "error")
+        get.assert_not_called()
+
     def test_innertube_uses_public_read_only_guide_request(self):
         with patch.object(api_key_tests.requests, "post", return_value=self.response(200)) as post:
             result = api_key_tests.test_innertube_api_key("SECRET-KEY-123")
