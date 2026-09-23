@@ -400,6 +400,7 @@ def _image_request(card: dict[str, Any], prompt: str, *, topic: str = "", letter
                 "output_format": "jpeg",
                 "width": 1024 if resolved_aspect_ratio == "16:9" else 720,
                 "height": 576 if resolved_aspect_ratio == "16:9" else 1280,
+                "steps": 20,
             },
             timeout=180,
         )

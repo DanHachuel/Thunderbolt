@@ -8,6 +8,7 @@ URL or raw exception text; callers may persist them in local settings safely.
 from __future__ import annotations
 
 import os
+import logging
 from datetime import datetime, timezone
 from typing import Any, Mapping
 from urllib.parse import quote, urlsplit, urlunsplit
@@ -18,6 +19,7 @@ from app.modules.niche_finder.apify import APIFY_API_BASE
 from integrations.openai_model_discovery import OpenAICompatibleAPIError, validate_openrouter_api_key
 
 DEFAULT_TIMEOUT = 20
+LOGGER = logging.getLogger(__name__)
 
 
 def _result(status: str, message: str, *, status_code: int | None = None) -> dict[str, Any]:
@@ -96,18 +98,38 @@ def test_apify_credentials(api_token: str) -> dict[str, Any]:
     return _get(f"{APIFY_API_BASE}/users/me", headers={"Authorization": f"Bearer {api_token}"})
 
 
-def test_kalodata_credentials(api_key: str, base_url: str = "https://api.kalodata.com/v1") -> dict[str, Any]:
-    """Validate Kalodata with the read-only credits endpoint; never expose the key."""
+def test_kalodata_credentials(api_key: str, base_url: str = "https://www.kalodata.com/openapi/v1") -> dict[str, Any]:
+    """Validate Kalodata with the low-cost video ranking endpoint; never expose the key."""
     api_key = str(api_key or "").strip()
     safe_base_url = _safe_url(base_url)
     if not api_key:
         return _missing("A API Key do Kalodata não está configurada.")
     if not safe_base_url:
         return _result("error", "A Base URL do Kalodata não é válida.")
-    return _get(
-        f"{safe_base_url}/credit",
-        headers={"Authorization": f"Bearer {api_key}"},
-    )
+    endpoint = f"{safe_base_url}/tiktok/video/rank"
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "secret-key": api_key,
+        "Authorization": f"Bearer {api_key}",
+    }
+    payload = {
+        "region": "US",
+        "language": "en-US",
+        "currency": "USD",
+        "date_range": "last7Day",
+        "page_number": 1,
+        "page_size": 1,
+    }
+    try:
+        response = requests.post(endpoint, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
+    except requests.RequestException:
+        LOGGER.error("Kalodata diagnostic failed endpoint=%s error=network", endpoint)
+        return _result("error", "Não foi possível contactar o serviço.")
+    if response.status_code >= 400:
+        detail = str(response.text or "").replace(api_key, "[REDACTED]").strip()[:500]
+        LOGGER.error("Kalodata diagnostic failed status=%s endpoint=%s response=%s", response.status_code, endpoint, detail)
+    return _response_result(response)
 
 
 def test_innertube_api_key(api_key: str) -> dict[str, Any]:
@@ -183,6 +205,12 @@ def test_media_provider_card(card: Mapping[str, Any]) -> dict[str, Any]:
     api_style = str(source.get("api_style") or "").strip().lower()
     if provider == "nano_banana":
         return test_nano_banana_credentials(api_key, model)
+    if provider == "together_ai":
+        if not base_url:
+            return _result("missing", "Complete a Base URL antes de testar.")
+        if not api_key:
+            return _missing("Introduza a API key Together AI antes de testar.")
+        return _get(_models_endpoint(base_url), headers={"Authorization": f"Bearer {api_key}"})
     if provider == "huggingface":
         if not api_key:
             return _missing("Introduza o token Hugging Face antes de testar.")

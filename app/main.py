@@ -9089,6 +9089,12 @@ def _fetch_media_models(card: dict[str, Any]) -> list[str]:
         if not models:
             raise ValueError("A FAL AI não devolveu modelos disponíveis.")
         return sorted(models, key=str.casefold)
+    if provider == "together_ai":
+        from integrations.openai_model_discovery import fetch_together_models
+        return fetch_together_models(
+            str(card.get("api_key") or ""),
+            str(card.get("base_url") or "https://api.together.ai/v1"),
+        )
     if provider == "openrouter":
         base_url = str(card.get("base_url") or "https://openrouter.ai/api/v1").rstrip("/")
         headers = {"Accept": "application/json", "Authorization": f"Bearer {str(card.get('api_key') or '').strip()}"}
@@ -9616,6 +9622,9 @@ def render_settings():
                         )
 
                     with niche_kalodata_tab:
+                        kalodata_saved_base_url = str(settings.get("kalodata_base_url") or "").strip()
+                        if kalodata_saved_base_url in {"", "https://api.kalodata.com/v1"}:
+                            kalodata_saved_base_url = "https://www.kalodata.com/openapi/v1"
                         kalodata_api_key = text_setting(
                             "Kalodata API Key",
                             "kalodata_api_key",
@@ -9624,10 +9633,10 @@ def render_settings():
                         )
                         kalodata_base_url = st.text_input(
                             "Kalodata Base URL",
-                            value=str(settings.get("kalodata_base_url") or "https://api.kalodata.com/v1"),
-                            help="Base URL usada pelo teste read-only do endpoint de créditos.",
+                            value=kalodata_saved_base_url,
+                            help="Base URL oficial do Open Center; o teste usa o ranking de vídeos com baixo volume.",
                             key="settings_kalodata_base_url",
-                        ).strip() or "https://api.kalodata.com/v1"
+                        ).strip() or "https://www.kalodata.com/openapi/v1"
                         _render_credential_status(kalodata_api_key)
                         _render_api_test_control(
                             settings,
@@ -9807,7 +9816,7 @@ def render_settings():
                         "moneyprinter_path": moneyprinter_path,
                         "kaggle_username": kaggle_username.strip(), "kaggle_api_key": kaggle_api_key.strip(), "kaggle_kernel_slug": kaggle_kernel_slug.strip() or "thunderbolt-niche-finder",
                         "apify_api_token": apify_api_token.strip(), "apify_actor_id": apify_actor_id.strip() or DEFAULT_ACTOR_ID, "apify_poll_interval_seconds": int(apify_poll_interval), "apify_run_timeout_seconds": int(apify_run_timeout),
-                        "kalodata_api_key": kalodata_api_key.strip(), "kalodata_base_url": kalodata_base_url.strip() or "https://api.kalodata.com/v1",
+                        "kalodata_api_key": kalodata_api_key.strip(), "kalodata_base_url": kalodata_base_url.strip() or "https://www.kalodata.com/openapi/v1",
                         "llm_rpm_limit_enabled": bool(llm_rpm_limit_enabled), "llm_rpm_limit": int(llm_rpm_limit), "llm_rpm_window_seconds": int(llm_rpm_window_seconds),
                         "azure_speech_key": azure_speech_key, "azure_speech_region": azure_speech_region,
                         "siliconflow_tts_api_key": siliconflow_tts_api_key, "minimax_tts_api_key": minimax_tts_api_key,

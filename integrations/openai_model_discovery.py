@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 DEFAULT_NVIDIA_NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
@@ -207,6 +211,38 @@ def fetch_openai_compatible_models(
         payload = response.json()
     except ValueError as exc:
         raise ModelDiscoveryError("O endpoint devolveu uma resposta que não é JSON.") from exc
+    return normalize_model_ids(payload)
+
+
+def fetch_together_models(
+    api_key: str,
+    base_url: str = "https://api.together.ai/v1",
+    *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> list[str]:
+    """Fetch Together AI models with a provider-specific, redacted diagnostic."""
+    token = str(api_key or "").strip()
+    endpoint = models_endpoint(base_url)
+    headers = {"Accept": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        response = requests.get(endpoint, headers=headers, timeout=timeout)
+    except requests.RequestException as exc:
+        LOGGER.error("Together AI model query failed endpoint=%s error=%s", endpoint, str(exc)[:300])
+        raise ModelDiscoveryError(f"Não foi possível consultar {endpoint}: {exc}") from exc
+    if response.status_code >= 400:
+        detail = str(response.text or "").replace(token, "[REDACTED]").strip()[:500]
+        LOGGER.error("Together AI model query failed status=%s endpoint=%s response=%s", response.status_code, endpoint, detail)
+        if response.status_code in (401, 403):
+            raise ModelDiscoveryError(f"O endpoint Together AI recusou a credencial (HTTP {response.status_code}).")
+        raise ModelDiscoveryError(f"O endpoint Together AI devolveu HTTP {response.status_code}: {detail or 'sem mensagem'}")
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        detail = str(response.text or "").replace(token, "[REDACTED]").strip()[:500]
+        LOGGER.error("Together AI model query returned non-JSON status=%s endpoint=%s response=%s", response.status_code, endpoint, detail)
+        raise ModelDiscoveryError("O endpoint Together AI devolveu uma resposta que não é JSON.") from exc
     return normalize_model_ids(payload)
 
 

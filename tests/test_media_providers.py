@@ -150,6 +150,34 @@ class MediaProvidersTests(unittest.TestCase):
         self.assertEqual(body["aspect_ratio"], "16:9")
         self.assertNotIn("response_format", body)
 
+    def test_together_image_request_uses_openai_payload_and_b64_json(self):
+        response = Mock(status_code=200)
+        card = {"provider": "together_ai", "api_style": "together_ai", "api_key": "secret", "base_url": "https://api.together.ai/v1", "model": "black-forest-labs/FLUX.1-schnell"}
+        with patch.object(media_generation.requests, "post", return_value=response) as post:
+            media_generation._image_request(card, "clean image")
+        self.assertEqual(post.call_args.args[0], "https://api.together.ai/v1/images/generations")
+        self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer secret")
+        body = post.call_args.kwargs["json"]
+        self.assertEqual(body["model"], "black-forest-labs/FLUX.1-schnell")
+        self.assertEqual(body["response_format"], "b64_json")
+        self.assertEqual(body["width"], 1024)
+        self.assertEqual(body["height"], 576)
+        self.assertEqual(body["steps"], 20)
+
+    def test_together_video_request_and_polling_use_v2_video_url(self):
+        create_response = Mock(status_code=200)
+        card = {"provider": "together_ai", "api_style": "together_ai", "api_key": "secret", "base_url": "https://api.together.ai/v1", "model": "together-video-model"}
+        with patch.object(media_generation.requests, "post", return_value=create_response) as post:
+            media_generation._video_request(card, "video prompt")
+        self.assertEqual(post.call_args.args[0], "https://api.together.ai/v2/videos")
+        self.assertEqual(post.call_args.kwargs["json"]["model"], "together-video-model")
+        self.assertIn("prompt", post.call_args.kwargs["json"])
+        completed = Mock(status_code=200)
+        completed.json.return_value = {"status": "completed", "video_url": "https://files.example/video.mp4"}
+        with patch.object(media_generation.requests, "get", return_value=completed) as get:
+            self.assertEqual(media_generation._poll_video(card, "job-123", attempts=1), "https://files.example/video.mp4")
+        self.assertEqual(get.call_args.args[0], "https://api.together.ai/v2/videos/job-123")
+
     def test_openrouter_video_request_uses_async_videos_endpoint(self):
         response = Mock(status_code=200)
         card = {"provider": "openrouter", "api_style": "openrouter", "api_key": "secret", "base_url": "https://openrouter.ai/api/v1", "model": "google/veo-3.1"}

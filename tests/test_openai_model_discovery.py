@@ -7,6 +7,7 @@ from integrations.openai_model_discovery import (
     OpenAICompatibleAPIError,
     chat_completions_endpoint,
     fetch_replicate_models,
+    fetch_together_models,
     models_endpoint,
     validate_openai_compatible_api_key,
     validate_paligemma_api_key,
@@ -15,6 +16,27 @@ from integrations.openai_model_discovery import (
 
 
 class OpenAICompatibleApiValidationTests(TestCase):
+    def test_together_catalog_uses_v1_models_and_bearer_auth(self) -> None:
+        response = Mock(status_code=200)
+        response.json.return_value = {"data": [{"id": "black-forest-labs/FLUX.1-schnell"}]}
+        with patch("integrations.openai_model_discovery.requests.get", return_value=response) as get:
+            models = fetch_together_models("together-secret", "https://api.together.ai/v1")
+        self.assertEqual(models, ["black-forest-labs/FLUX.1-schnell"])
+        get.assert_called_once_with(
+            "https://api.together.ai/v1/models",
+            headers={"Accept": "application/json", "Authorization": "Bearer together-secret"},
+            timeout=12,
+        )
+
+    def test_together_catalog_includes_http_error_detail_without_secret(self) -> None:
+        response = Mock(status_code=500)
+        response.text = "provider failure together-secret"
+        with patch("integrations.openai_model_discovery.requests.get", return_value=response):
+            with self.assertRaises(ValueError) as raised:
+                fetch_together_models("together-secret", "https://api.together.ai/v1")
+        self.assertIn("HTTP 500", str(raised.exception))
+        self.assertNotIn("together-secret", str(raised.exception))
+
     def test_paligemma_validation_uses_integrated_nim_catalog(self) -> None:
         response = Mock(status_code=200)
         with patch("integrations.openai_model_discovery.requests.get", return_value=response) as get:
