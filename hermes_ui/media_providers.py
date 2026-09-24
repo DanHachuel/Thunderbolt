@@ -120,6 +120,15 @@ MEDIA_PROVIDER_CATALOG: tuple[MediaProviderDefinition, ...] = (
         description="Hugging Face Inference API para imagens via InferenceClient com provider hf-inference; não usa endpoint OpenAI-compatible.",
     ),
     MediaProviderDefinition(
+        "huggingface_image_inference",
+        "Hugging Face Image Inference",
+        default_base_url="https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell",
+        supports_image=True,
+        supports_text=False,
+        api_style="huggingface_image_inference",
+        description="POST directo ao endpoint FLUX.1-schnell com Authorization Bearer e JSON {inputs: prompt}.",
+    ),
+    MediaProviderDefinition(
         "cloudflare_workers_ai",
         "Cloudflare Workers AI",
         default_base_url="https://api.cloudflare.com/client/v4",
@@ -300,7 +309,7 @@ def new_media_card(provider: Any, *, card_id: str | None = None) -> dict[str, An
         {
             "id": card_id or f"media-{code}-1",
             "provider": code,
-            "model": "gemini-3.1-flash-image" if code == "nano_banana" else ("agnes-image-2.1-flash" if code == "agnes" else ""),
+            "model": "gemini-3.1-flash-image" if code == "nano_banana" else ("agnes-image-2.1-flash" if code == "agnes" else ("black-forest-labs/FLUX.1-schnell" if code == "huggingface_image_inference" else "")),
             "base_url": definition.default_base_url,
             "enabled": True,
         }

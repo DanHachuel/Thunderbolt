@@ -24,12 +24,19 @@ class MediaProvidersTests(unittest.TestCase):
     def test_catalog_contains_requested_current_providers_and_excludes_deprecated_names(self):
         codes = {item["code"] for item in media_providers.media_provider_catalog()}
         self.assertTrue({"nano_banana", "pollinations", "agnes", "huggingface", "cloudflare_workers_ai", "inferenceport", "alibaba_cloud", "kie_ai", "fal_ai", "heygen", "openrouter", "together_ai"}.issubset(codes))
+        self.assertIn("huggingface_image_inference", codes)
         self.assertNotIn("nexaapi", codes)
         self.assertNotIn("openimagegen", codes)
         self.assertEqual(
             set(media_providers.FULL_IA_VIDEO_PROVIDER_CODES),
             {"fal_ai", "kie_ai", "agnes", "nano_banana", "replicate", "pollinations", "huggingface", "inferenceport", "heygen", "openrouter"},
         )
+
+    def test_huggingface_image_inference_card_uses_flux_endpoint_defaults(self):
+        card = media_providers.new_media_card("huggingface_image_inference")
+        self.assertEqual(card["model"], "black-forest-labs/FLUX.1-schnell")
+        self.assertEqual(card["base_url"], "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell")
+        self.assertTrue(card["supports_image"])
 
     def test_together_ai_catalog_definition_has_image_and_video_capabilities(self):
         definition = media_providers.media_provider_definition("together_ai")
@@ -136,6 +143,40 @@ class MediaProvidersTests(unittest.TestCase):
             self.assertEqual(output.read_bytes(), b"image")
             self.assertEqual(output.parent, Path(temp_dir) / "thumbnails")
         client.text_to_image.assert_called_once()
+
+    def test_huggingface_image_inference_uses_direct_post_contract(self):
+        response = Mock(status_code=200, content=b"image-bytes", text="")
+        card = {
+            "provider": "huggingface_image_inference",
+            "api_style": "huggingface_image_inference",
+            "api_key": "hf_secret",
+            "model": "black-forest-labs/FLUX.1-schnell",
+            "base_url": "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell",
+        }
+        with patch.object(media_generation.requests, "post", return_value=response) as post:
+            media_generation._image_request(card, "A clean product image")
+        self.assertEqual(post.call_args.args[0], "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell")
+        self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer hf_secret")
+        self.assertEqual(post.call_args.kwargs["headers"]["Content-Type"], "application/json")
+        body = post.call_args.kwargs["json"]
+        self.assertEqual(set(body), {"inputs"})
+        self.assertIn("A clean product image", body["inputs"])
+
+    def test_huggingface_image_inference_saves_binary_image_response(self):
+        png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+        response = Mock(status_code=200, content=png, text="")
+        card = {
+            "provider": "huggingface_image_inference",
+            "api_style": "huggingface_image_inference",
+            "api_key": "hf_secret",
+            "model": "black-forest-labs/FLUX.1-schnell",
+            "base_url": "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell",
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(media_generation, "STORAGE", Path(temp_dir)), patch.object(media_generation, "ensure_storage", lambda: None), patch.object(media_generation.requests, "post", return_value=response):
+                output = media_generation.generate_image_for_card({}, card, "A clean product image", topic="topic")
+            self.assertTrue(output.is_file())
+            self.assertGreater(output.stat().st_size, 0)
 
     def test_openrouter_image_request_uses_dedicated_images_endpoint(self):
         response = Mock(status_code=200)

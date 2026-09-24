@@ -300,6 +300,8 @@ def _image_endpoint(card: Mapping[str, Any]) -> str:
     explicit = str(card.get("image_endpoint") or "").strip()
     if explicit:
         return explicit
+    if style == "huggingface_image_inference":
+        return base
     if style == "openrouter":
         return f"{base}/images"
     if style == "together_ai":
@@ -355,6 +357,8 @@ def _image_request(card: dict[str, Any], prompt: str, *, topic: str = "", letter
         size=requested_size,
     )
     constrained_prompt = _fit_provider_prompt(constrained_prompt, provider)
+    if style == "huggingface_image_inference":
+        return requests.post(endpoint, headers=_headers(card), json={"inputs": constrained_prompt}, timeout=180)
     if style == "cloudflare":
         return requests.post(endpoint, headers=_headers(card), json={"prompt": constrained_prompt}, timeout=180)
     if style == "fal_queue":
@@ -492,6 +496,35 @@ def generate_image_for_card(
 
     ensure_storage()
     destination = STORAGE / "thumbnails" / f"media-{provider}-{abs(hash((topic, prompt, variant_index))) & 0xffffffffffffffff:x}.jpg"
+
+    if provider == "huggingface_image_inference":
+        try:
+            image_prompt, _headline = _compose_thumbnail_prompt(
+                prompt,
+                topic=topic,
+                lettering_text=lettering_text,
+                lettering_prompt=lettering_prompt,
+            )
+            constrained_prompt = _append_generation_constraints(
+                image_prompt,
+                kind="image",
+                aspect_ratio=aspect_ratio,
+                size="720x1280 minimum" if aspect_ratio == "9:16" else "1280x720 minimum",
+            )
+            response = _image_request({**dict(card), "api_style": "huggingface_image_inference"}, constrained_prompt, aspect_ratio=aspect_ratio)
+            if response.status_code >= 400:
+                detail = response.text[:220] if getattr(response, "text", "") else ""
+                raise MediaGenerationError(f"Hugging Face Image Inference devolveu HTTP {response.status_code}. {detail}")
+            image_bytes = bytes(response.content or b"")
+            if not image_bytes:
+                raise MediaGenerationError("Hugging Face Image Inference não devolveu uma imagem.")
+            return _download_or_write(image_bytes, "", destination, card, aspect_ratio=aspect_ratio)
+        except MediaGenerationError:
+            raise
+        except requests.RequestException as exc:
+            raise MediaGenerationError(f"Hugging Face Image Inference falhou: {str(exc)[:240]}") from exc
+        except Exception as exc:
+            raise MediaGenerationError(f"Hugging Face Image Inference falhou: {str(exc)[:240]}") from exc
 
     if provider == "huggingface":
         model = _model(card)
