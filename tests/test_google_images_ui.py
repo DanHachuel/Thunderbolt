@@ -13,6 +13,14 @@ def test_google_images_cards_ui_has_required_actions_and_fields():
     assert "Quota ≥ 80%" in MAIN
 
 
+def test_google_images_actions_use_form_submit_buttons_inside_settings_form():
+    start = MAIN.index('with st.expander("Google Imagem API", expanded=False)')
+    end = MAIN.index('with st.expander("Voz, TTS e música — Azure Speech, restantes serviços e Suno", expanded=False)', start)
+    block = MAIN[start:end]
+    assert "st.button(" not in block
+    assert block.count("st.form_submit_button(") >= 7
+
+
 def test_google_images_ui_has_copyright_warning_and_source_unblocked():
     assert "GOOGLE_IMAGES_COPYRIGHT_WARNING" in MAIN
     assert 'UNAVAILABLE_VIDEO_SOURCES = {"remotion", "music_clips"}' in MAIN

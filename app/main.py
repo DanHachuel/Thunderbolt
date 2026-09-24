@@ -9685,30 +9685,30 @@ def render_settings():
                                     st.warning("Quota ≥ 80%")
                             gactions = st.columns(4)
                             with gactions[0]:
-                                if st.button("↑", key=f"google_up_{card_id}", disabled=google_index == 0):
+                                if st.form_submit_button("↑", key=f"google_up_{card_id}", disabled=google_index == 0):
                                     google_cards[google_index - 1], google_cards[google_index] = google_cards[google_index], google_cards[google_index - 1]
                                     for pos, item in enumerate(google_cards, start=1): item["priority"] = pos
                                     write_json("settings.json", {**settings, "google_images_cards": google_cards}); st.rerun()
                             with gactions[1]:
-                                if st.button("↓", key=f"google_down_{card_id}", disabled=google_index == len(google_cards) - 1):
+                                if st.form_submit_button("↓", key=f"google_down_{card_id}", disabled=google_index == len(google_cards) - 1):
                                     google_cards[google_index + 1], google_cards[google_index] = google_cards[google_index], google_cards[google_index + 1]
                                     for pos, item in enumerate(google_cards, start=1): item["priority"] = pos
                                     write_json("settings.json", {**settings, "google_images_cards": google_cards}); st.rerun()
                             with gactions[2]:
-                                if st.button("Testar chamada API", key=f"google_test_{card_id}"):
+                                if st.form_submit_button("Testar chamada API", key=f"google_test_{card_id}"):
                                     result = test_google_images_card(google_card)
                                     (st.success if result["status"] == "success" else st.error)(result["message"])
                             with gactions[3]:
-                                if st.button("Salvar", key=f"google_save_{card_id}"):
+                                if st.form_submit_button("Salvar", key=f"google_save_{card_id}"):
                                     write_json("settings.json", {**settings, "google_images_cards": google_cards}); st.success("Cartão Google Images guardado.")
-                            if st.button("Remover card", key=f"google_remove_{card_id}"):
+                            if st.form_submit_button("Remover card", key=f"google_remove_{card_id}"):
                                 st.session_state[f"confirm_google_remove_{card_id}"] = True
                             if st.session_state.get(f"confirm_google_remove_{card_id}"):
                                 st.warning("Confirma a remoção deste cartão?")
-                                if st.button("Confirmar remoção", key=f"google_confirm_remove_{card_id}"):
+                                if st.form_submit_button("Confirmar remoção", key=f"google_confirm_remove_{card_id}"):
                                     write_json("settings.json", {**settings, "google_images_cards": [item for item in google_cards if str(item.get("id")) != card_id]})
                                     st.rerun()
-                    if st.button("Adicionar nova API Key do Google Images", key="google_add_card"):
+                    if st.form_submit_button("Adicionar nova API Key do Google Images", key="google_add_card"):
                         google_cards.append(new_google_images_card(priority=len(google_cards) + 1))
                         write_json("settings.json", {**settings, "google_images_cards": google_cards})
                         st.rerun()
