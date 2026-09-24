@@ -9670,11 +9670,22 @@ def render_settings():
                             st.markdown(f"**{google_card.get('label') or card_id}** · prioridade {google_card.get('priority', google_index + 1)}")
                             gcols = st.columns([2, 2, 1, 1])
                             with gcols[0]:
-                                google_card["label"] = st.text_input("Nome", value=str(google_card.get("label") or ""), key=f"google_label_{card_id}")
+                                name_col, _name_spacer = st.columns([1, 1])
+                                with name_col:
+                                    google_card["label"] = st.text_input("Nome", value=str(google_card.get("label") or ""), key=f"google_label_{card_id}")
                                 google_card["api_key"] = st.text_input("API Key", value=str(google_card.get("api_key") or ""), type="password", key=f"google_key_{card_id}")
                             with gcols[1]:
-                                google_card["cx"] = st.text_input("Custom Search Engine ID (CX)", value=str(google_card.get("cx") or ""), key=f"google_cx_{card_id}")
-                                google_card["daily_limit"] = st.number_input("Limite diário", min_value=1, max_value=10000, value=int(google_card.get("daily_limit", 100)), key=f"google_limit_{card_id}")
+                                cx_col, cx_link_col = st.columns([1, 1])
+                                with cx_col:
+                                    google_card["cx"] = st.text_input("Custom Search Engine ID (CX)", value=str(google_card.get("cx") or ""), key=f"google_cx_{card_id}")
+                                with cx_link_col:
+                                    st.markdown(
+                                        '<a href="https://programmablesearchengine.google.com/" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:28px;padding:6px 10px;border:1px solid rgba(128,128,128,.55);border-radius:6px;text-decoration:none;font-size:0.78rem;line-height:1.2;text-align:center;">Programmable Search Engine</a>',
+                                        unsafe_allow_html=True,
+                                    )
+                                daily_col, _daily_spacer = st.columns([1, 1])
+                                with daily_col:
+                                    google_card["daily_limit"] = st.number_input("Limite diário", min_value=1, max_value=10000, value=int(google_card.get("daily_limit", 100)), key=f"google_limit_{card_id}")
                             with gcols[2]:
                                 google_card["enabled"] = st.checkbox("Activo", value=bool(google_card.get("enabled", True)), key=f"google_enabled_{card_id}")
                             with gcols[3]:
