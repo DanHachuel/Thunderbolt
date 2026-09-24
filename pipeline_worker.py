@@ -16,6 +16,7 @@ from hermes_ui.script_generation import generate_script_document
 from hermes_ui.storage import STORAGE, ensure_storage, read_json, write_json
 from hermes_ui.llm_providers import active_llm_card, provider_definition
 from hermes_ui.thumbnail_generation import generate_thumbnail_image
+from hermes_ui.media_generation import MediaGenerationError, google_images_search
 
 PIPELINE_LOCK_FILENAME = "pipeline_worker.lock"
 PIPELINE_LOG_FILENAME = "pipeline_worker.json"
@@ -120,6 +121,15 @@ def _run_video_helper(task: dict[str, Any]) -> Path:
     if not subject:
         raise PipelineError("A etapa Vídeo não recebeu um tema válido.")
     settings = _settings()
+    requested_source = str(task.get("style_wide") or task.get("material_source") or "pexels").strip().lower()
+    if requested_source == "google_images":
+        try:
+            results = google_images_search(settings, subject, num_results=3, safe="active")
+            artifact = _save_json_artifact(str(task.get("id") or "google-images"), "google-images", {"query": subject, "items": results})
+            task["google_images_artifact"] = artifact
+        except MediaGenerationError:
+            # Google Images is an optional visual source; stock helper remains the final fallback.
+            requested_source = "pexels"
     env = os.environ.copy()
     card = active_llm_card(settings)
     provider = str(card.get("provider") or "openai").strip()

@@ -62,6 +62,14 @@ class MediaProviderDefinition:
 
 MEDIA_PROVIDER_CATALOG: tuple[MediaProviderDefinition, ...] = (
     MediaProviderDefinition(
+        "google_images",
+        "Google Custom Search (Google Images)",
+        default_base_url="https://www.googleapis.com/customsearch/v1",
+        supports_image=True,
+        api_style="google_custom_search",
+        description="Pesquisa de imagens através do Google Custom Search; usa cartões Google Images dedicados e quota por chave.",
+    ),
+    MediaProviderDefinition(
         "nano_banana",
         "Nano Banana",
         default_base_url="https://generativelanguage.googleapis.com/v1beta",

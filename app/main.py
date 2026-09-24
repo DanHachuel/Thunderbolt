@@ -146,6 +146,7 @@ from hermes_ui.mcp_server import server_status, start_server, stop_server
 from hermes_ui.material_sources import apply_material_source_cards_to_settings, ensure_material_source_cards, material_source_catalog, material_source_definition, new_material_card, normalize_material_card, selected_material_source
 from hermes_ui.llm_providers import LLM_CARDS_KEY, LLM_PROVIDER_CATALOG, apply_llm_cards_to_settings, ensure_llm_provider_cards, new_llm_card, normalize_llm_card, provider_definition, test_llm_provider_card, stamp_test_result
 from hermes_ui.media_providers import FULL_IA_VIDEO_PROVIDER_CODES, KIE_MEDIA_MODEL_CATALOG, MEDIA_CARDS_KEY, MEDIA_IMAGE_ACTIVE_CARD_KEY, MEDIA_VIDEO_ACTIVE_CARD_KEY, apply_media_provider_cards_to_settings, ensure_media_provider_cards, media_cards_for_pool, media_provider_catalog, media_provider_definition, new_media_card, normalize_media_card
+from hermes_ui.media_generation import GOOGLE_IMAGES_COPYRIGHT_WARNING, ensure_google_images_cards, google_images_cards, new_google_images_card, test_google_images_card
 from hermes_ui.music import create_music_task, list_music_files, list_music_tasks, materialize_suno_audio, request_suno_generation, run_music_task, store_music_file, store_voiceover_file, transition_music_task
 from hermes_ui.music_generation import MUSIC_GENRES, MUSIC_VOCAL_OPTIONS, generate_music_fields
 from hermes_ui.media_downloader import AUDIO_FORMATS, IMAGE_CONTAINERS, IMAGE_QUALITY_OPTIONS, VIDEO_CONTAINERS, VIDEO_QUALITY_OPTIONS, MediaDownloadError, build_download_options, clear_media_download_history, dependency_status, download_media, list_media_downloads, media_download_file
@@ -257,7 +258,7 @@ VIDEO_SOURCE_LABELS.update({
     "music_clips": "Clipes de Música",
     "clips": "Clipes de Música",
 })
-UNAVAILABLE_VIDEO_SOURCES = {"google_images", "remotion", "music_clips"}
+UNAVAILABLE_VIDEO_SOURCES = {"remotion", "music_clips"}
 CHANNEL_ASPECT_RATIO_OPTIONS = ["Landscape 16:9", "Portrait 9:16", "Square 1:1"]
 CHANNEL_FORMAT_OPTIONS = ["wide", "Shorts", "Music"]
 
@@ -4266,6 +4267,8 @@ def render_new_video(page_title: str = "Criação de Vídeos", prefix: str = "ne
                     ),
                 )
             wide_style_label = generation_settings["video_source"]
+            if channel_video_source_storage(wide_style_label) == "google_images":
+                st.warning(GOOGLE_IMAGES_COPYRIGHT_WARNING)
             style = channel_video_source_storage(wide_style_label)
             if style in UNAVAILABLE_VIDEO_SOURCES:
                 if style == "music_clips":
@@ -9654,8 +9657,61 @@ def render_settings():
                     st.info("Esta seção está reservada para a configuração do Remotion (renderização local com React/@remotion/renderer).")
 
                 with st.expander("Google Imagem API", expanded=False):
-                    st.caption("Integração da API do Google Custom Search (Google Images) será implementada na Etapa 2.")
-                    st.info("Esta seção está reservada para a configuração da API Key e do Custom Search Engine ID (CX).")
+                    st.caption("Configure múltiplas API Keys Google Custom Search com fallback por prioridade e quota diária.")
+                    st.warning(GOOGLE_IMAGES_COPYRIGHT_WARNING)
+                    migrated_google, google_changed = ensure_google_images_cards(settings)
+                    google_cards = [dict(item) for item in migrated_google.get("google_images_cards", [])]
+                    if google_changed:
+                        settings.update(migrated_google)
+                        write_json("settings.json", settings)
+                    for google_index, google_card in enumerate(google_cards):
+                        card_id = str(google_card.get("id") or f"google-images-{google_index + 1}")
+                        with st.container(border=True):
+                            st.markdown(f"**{google_card.get('label') or card_id}** · prioridade {google_card.get('priority', google_index + 1)}")
+                            gcols = st.columns([2, 2, 1, 1])
+                            with gcols[0]:
+                                google_card["label"] = st.text_input("Nome", value=str(google_card.get("label") or ""), key=f"google_label_{card_id}")
+                                google_card["api_key"] = st.text_input("API Key", value=str(google_card.get("api_key") or ""), type="password", key=f"google_key_{card_id}")
+                            with gcols[1]:
+                                google_card["cx"] = st.text_input("Custom Search Engine ID (CX)", value=str(google_card.get("cx") or ""), key=f"google_cx_{card_id}")
+                                google_card["daily_limit"] = st.number_input("Limite diário", min_value=1, max_value=10000, value=int(google_card.get("daily_limit", 100)), key=f"google_limit_{card_id}")
+                            with gcols[2]:
+                                google_card["enabled"] = st.checkbox("Activo", value=bool(google_card.get("enabled", True)), key=f"google_enabled_{card_id}")
+                            with gcols[3]:
+                                used = int(google_card.get("queries_used_today", 0))
+                                limit = int(google_card.get("daily_limit", 100))
+                                st.metric("Consultas hoje", f"{used}/{limit}")
+                                if used >= int(limit * 0.8):
+                                    st.warning("Quota ≥ 80%")
+                            gactions = st.columns(4)
+                            with gactions[0]:
+                                if st.button("↑", key=f"google_up_{card_id}", disabled=google_index == 0):
+                                    google_cards[google_index - 1], google_cards[google_index] = google_cards[google_index], google_cards[google_index - 1]
+                                    for pos, item in enumerate(google_cards, start=1): item["priority"] = pos
+                                    write_json("settings.json", {**settings, "google_images_cards": google_cards}); st.rerun()
+                            with gactions[1]:
+                                if st.button("↓", key=f"google_down_{card_id}", disabled=google_index == len(google_cards) - 1):
+                                    google_cards[google_index + 1], google_cards[google_index] = google_cards[google_index], google_cards[google_index + 1]
+                                    for pos, item in enumerate(google_cards, start=1): item["priority"] = pos
+                                    write_json("settings.json", {**settings, "google_images_cards": google_cards}); st.rerun()
+                            with gactions[2]:
+                                if st.button("Testar chamada API", key=f"google_test_{card_id}"):
+                                    result = test_google_images_card(google_card)
+                                    (st.success if result["status"] == "success" else st.error)(result["message"])
+                            with gactions[3]:
+                                if st.button("Salvar", key=f"google_save_{card_id}"):
+                                    write_json("settings.json", {**settings, "google_images_cards": google_cards}); st.success("Cartão Google Images guardado.")
+                            if st.button("Remover card", key=f"google_remove_{card_id}"):
+                                st.session_state[f"confirm_google_remove_{card_id}"] = True
+                            if st.session_state.get(f"confirm_google_remove_{card_id}"):
+                                st.warning("Confirma a remoção deste cartão?")
+                                if st.button("Confirmar remoção", key=f"google_confirm_remove_{card_id}"):
+                                    write_json("settings.json", {**settings, "google_images_cards": [item for item in google_cards if str(item.get("id")) != card_id]})
+                                    st.rerun()
+                    if st.button("Adicionar nova API Key do Google Images", key="google_add_card"):
+                        google_cards.append(new_google_images_card(priority=len(google_cards) + 1))
+                        write_json("settings.json", {**settings, "google_images_cards": google_cards})
+                        st.rerun()
 
                 with st.expander("Voz, TTS e música — Azure Speech, restantes serviços e Suno", expanded=False):
                     st.caption("Cada serviço está separado no seu próprio cartão. Os botões de teste ficam dentro do cartão correspondente e fazem apenas diagnóstico, sem gerar áudio ou música.")
