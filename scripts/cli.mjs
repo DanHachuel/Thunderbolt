@@ -384,6 +384,7 @@ let workerRestartTimer = null;
 let pipelineRestartTimer = null;
 let workerMonitorTimer = null;
 let streamlitRestartTimer = null;
+let shutdownForceTimer = null;
 let automationFailureCount = 0;
 let automationFailureWindowStartedAt = 0;
 let automationStableTimer = null;
@@ -531,20 +532,28 @@ function startStreamlit() {
 startStreamlit();
 
 const stopWorker = () => {
+  if (shuttingDown) return;
   shuttingDown = true;
   for (const socket of proxySockets) socket.destroy();
-  proxy.close();
   if (streamlitRestartTimer) clearTimeout(streamlitRestartTimer);
   if (workerRestartTimer) clearTimeout(workerRestartTimer);
   if (automationStableTimer) clearTimeout(automationStableTimer);
   if (workerMonitorTimer) clearInterval(workerMonitorTimer);
+  if (child && !child.killed) child.kill();
   if (worker && !worker.killed) worker.kill();
   stopPipelineWorker();
+  const finishShutdown = () => {
+    if (shutdownForceTimer) clearTimeout(shutdownForceTimer);
+    shutdownForceTimer = null;
+    process.exit(0);
+  };
+  proxy.close(finishShutdown);
+  shutdownForceTimer = setTimeout(finishShutdown, 5000);
+  shutdownForceTimer.unref();
 };
-// No Windows, Ctrl+C/SIGINT pode ser propagado ao launcher e ao Streamlit ao
-// mesmo tempo. Ignorar o sinal preserva a automação; não escrever no terminal
-// evita um ciclo de mensagens quando a consola repete o evento.
-process.on("SIGINT", () => {});
+// O Ctrl+C tem de encerrar o launcher, o Streamlit e os workers. Ignorar SIGINT
+// deixava a porta pública 3030 ocupada e impedia iniciar uma nova versão.
+process.on("SIGINT", stopWorker);
 process.on("SIGTERM", stopWorker);
 monitorWorkers();
 // O pipeline worker permanece disponível para recolher imediatamente tarefas

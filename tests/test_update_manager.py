@@ -187,10 +187,13 @@ def test_websocket_timeout_is_removed_after_streamlit_handshake_data():
     assert 'upstreamSocket.once("data", () => upstreamSocket.setTimeout(0));' in source
 
 
-def test_sigint_handlers_are_silent_to_avoid_terminal_message_loop():
+def test_sigint_handlers_shutdown_launcher_and_release_port():
     launcher = (Path(__file__).resolve().parents[1] / "scripts" / "cli.mjs").read_text(encoding="utf-8")
     bootstrap = (Path(__file__).resolve().parents[1] / "scripts" / "streamlit_bootstrap.py").read_text(encoding="utf-8")
-    assert 'process.on("SIGINT", () => {});' in launcher
+    assert 'process.on("SIGINT", stopWorker);' in launcher
+    assert "if (child && !child.killed) child.kill();" in launcher
+    assert "proxy.close(finishShutdown);" in launcher
+    assert "shutdownForceTimer = setTimeout(finishShutdown, 5000);" in launcher
     assert "SIGINT ignorado: o Thunderbolt continua activo" not in bootstrap
     assert "return None" in bootstrap
 
