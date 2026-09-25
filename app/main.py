@@ -9062,11 +9062,16 @@ def _fetch_media_models(card: dict[str, Any]) -> list[str]:
                 entries = entries.get("models") or entries.get("data") or entries.get("items") or []
             if not isinstance(entries, list):
                 entries = []
-            models.update(
-                str(item.get("name") or item.get("id") or item.get("model") or item.get("model_name") or "").strip()
-                for item in entries
-                if isinstance(item, dict)
-            )
+            for item in entries:
+                if not isinstance(item, dict):
+                    continue
+                task = item.get("task") or item.get("task_name") or ""
+                task_name = str(task.get("name") if isinstance(task, dict) else task).strip().lower()
+                if task_name and task_name not in {"text-to-image", "text to image"}:
+                    continue
+                model_name = str(item.get("name") or item.get("id") or item.get("model") or item.get("model_name") or "").strip()
+                if model_name:
+                    models.add(model_name)
             models.discard("")
             result_info = payload.get("result_info") if isinstance(payload, dict) else {}
             total_pages = int(result_info.get("total_pages") or page) if isinstance(result_info, dict) else page

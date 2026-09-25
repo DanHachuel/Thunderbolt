@@ -31,6 +31,7 @@ def test_cloudflare_model_listing_uses_internal_url_and_parses_names():
     assert 'params = {} if page == 1 else {"page": page, "per_page": 100}' in block
     assert 'result_info.get("total_pages")' in block
     assert 'entries: Any = payload.get("result")' in block
+    assert 'task_name not in {"text-to-image", "text to image"}' in block
     assert 'item.get("name") or item.get("id")' in block
 
 
