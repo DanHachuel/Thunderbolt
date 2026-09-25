@@ -43,3 +43,11 @@ def test_cloudflare_ui_hides_editable_base_url_and_renames_token():
     assert "cloudflare_workers_ai_run_base_url(account_id)" in block
     assert "cloudflare_workers_ai_models_url(account_id)" in source
     assert 'st.text_input("Base URL", value=display_base_url' in block
+
+def test_cloudflare_model_refresh_binds_exception_before_rendering_error():
+    source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+    start = source.index("elif refresh_clicked:")
+    end = source.index("elif test_clicked:", start)
+    block = source[start:end]
+    assert "except Exception as exc:" in block
+    assert "str(exc)[:300]" in block

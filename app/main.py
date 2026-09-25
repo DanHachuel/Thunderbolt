@@ -9379,7 +9379,7 @@ def _render_media_provider_card(settings: dict[str, Any], cards: list[dict[str, 
                 discovered = _fetch_media_models(edited)
                 st.session_state[f"media_model_catalog_{card_id}"] = discovered
                 st.success(f"{len(discovered)} modelo(s) disponíveis neste endpoint.")
-            except Exception:
+            except Exception as exc:
                 st.error(f"Não foi possível consultar os modelos deste provider: {str(exc)[:300]}")
         elif test_clicked:
             result = test_media_provider_card(edited)
