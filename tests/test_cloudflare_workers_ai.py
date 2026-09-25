@@ -11,6 +11,11 @@ def test_cloudflare_url_helpers_use_account_id():
     assert media_providers.cloudflare_workers_ai_run_base_url("account-123") == "https://api.cloudflare.com/client/v4/accounts/account-123/ai/run"
     assert media_providers.cloudflare_workers_ai_run_url("account-123", "@cf/meta/model") == "https://api.cloudflare.com/client/v4/accounts/account-123/ai/run/@cf/meta/model"
 
+def test_cloudflare_token_normalization_accepts_raw_and_bearer_values():
+    assert media_providers.cloudflare_workers_ai_token("cf-token") == "cf-token"
+    assert media_providers.cloudflare_workers_ai_token("Bearer cf-token") == "cf-token"
+    assert media_providers.cloudflare_workers_ai_token("  bearer   cf-token  ") == "cf-token"
+
 
 def test_cloudflare_image_endpoint_uses_selected_model_and_account():
     endpoint = media_generation._image_endpoint({
@@ -21,6 +26,19 @@ def test_cloudflare_image_endpoint_uses_selected_model_and_account():
         "model": "@cf/stabilityai/stable-diffusion-xl-base-1.0",
     })
     assert endpoint == "https://api.cloudflare.com/client/v4/accounts/account-123/ai/run/@cf/stabilityai/stable-diffusion-xl-base-1.0"
+
+def test_cloudflare_image_request_does_not_duplicate_bearer_prefix():
+    from unittest.mock import Mock, patch
+    card = {
+        "provider": "cloudflare_workers_ai",
+        "api_style": "cloudflare",
+        "account_id": "account-123",
+        "api_key": "Bearer cf-token",
+        "model": "@cf/stabilityai/stable-diffusion-xl-base-1.0",
+    }
+    with patch.object(media_generation.requests, "post", return_value=Mock(status_code=200)) as post:
+        media_generation._image_request(card, "test image")
+    assert post.call_args.kwargs["headers"]["Authorization"] == "Bearer cf-token"
 
 
 def test_cloudflare_model_listing_uses_internal_url_and_parses_names():

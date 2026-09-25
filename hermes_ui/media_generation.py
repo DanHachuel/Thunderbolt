@@ -29,6 +29,7 @@ from .media_providers import (
     INTERNAL_IMAGE_SIZE,
     INTERNAL_VIDEO_ASPECT_RATIO,
     INTERNAL_VIDEO_SIZE,
+    cloudflare_workers_ai_token,
     cloudflare_workers_ai_run_url,
     media_cards_for_pool,
     media_provider_definition,
@@ -266,6 +267,8 @@ def _base_url(card: Mapping[str, Any]) -> str:
 def _headers(card: Mapping[str, Any], *, fal: bool = False) -> dict[str, str]:
     key = _api_key(card)
     provider = str(card.get("provider") or "").strip().lower()
+    if provider == "cloudflare_workers_ai":
+        key = cloudflare_workers_ai_token(key)
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     if key:
         if provider == "heygen":

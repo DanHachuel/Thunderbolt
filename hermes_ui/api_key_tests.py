@@ -17,7 +17,7 @@ import requests
 
 from app.modules.niche_finder.apify import APIFY_API_BASE
 from integrations.openai_model_discovery import OpenAICompatibleAPIError, validate_openrouter_api_key
-from hermes_ui.media_providers import cloudflare_workers_ai_models_url
+from hermes_ui.media_providers import cloudflare_workers_ai_models_url, cloudflare_workers_ai_token
 
 DEFAULT_TIMEOUT = 20
 LOGGER = logging.getLogger(__name__)
@@ -225,6 +225,7 @@ def test_media_provider_card(card: Mapping[str, Any]) -> dict[str, Any]:
         )
     if provider == "cloudflare_workers_ai":
         account_id = str(source.get("account_id") or "").strip()
+        api_key = cloudflare_workers_ai_token(api_key)
         if not api_key:
             return _missing("Introduza o Token API Workers AI antes de testar.")
         if not account_id:

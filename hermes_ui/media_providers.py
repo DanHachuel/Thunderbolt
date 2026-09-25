@@ -65,6 +65,14 @@ def cloudflare_workers_ai_run_url(account_id: Any, model: Any) -> str:
     return f"{base}/{model_path}" if base and model_path else base
 
 
+def cloudflare_workers_ai_token(value: Any) -> str:
+    """Return a Cloudflare token without an accidentally duplicated Bearer prefix."""
+    token = str(value or "").strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+    return token
+
+
 @dataclass(frozen=True, slots=True)
 class MediaProviderDefinition:
     code: str
