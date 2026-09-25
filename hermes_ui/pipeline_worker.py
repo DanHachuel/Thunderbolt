@@ -1726,7 +1726,10 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
 
     stored_upload = artifacts.get("upload")
     if isinstance(stored_upload, dict) and stored_upload:
-        return _update(task_id, stage="upload", state="done", progress=100, artifacts=artifacts, video_ready=True, error=None)
+        return _update(task_id, stage="upload", state="done", progress=100, artifacts=artifacts, video_ready=True, upload_status="published", upload_ok=True, error=None)
+
+    if not bool(settings.get("youtube_automation_auto_upload", False)):
+        return _update(task_id, stage="ready_upload", state="done", progress=100, artifacts=artifacts, video_ready=True, upload_status="pending", error=None)
 
     configured_account_id = str(channel.get("google_account_id") or "").strip()
     configured_composio = bool(settings.get("composio_enabled", False)) and bool(settings.get("composio_auto_upload", True)) and bool(settings.get("composio_api_key")) and bool(settings.get("composio_tool_slug"))
@@ -1740,7 +1743,7 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
         }
         return _update(task_id, stage="upload", state="done", progress=100, artifacts=artifacts, video_ready=True, error=None)
 
-    _update(task_id, stage="upload", state="doing", progress=max(94, int(task.get("progress") or 0)), error=None)
+    _update(task_id, stage="upload", state="doing", progress=100, error=None)
     result = _upload_with_heartbeat(
         task_id,
         lambda: upload_with_default_route(

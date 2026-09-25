@@ -126,6 +126,7 @@ from hermes_ui.drafts import list_drafts, save_draft
 from hermes_ui.automation_worker import create_video_now_for_channel, load_worker_status
 from hermes_ui.pipeline_worker import load_pipeline_worker_status, recover_stale_tasks, STALE_TASK_SECONDS, WORKER_HEARTBEAT_TIMEOUT_SECONDS
 from hermes_ui.storage import BLUEPRINTS, DEFAULT_LLM_PROVIDER, MEDIA_DOWNLOADS, STORAGE, TIKTOK_PROMPT_MASTERS, atomic_write, ensure_storage, get_display_name, list_blueprint_files, list_prompt_master_files, load_blueprint_file, load_prompt_master_file, now, read_json, set_display_name, update_json, write_json
+from hermes_ui.domain import update_task
 from app.modules.niche_finder.apify import ApifyError, DEFAULT_ACTOR_ID, abort_actor_run, build_actor_input, get_dataset_items, normalize_video_items, start_actor_run, wait_for_actor_run
 from app.modules.niche_finder.data_loader import DatasetError, load_analysis_data
 from app.modules.niche_finder.kaggle_runner import KaggleNicheError
@@ -5917,6 +5918,38 @@ def _automation_download_name(prefix: str, task: dict[str, Any], path: Path | No
     return f"{prefix}_{_download_title(task)}{suffix}"
 
 
+def _upload_ready_for_task(task: dict[str, Any], video_path: Path | None, thumbnail_path: Path | None) -> bool:
+    return _catalog_task_state(task) == "done" and video_path is not None and thumbnail_path is not None
+
+
+def _upload_automation_task(task: dict[str, Any], video_path: Path, thumbnail_path: Path) -> IntegrationResult:
+    settings = read_json("settings.json", {})
+    channels = [item for item in read_json("channels.json", []) if isinstance(item, dict)]
+    channel = next((item for item in channels if str(item.get("id") or "") == str(task.get("channel_id") or "")), {})
+    tags = task.get("keywords") or task.get("tags") or []
+    if isinstance(tags, str):
+        tags = [item.strip() for item in tags.split(",") if item.strip()]
+    result = upload_with_default_route(
+        settings,
+        storage_root=STORAGE,
+        channel=channel,
+        account=resolve_youtube_account(settings, channel),
+        video_path=str(video_path),
+        title=str(task.get("title") or task.get("topic") or "Vídeo Thunderbolt"),
+        description=str(task.get("description") or ""),
+        tags=tags,
+        language=str(task.get("language") or channel.get("language") or "pt-BR"),
+        privacy_status="unlisted",
+        thumbnail_path=str(thumbnail_path),
+        captions_path=str((task.get("artifacts") or {}).get("captions") or ""),
+    )
+    artifacts = dict(task.get("artifacts") or {})
+    if result.ok:
+        artifacts["upload"] = result.data
+        update_task(str(task["id"]), {"artifacts": artifacts, "upload_ok": True, "upload_status": "published", "stage": "upload", "state": "done", "progress": 100})
+    return result
+
+
 def _is_music_task(task: dict[str, Any]) -> bool:
     """Identify music pipeline tasks without conflating them with ordinary video tasks."""
     return bool(task.get("music_mode")) or str(task.get("style_wide") or task.get("style") or "").strip().casefold() in {"music", "música"}
@@ -6740,6 +6773,16 @@ def _render_youtube_automation_cards():
         st.divider()
         st.subheader("Vídeos cadastrados")
         st.caption("Start retoma as etapas já concluídas e só gera novamente o que ainda não estiver pronto. Em tarefas falhadas ou bloqueadas, a nova tentativa lê as chaves, prioridades e configurações actualmente guardadas. Apagar remove o card da fila e elimina todos os artefactos locais do vídeo, incluindo áudio/voz, roteiro, vídeo, thumbnail, legendas, música, prompts e logs.")
+        settings = read_json("settings.json", {})
+        automatic_upload = st.checkbox(
+            "Upload automático",
+            value=bool(settings.get("youtube_automation_auto_upload", False)),
+            key="youtube_automation_auto_upload",
+            help="Quando ligado, o worker tenta publicar automaticamente depois de o vídeo e a thumbnail estarem prontos.",
+        )
+        if automatic_upload != bool(settings.get("youtube_automation_auto_upload", False)):
+            settings["youtube_automation_auto_upload"] = bool(automatic_upload)
+            write_json("settings.json", settings)
         tasks = load_automation_tasks_for_platform("youtube")
         if not tasks:
             st.info("Ainda não existem vídeos cadastrados.")
@@ -6812,6 +6855,8 @@ def _render_youtube_automation_cards():
                     st.write(_video_task_format(task))
                 with task_cols[3]:
                     state = str(task.get("state") or "")
+                    upload_ready = _upload_ready_for_task(task, video_path, thumbnail_path)
+                    upload_ok = bool(task.get("upload_ok") or isinstance((task.get("artifacts") or {}).get("upload"), dict))
                     start_col, stop_col, delete_col = st.columns(3)
                     with start_col:
                         if st.button("Start", key=f"automation_start_{task['id']}", width="stretch", disabled=state not in {"to_do", "blocked", "failed"}):
@@ -6853,6 +6898,28 @@ def _render_youtube_automation_cards():
                                 width="stretch",
                                 disabled=True,
                             )
+                    if st.button(
+                        "Upload",
+                        key=f"automation_upload_{task['id']}",
+                        type="primary",
+                        width="stretch",
+                        disabled=not upload_ready or upload_ok,
+                        help="Disponível quando o vídeo e a thumbnail estiverem prontos." if not upload_ready else None,
+                    ):
+                        with st.spinner("A enviar vídeo..."):
+                            result = _upload_automation_task(task, video_path, thumbnail_path)
+                        (st.success if result.ok else st.error)(result.message)
+                        st.rerun(scope="fragment")
+                    checked_upload_ok = st.checkbox(
+                        "Upload ok",
+                        value=upload_ok,
+                        key=f"automation_upload_ok_{task['id']}",
+                        disabled=not upload_ready,
+                        help="Marque depois de concluir manualmente o upload do vídeo.",
+                    )
+                    if checked_upload_ok != upload_ok:
+                        update_task(str(task["id"]), {"upload_ok": bool(checked_upload_ok), "upload_status": "manual" if checked_upload_ok else "pending"})
+                        st.rerun(scope="fragment")
                     if st.button(
                         "Refazer Vídeo",
                         key=f"automation_remake_video_{task['id']}",
