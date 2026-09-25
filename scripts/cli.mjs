@@ -489,9 +489,15 @@ function startStreamlit() {
   if (shuttingDown || child) return;
   child = spawn(python, [streamlitBootstrap, "run", main, "--server.port", String(backendPort), "--server.address", "127.0.0.1"], {
     cwd: root,
-    stdio: "inherit",
+    stdio: ["ignore", "pipe", "pipe"],
     env: { ...runtimeEnv, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", PYTHONLEGACYWINDOWSSTDIO: "1", CLICK_NO_WIN_CONSOLE: "1", THUNDERBOLT_LAUNCHER_RESTART: "1" },
     windowsHide: false,
+  });
+  child.stdout?.on("data", (chunk) => {
+    if (!shuttingDown) process.stdout.write(chunk);
+  });
+  child.stderr?.on("data", (chunk) => {
+    if (!shuttingDown) process.stderr.write(chunk);
   });
   child.on("error", (error) => {
     console.error(`Thunderbolt: não foi possível iniciar o Streamlit: ${error.message}`);

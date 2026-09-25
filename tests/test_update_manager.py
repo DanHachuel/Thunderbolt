@@ -192,6 +192,8 @@ def test_sigint_handlers_shutdown_launcher_and_release_port():
     bootstrap = (Path(__file__).resolve().parents[1] / "scripts" / "streamlit_bootstrap.py").read_text(encoding="utf-8")
     assert 'process.on("SIGINT", stopWorker);' in launcher
     assert "if (child && !child.killed) child.kill();" in launcher
+    assert 'stdio: ["ignore", "pipe", "pipe"]' in launcher
+    assert 'if (!shuttingDown) process.stderr.write(chunk);' in launcher
     assert "proxy.close(finishShutdown);" in launcher
     assert "shutdownForceTimer = setTimeout(finishShutdown, 5000);" in launcher
     assert "SIGINT ignorado: o Thunderbolt continua activo" not in bootstrap
