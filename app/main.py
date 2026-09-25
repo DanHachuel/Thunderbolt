@@ -146,7 +146,7 @@ from hermes_ui.mcp import detect_local_service, install_skill_locally, load_inte
 from hermes_ui.mcp_server import server_status, start_server, stop_server
 from hermes_ui.material_sources import apply_material_source_cards_to_settings, ensure_material_source_cards, material_source_catalog, material_source_definition, new_material_card, normalize_material_card, selected_material_source
 from hermes_ui.llm_providers import LLM_CARDS_KEY, LLM_PROVIDER_CATALOG, apply_llm_cards_to_settings, ensure_llm_provider_cards, new_llm_card, normalize_llm_card, provider_definition, test_llm_provider_card, stamp_test_result
-from hermes_ui.media_providers import FULL_IA_VIDEO_PROVIDER_CODES, KIE_MEDIA_MODEL_CATALOG, MEDIA_CARDS_KEY, MEDIA_IMAGE_ACTIVE_CARD_KEY, MEDIA_VIDEO_ACTIVE_CARD_KEY, apply_media_provider_cards_to_settings, cloudflare_workers_ai_models_url, cloudflare_workers_ai_run_base_url, cloudflare_workers_ai_token, cloudflare_workers_ai_token_error, ensure_media_provider_cards, media_cards_for_pool, media_provider_catalog, media_provider_definition, new_media_card, normalize_media_card
+from hermes_ui.media_providers import FULL_IA_VIDEO_PROVIDER_CODES, KIE_MEDIA_MODEL_CATALOG, MEDIA_CARDS_KEY, MEDIA_IMAGE_ACTIVE_CARD_KEY, MEDIA_VIDEO_ACTIVE_CARD_KEY, apply_media_provider_cards_to_settings, cloudflare_workers_ai_models_url, cloudflare_workers_ai_run_base_url, cloudflare_workers_ai_token, ensure_media_provider_cards, media_cards_for_pool, media_provider_catalog, media_provider_definition, new_media_card, normalize_media_card
 from hermes_ui.media_generation import GOOGLE_IMAGES_COPYRIGHT_WARNING, ensure_google_images_cards, google_images_cards, new_google_images_card, test_google_images_card
 from hermes_ui.music import create_music_task, list_music_files, list_music_tasks, materialize_suno_audio, request_suno_generation, run_music_task, store_music_file, store_voiceover_file, transition_music_task
 from hermes_ui.music_generation import MUSIC_GENRES, MUSIC_VOCAL_OPTIONS, generate_music_fields
@@ -9099,9 +9099,6 @@ def _fetch_media_models(card: dict[str, Any]) -> list[str]:
             raise ValueError("Introduza o Account ID do Cloudflare Workers AI antes de consultar os modelos.")
         if not api_key:
             raise ValueError("Introduza o Token API Workers AI antes de consultar os modelos.")
-        credential_error = cloudflare_workers_ai_token_error(api_key)
-        if credential_error:
-            raise ValueError(credential_error)
         endpoint = cloudflare_workers_ai_models_url(account_id)
         headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
         models: set[str] = set()

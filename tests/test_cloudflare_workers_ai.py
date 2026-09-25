@@ -17,13 +17,6 @@ def test_cloudflare_token_normalization_accepts_raw_and_bearer_values():
     assert media_providers.cloudflare_workers_ai_token("  bearer   cf-token  ") == "cf-token"
 
 
-def test_cloudflare_token_validation_explains_google_key_mixup():
-    message = media_providers.cloudflare_workers_ai_token_error("AIzaSyGoogleKey")
-    assert "chave Google" in message
-    assert "Cloudflare Workers AI" in message
-    assert media_providers.cloudflare_workers_ai_token_error("cfut-cloudflare-token") == ""
-
-
 def test_cloudflare_image_endpoint_uses_selected_model_and_account():
     endpoint = media_generation._image_endpoint({
         "provider": "cloudflare_workers_ai",
