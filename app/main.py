@@ -9037,12 +9037,23 @@ def _fetch_media_models(card: dict[str, Any]) -> list[str]:
         models: set[str] = set()
         for page in range(1, 21):
             try:
-                response = requests.get(endpoint, headers=headers, params={"page": page, "per_page": 100}, timeout=20)
+                params = {} if page == 1 else {"page": page, "per_page": 100}
+                response = requests.get(endpoint, headers=headers, params=params, timeout=20)
                 if response.status_code == 401:
                     raise ValueError("O Token API Workers AI foi rejeitado ou está expirado.")
                 if response.status_code == 403:
                     raise ValueError("O token não tem a permissão Workers AI Read ou Workers AI Write neste Account ID.")
-                response.raise_for_status()
+                if response.status_code >= 400:
+                    detail = ""
+                    try:
+                        error_payload = response.json()
+                        errors = error_payload.get("errors") if isinstance(error_payload, dict) else []
+                        if isinstance(errors, list):
+                            detail = "; ".join(str(item.get("message") or item) for item in errors[:2] if item)
+                    except ValueError:
+                        detail = str(response.text or "").strip()[:180]
+                    suffix = f": {detail}" if detail else ""
+                    raise ValueError(f"A consulta Cloudflare devolveu HTTP {response.status_code}{suffix}")
                 payload = response.json()
             except requests.RequestException as exc:
                 raise ValueError(f"Não foi possível consultar os modelos Cloudflare (HTTP {getattr(exc.response, 'status_code', 'indisponível')}).") from exc
@@ -9297,7 +9308,7 @@ def _render_media_provider_card(settings: dict[str, Any], cards: list[dict[str, 
                 st.session_state[f"media_model_catalog_{card_id}"] = discovered
                 st.success(f"{len(discovered)} modelo(s) disponíveis neste endpoint.")
             except Exception:
-                st.error("Não foi possível consultar os modelos deste provider. Confirme a API key e a Base URL.")
+                st.error(f"Não foi possível consultar os modelos deste provider: {str(exc)[:300]}")
         elif test_clicked:
             result = test_media_provider_card(edited)
             edited["test_result"] = stamp_test_result(result)

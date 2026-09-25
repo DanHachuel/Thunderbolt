@@ -65,7 +65,8 @@ def _response_result(response: Any) -> dict[str, Any]:
         return _result("error", "O endpoint de diagnóstico não está disponível.", status_code=status_code)
     if status_code == 429:
         return _result("error", "A API limitou a chamada de diagnóstico.", status_code=status_code)
-    return _result("error", "A chamada de diagnóstico falhou.", status_code=status_code or None)
+    status_suffix = f" (HTTP {status_code})" if status_code else ""
+    return _result("error", f"A chamada de diagnóstico falhou{status_suffix}.", status_code=status_code or None)
 
 
 def _get(url: str, **kwargs: Any) -> dict[str, Any]:
