@@ -29,6 +29,7 @@ from .media_providers import (
     INTERNAL_IMAGE_SIZE,
     INTERNAL_VIDEO_ASPECT_RATIO,
     INTERNAL_VIDEO_SIZE,
+    cloudflare_workers_ai_run_url,
     media_cards_for_pool,
     media_provider_definition,
 )
@@ -456,7 +457,7 @@ def _image_endpoint(card: Mapping[str, Any]) -> str:
             raise MediaGenerationError("Cloudflare Workers AI requer Account ID no cartão de media.")
         model = _model(card) or "@cf/stabilityai/stable-diffusion-xl-base-1.0"
         model = model if model.startswith("@") else f"@{model}"
-        return f"{base}/accounts/{account_id}/ai/run/{model}"
+        return cloudflare_workers_ai_run_url(account_id, model)
     if style == "fal_queue":
         if not _model(card):
             raise MediaGenerationError("FAL AI requer o identificador da rota/modelo para gerar imagem.")

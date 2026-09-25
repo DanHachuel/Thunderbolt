@@ -17,6 +17,7 @@ import requests
 
 from app.modules.niche_finder.apify import APIFY_API_BASE
 from integrations.openai_model_discovery import OpenAICompatibleAPIError, validate_openrouter_api_key
+from hermes_ui.media_providers import cloudflare_workers_ai_models_url
 
 DEFAULT_TIMEOUT = 20
 LOGGER = logging.getLogger(__name__)
@@ -219,6 +220,14 @@ def test_media_provider_card(card: Mapping[str, Any]) -> dict[str, Any]:
             headers={"Authorization": f"Bearer {api_key}"},
             params={"pipeline_tag": "text-to-image", "limit": 1},
         )
+    if provider == "cloudflare_workers_ai":
+        account_id = str(source.get("account_id") or "").strip()
+        if not api_key:
+            return _missing("Introduza o Token API Workers AI antes de testar.")
+        if not account_id:
+            return _result("missing", "Complete o Account ID do Cloudflare antes de testar.")
+        endpoint = cloudflare_workers_ai_models_url(account_id)
+        return _get(endpoint, headers={"Authorization": f"Bearer {api_key}"})
     if not base_url:
         return _result("missing", "Complete a Base URL antes de testar.")
     if provider not in {"inferenceport", "ollama", "lmstudio"} and not api_key:
@@ -238,12 +247,6 @@ def test_media_provider_card(card: Mapping[str, Any]) -> dict[str, Any]:
             return _result("error", str(exc)[:240])
         return _result("success", "OpenRouter API Key e modelo OK")
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    if provider == "cloudflare_workers_ai":
-        account_id = str(source.get("account_id") or "").strip()
-        if not account_id:
-            return _result("missing", "Complete o Account ID do Cloudflare antes de testar.")
-        endpoint = f"{base_url}/accounts/{quote(account_id, safe='')}/ai/models/search"
-        return _get(endpoint, headers=headers, params={"search": model or "stable-diffusion"})
     if api_style in {"openai_compatible", "huggingface", "agnes", "kie"} or provider in {"pollinations", "huggingface", "agnes", "inferenceport"}:
         endpoint = _models_endpoint(base_url)
     else:

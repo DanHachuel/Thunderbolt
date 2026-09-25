@@ -244,6 +244,20 @@ class ApiKeyDiagnosticsTests(unittest.TestCase):
         self.assertEqual(result["status"], "missing")
         get.assert_not_called()
 
+    def test_cloudflare_media_diagnostic_uses_internal_models_endpoint(self):
+        with patch.object(api_key_tests.requests, "get", return_value=self.response(200)) as get:
+            result = api_key_tests.test_media_provider_card({
+                "provider": "cloudflare_workers_ai",
+                "api_key": "token",
+                "base_url": "https://custom.example.invalid/ignored",
+                "account_id": "account-123",
+                "model": "@cf/meta/llama-3.1-8b-instruct",
+            })
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(get.call_args.args[0], "https://api.cloudflare.com/client/v4/accounts/account-123/ai/models/search")
+        self.assertEqual(get.call_args.kwargs["headers"], {"Authorization": "Bearer token"})
+        self.assertNotIn("custom.example", get.call_args.args[0])
+
 
 if __name__ == "__main__":
     unittest.main()

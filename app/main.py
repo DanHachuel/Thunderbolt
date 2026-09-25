@@ -145,7 +145,7 @@ from hermes_ui.mcp import detect_local_service, install_skill_locally, load_inte
 from hermes_ui.mcp_server import server_status, start_server, stop_server
 from hermes_ui.material_sources import apply_material_source_cards_to_settings, ensure_material_source_cards, material_source_catalog, material_source_definition, new_material_card, normalize_material_card, selected_material_source
 from hermes_ui.llm_providers import LLM_CARDS_KEY, LLM_PROVIDER_CATALOG, apply_llm_cards_to_settings, ensure_llm_provider_cards, new_llm_card, normalize_llm_card, provider_definition, test_llm_provider_card, stamp_test_result
-from hermes_ui.media_providers import FULL_IA_VIDEO_PROVIDER_CODES, KIE_MEDIA_MODEL_CATALOG, MEDIA_CARDS_KEY, MEDIA_IMAGE_ACTIVE_CARD_KEY, MEDIA_VIDEO_ACTIVE_CARD_KEY, apply_media_provider_cards_to_settings, ensure_media_provider_cards, media_cards_for_pool, media_provider_catalog, media_provider_definition, new_media_card, normalize_media_card
+from hermes_ui.media_providers import FULL_IA_VIDEO_PROVIDER_CODES, KIE_MEDIA_MODEL_CATALOG, MEDIA_CARDS_KEY, MEDIA_IMAGE_ACTIVE_CARD_KEY, MEDIA_VIDEO_ACTIVE_CARD_KEY, apply_media_provider_cards_to_settings, cloudflare_workers_ai_models_url, cloudflare_workers_ai_run_base_url, ensure_media_provider_cards, media_cards_for_pool, media_provider_catalog, media_provider_definition, new_media_card, normalize_media_card
 from hermes_ui.media_generation import GOOGLE_IMAGES_COPYRIGHT_WARNING, ensure_google_images_cards, google_images_cards, new_google_images_card, test_google_images_card
 from hermes_ui.music import create_music_task, list_music_files, list_music_tasks, materialize_suno_audio, request_suno_generation, run_music_task, store_music_file, store_voiceover_file, transition_music_task
 from hermes_ui.music_generation import MUSIC_GENRES, MUSIC_VOCAL_OPTIONS, generate_music_fields
@@ -9006,6 +9006,8 @@ def _media_card_config_status(card: dict[str, Any]) -> tuple[str, str]:
         return "local", "Local / sem API key"
     if definition.requires_api_key and not str(card.get("api_key") or "").strip():
         return "missing", "Missing key"
+    if definition.code == "cloudflare_workers_ai" and not str(card.get("account_id") or "").strip():
+        return "missing", "Missing Account ID"
     if not str(card.get("base_url") or "").strip():
         return "missing", "Missing Base URL"
     if not str(card.get("model") or "").strip() and card.get("supports_image") and card.get("provider") not in {"cloudflare_workers_ai", "canva"}:
@@ -9023,6 +9025,34 @@ def _persist_media_cards(settings: dict[str, Any], cards: list[dict[str, Any]], 
 def _fetch_media_models(card: dict[str, Any]) -> list[str]:
     """Consultar modelos do provider, incluindo o catálogo nativo Gemini."""
     provider = str(card.get("provider") or "").strip().lower()
+    if provider == "cloudflare_workers_ai":
+        account_id = str(card.get("account_id") or "").strip()
+        api_key = str(card.get("api_key") or "").strip()
+        if not account_id:
+            raise ValueError("Introduza o Account ID do Cloudflare Workers AI antes de consultar os modelos.")
+        if not api_key:
+            raise ValueError("Introduza o Token API Workers AI antes de consultar os modelos.")
+        response = requests.get(
+            cloudflare_workers_ai_models_url(account_id),
+            headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
+            timeout=20,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        entries: Any = payload.get("result") if isinstance(payload, dict) else []
+        if isinstance(entries, dict):
+            entries = entries.get("models") or entries.get("data") or entries.get("items") or []
+        if not isinstance(entries, list):
+            entries = []
+        models = {
+            str(item.get("name") or item.get("id") or item.get("model") or item.get("model_name") or "").strip()
+            for item in entries
+            if isinstance(item, dict)
+        }
+        models.discard("")
+        if not models:
+            raise ValueError("O Cloudflare Workers AI não devolveu modelos disponíveis para este Account ID.")
+        return sorted(models, key=str.casefold)
     if provider == "huggingface":
         from integrations.openai_model_discovery import fetch_huggingface_text_to_image_models
         return fetch_huggingface_text_to_image_models(str(card.get("api_key") or ""))
@@ -9136,7 +9166,8 @@ def _render_media_provider_card(settings: dict[str, Any], cards: list[dict[str, 
             with key_col:
                 api_key = str(card.get("api_key") or "")
                 if definition.requires_api_key:
-                    api_key = st.text_input("API key", value=api_key, type="password", key=f"media_card_{card_id}_api_key")
+                    api_key_label = "Token API Workers AI" if definition.code == "cloudflare_workers_ai" else "API key"
+                    api_key = st.text_input(api_key_label, value=api_key, type="password", key=f"media_card_{card_id}_api_key")
                 else:
                     st.caption("Este provider não exige API key.")
                     api_key = ""
@@ -9160,7 +9191,15 @@ def _render_media_provider_card(settings: dict[str, Any], cards: list[dict[str, 
                 model = "" if selected_model == "__select_model__" else selected_model
                 if definition.code == "canva":
                     refresh_clicked = st.form_submit_button("Consultar Modelos", width="stretch", key=f"media_card_{card_id}_refresh")
-            if definition.code == "canva":
+            extra_values: dict[str, str] = {}
+            if definition.code == "cloudflare_workers_ai":
+                account_id = st.text_input("Account ID", value=str(card.get("account_id") or ""), key=f"media_card_{card_id}_account_id").strip()
+                extra_values["account_id"] = account_id
+                base_url = definition.default_base_url
+                display_base_url = cloudflare_workers_ai_run_base_url(account_id)
+                st.text_input("Base URL", value=display_base_url, placeholder="Será preenchida após indicar o Account ID", disabled=True, key=f"media_card_{card_id}_base_url_display")
+                st.caption("A Base URL é interna e é montada automaticamente a partir do Account ID. Não é editável.")
+            elif definition.code == "canva":
                 base_url = definition.default_base_url
                 st.text_input("Base URL", value=base_url, disabled=True, key=f"media_card_{card_id}_base_url_display")
                 st.caption("Canva MCP directo: https://mcp.canva.com/mcp — a autenticação MCP é aberta pelo Thunderbolt na primeira utilização.")
@@ -9171,12 +9210,12 @@ def _render_media_provider_card(settings: dict[str, Any], cards: list[dict[str, 
                     help="Usada nas chamadas de imagem. Para Together AI, o endpoint de vídeo v2 é derivado automaticamente desta Base URL.",
                     key=f"media_card_{card_id}_base_url",
                 )
-            extra_values: dict[str, str] = {}
-            if definition.extra_fields and definition.code != "canva":
+            if definition.extra_fields and definition.code not in {"canva", "cloudflare_workers_ai"}:
                 extra_cols = st.columns(len(definition.extra_fields))
                 for extra_col, field_name in zip(extra_cols, definition.extra_fields):
                     with extra_col:
-                        extra_values[field_name] = st.text_input(field_name.replace("_", " ").title(), value=str(card.get(field_name) or ""), type="password" if field_name == "client_secret" else "default", key=f"media_card_{card_id}_{field_name}")
+                        field_label = "Account ID" if field_name == "account_id" else field_name.replace("_", " ").title()
+                        extra_values[field_name] = st.text_input(field_label, value=str(card.get(field_name) or ""), type="password" if field_name == "client_secret" else "default", key=f"media_card_{card_id}_{field_name}")
             if definition.code == "canva":
                 supports_image = True
                 supports_video = False

@@ -1,9 +1,9 @@
 """Configuration schema for independent image and video provider pools."""
 
 from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Any, Mapping
+from urllib.parse import quote
 
 
 MEDIA_CARDS_KEY = "media_provider_cards"
@@ -43,6 +43,26 @@ INTERNAL_IMAGE_ASPECT_RATIO = "16:9"
 INTERNAL_IMAGE_SIZE = "1K"
 INTERNAL_VIDEO_ASPECT_RATIO = "16:9"
 INTERNAL_VIDEO_SIZE = "1080p"
+CLOUDFLARE_WORKERS_AI_BASE_URL = "https://api.cloudflare.com/client/v4"
+
+
+def cloudflare_workers_ai_models_url(account_id: Any) -> str:
+    """Build the internal Workers AI model-search URL from the card Account ID."""
+    account = quote(str(account_id or "").strip(), safe="")
+    return f"{CLOUDFLARE_WORKERS_AI_BASE_URL}/accounts/{account}/ai/models/search" if account else ""
+
+
+def cloudflare_workers_ai_run_base_url(account_id: Any) -> str:
+    """Build the read-only UI display base for model execution."""
+    account = quote(str(account_id or "").strip(), safe="")
+    return f"{CLOUDFLARE_WORKERS_AI_BASE_URL}/accounts/{account}/ai/run" if account else ""
+
+
+def cloudflare_workers_ai_run_url(account_id: Any, model: Any) -> str:
+    """Build the final internal model execution URL."""
+    model_path = str(model or "").strip().lstrip("/")
+    base = cloudflare_workers_ai_run_base_url(account_id)
+    return f"{base}/{model_path}" if base and model_path else base
 
 
 @dataclass(frozen=True, slots=True)
