@@ -258,6 +258,20 @@ class ApiKeyDiagnosticsTests(unittest.TestCase):
         self.assertEqual(get.call_args.kwargs["headers"], {"Authorization": "Bearer token"})
         self.assertNotIn("custom.example", get.call_args.args[0])
 
+    def test_cloudflare_diagnostic_distinguishes_token_and_permission_errors(self):
+        for status_code, expected in (
+            (401, "rejeitado ou está expirado"),
+            (403, "permissão Workers AI Read ou Workers AI Write"),
+        ):
+            with self.subTest(status_code=status_code), patch.object(api_key_tests.requests, "get", return_value=self.response(status_code)):
+                result = api_key_tests.test_media_provider_card({
+                    "provider": "cloudflare_workers_ai",
+                    "api_key": "token",
+                    "account_id": "account-123",
+                })
+            self.assertEqual(result["status"], "error")
+            self.assertIn(expected, result["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

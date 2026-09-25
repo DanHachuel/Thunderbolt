@@ -57,8 +57,10 @@ def _response_result(response: Any) -> dict[str, Any]:
     status_code = int(getattr(response, "status_code", 0) or 0)
     if 200 <= status_code < 300:
         return _result("success", "API Key OK", status_code=status_code)
-    if status_code in {401, 403}:
-        return _result("error", "A API rejeitou a credencial.", status_code=status_code)
+    if status_code == 401:
+        return _result("error", "O Token API Workers AI foi rejeitado ou está expirado.", status_code=status_code)
+    if status_code == 403:
+        return _result("error", "O token não tem a permissão Workers AI Read ou Workers AI Write neste Account ID.", status_code=status_code)
     if status_code == 404:
         return _result("error", "O endpoint de diagnóstico não está disponível.", status_code=status_code)
     if status_code == 429:

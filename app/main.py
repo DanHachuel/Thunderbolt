@@ -9032,24 +9032,35 @@ def _fetch_media_models(card: dict[str, Any]) -> list[str]:
             raise ValueError("Introduza o Account ID do Cloudflare Workers AI antes de consultar os modelos.")
         if not api_key:
             raise ValueError("Introduza o Token API Workers AI antes de consultar os modelos.")
-        response = requests.get(
-            cloudflare_workers_ai_models_url(account_id),
-            headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
-            timeout=20,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        entries: Any = payload.get("result") if isinstance(payload, dict) else []
-        if isinstance(entries, dict):
-            entries = entries.get("models") or entries.get("data") or entries.get("items") or []
-        if not isinstance(entries, list):
-            entries = []
-        models = {
-            str(item.get("name") or item.get("id") or item.get("model") or item.get("model_name") or "").strip()
-            for item in entries
-            if isinstance(item, dict)
-        }
-        models.discard("")
+        endpoint = cloudflare_workers_ai_models_url(account_id)
+        headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
+        models: set[str] = set()
+        for page in range(1, 21):
+            try:
+                response = requests.get(endpoint, headers=headers, params={"page": page, "per_page": 100}, timeout=20)
+                if response.status_code == 401:
+                    raise ValueError("O Token API Workers AI foi rejeitado ou está expirado.")
+                if response.status_code == 403:
+                    raise ValueError("O token não tem a permissão Workers AI Read ou Workers AI Write neste Account ID.")
+                response.raise_for_status()
+                payload = response.json()
+            except requests.RequestException as exc:
+                raise ValueError(f"Não foi possível consultar os modelos Cloudflare (HTTP {getattr(exc.response, 'status_code', 'indisponível')}).") from exc
+            entries: Any = payload.get("result") if isinstance(payload, dict) else []
+            if isinstance(entries, dict):
+                entries = entries.get("models") or entries.get("data") or entries.get("items") or []
+            if not isinstance(entries, list):
+                entries = []
+            models.update(
+                str(item.get("name") or item.get("id") or item.get("model") or item.get("model_name") or "").strip()
+                for item in entries
+                if isinstance(item, dict)
+            )
+            models.discard("")
+            result_info = payload.get("result_info") if isinstance(payload, dict) else {}
+            total_pages = int(result_info.get("total_pages") or page) if isinstance(result_info, dict) else page
+            if not entries or page >= total_pages or len(entries) < 100:
+                break
         if not models:
             raise ValueError("O Cloudflare Workers AI não devolveu modelos disponíveis para este Account ID.")
         return sorted(models, key=str.casefold)

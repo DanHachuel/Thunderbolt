@@ -27,7 +27,9 @@ def test_cloudflare_model_listing_uses_internal_url_and_parses_names():
     source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
     block = source[source.index('if provider == "cloudflare_workers_ai":'):source.index('if provider == "huggingface":', source.index('if provider == "cloudflare_workers_ai":'))]
     assert "cloudflare_workers_ai_models_url(account_id)" in block
-    assert 'headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"}' in block
+    assert 'headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}' in block
+    assert 'params={"page": page, "per_page": 100}' in block
+    assert 'result_info.get("total_pages")' in block
     assert 'entries: Any = payload.get("result")' in block
     assert 'item.get("name") or item.get("id")' in block
 
