@@ -73,6 +73,14 @@ def cloudflare_workers_ai_token(value: Any) -> str:
     return token
 
 
+def cloudflare_workers_ai_token_error(value: Any) -> str:
+    """Explain the most common credential mix-up before calling Cloudflare."""
+    token = cloudflare_workers_ai_token(value)
+    if token.lower().startswith("aiza"):
+        return "Este valor parece uma chave Google (AIza...). Use um API Token da Cloudflare Workers AI neste campo."
+    return ""
+
+
 @dataclass(frozen=True, slots=True)
 class MediaProviderDefinition:
     code: str
