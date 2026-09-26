@@ -5972,9 +5972,16 @@ def _video_task_format(task: dict[str, Any]) -> str:
 
 def _video_task_progress(task: dict[str, Any]) -> int:
     try:
-        return max(0, min(100, int(task.get("progress") or 0)))
+        progress = max(0, min(100, int(task.get("progress") or 0)))
     except (TypeError, ValueError):
-        return 0
+        progress = 0
+    # Tarefas criadas antes da actualização para 0.9.x podem ter ficado
+    # persistidas em 94%, apesar de o vídeo e a thumbnail já existirem.
+    # Derivar 100% dos artefactos mantém a retrocompatibilidade sem reescrever
+    # o catálogo inteiro nem alterar o progresso de tarefas incompletas.
+    if progress < 100 and _task_artifact_path(task, "video") is not None and _task_thumbnail_path(task) is not None:
+        return 100
+    return progress
 
 
 def _render_video_task_state(task: dict[str, Any], state_override: str | None = None) -> None:

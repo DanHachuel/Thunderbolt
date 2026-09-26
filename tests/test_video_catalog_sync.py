@@ -23,6 +23,12 @@ def test_automation_video_cards_show_state_progress_and_format_like_backlog():
     assert 'value = task.get("format") or task.get("style_wide") or task.get("style") or "wide"' in MAIN_SOURCE
 
 
+def test_legacy_ready_artifacts_are_displayed_as_fully_complete():
+    assert 'progress = max(0, min(100, int(task.get("progress") or 0)))' in MAIN_SOURCE
+    assert 'if progress < 100 and _task_artifact_path(task, "video") is not None and _task_thumbnail_path(task) is not None:' in MAIN_SOURCE
+    assert "return 100" in MAIN_SOURCE.split("def _video_task_progress", 1)[1].split("def _render_video_task_state", 1)[0]
+
+
 def test_backlog_includes_extra_states_instead_of_dropping_them_from_the_filter():
     assert 'extra_states = sorted({str(task.get("state") or "unknown")' in MAIN_SOURCE
     assert 'state_filter = st.selectbox("Filtrar por estado", ["Todos", *known_states, *extra_states]' in MAIN_SOURCE
