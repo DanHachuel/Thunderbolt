@@ -2742,79 +2742,64 @@ def _tiktok_channel_records() -> list[dict[str, Any]]:
 def _render_bilibili_automation_cards() -> None:
     if not _has_script_context():
         return
-    st.divider()
-    st.subheader("Vídeos cadastrados Bilibili")
-    st.caption("Esta fila mostra exclusivamente tarefas associadas a canais Bilibili.")
+    pipeline_tab, posted_tab = st.tabs(["Pipeline", "Vídeos Postados"])
     tasks = load_automation_tasks_for_platform("bilibili")
-    if not tasks:
-        st.info("Ainda não existem vídeos Bilibili cadastrados.")
-        return
-    for task in tasks:
+    for tab, posted_only in ((pipeline_tab, False), (posted_tab, True)):
+        with tab:
+            st.divider()
+            st.subheader("Vídeos Postados" if posted_only else "Pipeline")
+            st.caption("Vídeos confirmados como publicados no Bilibili." if posted_only else "Fila de produção Bilibili.")
+            visible_tasks = [task for task in tasks if _automation_task_is_posted(task) is posted_only]
+            if not visible_tasks:
+                st.info("Ainda não existem vídeos nesta sub aba.")
+                continue
+            for task in visible_tasks:
+                _render_bilibili_automation_task_card(task)
+
+
+def _render_bilibili_automation_task_card(task: dict[str, Any]) -> None:
+    task_id = str(task.get("id") or "")
+    label = f"{task.get('title') or task.get('topic') or 'Vídeo Bilibili'} · {task.get('channel_name') or 'Canal Bilibili'}"
+    with st.expander(label, expanded=False):
         task_id = str(task.get("id") or "")
-        with st.container(border=True):
-            card_cols = st.columns([2.25, 1.55, 1.05, 2.15], gap="small")
-            script_path = _task_artifact_path(task, "script")
-            video_path = _task_artifact_path(task, "video")
-            thumbnail_path = _task_thumbnail_path(task)
-            with card_cols[0]:
-                if thumbnail_path:
-                    st.image(str(thumbnail_path), width=180, caption="Thumbnail")
-                else:
-                    st.caption("Thumbnail ainda não pronta")
-                st.write(f"**{task.get('title') or task.get('topic') or 'Vídeo Bilibili'}**")
-                st.caption(f"{task.get('channel_name') or 'Canal Bilibili'} · {task_id}")
-            with card_cols[1]:
-                _render_video_task_state(task)
-            with card_cols[2]:
-                st.caption("Plataforma")
-                st.write("Bilibili")
-            with card_cols[3]:
-                state = str(task.get("state") or "")
-                start_col, stop_col, delete_col = st.columns(3)
-                with start_col:
-                    if st.button("Start", key=f"bilibili_automation_start_{task_id}", width="stretch", disabled=state not in {"to_do", "blocked", "failed"}):
-                        if _start_pipeline_task(task_id, state):
-                            st.rerun(scope="fragment")
-                with stop_col:
-                    if st.button("Stop", key=f"bilibili_automation_stop_{task_id}", width="stretch", disabled=state != "doing"):
-                        stop_task_by_user(task_id)
+        card_cols = st.columns([2.25, 1.55, 1.05, 2.15], gap="small")
+        script_path = _task_artifact_path(task, "script")
+        video_path = _task_artifact_path(task, "video")
+        thumbnail_path = _task_thumbnail_path(task)
+        with card_cols[0]:
+            if thumbnail_path:
+                st.image(str(thumbnail_path), width=180, caption="Thumbnail")
+            else:
+                st.caption("Thumbnail ainda não pronta")
+            st.caption(f"ID da tarefa: {task_id}")
+        with card_cols[1]:
+            _render_video_task_state(task)
+        with card_cols[2]:
+            st.caption("Plataforma")
+            st.write("Bilibili")
+        with card_cols[3]:
+            state = str(task.get("state") or "")
+            start_col, stop_col, delete_col = st.columns(3)
+            with start_col:
+                if st.button("Start", key=f"bilibili_automation_start_{task_id}", width="stretch", disabled=state not in {"to_do", "blocked", "failed"}):
+                    if _start_pipeline_task(task_id, state):
                         st.rerun(scope="fragment")
-                script_download_col, video_download_col = st.columns(2, gap="small")
-                with script_download_col:
-                    st.download_button(
-                        "Baixar Roteiro",
-                        data=_file_bytes(script_path),
-                        file_name=_automation_download_name("Script", task, script_path, ".md"),
-                        mime="text/markdown",
-                        key=f"bilibili_automation_download_script_{task_id}",
-                        width="stretch",
-                        disabled=script_path is None,
-                    )
-                with video_download_col:
-                    st.download_button(
-                        "Baixar Vídeo",
-                        data=_file_bytes(video_path),
-                        file_name=_automation_download_name("Vídeo", task, video_path, ".mp4"),
-                        mime="video/mp4",
-                        key=f"bilibili_automation_download_video_{task_id}",
-                        width="stretch",
-                        disabled=video_path is None,
-                    )
-                if st.button(
-                    "Refazer Vídeo",
-                    key=f"bilibili_automation_remake_video_{task_id}",
-                    icon=":material/refresh:",
-                    type="primary",
-                    width="stretch",
-                    disabled=state == "doing",
-                    help="Refaz o áudio e o vídeo do zero, mantendo o roteiro, tags, voz, thumbnail e demais artefactos criativos.",
-                ):
-                    if _remake_video_from_card(task):
-                        st.rerun(scope="fragment")
-                with delete_col:
-                    if st.button("Apagar", key=f"bilibili_automation_delete_{task_id}", width="stretch", disabled=state == "doing"):
-                        delete_task(task_id)
-                        st.rerun(scope="fragment")
+            with stop_col:
+                if st.button("Stop", key=f"bilibili_automation_stop_{task_id}", width="stretch", disabled=state != "doing"):
+                    stop_task_by_user(task_id)
+                    st.rerun(scope="fragment")
+            script_download_col, video_download_col = st.columns(2, gap="small")
+            with script_download_col:
+                st.download_button("Baixar Roteiro", data=_file_bytes(script_path), file_name=_automation_download_name("Script", task, script_path, ".md"), mime="text/markdown", key=f"bilibili_automation_download_script_{task_id}", width="stretch", disabled=script_path is None)
+            with video_download_col:
+                st.download_button("Baixar Vídeo", data=_file_bytes(video_path), file_name=_automation_download_name("Vídeo", task, video_path, ".mp4"), mime="video/mp4", key=f"bilibili_automation_download_video_{task_id}", width="stretch", disabled=video_path is None)
+            if st.button("Refazer Vídeo", key=f"bilibili_automation_remake_video_{task_id}", icon=":material/refresh:", type="primary", width="stretch", disabled=state == "doing"):
+                if _remake_video_from_card(task):
+                    st.rerun(scope="fragment")
+            with delete_col:
+                if st.button("Apagar", key=f"bilibili_automation_delete_{task_id}", width="stretch", disabled=state == "doing"):
+                    delete_task(task_id)
+                    st.rerun(scope="fragment")
 
 
 def render_bilibili_automation() -> None:
@@ -6560,21 +6545,21 @@ def render_thumbnails():
                         st.error(str(exc))
 
 
-@st.fragment
-def _render_tiktok_automation_cards():
+def _render_tiktok_automation_task_list(*, posted_only: bool = False):
         if not _has_script_context():
             return
         st.divider()
-        st.subheader("Vídeos cadastrados TikTok")
-        st.caption("Esta fila mostra exclusivamente tarefas associadas a canais TikTok.")
+        st.subheader("Vídeos Postados" if posted_only else "Pipeline")
+        st.caption("Vídeos confirmados como publicados no TikTok." if posted_only else "Fila de produção TikTok.")
         tiktok_tasks = load_automation_tasks_for_platform("tiktok")
+        tiktok_tasks = [task for task in tiktok_tasks if _automation_task_is_posted(task) is posted_only]
         tiktok_channels_by_id = {
             str(channel.get("id")): channel
             for channel in read_json("channels.json", [])
             if isinstance(channel, dict) and classify_channel_platform(channel) == "tiktok"
         }
         if not tiktok_tasks:
-            st.info("Ainda não existem vídeos TikTok cadastrados.")
+            st.info("Ainda não existem vídeos nesta sub aba.")
         for task in tiktok_tasks:
             task_id = str(task["id"])
             with st.container(border=True):
@@ -6690,7 +6675,18 @@ def _render_tiktok_automation_cards():
                             with cancel_col:
                                 if st.button("Cancelar", key=f"tiktok_automation_cancel_delete_{task_id}", width="stretch"):
                                     st.session_state.pop(confirm_delete_key, None)
-                                    st.rerun()
+                            st.rerun()
+
+
+@st.fragment
+def _render_tiktok_automation_cards():
+    if not _has_script_context():
+        return
+    pipeline_tab, posted_tab = st.tabs(["Pipeline", "Vídeos Postados"])
+    with pipeline_tab:
+        _render_tiktok_automation_task_list(posted_only=False)
+    with posted_tab:
+        _render_tiktok_automation_task_list(posted_only=True)
 
 
 def render_tiktok_automation():
@@ -6781,6 +6777,11 @@ def _youtube_task_is_posted(task: dict[str, Any]) -> bool:
     remote_reference = bool(upload.get("video_id") or upload.get("url") or task.get("youtube_video_id") or task.get("video_id"))
     manual_confirmation = bool(task.get("upload_ok")) and status == "manual"
     return manual_confirmation or (status in {"published", "success", "successful", "done", "completed"} and remote_reference)
+
+
+def _automation_task_is_posted(task: dict[str, Any]) -> bool:
+    """Classify published tasks consistently across every video automation."""
+    return _youtube_task_is_posted(task)
 
 
 def _render_youtube_automation_task_list(*, posted_only: bool = False):
@@ -7657,6 +7658,66 @@ def _render_distrokid_upload_tab() -> None:
         (st.success if result.ok else st.error)(result.message)
         if result.ok and result.data.get("session_id"):
             st.session_state["distrokid_session_id"] = result.data["session_id"]
+
+
+def _music_upload_records() -> list[dict[str, Any]]:
+    destinations = ("jewelmusic", "pushtunes", "youtube music", "ytmusicapi", "distrokid")
+    return [
+        record
+        for record in read_json("uploads.json", [])
+        if isinstance(record, dict) and any(name in str(record.get("destination") or "").lower() for name in destinations)
+    ]
+
+
+def _render_music_automation_card(record: dict[str, Any], *, posted: bool) -> None:
+    record_id = str(record.get("id") or hashlib.sha1(str(record).encode("utf-8")).hexdigest()[:12])
+    path = Path(str(record.get("audio_path") or record.get("music_path") or ""))
+    target = record.get("target") if isinstance(record.get("target"), dict) else {}
+    title = str(record.get("title") or target.get("title") or path.stem or "Música sem título")
+    channel = str(record.get("channel_name") or target.get("artist") or record.get("destination") or "Canal musical")
+    with st.expander(f"{title} · {channel}", expanded=False):
+        with st.container(border=True):
+            st.caption(f"ID: {record_id}")
+            if posted:
+                status = "Concluído" if record.get("status") == "published" else "Falhou"
+                st.write(f"Estado: {status}")
+                st.caption(str(record.get("created_at") or ""))
+                st.write(str(record.get("message") or ""))
+            else:
+                state = str(record.get("state") or "unknown").strip().lower()
+                progress = _video_task_progress(record)
+                st.write(VIDEO_TASK_STATE_LABELS.get(state, state.replace("_", " ").capitalize() or "Pendente"))
+                st.progress(progress, text=f"{progress}%")
+            if path.is_file():
+                st.download_button(
+                    "Descarregar música",
+                    data=path.read_bytes(),
+                    file_name=path.name,
+                    mime=mimetypes.guess_type(path.name)[0] or "audio/mpeg",
+                    key=f"music_automation_download_{record_id}",
+                    width="stretch",
+                )
+
+
+def render_music_automation() -> None:
+    st.title("Automação Musicas")
+    st.caption("Acompanhamento das músicas em pipeline e dos uploads musicais concluídos.")
+    pipeline_tab, posted_tab = st.tabs(["Pipeline", "Vídeos Postados"])
+    with pipeline_tab:
+        st.subheader("Pipeline")
+        records = [record for record in _music_backlog_records() if str(record.get("state") or "").strip().lower() != "done"]
+        if not records:
+            st.info("Ainda não existem músicas na Pipeline.")
+        for record in records:
+            _render_music_automation_card(record, posted=False)
+    with posted_tab:
+        st.subheader("Vídeos Postados")
+        records = _music_upload_records()
+        if not records:
+            st.info("Ainda não existem uploads musicais registados.")
+        for record in reversed(records[-50:]):
+            _render_music_automation_card(record, posted=True)
+
 
 def render_music_upload() -> None:
     st.title("Upload Música")
@@ -11358,7 +11419,7 @@ def main():
         "Automação Tiktok": render_tiktok_automation,
         "Automação Instagram": lambda: render_instagram_automation(read_json("settings.json", {})),
         "Automação Facebook": render_facebook_automation,
-        "Automação Musicas": lambda: None,
+        "Automação Musicas": render_music_automation,
         "Automação UGC": lambda: None,
         "Automação Influencer Content": lambda: None,
         "Automação Bilibili": render_bilibili_automation,
