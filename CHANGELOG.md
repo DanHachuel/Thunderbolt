@@ -1,4 +1,11 @@
 # Changelog
+## 0.8.63 — 2026-09-26
+- Adicionada a integração Google Images API com múltiplos cartões API Key/CX, prioridade, quota diária, paginação, teste de chamada e fallback entre cartões.
+- A Automação Facebook Pages passou a usar exclusivamente o pool Google Images, sem IA ou chaves Google legadas.
+- Adicionada a fonte Google Images à criação de vídeos e fallback para Pexels/Pixabay quando a pesquisa Google falha durante a acção.
+- A Automação YouTube passou a ter as sub-abas **Pipeline** e **Videos Postados** abaixo dos canais cadastrados; vídeos confirmadamente publicados são separados da fila.
+- Cada vídeo YouTube é apresentado numa aba expansível fechada por defeito, mostrando no cabeçalho apenas o nome do vídeo e o canal.
+
 ## 0.8.62 — 2026-09-17
 - Priorizada a ferramenta `YOUTUBE_MULTIPART_UPLOAD_VIDEO` na operação `upload_video` do Composio.
 - Adicionados logs do caminho absoluto, tamanho, tipo, valor do campo de ficheiro e resposta completa do Composio.

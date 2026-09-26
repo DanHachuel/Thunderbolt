@@ -170,7 +170,18 @@ from hermes_ui.thumbnails import (
 )
 from hermes_ui.draft_video import DRAFT_SETTING_SECTIONS, missing_content_fields, missing_setting_sections, normalise_saved_script, setting_widget_suffixes
 from hermes_ui.creative_generation import CreativeGenerationError, generate_creative_package, generate_thumbnail_prompt, generate_title_and_keywords, generate_topic_for_channel, generate_video_description, generate_video_keywords, generate_video_update_metadata
-from hermes_ui.media_generation import MediaGenerationError, format_media_generation_error, generate_image_for_card, generate_video_for_card
+from hermes_ui.media_generation import (
+    GOOGLE_IMAGES_COPYRIGHT_WARNING,
+    MediaGenerationError,
+    add_google_images_card,
+    format_media_generation_error,
+    google_images_cards,
+    move_google_images_card,
+    remove_google_images_card,
+    test_google_images_card,
+    generate_image_for_card,
+    generate_video_for_card,
+)
 from hermes_ui.growth_youtube import list_analyses, run_audit
 from hermes_ui.growth_tiktok import render_growth_tiktok
 from hermes_ui.growth_instagram import render_growth_instagram
@@ -229,17 +240,17 @@ AI_STYLE_OPTIONS = [
     "Pixar Style",
 ]
 
-WIDE_STYLE_OPTIONS = ["Pexels/Pixabay", "full_ia", "Apenas Música"]
+WIDE_STYLE_OPTIONS = ["Pexels/Pixabay", "Google Images", "full_ia", "Apenas Música"]
 CHANNEL_ASPECT_RATIO_OPTIONS = ["Landscape 16:9", "Portrait 9:16", "Square 1:1"]
 CHANNEL_FORMAT_OPTIONS = ["wide", "Shorts", "Music"]
 
 
 def channel_video_source_value(value: Any) -> str:
-    return {"pexels": "Pexels/Pixabay", "full_ia": "full_ia", "music": "Apenas Música"}.get(str(value or "").strip(), str(value or "Pexels/Pixabay") if str(value or "").strip() in set(WIDE_STYLE_OPTIONS) else "Pexels/Pixabay")
+    return {"pexels": "Pexels/Pixabay", "google_images": "Google Images", "full_ia": "full_ia", "music": "Apenas Música"}.get(str(value or "").strip(), str(value or "Pexels/Pixabay") if str(value or "").strip() in set(WIDE_STYLE_OPTIONS) else "Pexels/Pixabay")
 
 
 def channel_video_source_storage(value: str) -> str:
-    return {"Pexels/Pixabay": "pexels", "full_ia": "full_ia", "Apenas Música": "music"}.get(value, value)
+    return {"Pexels/Pixabay": "pexels", "Google Images": "google_images", "full_ia": "full_ia", "Apenas Música": "music"}.get(value, value)
 MATERIAL_SOURCE_OPTIONS = ["Pexels", "Pixabay"]
 
 VIDEO_LANGUAGE_OPTIONS = [
@@ -3390,13 +3401,13 @@ def render_channels():
                     with defaults_cols[2]:
                         batch_language = st.selectbox("Idioma", list(LANGUAGE_CODES), index=list(LANGUAGE_CODES).index("pt"), format_func=language_label, key="batch_channel_language")
                     with defaults_cols[3]:
-                        batch_style = st.selectbox("Estilo wide", ["Pexels/Pixabay", "full_ia", "Apenas Música"], key="batch_channel_style")
+                        batch_style = st.selectbox("Estilo wide", WIDE_STYLE_OPTIONS, key="batch_channel_style")
                     import_selected = st.form_submit_button("Cadastrar canais seleccionados", type="primary", width="stretch")
                 if import_selected:
                     created_names = []
                     skipped_names = []
                     failed_names = []
-                    style_value = {"Pexels/Pixabay": "pexels", "full_ia": "full_ia", "Apenas Música": "music"}.get(batch_style, batch_style)
+                    style_value = channel_video_source_storage(batch_style)
                     for channel_id in selected_channel_ids:
                         data = channel_by_id[channel_id]
                         if channel_id in existing_ids:
@@ -3438,7 +3449,7 @@ def render_channels():
             language = st.selectbox("Idioma", list(LANGUAGE_CODES), index=list(LANGUAGE_CODES).index("pt"), format_func=language_label, key="manual_channel_language")
             manual_country_options = [""] + list(COUNTRY_OPTIONS)
             manual_country = st.selectbox("País", manual_country_options, key="manual_channel_country")
-            style = st.selectbox("Estilo wide", ["Pexels/Pixabay", "full_ia", "Apenas Música"], index=0, key="manual_channel_style")
+            style = st.selectbox("Estilo wide", WIDE_STYLE_OPTIONS, index=0, key="manual_channel_style")
             manual_blueprint_items = blueprint_catalog()
             manual_blueprint_ids = [item[0] for item in manual_blueprint_items]
             manual_blueprint_labels = {item[0]: item[1] for item in manual_blueprint_items}
@@ -3467,7 +3478,7 @@ def render_channels():
                         "niche": niche.strip(),
                         "reference_channels": [item.strip() for item in re.split(r"[,|]", niche) if item.strip()],
                         "language": language, "country": manual_country.strip(),
-                        "style_wide": {"Pexels/Pixabay": "pexels", "full_ia": "full_ia", "Apenas Música": "music"}.get(style, style),
+                        "style_wide": channel_video_source_storage(style),
                         "blueprint_id": blueprint.strip(),
                         "default_blueprint_id": blueprint.strip(),
                         "default_voice": voice.strip(),
@@ -3731,7 +3742,7 @@ def _create_video_task_from_saved_script(record: dict[str, Any], channel: dict[s
         "generate_script_with_ai": False,
     }
     style_label = str(settings.get("video_source") or "Pexels/Pixabay")
-    style = {"Pexels/Pixabay": "pexels", "full_ia": "full_ia", "Apenas Música": "music"}.get(style_label, style_label)
+    style = channel_video_source_storage(style_label)
     blueprint_id = str(record.get("blueprint_id") or channel.get("default_blueprint_id") or channel.get("blueprint_id") or "")
     blueprint_name = str(record.get("blueprint_name") or blueprint_id or "SEM BLUEPRINT CONFIGURADO")
     payload = {
@@ -4001,7 +4012,9 @@ def render_new_video(page_title: str = "Criação de Vídeos", prefix: str = "ne
                     ),
                 )
             wide_style_label = generation_settings["video_source"]
-            style = {"Pexels/Pixabay": "pexels", "full_ia": "full_ia", "Apenas Música": "music"}[wide_style_label]
+            style = {"Pexels/Pixabay": "pexels", "Google Images": "google_images", "full_ia": "full_ia", "Apenas Música": "music"}[wide_style_label]
+            if style == "google_images":
+                st.warning(GOOGLE_IMAGES_COPYRIGHT_WARNING)
             material_source = (
                 {"Pexels": "pexels", "Pixabay": "pixabay"}.get(str(generation_settings.get("material_source") or ""), "")
                 if style == "pexels"
@@ -6493,16 +6506,25 @@ def render_tiktok_automation():
                             st.rerun()
     _render_tiktok_automation_cards()
 
-@st.fragment(run_every=5.0)
-def _render_youtube_automation_cards():
+def _youtube_task_is_posted(task: dict[str, Any]) -> bool:
+    """Return true only when an upload result confirms publication, not local completion."""
+    artifacts = task.get("artifacts") if isinstance(task.get("artifacts"), dict) else {}
+    upload = artifacts.get("upload") if isinstance(artifacts.get("upload"), dict) else {}
+    status = str(upload.get("status") or task.get("upload_status") or task.get("status") or "").strip().casefold()
+    has_remote_reference = bool(upload.get("video_id") or upload.get("url") or task.get("youtube_video_id") or task.get("video_id"))
+    return status in {"published", "success", "successful", "done", "completed"} and has_remote_reference
+
+
+def _render_youtube_automation_cards(*, posted_only: bool = False):
         if not _has_script_context():
             return
         st.divider()
-        st.subheader("Vídeos cadastrados")
-        st.caption("Start retoma as etapas já concluídas e só gera novamente o que ainda não estiver pronto. Em tarefas falhadas ou bloqueadas, a nova tentativa lê as chaves, prioridades e configurações actualmente guardadas. Apagar remove o card da fila após confirmação e preserva os artefactos locais.")
-        tasks = load_automation_tasks_for_platform("youtube")
+        st.subheader("Videos Postados" if posted_only else "Pipeline")
+        st.caption("Vídeos já confirmados como publicados no YouTube." if posted_only else "Fila de produção. Start retoma as etapas já concluídas; tarefas publicadas aparecem em Videos Postados.")
+        all_tasks = load_automation_tasks_for_platform("youtube")
+        tasks = [task for task in all_tasks if _youtube_task_is_posted(task) is posted_only]
         if not tasks:
-            st.info("Ainda não existem vídeos cadastrados.")
+            st.info("Ainda não existem vídeos nesta sub aba.")
         page_size = 12
         page_count = max(1, (len(tasks) + page_size - 1) // page_size)
         current_page = st.session_state.get("youtube_automation_page", 1)
@@ -6524,7 +6546,9 @@ def _render_youtube_automation_cards():
         else:
             visible_tasks = tasks
         for task in visible_tasks:
-            with st.container(border=True):
+            task_title = str(task.get("topic") or task.get("title") or "Vídeo sem nome").strip()
+            task_channel = str(task.get("channel_name") or "Canal sem nome").strip()
+            with st.expander(f"{task_title} · {task_channel}", expanded=False):
                 task_cols = st.columns([2.25, 1.55, 1.05, 2.15], gap="small")
                 script_path = _task_artifact_path(task, "script")
                 video_path = _task_artifact_path(task, "video")
@@ -6536,8 +6560,7 @@ def _render_youtube_automation_cards():
                         st.image(str(thumbnail_path), width=180, caption="Thumbnail")
                     else:
                         st.caption("Thumbnail ainda não pronta")
-                    st.write(f"**{task.get('topic', 'Sem tópico')}**")
-                    st.caption(f"{task.get('channel_name', 'Canal')} · {task.get('id', '')}")
+                    st.caption(f"ID da tarefa: {task.get('id', '')}")
                     thumbnail_download_col, prompt_download_col = st.columns(2, gap="small")
                     with thumbnail_download_col:
                         st.download_button(
@@ -6690,10 +6713,10 @@ def _render_facebook_automation_cards() -> None:
                         st.rerun()
                     except Exception as exc:
                         st.error(str(exc))
-                source = st.selectbox("Fonte das imagens", ["Google Imagens", "Gerar com IA"], key=f"facebook_image_source_{post_id}")
+                st.caption("Fonte exclusiva: Google Images API, com fallback entre os cartões configurados.")
                 if st.button("Buscar/Gerar imagens", key=f"facebook_collect_images_{post_id}", disabled=str(post.get("status")) != "imagens_pendentes", width="stretch"):
                     try:
-                        collect_images(settings, post, source="google" if source == "Google Imagens" else "ai")
+                        collect_images(settings, post, source="google")
                         st.success("Imagens processadas.")
                         st.rerun()
                     except Exception as exc:
@@ -6900,7 +6923,11 @@ def render_automation():
     if worker_status.get("last_error"):
         st.error(f"Último erro do worker: {worker_status['last_error']}")
     _render_youtube_automation_channel_cards()
-    _render_youtube_automation_cards()
+    pipeline_tab, posted_tab = st.tabs(["Pipeline", "Videos Postados"])
+    with pipeline_tab:
+        _render_youtube_automation_cards(posted_only=False)
+    with posted_tab:
+        _render_youtube_automation_cards(posted_only=True)
 
 def render_upload_direct():
     st.subheader("Upload directo")
@@ -8382,6 +8409,74 @@ def _render_material_source_card(settings: dict[str, Any], cards: list[dict[str,
             st.rerun()
 
 
+def render_google_images_cards(settings: dict[str, Any], *, embedded: bool = False) -> None:
+    """Render the Google Custom Search Images card pool and its safe fallback controls."""
+    cards = google_images_cards(settings)
+    with st.expander("Google Imagem API", expanded=False):
+        st.caption("Configure múltiplas API Keys/CX. A prioridade define a ordem do fallback; as chaves nunca são mostradas em logs.")
+        st.warning(GOOGLE_IMAGES_COPYRIGHT_WARNING)
+        for index, card in enumerate(cards):
+            card_id = str(card.get("id"))
+            with st.container(border=True):
+                st.markdown(f"#### {card.get('label') or card_id}")
+                top = st.columns([3, 2, 2, 1, 1])
+                with top[0]:
+                    label = st.text_input("Nome", value=str(card.get("label") or ""), key=f"google_images_label_{card_id}")
+                with top[1]:
+                    api_key = st.text_input("API Key", value=str(card.get("api_key") or ""), type="password", key=f"google_images_key_{card_id}")
+                with top[2]:
+                    cx = st.text_input("Custom Search Engine ID (CX)", value=str(card.get("cx") or ""), key=f"google_images_cx_{card_id}")
+                with top[3]:
+                    daily_limit = st.number_input("Limite/dia", min_value=1, max_value=10000, value=int(card.get("daily_limit") or 100), key=f"google_images_limit_{card_id}")
+                with top[4]:
+                    enabled = st.checkbox("Activo", value=bool(card.get("enabled", True)), key=f"google_images_enabled_{card_id}")
+                used, limit = int(card.get("queries_used_today") or 0), int(card.get("daily_limit") or 100)
+                st.caption(f"Consultas hoje: {used} / {limit}")
+                if limit and used / limit >= 0.8:
+                    st.warning("Este cartão já atingiu pelo menos 80% da quota diária.")
+                actions = st.columns(5)
+                with actions[0]:
+                    up = st.form_submit_button("↑", key=f"google_images_up_{card_id}") if embedded else st.button("↑", key=f"google_images_up_{card_id}")
+                with actions[1]:
+                    down = st.form_submit_button("↓", key=f"google_images_down_{card_id}") if embedded else st.button("↓", key=f"google_images_down_{card_id}")
+                with actions[2]:
+                    test = st.form_submit_button("Testar chamada API", key=f"google_images_test_{card_id}") if embedded else st.button("Testar chamada API", key=f"google_images_test_{card_id}")
+                with actions[3]:
+                    save = st.form_submit_button("Salvar", type="primary", key=f"google_images_save_{card_id}") if embedded else st.button("Salvar", type="primary", key=f"google_images_save_{card_id}")
+                with actions[4]:
+                    remove = st.form_submit_button("Remover card", key=f"google_images_remove_{card_id}") if embedded else st.button("Remover card", key=f"google_images_remove_{card_id}")
+                edited = {**card, "label": label.strip(), "api_key": api_key.strip(), "cx": cx.strip(), "daily_limit": int(daily_limit), "enabled": bool(enabled)}
+                if up or down:
+                    move_google_images_card(settings, card_id, -1 if up else 1)
+                    st.rerun()
+                elif test:
+                    result = test_google_images_card(edited)
+                    cards[index]["test_result"] = result
+                    cards[index].update(edited)
+                    settings["google_images_cards"] = cards
+                    write_json("settings.json", settings)
+                    (st.success if result.get("status") == "success" else st.error)(result.get("message", "Teste concluído."))
+                elif save:
+                    cards[index].update(edited)
+                    settings["google_images_cards"] = cards
+                    write_json("settings.json", settings)
+                    st.success("Cartão Google Images guardado.")
+                elif remove:
+                    st.session_state[f"google_images_confirm_remove_{card_id}"] = True
+                if st.session_state.get(f"google_images_confirm_remove_{card_id}"):
+                    if st.checkbox("Confirmar remoção deste cartão", key=f"google_images_confirm_{card_id}"):
+                        if st.button("Confirmar remoção", key=f"google_images_confirm_button_{card_id}"):
+                            remove_google_images_card(settings, card_id)
+                            st.rerun()
+                result = card.get("test_result")
+                if isinstance(result, dict) and result.get("message"):
+                    (st.success if result.get("status") == "success" else st.error)(f"Último teste: {result['message']}")
+        add_clicked = st.form_submit_button("Adicionar nova API Key do Google Images", key="add_google_images_card") if embedded else st.button("Adicionar nova API Key do Google Images", key="add_google_images_card")
+        if add_clicked:
+            add_google_images_card(settings)
+            st.rerun()
+
+
 def render_material_source_api_keys(settings: dict[str, Any], *, embedded: bool = False) -> None:
     with st.expander("Imagem e Video Montagem/MoviePy", expanded=False):
         st.caption("Configure as fontes usadas pela montagem de vídeo com MoviePy/FFmpeg num cartão independente. Pode repetir o mesmo provedor para guardar várias API keys; a fonte seleccionada será usada pela pipeline.")
@@ -9245,6 +9340,7 @@ def render_settings():
                 render_material_source_api_keys(settings, embedded=True)
 
                 render_media_provider_cards(settings, embedded=True)
+                render_google_images_cards(settings, embedded=True)
 
                 with st.expander("Voz, TTS e música — Azure Speech, restantes serviços e Suno", expanded=False):
                     st.caption("Cada serviço está separado no seu próprio cartão. Os botões de teste ficam dentro do cartão correspondente e fazem apenas diagnóstico, sem gerar áudio ou música.")

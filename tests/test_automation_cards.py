@@ -18,7 +18,7 @@ class AutomationCardsTests(unittest.TestCase):
         self.assertIn('if not updated:', MAIN_SOURCE)
         self.assertIn('stop_task_by_user(task["id"])', MAIN_SOURCE)
         self.assertIn('Stoped by User', MAIN_SOURCE)
-        self.assertIn("a nova tentativa lê as chaves, prioridades e configurações actualmente guardadas", MAIN_SOURCE)
+        self.assertIn("Fila de produção. Start retoma as etapas já concluídas", MAIN_SOURCE)
 
     def test_manual_stop_has_distinct_user_label_and_preserves_internal_blocked_state(self):
         self.assertIn('def stop_task_by_user(task_id: str)', (ROOT / "hermes_ui" / "domain.py").read_text(encoding="utf-8"))
@@ -29,10 +29,10 @@ class AutomationCardsTests(unittest.TestCase):
         self.assertNotIn('st.caption("Horário do canal")', MAIN_SOURCE)
         self.assertIn('st.text_input("Horário (HH:MM)"', MAIN_SOURCE)
 
-    def test_youtube_video_cards_refresh_every_five_seconds_in_fragment(self):
-        self.assertIn('@st.fragment(run_every=5.0)\ndef _render_youtube_automation_cards():', MAIN_SOURCE)
-        self.assertNotIn('@st.fragment\ndef _render_youtube_automation_cards():', MAIN_SOURCE)
-        youtube_block = MAIN_SOURCE.split('def _render_youtube_automation_cards():', 1)[1].split('def _facebook_pages_for_automation():', 1)[0]
+    def test_youtube_video_cards_are_collapsed_and_split_by_status(self):
+        self.assertIn('st.tabs(["Pipeline", "Videos Postados"])', MAIN_SOURCE)
+        self.assertIn('st.expander(f"{task_title} · {task_channel}", expanded=False)', MAIN_SOURCE)
+        youtube_block = MAIN_SOURCE.split('def _render_youtube_automation_cards(', 1)[1].split('def _facebook_pages_for_automation():', 1)[0]
         self.assertIn('if not _has_script_context():', youtube_block)
 
     def test_youtube_channel_settings_use_independent_fragment_and_local_rerun(self):

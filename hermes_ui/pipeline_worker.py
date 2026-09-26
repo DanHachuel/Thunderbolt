@@ -30,7 +30,7 @@ from hermes_ui.script_documents import save_script_document
 from hermes_ui.script_generation import generate_script_document
 from hermes_ui.storage import STORAGE, atomic_write, ensure_storage, get_display_name, list_blueprint_files, load_blueprint_file, read_json, write_json
 from hermes_ui.llm_providers import active_llm_card, provider_definition
-from hermes_ui.media_generation import MediaGenerationError, _append_generation_constraints, generate_image_from_pool, generate_video_from_pool
+from hermes_ui.media_generation import MediaGenerationError, _append_generation_constraints, generate_image_from_pool, generate_video_from_pool, search_google_images
 from hermes_ui.media_providers import FULL_IA_VIDEO_PROVIDER_CODES, media_cards_for_pool, media_provider_definition
 from hermes_ui.material_sources import material_api_keys, material_source_cards, selected_material_source
 from hermes_ui.thumbnail_generation import ThumbnailGenerationError, generate_thumbnail_image, infer_thumbnail_aspect_ratio
@@ -752,6 +752,8 @@ def _normalise_video_route(task: dict[str, Any], settings: dict[str, Any]) -> st
     raw = str(task.get("style_wide") or generation_settings.get("video_source") or "pexels").strip().casefold()
     if raw in {"full_ia", "full ia", "full-ai", "ai", "ia"}:
         return "full_ia"
+    if raw in {"google images", "google_images", "google image", "google"}:
+        return "google_images"
     if raw in {"music", "apenas música", "apenas musica", "only music"}:
         return "music"
     if raw in {"pixabay", "pixabay only"}:
@@ -759,7 +761,7 @@ def _normalise_video_route(task: dict[str, Any], settings: dict[str, Any]) -> st
     if raw in {"pexels", "pexels/pixabay", "stock", "materials", "materiales"}:
         configured = selected_material_source(settings)
         return configured if configured in {"pexels", "pixabay"} else "pexels"
-    return raw if raw in {"pexels", "pixabay", "local"} else "pexels"
+    return raw if raw in {"pexels", "pixabay", "local", "google_images"} else "pexels"
 
 
 def _material_video_attempts(task: dict[str, Any], settings: dict[str, Any]) -> list[tuple[str, str]]:
@@ -1055,6 +1057,13 @@ def _run_video_helper_once(
     provider = str(card.get("provider") or "openai").strip()
     definition = provider_definition(provider)
     route = str(route_override or _normalise_video_route(task, settings)).strip().casefold()
+    if route == "google_images":
+        try:
+            search_google_images(settings, subject, num_results=1, safe="active")
+            route = "local"
+        except MediaGenerationError:
+            fallback = selected_material_source(settings)
+            route = fallback if fallback in {"pexels", "pixabay"} else "pexels"
     source_keys = material_api_keys(settings, route) if route in {"pexels", "pixabay"} else []
     if api_key_override and route in {"pexels", "pixabay"}:
         source_keys = [str(api_key_override).strip()]

@@ -408,6 +408,11 @@ def generate_image_for_card(
     """Generate one image with the selected media card."""
     card = _hydrate_media_card(settings, card)
     provider = str(card.get("provider") or "").strip().lower()
+    if provider == "google_images":
+        ensure_storage()
+        results = search_google_images(settings, prompt, num_results=1)
+        destination = STORAGE / "thumbnails" / f"google-images-{abs(hash((topic, prompt, variant_index))) & 0xffffffffffffffff:x}.jpg"
+        return download_google_image(str(results[0]["link"]), destination)
     if provider == "canva":
         ensure_storage()
         export_format = str(card.get("export_format") or "png").lower()
@@ -579,6 +584,140 @@ def generate_image_from_pool(
         "Todos os providers do pool de imagem falharam. Tentativas realizadas:\n" + details,
         provider_errors=errors,
     )
+
+
+GOOGLE_IMAGES_ENDPOINT = "https://www.googleapis.com/customsearch/v1"
+GOOGLE_IMAGES_CARDS_KEY = "google_images_cards"
+GOOGLE_IMAGES_COPYRIGHT_WARNING = (
+    "Atenção: imagens de pessoas famosas podem estar protegidas por direitos de imagem e autorais. "
+    "Use com responsabilidade e prefira filtros de licença permissiva (rights)."
+)
+
+
+def normalize_google_images_card(card: Mapping[str, Any], index: int = 0) -> dict[str, Any]:
+    current = dict(card)
+    current.setdefault("id", f"google-images-{index + 1}")
+    current.setdefault("label", f"Google Images — Conta {index + 1}")
+    current["api_key"] = str(current.get("api_key") or "").strip()
+    current["cx"] = str(current.get("cx") or "").strip()
+    current["enabled"] = bool(current.get("enabled", True))
+    current["priority"] = max(1, int(current.get("priority") or index + 1))
+    current["daily_limit"] = max(1, int(current.get("daily_limit") or 100))
+    current["queries_used_today"] = max(0, int(current.get("queries_used_today") or 0))
+    current["usage_date"] = str(current.get("usage_date") or "")
+    current.setdefault("test_result", {})
+    return current
+
+
+def google_images_cards(settings: Mapping[str, Any], *, enabled_only: bool = False) -> list[dict[str, Any]]:
+    raw = settings.get(GOOGLE_IMAGES_CARDS_KEY)
+    cards = [normalize_google_images_card(item, index) for index, item in enumerate(raw or []) if isinstance(item, Mapping)]
+    cards.sort(key=lambda item: int(item.get("priority", 1)))
+    return [item for item in cards if item.get("enabled", True)] if enabled_only else cards
+
+
+def _persist_google_images_cards(settings: Mapping[str, Any], cards: list[Mapping[str, Any]]) -> None:
+    updated = dict(settings)
+    updated[GOOGLE_IMAGES_CARDS_KEY] = [normalize_google_images_card(item, index) for index, item in enumerate(cards)]
+    if isinstance(settings, dict):
+        settings.clear()
+        settings.update(updated)
+    write_json("settings.json", updated)
+
+
+def add_google_images_card(settings: Mapping[str, Any]) -> dict[str, Any]:
+    cards = google_images_cards(settings)
+    card = normalize_google_images_card({"id": f"google-images-{len(cards) + 1}", "label": f"Google Images — Conta {len(cards) + 1}", "priority": len(cards) + 1}, len(cards))
+    _persist_google_images_cards(settings, [*cards, card])
+    return card
+
+
+def remove_google_images_card(settings: Mapping[str, Any], card_id: str) -> None:
+    _persist_google_images_cards(settings, [item for item in google_images_cards(settings) if str(item.get("id")) != str(card_id)])
+
+
+def move_google_images_card(settings: Mapping[str, Any], card_id: str, direction: int) -> list[dict[str, Any]]:
+    cards = google_images_cards(settings)
+    index = next((position for position, item in enumerate(cards) if str(item.get("id")) == str(card_id)), -1)
+    target = index + int(direction)
+    if index < 0 or target < 0 or target >= len(cards):
+        return cards
+    cards[index], cards[target] = cards[target], cards[index]
+    for position, item in enumerate(cards, start=1):
+        item["priority"] = position
+    _persist_google_images_cards(settings, cards)
+    return cards
+
+
+def _google_images_request(card: Mapping[str, Any], *, query: str, num: int, start: int, rights: str, img_type: str, safe: str) -> list[dict[str, Any]]:
+    params = {"key": card["api_key"], "cx": card["cx"], "q": query, "searchType": "image", "num": min(10, max(1, num)), "start": max(1, start), "safe": safe or "active"}
+    if rights:
+        params["rights"] = rights
+    if img_type:
+        params["imgType"] = img_type
+    response = requests.get(GOOGLE_IMAGES_ENDPOINT, params=params, timeout=30)
+    response.raise_for_status()
+    payload = response.json()
+    return [dict(item) for item in payload.get("items", []) if isinstance(item, Mapping) and item.get("link")]
+
+
+def search_google_images(settings: Mapping[str, Any], query: str, *, num_results: int = 1, start: int = 1, rights: str = "", img_type: str = "", safe: str = "active") -> list[dict[str, Any]]:
+    """Search Google Custom Search Images with daily quota and card failover."""
+    from datetime import date
+    query = str(query or "").strip()
+    if not query:
+        raise MediaGenerationError("A pesquisa Google Images exige um termo de pesquisa.")
+    today = date.today().isoformat()
+    wanted = min(100, max(1, int(num_results)))
+    errors: list[str] = []
+    cards = google_images_cards(settings, enabled_only=True)
+    for card in cards:
+        if card.get("usage_date") != today:
+            card["usage_date"], card["queries_used_today"] = today, 0
+        try:
+            results: list[dict[str, Any]] = []
+            while len(results) < wanted:
+                if int(card["queries_used_today"]) >= int(card["daily_limit"]):
+                    raise RuntimeError("cota diária esgotada")
+                batch = min(10, wanted - len(results))
+                card["queries_used_today"] = int(card["queries_used_today"]) + 1
+                page = _google_images_request(card, query=query, num=batch, start=int(start) + len(results), rights=rights, img_type=img_type, safe=safe)
+                results.extend(page)
+                if not page:
+                    break
+            _persist_google_images_cards(settings, cards)
+            if results:
+                return results[:wanted]
+            errors.append(f"{card['label']}: nenhum resultado")
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else 0
+            if status == 403:
+                card["enabled"] = False
+            errors.append(f"{card['label']}: HTTP {status}")
+            _persist_google_images_cards(settings, cards)
+        except (requests.RequestException, ValueError, RuntimeError) as exc:
+            errors.append(f"{card['label']}: {str(exc)[:160]}")
+            _persist_google_images_cards(settings, cards)
+    raise MediaGenerationError("Todos os cartões Google Images falharam: " + " | ".join(errors))
+
+
+def test_google_images_card(card: Mapping[str, Any]) -> dict[str, Any]:
+    try:
+        results = _google_images_request(normalize_google_images_card(card), query="Thunderbolt", num=1, start=1, rights="", img_type="", safe="active")
+        return {"status": "success", "message": f"API Key e CX válidos ({len(results)} resultado(s))."}
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else 0
+        return {"status": "error", "message": f"Google Images devolveu HTTP {status}."}
+    except (requests.RequestException, ValueError) as exc:
+        return {"status": "error", "message": f"Falha na chamada Google Images: {str(exc)[:240]}"}
+
+
+def download_google_image(url: str, destination: Path) -> Path:
+    response = requests.get(str(url), timeout=30)
+    response.raise_for_status()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(normalize_thumbnail_bytes(response.content, "16:9"))
+    return destination
 
 
 def _video_endpoint(card: Mapping[str, Any]) -> str:

@@ -208,6 +208,7 @@ DEFAULTS: dict[str, Any] = {
         "media_image_provider": "nano_banana",
         "media_video_provider": "",
         "media_video_pool_enabled": False,
+        "google_images_cards": [],
         "deepseek_api_key": "",
         "deepseek_base_url": "",
         "deepseek_model_name": "",

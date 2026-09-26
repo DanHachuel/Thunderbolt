@@ -12,7 +12,7 @@ import requests
 from PIL import Image, ImageDraw, ImageFont
 
 from .creative_generation import CreativeGenerationError, _chat_json
-from .media_generation import generate_image_for_card
+from .media_generation import download_google_image, google_images_cards, search_google_images
 from .storage import STORAGE, read_json, write_json
 
 POSTS_FILE = "facebook_automation_posts.json"
@@ -121,30 +121,18 @@ def _download_image(url: str, destination: Path) -> Path:
 
 
 def collect_images(settings: dict[str, Any], post: Mapping[str, Any], *, source: str = "google") -> dict[str, Any]:
-    folder = Path(str(post.get("folder") or POSTS_DIR / str(post.get("id"))) / "images")
+    folder = Path(str(post.get("folder") or (POSTS_DIR / str(post.get("id"))))) / "images"
     images = []
-    custom_key = str(settings.get("google_custom_search_api_key") or settings.get("google_images_api_key") or "").strip()
-    custom_cx = str(settings.get("google_custom_search_cx") or settings.get("google_images_cx") or "").strip()
+    if not google_images_cards(settings, enabled_only=True):
+        raise ValueError("Configure pelo menos um cartão Google Images em Configuração API > API Keys.")
     for index, item in enumerate(post.get("images") or [], start=1):
         query = str(item.get("search_query") or post.get("theme") or "").strip()
         image_record = dict(item)
         try:
             destination = folder / f"image-{index}.jpg"
-            if source == "google" and custom_key and custom_cx:
-                payload = requests.get("https://www.googleapis.com/customsearch/v1", params={"key": custom_key, "cx": custom_cx, "q": query, "searchType": "image", "num": 1, "safe": "active"}, timeout=30).json()
-                link = str(((payload.get("items") or [{}])[0]).get("link") or "")
-                if not link:
-                    raise ValueError("A pesquisa Google não devolveu uma imagem.")
-                _download_image(link, destination)
-                image_record["source"] = "google_images"
-            else:
-                cards = settings.get("media_provider_cards") if isinstance(settings.get("media_provider_cards"), list) else []
-                card = next((c for c in cards if isinstance(c, Mapping) and bool(c.get("enabled", True)) and str(c.get("kind") or c.get("type") or "image").lower() in {"image", "images", ""}), None)
-                if not card:
-                    raise ValueError("Configure um provider de imagens IA em Configuração API.")
-                generated = generate_image_for_card(settings, card, query, topic=str(post.get("title") or post.get("theme") or "Facebook"), variant_index=index - 1)
-                destination = Path(generated)
-                image_record["source"] = "ai"
+            result = search_google_images(settings, query, num_results=1, safe="active")
+            download_google_image(str(result[0]["link"]), destination)
+            image_record["source"] = "google_images"
             image_record["path"] = str(destination)
             image_record["status"] = "imagem_baixada"
         except Exception as exc:

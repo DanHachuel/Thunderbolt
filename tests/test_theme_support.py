@@ -18,7 +18,7 @@ def test_streamlit_theme_config_defaults_to_dark_with_moneyprinter_style_semanti
 
 
 def test_package_distributes_streamlit_theme_config_and_new_release_version():
-    assert '"version": "0.8.62"' in PACKAGE_SOURCE
+    assert '"version": "0.8.63"' in PACKAGE_SOURCE
     assert '".streamlit/config.toml"' in PACKAGE_SOURCE
 
 
