@@ -6786,7 +6786,7 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False):
         automatic_upload = st.checkbox(
             "Upload automático",
             value=bool(settings.get("youtube_automation_auto_upload", False)),
-            key="youtube_automation_auto_upload",
+            key=f"youtube_automation_auto_upload_{'posted' if posted_only else 'pipeline'}",
             help="Quando ligado, o worker tenta publicar automaticamente depois de o vídeo e a thumbnail estarem prontos.",
         )
         if automatic_upload != bool(settings.get("youtube_automation_auto_upload", False)):

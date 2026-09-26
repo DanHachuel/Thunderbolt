@@ -9,6 +9,8 @@ WORKER_SOURCE = (ROOT / "hermes_ui" / "pipeline_worker.py").read_text(encoding="
 def test_youtube_automation_has_upload_controls_with_safe_default():
     assert '"Upload automático"' in MAIN_SOURCE
     assert 'youtube_automation_auto_upload' in MAIN_SOURCE
+    assert 'key=f"youtube_automation_auto_upload_{\'posted\' if posted_only else \'pipeline\'}"' in MAIN_SOURCE
+    assert MAIN_SOURCE.count('key=f"youtube_automation_auto_upload_{\'posted\' if posted_only else \'pipeline\'}"') == 1
     assert 'value=bool(settings.get("youtube_automation_auto_upload", False))' in MAIN_SOURCE
     assert '"Upload ok"' in MAIN_SOURCE
     assert '"Upload"' in MAIN_SOURCE
