@@ -1,4 +1,9 @@
 # Changelog
+## 0.9.12 — 2026-09-26
+- Adicionadas as sub-abas **Pipeline** e **Videos Postados** na Automação YouTube, abaixo dos canais cadastrados.
+- Vídeos com publicação remota confirmada ou marcados manualmente como “Upload ok” são separados da fila e apresentados em **Videos Postados**.
+- Cada vídeo da Pipeline e de Videos Postados passou a ser uma aba expansível fechada por defeito, com apenas nome do vídeo e canal no cabeçalho.
+
 ## 0.8.96 — 2026-09-23
 - Refatorado o Niche Finder para publicar e executar a análise remotamente no Kaggle através da biblioteca Python `kaggle`.
 - Adicionada a kernel privada com o dataset Trending YouTube Videos e os três resultados CSV: clusters, itemsets frequentes e regras de associação.

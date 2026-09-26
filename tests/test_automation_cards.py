@@ -18,7 +18,7 @@ class AutomationCardsTests(unittest.TestCase):
         self.assertIn('if not updated:', MAIN_SOURCE)
         self.assertIn('stop_task_by_user(task["id"])', MAIN_SOURCE)
         self.assertIn('Stoped by User', MAIN_SOURCE)
-        self.assertIn("a nova tentativa lê as chaves, prioridades e configurações actualmente guardadas", MAIN_SOURCE)
+        self.assertIn("Fila de produção. Vídeos já publicados são apresentados em Videos Postados.", MAIN_SOURCE)
 
     def test_manual_stop_has_distinct_user_label_and_preserves_internal_blocked_state(self):
         self.assertIn('def stop_task_by_user(task_id: str)', (ROOT / "hermes_ui" / "domain.py").read_text(encoding="utf-8"))
@@ -33,7 +33,7 @@ class AutomationCardsTests(unittest.TestCase):
         self.assertIn('@st.fragment\ndef _render_youtube_automation_cards():', MAIN_SOURCE)
         self.assertNotIn('@st.fragment(run_every=5.0)\ndef _render_youtube_automation_cards():', MAIN_SOURCE)
         self.assertIn('key="youtube_automation_refresh"', MAIN_SOURCE)
-        youtube_block = MAIN_SOURCE.split('def _render_youtube_automation_cards():', 1)[1].split('def _facebook_pages_for_automation():', 1)[0]
+        youtube_block = MAIN_SOURCE.split('def _render_youtube_automation_task_list', 1)[1].split('def _facebook_pages_for_automation():', 1)[0]
         self.assertIn('if not _has_script_context():', youtube_block)
 
     def test_youtube_channel_settings_use_independent_fragment_and_local_rerun(self):
@@ -63,7 +63,7 @@ class AutomationCardsTests(unittest.TestCase):
         self.assertIn('return "bilibili"', MAIN_SOURCE)
 
     def test_youtube_automation_cards_render_thumbnail_and_ready_video_side_by_side(self):
-        block = MAIN_SOURCE.split("def _render_youtube_automation_cards():", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
+        block = MAIN_SOURCE.split("def _render_youtube_automation_task_list", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
         self.assertIn('media_cols = st.columns(2, gap="small")', block)
         self.assertIn('st.image(str(thumbnail_path), width=180, caption="Thumbnail")', block)
         self.assertIn('_render_local_video_player(video_path, width="stretch")', block)

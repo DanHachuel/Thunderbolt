@@ -6766,13 +6766,22 @@ def render_tiktok_automation():
                             st.rerun()
     _render_tiktok_automation_cards()
 
-@st.fragment
-def _render_youtube_automation_cards():
+def _youtube_task_is_posted(task: dict[str, Any]) -> bool:
+    """Classify only confirmed remote publications as posted videos."""
+    artifacts = task.get("artifacts") if isinstance(task.get("artifacts"), dict) else {}
+    upload = artifacts.get("upload") if isinstance(artifacts.get("upload"), dict) else {}
+    status = str(upload.get("status") or task.get("upload_status") or task.get("status") or "").strip().casefold()
+    remote_reference = bool(upload.get("video_id") or upload.get("url") or task.get("youtube_video_id") or task.get("video_id"))
+    manual_confirmation = bool(task.get("upload_ok")) and status == "manual"
+    return manual_confirmation or (status in {"published", "success", "successful", "done", "completed"} and remote_reference)
+
+
+def _render_youtube_automation_task_list(*, posted_only: bool = False):
         if not _has_script_context():
             return
         st.divider()
-        st.subheader("Vídeos cadastrados")
-        st.caption("Start retoma as etapas já concluídas e só gera novamente o que ainda não estiver pronto. Em tarefas falhadas ou bloqueadas, a nova tentativa lê as chaves, prioridades e configurações actualmente guardadas. Apagar remove o card da fila e elimina todos os artefactos locais do vídeo, incluindo áudio/voz, roteiro, vídeo, thumbnail, legendas, música, prompts e logs.")
+        st.subheader("Videos Postados" if posted_only else "Pipeline")
+        st.caption("Vídeos confirmados como publicados no YouTube." if posted_only else "Fila de produção. Vídeos já publicados são apresentados em Videos Postados.")
         settings = read_json("settings.json", {})
         automatic_upload = st.checkbox(
             "Upload automático",
@@ -6783,9 +6792,10 @@ def _render_youtube_automation_cards():
         if automatic_upload != bool(settings.get("youtube_automation_auto_upload", False)):
             settings["youtube_automation_auto_upload"] = bool(automatic_upload)
             write_json("settings.json", settings)
-        tasks = load_automation_tasks_for_platform("youtube")
+        all_tasks = load_automation_tasks_for_platform("youtube")
+        tasks = [task for task in all_tasks if _youtube_task_is_posted(task) is posted_only]
         if not tasks:
-            st.info("Ainda não existem vídeos cadastrados.")
+            st.info("Ainda não existem vídeos nesta sub aba.")
         page_size = 12
         page_count = max(1, (len(tasks) + page_size - 1) // page_size)
         current_page = st.session_state.get("youtube_automation_page", 1)
@@ -6807,7 +6817,9 @@ def _render_youtube_automation_cards():
         else:
             visible_tasks = tasks
         for task in visible_tasks:
-            with st.container(border=True):
+            task_title = str(task.get("topic") or task.get("title") or "Vídeo sem nome").strip()
+            task_channel = str(task.get("channel_name") or "Canal sem nome").strip()
+            with st.expander(f"{task_title} · {task_channel}", expanded=False):
                 task_cols = st.columns([2.25, 1.55, 1.05, 2.15], gap="small")
                 script_path = _task_artifact_path(task, "script")
                 video_path = _task_artifact_path(task, "video")
@@ -6824,8 +6836,7 @@ def _render_youtube_automation_cards():
                     with media_cols[1]:
                         if video_path is not None and _catalog_task_state(task) == "done":
                             _render_local_video_player(video_path, width="stretch")
-                    st.write(f"**{task.get('topic', 'Sem tópico')}**")
-                    st.caption(f"{task.get('channel_name', 'Canal')} · {task.get('id', '')}")
+                    st.caption(f"ID da tarefa: {task.get('id', '')}")
                     thumbnail_download_col, prompt_download_col = st.columns(2, gap="small")
                     with thumbnail_download_col:
                         st.download_button(
@@ -6951,6 +6962,17 @@ def _render_youtube_automation_cards():
                                 if st.button("Cancelar", key=f"automation_cancel_delete_{task['id']}", width="stretch"):
                                     st.session_state.pop(confirm_delete_key, None)
                                     st.rerun(scope="fragment")
+
+
+@st.fragment
+def _render_youtube_automation_cards():
+    if not _has_script_context():
+        return
+    pipeline_tab, posted_tab = st.tabs(["Pipeline", "Videos Postados"])
+    with pipeline_tab:
+        _render_youtube_automation_task_list(posted_only=False)
+    with posted_tab:
+        _render_youtube_automation_task_list(posted_only=True)
 
 
 def _facebook_pages_for_automation() -> list[dict[str, Any]]:
