@@ -62,6 +62,19 @@ class AutomationCardsTests(unittest.TestCase):
         self.assertIn('classify_channel_platform(channel)', MAIN_SOURCE)
         self.assertIn('return "bilibili"', MAIN_SOURCE)
 
+    def test_requested_automation_video_cards_are_closed_expanders_with_name_and_channel(self):
+        tiktok_block = MAIN_SOURCE.split("def _render_tiktok_automation_task_list", 1)[1].split("@st.fragment\ndef _render_tiktok_automation_cards", 1)[0]
+        self.assertIn('with st.expander(f"{task_title} · {task_channel}", expanded=False):', tiktok_block)
+        self.assertIn('task_title = str(task.get("title") or task.get("topic") or "Vídeo TikTok").strip()', tiktok_block)
+        self.assertIn('task_channel = str(task.get("channel_name") or "Canal TikTok").strip()', tiktok_block)
+
+        bilibili_block = MAIN_SOURCE.split("def _render_bilibili_automation_task_card", 1)[1].split("def render_bilibili_automation", 1)[0]
+        self.assertIn('with st.expander(label, expanded=False):', bilibili_block)
+        self.assertIn(' · {task.get(\'channel_name\') or \'Canal Bilibili\'}', bilibili_block)
+
+        music_block = MAIN_SOURCE.split("def _render_music_automation_card", 1)[1].split("def render_music_automation", 1)[0]
+        self.assertIn('with st.expander(f"{title} · {channel}", expanded=False):', music_block)
+
     def test_youtube_automation_cards_render_thumbnail_and_ready_video_side_by_side(self):
         block = MAIN_SOURCE.split("def _render_youtube_automation_task_list", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
         self.assertIn('media_cols = st.columns(2, gap="small")', block)

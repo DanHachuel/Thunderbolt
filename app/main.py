@@ -6568,7 +6568,9 @@ def _render_tiktok_automation_task_list(*, posted_only: bool = False):
             st.info("Ainda não existem vídeos nesta sub aba.")
         for task in tiktok_tasks:
             task_id = str(task["id"])
-            with st.container(border=True):
+            task_title = str(task.get("title") or task.get("topic") or "Vídeo TikTok").strip()
+            task_channel = str(task.get("channel_name") or "Canal TikTok").strip()
+            with st.expander(f"{task_title} · {task_channel}", expanded=False):
                 task_cols = st.columns([2.25, 1.55, 1.05, 2.15], gap="small")
                 thumbnail_path = _task_thumbnail_path(task)
                 script_path = _task_artifact_path(task, "script")
