@@ -72,10 +72,12 @@ def _local_video_static_url(path: Path) -> str | None:
         resolved = path.resolve()
         link_name = f"{hashlib.sha1(str(resolved).encode('utf-8')).hexdigest()[:12]}-{resolved.name}"
         link_path = static_dir / link_name
-        if link_path.exists() or link_path.is_symlink():
-            if link_path.is_symlink() and link_path.resolve() != resolved:
+        if link_path.is_symlink():
+            if link_path.resolve() != resolved:
                 link_path.unlink()
-        if not link_path.exists():
+        elif link_path.exists():
+            return None
+        if not link_path.exists() and not link_path.is_symlink():
             link_path.symlink_to(resolved)
         return f"/app/static/videos/{quote(link_name)}"
     except (OSError, ValueError):
@@ -83,18 +85,11 @@ def _local_video_static_url(path: Path) -> str | None:
 
 
 def _render_local_video_player(path: Path, *, width: int | str = "stretch") -> None:
-    """Render a local video with browser-side lazy loading and no Python buffering."""
+    """Render a local video through the native player without Python buffering."""
     if not path.is_file():
         st.warning(f"Vídeo não encontrado: {path.name}")
         return
     static_url = _local_video_static_url(path)
-    if static_url and hasattr(st, "html"):
-        width_css = "100%" if width == "stretch" else f"{int(width)}px"
-        st.html(
-            f'<video controls preload="none" style="display:block;width:{width_css};max-width:100%;" '
-            f'src="{escape(static_url)}"></video>'
-        )
-        return
     video_kwargs: dict[str, Any] = {"format": mimetypes.guess_type(path.name)[0] or "video/mp4"}
     # ``width`` was added to st.video after the minimum Streamlit version used
     # by the launcher. Omit it on older installations so the native player
@@ -108,7 +103,7 @@ def _render_local_video_player(path: Path, *, width: int | str = "stretch") -> N
     # Streamlit's local media handler reliably resolves a string path. Passing
     # Path directly can leave the browser player waiting indefinitely on some
     # supported Streamlit versions.
-    st.video(str(path), **video_kwargs)
+    st.video(static_url or str(path), **video_kwargs)
 
 
 def _load_local_env() -> None:

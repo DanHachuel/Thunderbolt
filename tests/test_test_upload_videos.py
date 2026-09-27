@@ -30,13 +30,13 @@ def test_seed_test_videos_are_packaged_and_described():
     assert '"seed/test_upload_videos/*.mp4"' in package
 
 
-def test_local_video_player_uses_native_lazy_video_without_base64():
+def test_local_video_player_uses_native_static_url_without_base64():
     block = SOURCE.split("def _render_local_video_player", 1)[1].split("def ", 1)[0]
     assert "if not path.is_file()" in block
     assert 'st.warning(f"Vídeo não encontrado: {path.name}")' in block
     assert 'def _local_video_static_url(path: Path) -> str | None:' in SOURCE
-    assert 'preload="none"' in block
-    assert 'st.html(' in block
+    assert 'st.video(static_url or str(path), **video_kwargs)' in block
+    assert 'st.html(' not in block
     assert 'enableStaticServing = true' in (ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8")
     assert "_file_bytes(path)" not in block
     assert "base64" not in block
