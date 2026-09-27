@@ -24,5 +24,8 @@ secondaryBackgroundColor = "#EEF2F7"
 [client]
 toolbarMode = "auto"
 
+[server]
+enableStaticServing = true
+
 [logger]
 hideWelcomeMessage = true

@@ -30,6 +30,7 @@ import mimetypes
 import re
 import inspect
 import time
+from urllib.parse import quote
 from contextlib import nullcontext
 from datetime import date, datetime, timezone
 import uuid
@@ -63,10 +64,36 @@ def _file_bytes(path: Path | None) -> bytes:
     return _cached_file_bytes(str(path.resolve()), int(stat.st_mtime_ns), int(stat.st_size))
 
 
+def _local_video_static_url(path: Path) -> str | None:
+    """Expose a local video by static URL without copying it into the Streamlit payload."""
+    try:
+        static_dir = ROOT / "static" / "videos"
+        static_dir.mkdir(parents=True, exist_ok=True)
+        resolved = path.resolve()
+        link_name = f"{hashlib.sha1(str(resolved).encode('utf-8')).hexdigest()[:12]}-{resolved.name}"
+        link_path = static_dir / link_name
+        if link_path.exists() or link_path.is_symlink():
+            if link_path.is_symlink() and link_path.resolve() != resolved:
+                link_path.unlink()
+        if not link_path.exists():
+            link_path.symlink_to(resolved)
+        return f"/app/static/videos/{quote(link_name)}"
+    except (OSError, ValueError):
+        return None
+
+
 def _render_local_video_player(path: Path, *, width: int | str = "stretch") -> None:
-    """Render a local video through Streamlit without loading it into Python memory."""
+    """Render a local video with browser-side lazy loading and no Python buffering."""
     if not path.is_file():
         st.warning(f"Vídeo não encontrado: {path.name}")
+        return
+    static_url = _local_video_static_url(path)
+    if static_url and hasattr(st, "html"):
+        width_css = "100%" if width == "stretch" else f"{int(width)}px"
+        st.html(
+            f'<video controls preload="none" style="display:block;width:{width_css};max-width:100%;" '
+            f'src="{escape(static_url)}"></video>'
+        )
         return
     video_kwargs: dict[str, Any] = {"format": mimetypes.guess_type(path.name)[0] or "video/mp4"}
     # ``width`` was added to st.video after the minimum Streamlit version used
