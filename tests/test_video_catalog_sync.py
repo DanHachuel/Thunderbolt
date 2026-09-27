@@ -13,14 +13,23 @@ def test_backlog_and_automation_use_the_same_complete_task_catalog():
     assert "Return the complete persisted task catalog shared by Backlog and Automation" in MAIN_SOURCE
 
 
-def test_automation_video_cards_show_state_progress_and_format_like_backlog():
+def test_automation_video_cards_show_state_progress_and_video_source_like_backlog():
     assert MAIN_SOURCE.count("_render_video_task_state(task)") >= 2
-    assert MAIN_SOURCE.count("_video_task_format(task)") >= 2
+    assert MAIN_SOURCE.count("_video_task_format(task)") >= 1
     for state in ("to_do", "doing", "blocked", "done", "failed", "cancelled"):
         assert f'"{state}":' in MAIN_SOURCE
     assert 'st.progress(progress, text=f"{progress}%")' in MAIN_SOURCE
-    assert 'st.caption("Formato")' in MAIN_SOURCE
+    assert 'st.caption("Fonte do vídeo")' in MAIN_SOURCE
     assert 'value = task.get("format") or task.get("style_wide") or task.get("style") or "wide"' in MAIN_SOURCE
+    assert "def _video_task_source(task: dict[str, Any]) -> str:" in MAIN_SOURCE
+
+
+def test_youtube_automation_defers_large_video_files_until_requested():
+    block = MAIN_SOURCE.split("def _render_youtube_automation_task_list", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
+    assert 'if not st.session_state.get(player_key, False):' in block
+    assert 'st.button("Carregar player"' in block
+    assert '_render_local_video_player(video_path, width="stretch")' in block
+    assert 'if video_path is not None and st.session_state.get(player_key, False):' in block
 
 
 def test_legacy_ready_artifacts_are_displayed_as_fully_complete():
@@ -55,9 +64,9 @@ def test_youtube_automation_cards_do_not_poll_each_browser_session():
     block = MAIN_SOURCE.split("@st.fragment\ndef _render_youtube_automation_cards():", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
     assert '@st.fragment\ndef _render_youtube_automation_cards():' in MAIN_SOURCE
     assert '@st.fragment(run_every=5.0)\ndef _render_youtube_automation_cards():' not in MAIN_SOURCE
-    assert 'tasks = load_automation_tasks_for_platform("youtube")' in block
+    assert 'tasks = load_automation_tasks_for_platform("youtube")' in MAIN_SOURCE
     assert 'st.rerun()' not in block
-    assert 'st.rerun(scope="fragment")' in block
+    assert 'st.rerun(scope="fragment")' in MAIN_SOURCE
     assert 'key="youtube_automation_refresh"' in MAIN_SOURCE
 
 

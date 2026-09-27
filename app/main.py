@@ -5961,6 +5961,21 @@ def _video_task_format(task: dict[str, Any]) -> str:
     return str(value).strip() or "wide"
 
 
+def _video_task_source(task: dict[str, Any]) -> str:
+    """Return the persisted material source without confusing it with aspect ratio."""
+    generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else {}
+    value = (
+        task.get("video_source")
+        or task.get("source")
+        or generation_settings.get("video_source")
+        or task.get("style_wide")
+        or "—"
+    )
+    source = str(value).strip()
+    labels = {"pexels": "Pexels", "pixabay": "Pixabay", "google": "Google", "ai": "IA", "generated": "IA"}
+    return labels.get(source.casefold(), source) or "—"
+
+
 def _video_task_progress(task: dict[str, Any]) -> int:
     try:
         progress = max(0, min(100, int(task.get("progress") or 0)))
@@ -6851,7 +6866,13 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False):
                             st.caption("Thumbnail ainda não pronta")
                     with media_cols[1]:
                         if video_path is not None and _catalog_task_state(task) == "done":
-                            _render_local_video_player(video_path, width="stretch")
+                            player_key = f"youtube_automation_player_{task['id']}"
+                            if not st.session_state.get(player_key, False):
+                                if st.button("Carregar player", key=f"{player_key}_load", width="stretch"):
+                                    st.session_state[player_key] = True
+                                    st.rerun(scope="fragment")
+                            else:
+                                _render_local_video_player(video_path, width="stretch")
                     st.caption(f"ID da tarefa: {task.get('id', '')}")
                     thumbnail_download_col, prompt_download_col = st.columns(2, gap="small")
                     with thumbnail_download_col:
@@ -6878,8 +6899,8 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False):
                 with task_cols[1]:
                     _render_video_task_state(task)
                 with task_cols[2]:
-                    st.caption("Formato")
-                    st.write(_video_task_format(task))
+                    st.caption("Fonte do vídeo")
+                    st.write(_video_task_source(task))
                 with task_cols[3]:
                     state = str(task.get("state") or "")
                     upload_ready = _upload_ready_for_task(task, video_path, thumbnail_path)
@@ -6905,7 +6926,8 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False):
                             disabled=script_path is None,
                         )
                     with video_download_col:
-                        if video_path is not None:
+                        player_key = f"youtube_automation_player_{task['id']}"
+                        if video_path is not None and st.session_state.get(player_key, False):
                             with video_path.open("rb") as video_stream:
                                 st.download_button(
                                     "Baixar Vídeo",
@@ -6915,6 +6937,8 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False):
                                     key=f"automation_download_video_{task['id']}",
                                     width="stretch",
                                 )
+                        elif video_path is not None:
+                            st.caption("Carregue o player para activar o download")
                         else:
                             st.download_button(
                                 "Baixar Vídeo",
