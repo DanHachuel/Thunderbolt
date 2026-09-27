@@ -6866,13 +6866,7 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False):
                             st.caption("Thumbnail ainda não pronta")
                     with media_cols[1]:
                         if video_path is not None and _catalog_task_state(task) == "done":
-                            player_key = f"youtube_automation_player_{task['id']}"
-                            if not st.session_state.get(player_key, False):
-                                if st.button("Carregar player", key=f"{player_key}_load", width="stretch"):
-                                    st.session_state[player_key] = True
-                                    st.rerun(scope="fragment")
-                            else:
-                                _render_local_video_player(video_path, width="stretch")
+                            _render_local_video_player(video_path, width="stretch")
                     st.caption(f"ID da tarefa: {task.get('id', '')}")
                     thumbnail_download_col, prompt_download_col = st.columns(2, gap="small")
                     with thumbnail_download_col:
@@ -6926,8 +6920,7 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False):
                             disabled=script_path is None,
                         )
                     with video_download_col:
-                        player_key = f"youtube_automation_player_{task['id']}"
-                        if video_path is not None and st.session_state.get(player_key, False):
+                        if video_path is not None:
                             with video_path.open("rb") as video_stream:
                                 st.download_button(
                                     "Baixar Vídeo",
@@ -6937,8 +6930,6 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False):
                                     key=f"automation_download_video_{task['id']}",
                                     width="stretch",
                                 )
-                        elif video_path is not None:
-                            st.caption("Carregue o player para activar o download")
                         else:
                             st.download_button(
                                 "Baixar Vídeo",

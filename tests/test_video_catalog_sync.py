@@ -24,12 +24,11 @@ def test_automation_video_cards_show_state_progress_and_video_source_like_backlo
     assert "def _video_task_source(task: dict[str, Any]) -> str:" in MAIN_SOURCE
 
 
-def test_youtube_automation_defers_large_video_files_until_requested():
+def test_youtube_automation_uses_native_local_video_player():
     block = MAIN_SOURCE.split("def _render_youtube_automation_task_list", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
-    assert 'if not st.session_state.get(player_key, False):' in block
-    assert 'st.button("Carregar player"' in block
+    assert 'st.button("Carregar player"' not in block
     assert '_render_local_video_player(video_path, width="stretch")' in block
-    assert 'if video_path is not None and st.session_state.get(player_key, False):' in block
+    assert 'if video_path is not None and _catalog_task_state(task) == "done":' in block
 
 
 def test_legacy_ready_artifacts_are_displayed_as_fully_complete():
