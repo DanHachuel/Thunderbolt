@@ -6846,7 +6846,7 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False):
                     media_cols = st.columns(2, gap="small")
                     with media_cols[0]:
                         if thumbnail_path is not None:
-                            st.image(str(thumbnail_path), width=180, caption="Thumbnail")
+                            st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")
                         else:
                             st.caption("Thumbnail ainda não pronta")
                     with media_cols[1]:

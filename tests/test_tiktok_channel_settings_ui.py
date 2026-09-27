@@ -40,6 +40,8 @@ def test_youtube_downloads_use_the_same_requested_name_patterns():
     assert '_automation_download_name("Thumbnail-Prompt", task, thumbnail_prompt_path, ".txt")' in card_block
     assert '_automation_download_name("Script", task, script_path, ".md")' in card_block
     assert '_automation_download_name("Vídeo", task, video_path, ".mp4")' in card_block
+    assert 'st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")' in card_block
+    assert 'st.image(str(thumbnail_path), width=180, caption="Thumbnail")' not in card_block
 
 
 def test_automation_download_title_uses_original_topic_without_losing_letters():
