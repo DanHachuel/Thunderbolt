@@ -11457,7 +11457,7 @@ def main():
         "Growth Instagram": render_growth_instagram,
         "Facebook Pages": render_growth_facebook_pages,
         "Growth Bilibili": render_growth_bilibili,
-        "Documentação": lambda: render_edit_placeholder("Documentação", "Seleccione uma subaba de documentação."),
+        "Documentação": render_documentation_pages,
         "Meta": render_models_ai_tutorial,
         "Supabase": render_supabase_tutorial,
         "Kaggle": lambda: render_niche_tutorial("kaggle"),

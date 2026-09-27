@@ -37,3 +37,16 @@ def test_documentation_renderers_keep_local_tutorial_content():
     assert "st.markdown(tutorial_content, unsafe_allow_html=True)" in MAIN_SOURCE
     assert "st.markdown(tutorial_content, unsafe_allow_html=False)" in MAIN_SOURCE
     assert "st.markdown(tutorial_body(tutorial_kind, ui_language), unsafe_allow_html=False)" in MAIN_SOURCE
+
+
+def test_documentation_parent_page_uses_real_tutorial_renderer():
+    assert '"Documentação": render_documentation_pages,' in MAIN_SOURCE
+    assert '"Documentação": lambda: render_edit_placeholder' not in MAIN_SOURCE
+    for filename in (
+        "guide-instagram.md",
+        "guide-supabase.md",
+        "tutorial-oauth-google.md",
+        "youtube-video-upload-frontend.md",
+        "tutorial-youtube-data-api-key.md",
+    ):
+        assert (ROOT / "seed" / "references" / filename).is_file()
