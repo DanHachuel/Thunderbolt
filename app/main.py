@@ -67,7 +67,7 @@ def _file_bytes(path: Path | None) -> bytes:
 def _local_video_static_url(path: Path) -> str | None:
     """Expose a local video by static URL without copying it into the Streamlit payload."""
     try:
-        static_dir = ROOT / "static" / "videos"
+        static_dir = Path(__file__).resolve().parent / "static" / "videos"
         static_dir.mkdir(parents=True, exist_ok=True)
         resolved = path.resolve()
         link_name = f"{hashlib.sha1(str(resolved).encode('utf-8')).hexdigest()[:12]}-{resolved.name}"
