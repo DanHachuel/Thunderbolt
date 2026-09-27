@@ -12,7 +12,7 @@ import requests
 from PIL import Image, ImageDraw, ImageFont
 
 from .creative_generation import CreativeGenerationError, _chat_json
-from .media_generation import GOOGLE_IMAGES_COPYRIGHT_WARNING, generate_image_for_card, google_images_search
+from .media_generation import GOOGLE_IMAGES_COPYRIGHT_WARNING, generate_image_for_card, web_images_cards, web_images_search
 from .storage import STORAGE, read_json, write_json
 
 POSTS_FILE = "facebook_automation_posts.json"
@@ -120,25 +120,25 @@ def _download_image(url: str, destination: Path) -> Path:
     return destination
 
 
-def collect_images(settings: dict[str, Any], post: Mapping[str, Any], *, source: str = "google") -> dict[str, Any]:
-    """Collect Facebook visuals exclusively from Google Images (commercial celebrity use is legally risky)."""
+def collect_images(settings: dict[str, Any], post: Mapping[str, Any], *, source: str = "web_images") -> dict[str, Any]:
+    """Collect Facebook visuals exclusively from the priority-ordered web image pool."""
     folder = Path(str(post.get("folder") or (POSTS_DIR / str(post.get("id"))))) / "images"
-    if not any(google_images_searchable for google_images_searchable in [True] if isinstance(settings.get("google_images_cards"), list) and settings.get("google_images_cards")):
-        raise ValueError("Configure pelo menos um cartão Google Images antes de recolher imagens para Facebook Pages.")
+    if not web_images_cards(settings, enabled_only=True):
+        raise ValueError("Configure pelo menos um cartão activo em Scrapt de Imagens na Web antes de recolher imagens para Facebook Pages.")
     images = []
     for index, item in enumerate(post.get("images") or [], start=1):
         query = str(item.get("search_query") or post.get("theme") or "").strip()
         image_record = dict(item)
         try:
-            results = google_images_search(settings, query, num_results=1, safe="active")
-            link = str((results[0] if results else {}).get("link") or "")
+            results = web_images_search(settings, query, num_results=1, rights="sur:cl")
+            link = str((results[0] if results else {}).get("url") or "")
             if not link:
                 raise ValueError("A pesquisa Google não devolveu uma imagem.")
             destination = folder / f"image-{index}.jpg"
             _download_image(link, destination)
-            image_record.update({"source": "google_images", "path": str(destination), "status": "imagem_baixada"})
+            image_record.update({"source": str((results[0] if results else {}).get("source") or "web_images"), "path": str(destination), "status": "imagem_baixada"})
         except Exception as exc:
-            image_record.update({"source": "google_images", "status": "erro", "error": str(exc)[:300]})
+            image_record.update({"source": "web_images", "status": "erro", "error": str(exc)[:300]})
         images.append(image_record)
     return save_post({**post, "images": images, "status": "legendas_pendentes" if any(item.get("path") for item in images) else "imagens_pendentes"})
 

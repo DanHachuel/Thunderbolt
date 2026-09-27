@@ -18,6 +18,7 @@ import signal
 import subprocess
 import threading
 import time
+import requests
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,7 @@ from hermes_ui.script_documents import save_script_document
 from hermes_ui.script_generation import generate_script_document
 from hermes_ui.storage import STORAGE, atomic_write, ensure_storage, get_display_name, list_blueprint_files, load_blueprint_file, read_json, write_json
 from hermes_ui.llm_providers import active_llm_card, provider_definition
-from hermes_ui.media_generation import MediaGenerationError, _append_generation_constraints, generate_image_from_pool, generate_video_from_pool
+from hermes_ui.media_generation import MediaGenerationError, _append_generation_constraints, generate_image_from_pool, generate_video_from_pool, web_images_search
 from hermes_ui.media_providers import FULL_IA_VIDEO_PROVIDER_CODES, media_cards_for_pool, media_provider_definition
 from hermes_ui.material_sources import material_api_keys, material_source_cards, selected_material_source
 from hermes_ui.thumbnail_generation import ThumbnailGenerationError, generate_thumbnail_image, infer_thumbnail_aspect_ratio
@@ -763,8 +764,8 @@ def _normalise_video_route(task: dict[str, Any], settings: dict[str, Any]) -> st
         return "text_to_images"
     if raw in {"music_clips", "music-clips", "clipes de música", "clipes de musica"}:
         return "music_clips"
-    if raw in {"google_images", "google-images", "montage: google imagem api"}:
-        return "google_images"
+    if raw in {"google_images", "google-images", "web_images", "web-images", "montage: google imagem api", "montage: web images"}:
+        return "web_images"
     if raw in {"remotion"}:
         return "remotion"
     if raw in {"pixabay", "pixabay only"}:
@@ -1476,7 +1477,7 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
         )
         return _task_by_id(task_id) or task
 
-    if route in {"google_images", "remotion", "music_clips"}:
+    if route in {"remotion", "music_clips"}:
         raise PipelineError(f"A fonte {route} é um placeholder e não está disponível nesta versão.")
 
     if route == "only_music":
@@ -1589,6 +1590,31 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                     video_prompt,
                     allowed_providers=set(FULL_IA_VIDEO_PROVIDER_CODES),
                 )
+            elif route == "web_images":
+                target_seconds = float(generation_settings.get("text_to_images_scene_duration") or 5)
+                scenes = split_script_into_scenes(str(script.get("content") or ""), target_seconds=target_seconds, wpm=int(generation_settings.get("text_to_images_wpm") or 150))
+                if not scenes:
+                    scenes = [{"index": 1, "text": topic, "duration": target_seconds}]
+                image_scenes = []
+                web_dir = STORAGE / "web-images" / task_id
+                web_dir.mkdir(parents=True, exist_ok=True)
+                for scene in scenes:
+                    query = str(scene.get("text") or topic).strip()[:300]
+                    results = web_images_search(settings, query, num_results=1, rights="sur:cl")
+                    image_url = str(results[0].get("url") or "")
+                    if not image_url:
+                        continue
+                    image_path = web_dir / f"scene-{int(scene.get('index') or len(image_scenes) + 1)}.jpg"
+                    response = requests.get(image_url, timeout=45)
+                    response.raise_for_status()
+                    image_path.write_bytes(response.content)
+                    image_scenes.append({**scene, "image_path": str(image_path), "duration": float(scene.get("duration") or target_seconds)})
+                audio_path = _valid_audio_artifact(generation_settings.get("voiceover_file") or artifacts.get("audio") or artifacts.get("narration"))
+                if audio_path is None:
+                    audio_path = synthesize_text_to_images_audio(narration_text_from_script(str(script.get("content") or "")), {**settings, **generation_settings}, str(task.get("voice") or generation_settings.get("voice") or channel.get("default_voice") or channel.get("voice") or "pt-BR-FranciscaNeural-Female"), STORAGE / "audio" / f"{task_id}-web-images.mp3")
+                    artifacts["audio"] = str(audio_path)
+                output_path = STORAGE / "videos" / f"{task_id}-web-images.mp4"
+                video_path = assemble_text_to_images_video(image_scenes, audio_path, output_path, str(task.get("format") or "wide"), fps=int(generation_settings.get("text_to_images_fps") or 30))
             elif route == "text_to_images":
                 target_seconds = float(generation_settings.get("text_to_images_scene_duration") or 5)
                 scenes = split_script_into_scenes(

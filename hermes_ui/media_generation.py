@@ -224,6 +224,120 @@ def test_google_images_card(card: Mapping[str, Any]) -> dict[str, Any]:
         return {"status": "error", "message": f"Falha ao testar Google Images: {str(exc)[:180]}"}
 
 
+WEB_IMAGES_CARDS_KEY = "web_images_cards"
+SERPAPI_ENDPOINT = "https://serpapi.com/search.json"
+BRIGHTDATA_PROXY_HOST = "fserp.brd.superproxy.io:44445"
+WEB_IMAGES_COPYRIGHT_WARNING = "Atenção: imagens de pessoas famosas podem estar protegidas por direitos de imagem e autorais. Use com responsabilidade e prefira filtros de licença permissiva (rights=sur:cl na SerpApi)."
+
+
+def normalize_web_images_card(card: Any, index: int = 0) -> dict[str, Any]:
+    source = dict(card) if isinstance(card, Mapping) else {}
+    provider = str(source.get("provider") or "google_images").strip().lower()
+    if provider not in {"google_images", "serpapi", "brightdata"}:
+        provider = "google_images"
+    result = {
+        "id": str(source.get("id") or f"{provider}-{index + 1}").strip(),
+        "provider": provider,
+        "label": str(source.get("label") or f"{provider} — Conta {index + 1}").strip(),
+        "api_key": str(source.get("api_key") or "").strip(),
+        "cx": str(source.get("cx") or "").strip(),
+        "customer_id": str(source.get("customer_id") or "").strip(),
+        "zone_name": str(source.get("zone_name") or "").strip(),
+        "zone_password": str(source.get("zone_password") or "").strip(),
+        "enabled": bool(source.get("enabled", True)),
+        "priority": max(1, int(source.get("priority", index + 1)) if str(source.get("priority", index + 1)).strip().lstrip("-").isdigit() else index + 1),
+        "daily_limit": max(1, int(source.get("daily_limit", 100)) if str(source.get("daily_limit", 100)).isdigit() else 100),
+        "test_result": dict(source.get("test_result")) if isinstance(source.get("test_result"), Mapping) else {},
+    }
+    return result
+
+
+def ensure_web_images_cards(settings: Mapping[str, Any]) -> tuple[dict[str, Any], bool]:
+    result = dict(settings)
+    raw = result.get(WEB_IMAGES_CARDS_KEY)
+    if not isinstance(raw, list):
+        legacy = result.get(GOOGLE_IMAGES_CARDS_KEY)
+        raw = [{**dict(item), "provider": "google_images"} for item in legacy] if isinstance(legacy, list) else []
+    cards = [normalize_web_images_card(item, index) for index, item in enumerate(raw)]
+    cards.sort(key=lambda item: int(item.get("priority", 1)))
+    for index, card in enumerate(cards, start=1):
+        card["priority"] = index
+    changed = result.get(WEB_IMAGES_CARDS_KEY) != cards
+    result[WEB_IMAGES_CARDS_KEY] = cards
+    return result, changed
+
+
+def new_web_images_card(provider: str, card_id: str | None = None, priority: int = 1) -> dict[str, Any]:
+    return normalize_web_images_card({"id": card_id or f"{provider}-{priority}", "provider": provider, "priority": priority})
+
+
+def web_images_cards(settings: Mapping[str, Any], *, enabled_only: bool = False) -> list[dict[str, Any]]:
+    migrated, _ = ensure_web_images_cards(settings)
+    cards = [dict(item) for item in migrated.get(WEB_IMAGES_CARDS_KEY, [])]
+    if enabled_only:
+        def configured(item: Mapping[str, Any]) -> bool:
+            provider = str(item.get("provider") or "")
+            if provider in {"google_images", "serpapi"}:
+                return bool(str(item.get("api_key") or "").strip()) and (provider == "serpapi" or bool(str(item.get("cx") or "").strip()))
+            return all(str(item.get(field) or "").strip() for field in ("customer_id", "zone_name", "zone_password"))
+        cards = [item for item in cards if item.get("enabled") and configured(item)]
+    return sorted(cards, key=lambda item: int(item.get("priority", 1)))
+
+
+def _normalise_web_image(item: Mapping[str, Any], provider: str) -> dict[str, Any]:
+    return {
+        "url": str(item.get("original") or item.get("original_image") or item.get("link") or item.get("image") or "").strip(),
+        "thumbnail": str(item.get("thumbnail") or item.get("image") or item.get("thumbnail_url") or "").strip(),
+        "title": str(item.get("title") or "").strip(),
+        "source": provider,
+    }
+
+
+def _search_web_images_card(card: Mapping[str, Any], query: str, *, num_results: int, start: int = 1, rights: str = "") -> list[dict[str, Any]]:
+    provider = str(card.get("provider") or "").lower()
+    if provider == "google_images":
+        response = requests.get(GOOGLE_IMAGES_ENDPOINT, params={"key": card["api_key"], "cx": card["cx"], "q": query, "searchType": "image", "num": min(10, num_results), "start": max(1, start), "safe": "active", **({"rights": rights} if rights else {})}, timeout=30)
+        response.raise_for_status()
+        return [_normalise_web_image(item, provider) for item in (response.json().get("items") or []) if isinstance(item, Mapping)]
+    if provider == "serpapi":
+        params = {"engine": "google_images", "q": query, "api_key": card["api_key"], "num": min(100, num_results), "start": max(0, start - 1), "hl": "en", "gl": "us"}
+        if rights:
+            params["tbs"] = rights
+        response = requests.get(SERPAPI_ENDPOINT, params=params, timeout=30)
+        response.raise_for_status()
+        return [_normalise_web_image(item, provider) for item in (response.json().get("images_results") or []) if isinstance(item, Mapping)]
+    user = f"brd-customer-{card['customer_id']}-zone-{card['zone_name']}:{card['zone_password']}"
+    proxy = f"http://{user}@{BRIGHTDATA_PROXY_HOST}"
+    response = requests.get("https://www.google.com/search", params={"q": query, "udm": 2, "brd_json": 1}, headers={"x-unblock-data-format": "parsed_light"}, proxies={"http": proxy, "https": proxy}, timeout=45)
+    response.raise_for_status()
+    payload = response.json()
+    return [_normalise_web_image(item, provider) for item in (payload.get("images") or []) if isinstance(item, Mapping)]
+
+
+def web_images_search(settings: Mapping[str, Any], query: str, *, num_results: int = 5, provider: str | None = None, start: int = 1, rights: str = "") -> list[dict[str, Any]]:
+    errors: list[str] = []
+    cards = web_images_cards(settings, enabled_only=True)
+    if provider:
+        cards = [item for item in cards if str(item.get("provider")) == str(provider)]
+    for card in cards:
+        try:
+            results = [item for item in _search_web_images_card(card, str(query).strip(), num_results=num_results, start=start, rights=rights) if item.get("url")]
+            if results:
+                return results
+            errors.append(f"{card['provider']} não devolveu imagens")
+        except (requests.RequestException, ValueError, KeyError, RuntimeError) as exc:
+            errors.append(f"{card['provider']}: {str(exc)[:180]}")
+    raise MediaGenerationError("Todos os cartões de Scrapt de Imagens na Web falharam.", provider_errors=errors or ["Não existem cartões activos"])
+
+
+def test_web_images_card(card: Mapping[str, Any]) -> dict[str, Any]:
+    try:
+        results = _search_web_images_card(normalize_web_images_card(card), "test", num_results=1)
+        return {"status": "success", "message": f"Chamada {card.get('provider')} OK ({len(results)} resultado(s))."}
+    except Exception as exc:
+        return {"status": "error", "message": f"Falha ao testar {card.get('provider')}: {str(exc)[:180]}"}
+
+
 AGNES_IMAGE_MODEL = "agnes-image-2.1-flash"
 AGNES_IMAGE_TIMEOUT_SECONDS = 120
 AGNES_MAX_PROMPT_CHARS = 9500
