@@ -206,6 +206,7 @@ from hermes_ui.growth_instagram import render_growth_instagram
 from hermes_ui.growth_facebook_pages import render_growth_facebook_pages
 from hermes_ui.growth_bilibili import render_growth_bilibili
 from hermes_ui.facebook_automation import caption_images, collect_images, create_post, generate_article, generate_theme, list_posts, publish_to_facebook, save_post
+from hermes_ui.facebook_storytelling import caption_storytelling_images, collect_storytelling_images, generate_storytelling_article, generate_storytelling_theme, list_facebook_posts, migrate_posts_json_to_sqlite, save_facebook_post
 from hermes_ui.canva_auth import authorization_url, create_pkce_pair, create_state, exchange_code
 from integrations.platforms import IntegrationResult, TikTokAdapter, YouTubeAdapter, fetch_channel_videos_public
 from integrations.tiktok_public import fetch_public_tiktok_profile, normalize_tiktok_reference
@@ -7039,101 +7040,94 @@ def _facebook_pages_for_automation() -> list[dict[str, Any]]:
 def _render_facebook_automation_cards() -> None:
     if not _has_script_context():
         return
-    st.divider()
-    st.subheader("Posts Facebook em produção")
-    posts = list_posts()
+    posts = list_facebook_posts()
+    status_labels = {"tema_pendente": "Tema pendente", "para_producao": "Para produção", "artigo_pronto": "Artigo pronto", "pronto_publicacao": "Pronto para publicação", "publicado": "Publicado", "erro": "Erro"}
     if not posts:
-        st.info("Ainda não existem posts Facebook em produção.")
+        st.info("Ainda não existem posts Facebook na pipeline editorial.")
         return
-    for post in posts:
+    pages = _facebook_pages_for_automation()
+    settings = read_json("settings.json", {})
+    status_filter = st.selectbox("Filtrar histórico", ["Todos"] + list(status_labels.values()), key="facebook_storytelling_status_filter")
+    wanted_status = next((key for key, label in status_labels.items() if label == status_filter), None)
+    for post in list_facebook_posts(status=wanted_status):
         post_id = str(post.get("id") or "")
+        page = next((item for item in pages if str(item.get("id")) == str(post.get("channel_id"))), {})
         with st.container(border=True):
-            cols = st.columns([2.5, 1.35, 1.15, 2.0], gap="small")
-            with cols[0]:
+            header, state, actions = st.columns([2.5, 1.2, 2.0], gap="small")
+            with header:
                 st.write(f"**{post.get('title') or post.get('theme') or 'Post sem tema'}**")
-                st.caption(f"{post.get('page_name') or 'Facebook Page'} · {post_id}")
-                st.caption(f"Etapa: {post.get('status', 'tema_pendente')}")
+                st.caption(f"{page.get('name') or post.get('channel_id') or 'Nenhuma página seleccionada'} · {post_id}")
+                st.caption(f"Estado: {status_labels.get(str(post.get('status')), str(post.get('status') or 'erro'))}")
                 if post.get("article_text"):
-                    with st.expander("Ver artigo", expanded=False):
-                        st.text_area("Artigo", value=str(post["article_text"]), height=220, key=f"facebook_article_{post_id}", disabled=True)
+                    with st.expander("Preview do artigo", expanded=False):
+                        st.text(str(post.get("article_text")))
                 image_records = post.get("images") if isinstance(post.get("images"), list) else []
                 if image_records:
                     image_cols = st.columns(min(5, len(image_records)))
-                    for image_col, image in zip(image_cols, image_records):
-                        image_path = Path(str(image.get("captioned_path") or image.get("path") or ""))
+                    for image_col, image in zip(image_cols, sorted(image_records, key=lambda item: int(item.get("index") or 0))):
+                        image_path = Path(str(image.get("image_final_path") or image.get("final_path") or image.get("image_path") or image.get("path") or ""))
                         with image_col:
                             if image_path.is_file():
                                 st.image(str(image_path), use_container_width=True)
-                            st.caption(str(image.get("status") or "pendente"))
-            with cols[1]:
-                st.caption("Estado")
-                st.write(str(post.get("status") or "tema_pendente").replace("_", " ").capitalize())
-                st.progress({"tema_pendente": 0, "artigo_pendente": 20, "imagens_pendentes": 45, "legendas_pendentes": 70, "pronto_upload": 90, "publicado": 100}.get(str(post.get("status")), 0), text=f"{len(post.get('images') or [])}/5 imagens")
-            with cols[2]:
-                st.caption("Imagens")
-                st.write(f"{len(post.get('images') or [])} previstas")
-                st.caption("Google Imagens ou IA")
-            with cols[3]:
-                settings = read_json("settings.json", {})
-                pages = _facebook_pages_for_automation()
-                page = next((item for item in pages if str(item.get("id")) == str(post.get("page_id"))), {})
-                if st.button("Gerar tema", key=f"facebook_generate_theme_{post_id}", disabled=str(post.get("status")) not in {"tema_pendente", "erro"}, width="stretch"):
+                            st.caption(str(image.get("status") or "pending"))
+            with state:
+                st.metric("Estado", status_labels.get(str(post.get("status")), "Erro"))
+                st.caption(f"{len(post.get('images') or [])}/{post.get('image_count') or 0} cards")
+                if post.get("published_url"):
+                    st.link_button("Abrir publicação", str(post["published_url"]), width="stretch")
+            with actions:
+                current_status = str(post.get("status") or "tema_pendente")
+                if st.button("Gerar Tema", key=f"facebook_story_theme_{post_id}", disabled=current_status not in {"tema_pendente", "erro"}, width="stretch"):
                     try:
-                        generate_theme(settings, post, page)
+                        generated = generate_storytelling_theme(settings, page or {"id": post.get("channel_id")})
+                        save_facebook_post({**post, "theme": generated.get("theme"), "tone": generated.get("tone"), "status": "para_producao"})
                         st.success("Tema criado pelo LLM.")
-                        st.rerun()
+                        st.rerun(scope="fragment")
                     except Exception as exc:
                         st.error(str(exc))
-                if st.button("Criar artigo", key=f"facebook_generate_article_{post_id}", disabled=str(post.get("status")) != "artigo_pendente", width="stretch"):
+                if st.button("Gerar Artigo e Imagens", key=f"facebook_story_article_{post_id}", disabled=current_status != "para_producao", width="stretch"):
                     try:
-                        generate_article(settings, post, page)
-                        st.success("Artigo e prompts de imagens criados pelo LLM.")
-                        st.rerun()
+                        article = generate_storytelling_article(settings, page, str(post.get("theme") or ""), str(post.get("tone") or "Motivacional/Superação"), int(post.get("image_count") or settings.get("facebook_default_image_count", 5)))
+                        save_facebook_post({**post, **article, "status": "artigo_pronto"})
+                        st.success("Artigo e prompts dos cards criados.")
+                        st.rerun(scope="fragment")
+                    except Exception as exc:
+                        save_facebook_post({**post, "status": "erro"})
+                        st.error(str(exc))
+                source = st.selectbox("Fonte das imagens", ["Scrapt de Imagens na Web", "Imagem e Video IA"], index=0 if str(settings.get("facebook_default_image_source", "web")) == "web" else 1, key=f"facebook_story_source_{post_id}")
+                if st.button("Buscar/Gerar Imagens", key=f"facebook_story_collect_{post_id}", disabled=current_status != "artigo_pronto", width="stretch"):
+                    try:
+                        collect_storytelling_images(settings, post, source="web" if source.startswith("Scrapt") else "ai")
+                        st.success("Imagens processadas com fallback dentro do pool seleccionado.")
+                        st.rerun(scope="fragment")
                     except Exception as exc:
                         st.error(str(exc))
-                source = st.selectbox("Fonte das imagens", ["Google Imagens", "Gerar com IA"], key=f"facebook_image_source_{post_id}")
-                if st.button("Buscar/Gerar imagens", key=f"facebook_collect_images_{post_id}", disabled=str(post.get("status")) != "imagens_pendentes", width="stretch"):
+                if st.button("Aplicar overlay", key=f"facebook_story_overlay_{post_id}", disabled=current_status != "artigo_pronto", width="stretch"):
                     try:
-                        collect_images(settings, post, source="google" if source == "Google Imagens" else "ai")
-                        st.success("Imagens processadas.")
-                        st.rerun()
+                        caption_storytelling_images(settings, post)
+                        st.success("Overlays aplicados com Pillow.")
+                        st.rerun(scope="fragment")
                     except Exception as exc:
                         st.error(str(exc))
-                if st.button("Legendar imagens", key=f"facebook_caption_images_{post_id}", disabled=str(post.get("status")) != "legendas_pendentes", width="stretch"):
+                if st.button("Publicar no Facebook", key=f"facebook_story_publish_{post_id}", type="primary", disabled=current_status != "pronto_publicacao", width="stretch"):
                     try:
-                        caption_images(post)
-                        st.success("Textos aplicados nas imagens com Pillow.")
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(str(exc))
-                if st.button("Upload para Facebook", key=f"facebook_publish_{post_id}", type="primary", disabled=str(post.get("status")) != "pronto_upload", width="stretch"):
-                    try:
-                        publish_to_facebook(post, page)
+                        published = publish_to_facebook({**post, "page_id": post.get("channel_id")}, page)
+                        save_facebook_post({**post, **published, "status": "publicado", "published_url": page.get("url") or ""})
                         st.success("Post publicado na Facebook Page.")
-                        st.rerun()
+                        st.rerun(scope="fragment")
                     except Exception as exc:
+                        save_facebook_post({**post, "status": "erro"})
                         st.error(str(exc))
-
 
 def render_facebook_automation() -> None:
     st.title("Automação Facebook")
-    st.caption("Fluxo local de posts: Ideia/Tema → LLM → Artigo → Google Imagens ou IA → textos e legendas → Upload pela Meta Graph API.")
+    st.caption("Pipeline editorial: Tema → Artigo → Imagens web ou IA → Overlay Pillow → Preview → Publicação Meta.")
+    migrate_posts_json_to_sqlite()
     pages = _facebook_pages_for_automation()
     settings = read_json("settings.json", {})
     if not pages:
-        st.info("Nenhuma Facebook Page seleccionada. A fila pode ser criada e preenchida; o destino poderá ser escolhido mais tarde.")
-    with st.expander("Configurar API Facebook da página", expanded=False):
-        for page in pages:
-            page_id = str(page.get("id") or "")
-            with st.form(f"facebook_page_api_{page_id}"):
-                st.write(f"**{page.get('name') or 'Facebook Page'}**")
-                meta_page_id = st.text_input("Page ID da Meta", value=str(page.get("page_id") or page.get("facebook_page_id") or ""), key=f"facebook_meta_page_id_{page_id}")
-                access_token = st.text_input("Access Token da Page", value=str(page.get("access_token") or page.get("facebook_access_token") or ""), type="password", key=f"facebook_meta_token_{page_id}")
-                if st.form_submit_button("Guardar credenciais Facebook", type="primary"):
-                    update_channel(page_id, {"page_id": meta_page_id.strip(), "facebook_page_id": meta_page_id.strip(), "access_token": access_token.strip(), "facebook_access_token": access_token.strip()})
-                    st.success("Credenciais da página guardadas localmente.")
-                    st.rerun()
-    with st.form("facebook_automation_new_post"):
+        st.info("Nenhuma Facebook Page cadastrada. O selector permanece vazio e pode continuar a trabalhar; a validação da Meta ocorre apenas ao publicar.")
+    with st.form("facebook_storytelling_new_post"):
         page_options = [""] + [str(page.get("id")) for page in pages]
         page_labels = {str(page.get("id")): str(page.get("name") or "Facebook Page") for page in pages}
         selected_page = st.selectbox("Facebook Page", page_options, format_func=lambda value: page_labels.get(value, "Nenhuma página seleccionada"), key="facebook_automation_target_page")
@@ -7141,20 +7135,18 @@ def render_facebook_automation() -> None:
         with form_cols[0]:
             theme = st.text_input("Tema/ideia opcional", placeholder="Deixe vazio para o LLM sugerir um tema")
         with form_cols[1]:
-            image_count = st.number_input("Imagens", min_value=1, max_value=5, value=3, step=1)
+            image_count = st.number_input("Imagens", min_value=1, max_value=5, value=int(settings.get("facebook_default_image_count", 5)), step=1)
         with form_cols[2]:
             start_stage = st.selectbox("Iniciar por", ["Ideia / Tema", "Tema já definido"])
         create_clicked = st.form_submit_button("Criar post na fila", type="primary", width="stretch")
     if create_clicked:
-        page = next((page for page in pages if str(page.get("id")) == selected_page), {})
-        post = create_post(page, image_count=int(image_count), theme=theme)
-        if start_stage == "Tema já definido" and theme.strip():
-            save_post({**post, "status": "artigo_pendente"})
-        st.success("Post criado na fila local. Execute cada etapa pelos botões do card.")
+        post_id = f"fbpost_{uuid.uuid4().hex[:12]}"
+        folder = STORAGE / "facebook" / "posts" / post_id
+        page = next((item for item in pages if str(item.get("id")) == selected_page), {})
+        save_facebook_post({"id": post_id, "channel_id": selected_page, "theme": theme.strip(), "tone": "Motivacional/Superação", "image_count": int(image_count), "folder": str(folder), "status": "para_producao" if start_stage == "Tema já definido" and theme.strip() else "tema_pendente"})
+        st.success("Post criado na pipeline SQLite.")
         st.rerun()
     _render_facebook_automation_cards()
-
-
 @st.fragment
 def _render_youtube_automation_channel_cards():
     channels = [channel for channel in read_json("channels.json", []) if is_youtube_channel_record(channel)]
@@ -10245,6 +10237,20 @@ def render_settings():
             render_meta_api_cards(settings, "instagram")
         with st.expander("API Facebook Pages", expanded=False):
             render_meta_api_cards(settings, "facebook_pages")
+            st.markdown("### Facebook Storytelling")
+            st.caption("Preferências da pipeline editorial; a ordem de prioridade dos pools continua a ser definida nos respectivos cartões.")
+            with st.form("facebook_storytelling_settings_form"):
+                storytelling_style = st.text_input("Estilo editorial", value=str(settings.get("facebook_storytelling_style") or "Update Diário"))
+                storytelling_count = st.number_input("Quantidade padrão de imagens", min_value=1, max_value=5, value=int(settings.get("facebook_default_image_count") or 5), step=1)
+                storytelling_font = st.text_input("Fonte do overlay", value=str(settings.get("facebook_overlay_font") or "Montserrat-Bold.ttf"))
+                storytelling_size = st.number_input("Tamanho da fonte do overlay", min_value=12, max_value=160, value=int(settings.get("facebook_overlay_font_size") or 60), step=1)
+                storytelling_position = st.selectbox("Posição do overlay", ["top_center", "center", "bottom_center"], index=["top_center", "center", "bottom_center"].index(str(settings.get("facebook_overlay_position") or "top_center")) if str(settings.get("facebook_overlay_position") or "top_center") in {"top_center", "center", "bottom_center"} else 0)
+                storytelling_source = st.selectbox("Fonte padrão de imagens", ["web", "ai"], index=0 if str(settings.get("facebook_default_image_source") or "web") == "web" else 1)
+                if st.form_submit_button("Guardar Facebook Storytelling", type="primary"):
+                    settings.update({"facebook_storytelling_style": storytelling_style.strip() or "Update Diário", "facebook_default_image_count": int(storytelling_count), "facebook_overlay_font": storytelling_font.strip() or "Montserrat-Bold.ttf", "facebook_overlay_font_size": int(storytelling_size), "facebook_overlay_position": storytelling_position, "facebook_default_image_source": storytelling_source})
+                    write_json("settings.json", settings)
+                    st.success("Preferências Facebook Storytelling guardadas.")
+                    st.rerun()
         with st.expander("API Bilibili", expanded=False):
             bilibili_cards = settings.get("bilibili_api_cards") if isinstance(settings.get("bilibili_api_cards"), list) else []
             bilibili_ready = any(bool(card.get("active", True) and card.get("sessdata") and card.get("bili_jct") and card.get("buvid3")) for card in bilibili_cards if isinstance(card, dict))

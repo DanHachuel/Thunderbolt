@@ -192,6 +192,12 @@ DEFAULTS: dict[str, Any] = {
         "gemini_image_aspect_ratio": "16:9",
         "gemini_image_size": "1K",
         "google_images_cards": [],
+        "facebook_storytelling_style": "Update Diário",
+        "facebook_default_image_count": 5,
+        "facebook_overlay_font": "Montserrat-Bold.ttf",
+        "facebook_overlay_font_size": 60,
+        "facebook_overlay_position": "top_center",
+        "facebook_default_image_source": "web",
         "serpapi_api_key": "",
         "web_images_cards": [],
         "media_provider_cards": [{

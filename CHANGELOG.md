@@ -1,4 +1,11 @@
 # Changelog
+## 0.9.33 — 2026-09-28
+- Integrada a pipeline editorial **Facebook Storytelling** em três fases: tema, produção e publicação controlada.
+- Adicionado SQLite dedicado em `storage/state/facebook.db`, com isolamento por Facebook Page, histórico de estados, cards de imagens e migração não destrutiva dos JSON legados.
+- Adicionada escolha explícita entre os pools **Scrapt de Imagens na Web** e **Imagem e Video IA**, respeitando a prioridade e o fallback interno de cada pool.
+- Adicionados overlays Pillow com quebra de texto, contorno preto, posicionamento configurável e preview antes da publicação Meta Graph API.
+- Mantido o selector de Facebook Page vazio sem trava de pré-cadastro; a validação de credenciais ocorre apenas no momento da publicação.
+
 ## 0.9.32 — 2026-09-28
 - Removida a actualização automática da página ao trocar de aba, voltar após inactividade, recuperar a ligação ou detectar textos de `connection timed out`.
 - Restaurada a recuperação limitada apenas a falhas de carregamento de bundles dinâmicos, preservando o estado da sessão e deixando a actualização normal sob controlo manual/F5.

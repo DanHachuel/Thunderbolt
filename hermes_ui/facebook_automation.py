@@ -12,7 +12,7 @@ import requests
 from PIL import Image, ImageDraw, ImageFont
 
 from .creative_generation import CreativeGenerationError, _chat_json
-from .media_generation import GOOGLE_IMAGES_COPYRIGHT_WARNING, generate_image_for_card, web_images_cards, web_images_search
+from .media_generation import GOOGLE_IMAGES_COPYRIGHT_WARNING, generate_image_for_card, google_images_search, web_images_cards, web_images_search
 from .storage import STORAGE, read_json, write_json
 
 POSTS_FILE = "facebook_automation_posts.json"
@@ -122,21 +122,27 @@ def _download_image(url: str, destination: Path) -> Path:
 
 def collect_images(settings: dict[str, Any], post: Mapping[str, Any], *, source: str = "web_images") -> dict[str, Any]:
     """Collect Facebook visuals exclusively from the priority-ordered web image pool."""
+    if str(source).lower() in {"ai", "image_ai", "imagem e video ia"}:
+        from .facebook_storytelling import collect_storytelling_images
+        return collect_storytelling_images(settings, post, source="ai")
     folder = Path(str(post.get("folder") or (POSTS_DIR / str(post.get("id"))))) / "images"
-    if not web_images_cards(settings, enabled_only=True):
+    legacy_google = isinstance(settings.get("google_images_cards"), list) and "web_images_cards" not in settings
+    if legacy_google and not any(isinstance(card, Mapping) and card.get("api_key") and card.get("cx") for card in settings.get("google_images_cards", [])):
+        raise ValueError("Configure pelo menos um cartão activo em Google Images antes de recolher imagens para Facebook Pages.")
+    if not legacy_google and not web_images_cards(settings, enabled_only=True):
         raise ValueError("Configure pelo menos um cartão activo em Scrapt de Imagens na Web antes de recolher imagens para Facebook Pages.")
     images = []
     for index, item in enumerate(post.get("images") or [], start=1):
         query = str(item.get("search_query") or post.get("theme") or "").strip()
         image_record = dict(item)
         try:
-            results = web_images_search(settings, query, num_results=1, rights="sur:cl")
-            link = str((results[0] if results else {}).get("url") or "")
+            results = google_images_search(settings, query, num_results=1, rights="sur:cl") if legacy_google else web_images_search(settings, query, num_results=1, rights="sur:cl")
+            link = str((results[0] if results else {}).get("url") or (results[0] if results else {}).get("link") or "")
             if not link:
                 raise ValueError("A pesquisa Google não devolveu uma imagem.")
             destination = folder / f"image-{index}.jpg"
             _download_image(link, destination)
-            image_record.update({"source": str((results[0] if results else {}).get("source") or "web_images"), "path": str(destination), "status": "imagem_baixada"})
+            image_record.update({"source": "google_images" if legacy_google else str((results[0] if results else {}).get("source") or "web_images"), "path": str(destination), "status": "imagem_baixada"})
         except Exception as exc:
             image_record.update({"source": "web_images", "status": "erro", "error": str(exc)[:300]})
         images.append(image_record)
@@ -206,4 +212,24 @@ def publish_to_facebook(post: Mapping[str, Any], page: Mapping[str, Any]) -> dic
     return save_post({**post, "status": "publicado", "published_at": _now(), "facebook_media_ids": published})
 
 
-__all__ = ["POSTS_DIR", "caption_images", "collect_images", "create_post", "generate_article", "generate_theme", "list_posts", "publish_to_facebook", "save_post"]
+def generate_storytelling_theme(settings: dict[str, Any], channel: Mapping[str, Any]) -> dict[str, Any]:
+    from .facebook_storytelling import generate_storytelling_theme as generate
+    return generate(settings, channel)
+
+
+def generate_storytelling_article(settings: dict[str, Any], channel: Mapping[str, Any], tema: str, tom: str, quantidade_imagens: int) -> dict[str, Any]:
+    from .facebook_storytelling import generate_storytelling_article as generate
+    return generate(settings, channel, tema, tom, quantidade_imagens)
+
+
+def save_storytelling_post(post: Mapping[str, Any]) -> dict[str, Any]:
+    from .facebook_storytelling import save_facebook_post
+    return save_facebook_post(post)
+
+
+def list_storytelling_posts(channel_id: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
+    from .facebook_storytelling import list_facebook_posts
+    return list_facebook_posts(channel_id, status)
+
+
+__all__ = ["POSTS_DIR", "caption_images", "collect_images", "create_post", "generate_article", "generate_theme", "generate_storytelling_article", "generate_storytelling_theme", "list_posts", "list_storytelling_posts", "publish_to_facebook", "save_post", "save_storytelling_post"]
