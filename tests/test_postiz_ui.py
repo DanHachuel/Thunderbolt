@@ -36,7 +36,8 @@ def test_fallback_order_is_documented_in_conventional_upload():
     order_text = "1. API Oficial"
     assert order_text in MAIN_SOURCE
     assert "2. Upload directo" in MAIN_SOURCE
-    assert "3. Postiz" in MAIN_SOURCE
+    assert "3. social-auto-upload directo com Camoufox" in MAIN_SOURCE
+    assert "4. Postiz" in MAIN_SOURCE
     assert "upload_with_default_route(" in MAIN_SOURCE
 
 

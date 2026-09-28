@@ -536,7 +536,7 @@ def stop_task_by_user(task_id: str) -> dict[str, Any] | None:
     return task
 
 
-def retry_task_with_current_settings(task_id: str) -> dict[str, Any] | None:
+def retry_task_with_current_settings(task_id: str, *, confirm_upload_uncertain: bool = False) -> dict[str, Any] | None:
     """Queue a failed or blocked task without persisting API credentials or provider snapshots.
 
     The pipeline reloads settings.json immediately before every execution, so a
@@ -552,6 +552,8 @@ def retry_task_with_current_settings(task_id: str) -> dict[str, Any] | None:
             previous_state = str(task.get("state") or "")
             if previous_state not in {"failed", "blocked"}:
                 raise ValueError("Apenas tarefas falhadas ou bloqueadas podem ser retomadas.")
+            if task.get("stop_reason") == "upload_uncertain" and not confirm_upload_uncertain:
+                raise ValueError("Verifique manualmente na plataforma se o vídeo foi publicado antes de retentar.")
             try:
                 retry_count = int(task.get("retry_count") or 0)
             except (TypeError, ValueError):
@@ -561,6 +563,11 @@ def retry_task_with_current_settings(task_id: str) -> dict[str, Any] | None:
             task["retry_count"] = retry_count + 1
             task["retry_requested_at"] = now()
             task["retry_config_source"] = "settings.json_at_execution"
+            if task.get("stop_reason") == "upload_uncertain":
+                task["upload_uncertainty_user_confirmed"] = True
+                task["upload_uncertainty_verified_at"] = now()
+            task.pop("stop_reason", None)
+            task.pop("upload_uncertain", None)
             for field in ("failure_api", "failure_provider", "failure_service", "failure_config_fields"):
                 task.pop(field, None)
             task["updated_at"] = now()

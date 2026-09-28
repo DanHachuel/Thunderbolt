@@ -23,9 +23,9 @@ A primeira versão implementa a camada UI independente com:
 | AI Influencers | Menu expansível com Personagens, Geração de Conteúdo IA, Motion Control, UGC Products e Redes Sociais; Personagens aceita múltiplas imagens e documentos `.md`/`.json`, e os dois workflows standalone guardam os resultados localmente sem Telegram ou publicação social |
 | Niche Finder | Menu expansível com duas alternativas independentes: Niche Finder Kaggle e Niche Finder Apify, com parâmetros, execução e resultados separados |
 | Edição | Menu expansível abaixo de Automação com Limpador de Metadados, Clip Generator local em Cortes e Editor Python inspirado no PYEdit para vídeos e scripts locais |
-| Upload | YouTube via `youtube-automation-agent` adaptado internamente, fallback ordenado API Oficial → Upload directo → Postiz, Upload-Post textual e destinos locais Bilibili/TikTok/Instagram/Facebook Pages |
+| Upload | YouTube via `youtube-automation-agent` adaptado internamente, fallback ordenado API Oficial → Upload directo → social-auto-upload directo (Camoufox) → Postiz, Upload-Post textual e destinos locais Bilibili/TikTok/Instagram/Facebook Pages; CLI upstream social-auto-upload opcional para outras plataformas |
 | MCP | Catálogo local opcional de Short Video Maker, AutoVio, OpenMontage e OpenCut, com portas editáveis e activação |
-| Configurações | **Contas Google**, **Configuração API** e **Notificações**; Notificações contém as subabas **Geral** e **Telegram Gateway**, com envio das mesmas operações locais para um Chat ID; API Keys divididas entre **Serviços e modelos**, **API Tiktok** e **Fontes de materiais**, com várias chaves independentes por fonte, além de contas Google/YouTube por cartão, `INNERTUBE_API_KEY` global para todas as contas, providers, TTS, Nano Banana, Postiz, TikTok e Upload-Post |
+| Configurações | **Contas Google**, **Configuração API** e **Notificações**; Notificações contém as subabas **Geral** e **Telegram Gateway**, com envio das mesmas operações locais para um Chat ID; API Keys divididas entre **Serviços e modelos**, **API Tiktok**, **Upload Social** e **Fontes de materiais**, com várias chaves independentes por fonte, além de contas Google/YouTube por cartão, `INNERTUBE_API_KEY` global para todas as contas, providers, TTS, Nano Banana, Postiz, TikTok e Upload-Post |
 | Launcher | Execução via `npx`, instalação assistida, diagnóstico e preparação para distribuição |
 
 ## AI Influencers — personagens e geração de conteúdo
@@ -68,6 +68,14 @@ A página **Upload** contém quatro subabas: **Upload convencional**, **Upload d
 A API key, o username/perfil e a lista inicial de plataformas continuam em **Configuração API > API Keys > Serviços e modelos**, no expander **Publicação através do Upload-Post**. **Plataformas Upload-Post** é um campo textual: escreva os slugs separados por vírgulas, como `youtube,tiktok`, tal como os destinos da página Upload. A subaba não pede novamente a credencial. O cliente envia `multipart/form-data` para `https://api.upload-post.com/api/upload`, repete `platform[]` para cada destino e guarda a resposta, o `request_id` e o resultado no histórico local de uploads. A opção **Processar em segundo plano** usa `async_upload=true` quando a API estiver configurada para processamento assíncrono.
 
 O Upload-Post é independente do Postiz: Postiz continua a usar o seu fluxo próprio de asset + post, enquanto Upload-Post publica directamente nas plataformas ligadas ao username configurado. Uma publicação aceite pelo Upload-Post também é reconciliada no centro de **Notificações**.
+
+## social-auto-upload — CLI upstream
+
+Em **Configuração API > API Keys > Upload Social**, o Thunderbolt mantém contas e cookies locais para a CLI upstream `sau`. Os destinos suportados são **Douyin, Kuaishou, Xiaohongshu, Bilibili, Tencent/WeChat Channels, Baijiahao, Alipay, Weibo, Hupu e YouTube CLI**. Os logins de browser são visíveis; o upload CLI usa o modo headless e Patchright/Chromium conforme o upstream. Bilibili abre um terminal interactivo. A lista pode permanecer vazia: contas só são necessárias quando o utilizador escolhe explicitamente um destino e executa um upload.
+
+O destino **YouTube** já existente e o fallback automático de YouTube não são substituídos: o fluxo directo mantém a sessão/browser Camoufox configurado em **Navegador e Proxies**. **YouTube (social-auto-upload CLI)** é uma opção separada e manual. **TikTok** não é suportado pela CLI upstream; as integrações TikTok existentes do Thunderbolt continuam disponíveis. As configurações de proxy desta UI aplicam-se ao browser directo YouTube, não são propagadas como proxy global aos processos da CLI upstream.
+
+Cada envio CLI cria um checkpoint local. Se o processo terminar sem confirmação, a operação fica bloqueada como incerta e requer verificação manual na plataforma antes de uma nova tentativa, para evitar publicações duplicadas.
 
 ## Bilibili — upload via bilibili-api (Python)
 A opção **Bilibili** está disponível em **Upload > Upload convencional > Destinos**. Seleccione uma conta Bilibili activa, reveja título, descrição, tags e ID da secção, e clique em **Enviar via bilibili-api (Python)**. O adapter usa `bilibili-api-python` 17.4.2, que expõe `Credential` com `SESSDATA`, `bili_jct` e `BUVID3` e executa o `VideoUploader` assíncrono a partir da UI síncrona. A capa usa a thumbnail do vídeo quando existe; caso contrário, é extraído localmente um primeiro frame com FFmpeg.
@@ -193,7 +201,7 @@ A área **Contas Google/YouTube — canais em lote** permite manter várias cont
 
 ## Instalação
 
-Recomenda-se Python 3.11 ou superior e Node.js 18 ou superior.
+Recomenda-se Python 3.11 ou 3.12 e Node.js 18 ou superior. O social-auto-upload upstream requer Python inferior a 3.13.
 
 ```bash
 python3 -m venv .venv
@@ -236,13 +244,13 @@ O pacote está publicado no npm como `@danhachuel/thunderbolt` e pode ser execut
 npx --yes @danhachuel/thunderbolt
 ```
 
-Para instalar automaticamente o ambiente completo — Python 3.11+, ambiente virtual, dependências Python do Thunderbolt, dependências Python do MoneyPrinterTurbo, Streamlit e `imageio-ffmpeg` — execute:
+Para instalar automaticamente o ambiente completo — Python 3.11/3.12, ambiente virtual, dependências Python do Thunderbolt, dependências Python do MoneyPrinterTurbo, Streamlit e `imageio-ffmpeg` — execute:
 
 ```bash
 npx --yes @danhachuel/thunderbolt install
 ```
 
-Por defeito, o instalador cria automaticamente a pasta `~/.thunderbolt` — no Windows, `%LOCALAPPDATA%\\THUNDERBOLT` —, clona o MoneyPrinterTurbo para `THUNDERBOLT/MoneyPrinterTurbo`, cria o ambiente em `THUNDERBOLT/.venv` e guarda o estado em `THUNDERBOLT/storage`. No Windows, se Python 3.11+ não estiver instalado, o instalador tenta instalá-lo automaticamente através do `winget`. A instalação normal é segura para actualizações: preserva `storage`, Blueprints, Brandings, configurações e artefactos, removendo apenas `.venv` e o clone técnico do MoneyPrinterTurbo para os recriar. A antiga pasta sem dados do utilizador em `C:\Users\<utilizador>\AppData\Local\hermes` pode ser removida. O caminho `AppData\Local\npm-cache\_npx` é apenas cache temporária do npm, não é a pasta de instalação final. Para apagar dados intencionalmente, use o parâmetro explícito `--purge-data`; nunca o use numa actualização normal. Para usar uma cópia existente do MoneyPrinterTurbo:
+Por defeito, o instalador cria automaticamente a pasta `~/.thunderbolt` — no Windows, `%LOCALAPPDATA%\\THUNDERBOLT` —, clona o MoneyPrinterTurbo para `THUNDERBOLT/MoneyPrinterTurbo`, cria o ambiente em `THUNDERBOLT/.venv` e guarda o estado em `THUNDERBOLT/storage`. No Windows, se não encontrar Python 3.11 ou 3.12, o instalador tenta instalar Python 3.11 através do `winget`. A instalação normal é segura para actualizações: preserva `storage`, Blueprints, Brandings, configurações e artefactos, removendo apenas `.venv` e o clone técnico do MoneyPrinterTurbo para os recriar. A antiga pasta sem dados do utilizador em `C:\Users\<utilizador>\AppData\Local\hermes` pode ser removida. O caminho `AppData\Local\npm-cache\_npx` é apenas cache temporária do npm, não é a pasta de instalação final. Para apagar dados intencionalmente, use o parâmetro explícito `--purge-data`; nunca o use numa actualização normal. Para usar uma cópia existente do MoneyPrinterTurbo:
 
 ```bash
 MONEYPRINTER_PATH=/caminho/MoneyPrinterTurbo npx --yes @danhachuel/thunderbolt install

@@ -118,6 +118,15 @@ DEFAULTS: dict[str, Any] = {
         "provider_cooldown_seconds": 2,
         "video_concurrency": 3,
         "upload_concurrency": 2,
+        "social_auto_upload_enabled": True,
+        "social_auto_upload_browser": "camoufox",
+        "social_auto_upload_geoip": True,
+        "sau_base_dir": "",
+        "sau_default_browser": "patchright-chromium",
+        "sau_python_version_check": True,
+        "sau_accounts": [],
+        "proxies_cards": [],
+        "proxy_active_id": "",
         "youtube_api_key": "",
         "youtube_client_id": "",
         "youtube_client_secret": "",
@@ -585,6 +594,10 @@ def _migrate_settings(settings: Any) -> tuple[dict[str, Any], bool]:
     migrated = dict(settings)
     provider = str(migrated.get("llm_provider") or "").strip().lower()
     changed = False
+    for key, default_value in DEFAULTS.get("settings.json", {}).items():
+        if key not in migrated:
+            migrated[key] = deepcopy(default_value)
+            changed = True
     if provider in LEGACY_DEFAULT_LLM_PROVIDERS:
         migrated["llm_provider"] = DEFAULT_LLM_PROVIDER
         changed = True

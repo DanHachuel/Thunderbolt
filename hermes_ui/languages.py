@@ -701,6 +701,26 @@ for _language_code, _tutorial_translation in TUTORIAL_TRANSLATIONS.items():
     UI_TRANSLATIONS[_language_code].update(_tutorial_translation)
 
 
+_BROWSER_PROXY_TAB_TRANSLATIONS = {
+    "pt": "Navegador e Proxies",
+    "en": "Browser & Proxies",
+    "zh": "浏览器和代理",
+    "de": "Browser und Proxys",
+    "vi": "Trình duyệt và Proxy",
+    "tr": "Tarayıcı ve Proxy",
+    "ru": "Браузер и прокси",
+    "es": "Navegador y proxies",
+    "id": "Browser dan Proxy",
+    "it": "Browser e proxy",
+    "pl": "Przeglądarka i proxy",
+    "ga": "Brabhsálaí agus seachfhreastalaí",
+    "ar": "المتصفح والوكلاء",
+    "he": "דפדפן ופרוקסי",
+}
+for _language_code, _browser_proxy_label in _BROWSER_PROXY_TAB_TRANSLATIONS.items():
+    UI_TRANSLATIONS.setdefault(_language_code, {})["Navegador e Proxies"] = _browser_proxy_label
+
+
 _CONTENT_TRANSLATION_CODES = ("pt", "en", "zh", "de", "vi", "tr", "ru", "es", "id", "it")
 _CONTENT_TRANSLATION_ROWS = (
     ("Guardar", "Guardar", "Save", "保存", "Speichern", "Lưu", "Kaydet", "Сохранить", "Guardar", "Simpan", "Salva"),

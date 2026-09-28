@@ -73,7 +73,7 @@ function probePython(command, commandArgs = []) {
   if (result.status !== 0) return null;
   const versionText = result.stdout.trim();
   const version = versionText.split(".").map(Number);
-  if (version[0] > 3 || (version[0] === 3 && version[1] >= 11)) return { command, args: commandArgs, version: versionText };
+  if (version[0] === 3 && version[1] >= 11 && version[1] < 13) return { command, args: commandArgs, version: versionText };
   return null;
 }
 
@@ -84,8 +84,8 @@ function findPython() {
     candidates.push({ command: process.env.THUNDERBOLT_PYTHON || process.env.HERMES_PYTHON, args: [] });
   }
   candidates.push(...(platform() === "win32"
-    ? [{ command: "py", args: ["-3.11"] }, { command: "py", args: [] }, { command: "python", args: [] }, { command: "python3", args: [] }]
-    : [{ command: "python3.11", args: [] }, { command: "python3", args: [] }, { command: "python", args: [] }]));
+    ? [{ command: "py", args: ["-3.11"] }, { command: "py", args: ["-3.12"] }, { command: "py", args: [] }, { command: "python", args: [] }, { command: "python3", args: [] }]
+    : [{ command: "python3.11", args: [] }, { command: "python3.12", args: [] }, { command: "python3", args: [] }, { command: "python", args: [] }]));
   for (const candidate of candidates) {
     const found = probePython(candidate.command, candidate.args);
     if (found) return found;
@@ -362,12 +362,12 @@ function cleanInstallationRoots(moneyprinterPath) {
 function installPythonWindows() {
   if (process.env.THUNDERBOLT_SKIP_PYTHON_INSTALL === "1" || process.env.HERMES_SKIP_PYTHON_INSTALL === "1") return null;
   if (!commandExists("winget")) {
-    console.error("Python 3.11+ não foi encontrado e o winget também não está disponível.");
-    console.error("Instale Python 3.11+ a partir de https://www.python.org/downloads/windows/ ou instale o App Installer da Microsoft para obter o winget.");
+    console.error("Python 3.11 ou 3.12 não foi encontrado e o winget também não está disponível.");
+    console.error("Instale Python 3.11 ou 3.12 a partir de https://www.python.org/downloads/windows/ ou instale o App Installer da Microsoft para obter o winget.");
     console.error("Depois execute novamente: npx.cmd --yes @danhachuel/thunderbolt install");
     process.exit(1);
   }
-  console.log("Python 3.11+ não encontrado. A instalar Python automaticamente através do winget...");
+  console.log("Python 3.11/3.12 compatível não encontrado. A instalar Python 3.11 automaticamente através do winget...");
   const result = spawnSync("winget", ["install", "--exact", "--id", "Python.Python.3.11", "--source", "winget", "--scope", "user", "--accept-source-agreements", "--accept-package-agreements", "--silent"], { stdio: "inherit" });
   if (result.status !== 0) process.exit(result.status || 1);
   const found = findPython();
@@ -388,7 +388,7 @@ function ensurePython() {
   found = findPython();
   if (!found && platform() === "win32") found = installPythonWindows();
   if (!found) {
-    console.error("Python 3.11 ou superior não foi encontrado. Instale Python 3.11+ e execute novamente.");
+    console.error("Python 3.11 ou 3.12 compatível não foi encontrado. Instale uma dessas versões e execute novamente.");
     process.exit(1);
   }
   return found;
@@ -505,10 +505,22 @@ function installRequirementIfNeeded(requirementsPath, stateKey, modules, label) 
 
 function installPlaywrightBrowsers() {
   if (!existsSync(pythonBin)) return;
-  console.log("Playwright: a verificar o browser Chromium... ");
-  const result = spawnSync(pythonBin, ["-m", "playwright", "install", "chromium"], { stdio: "inherit", env: pythonEnvironment });
+  console.log("Playwright: a verificar os browsers Chromium e Firefox... ");
+  const result = spawnSync(pythonBin, ["-m", "playwright", "install", "chromium", "firefox"], { stdio: "inherit", env: pythonEnvironment });
   if (result.status !== 0) {
-    console.error("Não foi possível instalar o browser Chromium do Playwright.");
+    console.error("Não foi possível instalar os browsers Chromium e Firefox do Playwright.");
+    console.error("Execute novamente o instalador depois de confirmar o acesso à Internet.");
+    process.exit(result.status || 1);
+  }
+}
+
+function installPatchrightBrowser() {
+  if (!existsSync(pythonBin)) return;
+  const executable = join(venvPath, process.platform === "win32" ? "Scripts" : "bin", process.platform === "win32" ? "patchright.exe" : "patchright");
+  console.log("Patchright: a verificar o browser Chromium...");
+  const result = spawnSync(executable, ["install", "chromium"], { stdio: "inherit", env: pythonEnvironment });
+  if (result.status !== 0) {
+    console.error("Não foi possível instalar o Chromium do Patchright.");
     console.error("Execute novamente o instalador depois de confirmar o acesso à Internet.");
     process.exit(result.status || 1);
   }
@@ -523,6 +535,14 @@ function writeSettings(moneyprinterPath) {
     try { settings = JSON.parse(readFileSync(settingsPath, "utf8")); } catch { settings = {}; }
   }
   settings.moneyprinter_path = moneyprinterPath;
+  for (const [key, value] of Object.entries({
+    sau_base_dir: "",
+    sau_default_browser: "patchright-chromium",
+    sau_python_version_check: true,
+    sau_accounts: [],
+  })) {
+    if (settings[key] === undefined) settings[key] = value;
+  }
   if (seededFfmpegPath) {
     settings.ffmpeg_seed_path = seededFfmpegPath;
     settings.ffmpeg_path = seededFfmpegPath;
@@ -540,8 +560,9 @@ function writeSettings(moneyprinterPath) {
 
 function installThunderboltDependencies(python) {
   if (!existsSync(pythonBin)) run(python.command, [...python.args, "-m", "venv", venvPath]);
-  installRequirementIfNeeded(join(root, "requirements.txt"), "thunderbolt_requirements_sha256", ["streamlit", "requests", "pandas", "toml", "imageio_ffmpeg", "edge_tts", "google.auth", "google_auth_oauthlib", "googleapiclient", "yt_dlp", "deno", "youtube_transcript_api", "huggingface_hub", "playwright", "serpapi"], "Thunderbolt");
+  installRequirementIfNeeded(join(root, "requirements.txt"), "thunderbolt_requirements_sha256", ["streamlit", "requests", "pandas", "toml", "imageio_ffmpeg", "edge_tts", "google.auth", "google_auth_oauthlib", "googleapiclient", "yt_dlp", "deno", "youtube_transcript_api", "huggingface_hub", "playwright", "patchright", "camoufox", "filelock", "uploader", "sau_cli", "serpapi"], "Thunderbolt");
   installPlaywrightBrowsers();
+  installPatchrightBrowser();
 }
 
 function installMoneyPrinterDependencies(moneyprinterPath) {

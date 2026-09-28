@@ -1761,7 +1761,12 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
     configured_composio = bool(settings.get("composio_enabled", False)) and bool(settings.get("composio_auto_upload", True)) and bool(settings.get("composio_api_key")) and bool(settings.get("composio_tool_slug"))
     configured_upload_post = bool(settings.get("upload_post_enabled", False)) and bool(settings.get("upload_post_auto_upload", False))
     configured_postiz = bool(settings.get("postiz_enabled", False)) and bool(settings.get("postiz_auto_publish", False))
-    if not (configured_composio or configured_account_id or configured_upload_post or configured_postiz):
+    try:
+        from hermes_ui.social_auto_upload_backend import has_valid_youtube_session
+        configured_social_auto_upload = bool(settings.get("social_auto_upload_enabled", True)) and has_valid_youtube_session()
+    except Exception:
+        configured_social_auto_upload = False
+    if not (configured_composio or configured_account_id or configured_upload_post or configured_postiz or configured_social_auto_upload):
         artifacts["upload"] = {
             "route": "local",
             "status": "skipped",
@@ -1785,9 +1790,21 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
             privacy_status="unlisted",
             thumbnail_path=str(thumbnail_path),
             captions_path=str(artifacts.get("captions") or ""),
+            task_id=task_id,
         ),
     )
     if not result.ok:
+        result_data = result.data if isinstance(result.data, dict) else {}
+        if result_data.get("reason") == "upload_uncertain" or result_data.get("checkpoint_state") == "upload_uncertain":
+            return _update(
+                task_id,
+                stage="upload",
+                state="blocked",
+                progress=100,
+                error=str(result.message or "O resultado do upload é incerto; verifique manualmente antes de retentar."),
+                stop_reason="upload_uncertain",
+                upload_uncertain=True,
+            )
         attempts = (result.data or {}).get("attempts") if isinstance(result.data, dict) else None
         detail = ""
         if isinstance(attempts, list):
@@ -1821,7 +1838,13 @@ def run_once() -> dict[str, Any]:
         except Exception as exc:
             # Monitoring is advisory and must not prevent a resumable task from running.
             _worker_heartbeat(session_info_health_error=type(exc).__name__)
-        recovered = _recover_stale_tasks()
+        try:
+            from hermes_ui.social_auto_upload_backend import reconcile_uncertain_uploads
+            uncertain_recovered = reconcile_uncertain_uploads()
+        except Exception as exc:
+            uncertain_recovered = []
+            _worker_heartbeat(social_auto_upload_recovery_error=type(exc).__name__)
+        recovered = list(dict.fromkeys([*uncertain_recovered, *_recover_stale_tasks()]))
         tasks = read_json("tasks.json", [])
         candidate = _next_runnable_task(tasks)
         if not candidate:
@@ -1831,8 +1854,11 @@ def run_once() -> dict[str, Any]:
         _worker_heartbeat(last_task_id=task_id, status="running", stage=str(candidate.get("stage") or "pipeline"), progress=int(candidate.get("progress") or 0), last_error="", recovered_task_ids=recovered)
         try:
             result = _run_task(candidate)
-            _worker_heartbeat(status="completed", last_error="", stage=str(result.get("stage") or "upload"), progress=100, task_id=task_id)
-            return {"ok": True, "task_id": task_id, "task": result, "recovered_task_ids": recovered}
+            result_state = str(result.get("state") or "")
+            result_status = "blocked" if result_state == "blocked" and result.get("stop_reason") == "upload_uncertain" else "completed"
+            result_error = str(result.get("error") or "") if result_status == "blocked" else ""
+            _worker_heartbeat(status=result_status, last_error=result_error, stage=str(result.get("stage") or "upload"), progress=int(result.get("progress") or 100), task_id=task_id)
+            return {"ok": True, "task_id": task_id, "task": result, "status": result_status, "recovered_task_ids": recovered}
         except PipelineStopped as exc:
             current_task = _task_by_id(task_id) or candidate
             current_state = str(current_task.get("state") or "")

@@ -6,7 +6,7 @@ SOURCE = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 
 
 def test_test_upload_videos_tab_is_between_ai_and_voice_test():
-    tabs = 'api_keys_tab, upload_api_keys_tab, subtitles_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz"])'
+    tabs = 'api_keys_tab, upload_api_keys_tab, subtitles_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab, browser_proxy_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz", "Navegador e Proxies"])'
     assert tabs in SOURCE
     assert SOURCE.index("with ai_influencers_tab:") < SOURCE.index("with test_upload_videos_tab:") < SOURCE.index("with voice_test_tab:")
 

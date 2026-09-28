@@ -186,6 +186,9 @@ def upload_with_default_route(
     direct_uploader: Callable[..., IntegrationResult] | None = None,
     postiz_publisher: Callable[..., IntegrationResult] | None = None,
     composio_publisher: Callable[..., IntegrationResult] | None = None,
+    social_auto_upload_publisher: Callable[..., IntegrationResult] | None = None,
+    social_auto_upload_session_ready: bool | None = None,
+    task_id: str = "",
 ) -> IntegrationResult:
     attempts: list[dict[str, Any]] = []
     account = account or resolve_youtube_account(settings, channel)
@@ -294,6 +297,40 @@ def upload_with_default_route(
     attempts.append(_attempt_record("Upload directo", direct_result))
     if direct_result.ok:
         return _result_with_attempts(direct_result, attempts, "Upload directo")
+
+    if str(channel.get("platform", "youtube") or "youtube").casefold() == "youtube" and bool(settings.get("social_auto_upload_enabled", True)):
+        if social_auto_upload_session_ready is None:
+            try:
+                from hermes_ui.social_auto_upload_backend import has_valid_youtube_session
+                social_auto_upload_session_ready = has_valid_youtube_session()
+            except Exception:
+                social_auto_upload_session_ready = False
+        if social_auto_upload_session_ready:
+            if social_auto_upload_publisher is None:
+                from hermes_ui.social_auto_upload_backend import upload_youtube_video
+                social_auto_upload_publisher = upload_youtube_video
+            try:
+                from uuid import uuid4
+                social_result = social_auto_upload_publisher(
+                    task_id=str(task_id or f"manual-{uuid4().hex}"),
+                    video_path=video_path,
+                    title=title,
+                    description=description,
+                    tags=tags or [],
+                    thumbnail_path=thumbnail_path,
+                    visibility=privacy_status,
+                    browser_type=str(settings.get("social_auto_upload_browser") or "camoufox"),
+                    proxy_id=str(settings.get("proxy_active_id") or "") or None,
+                    geoip=bool(settings.get("social_auto_upload_geoip", True)),
+                )
+            except Exception as exc:
+                social_result = IntegrationResult(False, f"social-auto-upload falhou: {type(exc).__name__}: {exc}", {})
+            attempts.append(_attempt_record("social-auto-upload", social_result))
+            if social_result.ok:
+                return _result_with_attempts(social_result, attempts, "social-auto-upload")
+            social_data = social_result.data if isinstance(social_result.data, dict) else {}
+            if social_data.get("reason") == "upload_uncertain" or social_data.get("checkpoint_state") == "upload_uncertain":
+                return _result_with_attempts(social_result, attempts, "social-auto-upload")
 
     postiz = PostizAdapter(settings)
     if not bool(settings.get("postiz_enabled", False)):

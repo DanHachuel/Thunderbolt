@@ -31,7 +31,12 @@ The JewelMusic upload adapter follows the documented HTTP contract and API examp
 Thunderbolt optionally depends on [supabase-py](https://github.com/supabase/supabase-py) for the AI Influencers Supabase backend. The package is distributed under the MIT License. The SQLite backend uses Python's standard library and does not require a remote service.
 
 ## bilibili-api-python
+
 Thunderbolt depends optionally on [bilibili-api-python](https://pypi.org/project/bilibili-api-python/) for the Bilibili video-upload adapter. The package is distributed under the GNU General Public License v3 or later and its upstream repository [Nemo2011/bilibili-api](https://github.com/Nemo2011/bilibili-api) was archived and announced as closed on 2026-07-06. This dependency is separate from Thunderbolt's MIT License; consult the complete upstream licence and use the integration only with accounts and content you are authorised to operate.
+
+## social-auto-upload
+
+Thunderbolt installs the upstream `social-auto-upload` CLI from the pinned source snapshot `dreammis/social-auto-upload` commit `0012d2c355f88f683cc38dde2a2db209e14091bc`; the source is installed as a Python runtime dependency and is not vendored into the npm archive. The upstream project is distributed under the MIT License, Copyright (c) 2023 dreammis. The MIT permission notice and warranty disclaimer in the upstream `LICENSE` apply to that dependency and remain separate from Thunderbolt's own licence.
 
 ## Playwright
 Thunderbolt optionally depends on [Playwright for Python](https://playwright.dev/python/) to open the DistroKid upload form and load local tracks. The adapter does not submit the final form automatically. Playwright's own licence and browser distribution terms remain applicable.

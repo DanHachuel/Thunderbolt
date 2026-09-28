@@ -172,7 +172,9 @@ from app.modules.token_optimizer.compressor import check_installation
 from app.modules.token_optimizer.config import DEFAULTS as TOKEN_OPTIMIZER_DEFAULTS
 from app.modules.token_optimizer.metrics import get_stats as get_token_optimizer_stats
 from app.influencers_ui import render_ai_influencer_characters, render_ai_influencer_content, render_ai_influencers_api_status, render_motion_control, render_ugc_products
+from app.social_auto_upload_ui import render_sau_accounts, render_social_auto_upload_settings
 from app.social_networks_ui import render_instagram_automation, render_meta_api_cards, render_social_networks
+from hermes_ui.social_auto_upload_backend import confirm_sau_upload_not_published, get_sau_upload_checkpoint, reconcile_uncertain_uploads, sau_upload_checkpoint_id, upload_video_via_sau
 from hermes_ui.blueprints import create_blueprint_from_link, list_branding_files, save_generated_blueprint
 from hermes_ui.thumbnail_blueprints import generate_thumbnail_blueprint, list_thumbnail_blueprint_documents, resolve_thumbnail_blueprint, save_thumbnail_blueprint, save_thumbnail_blueprint_pair, save_thumbnail_blueprint_pairs, thumbnail_blueprint_associations, thumbnail_blueprint_catalog, thumbnail_blueprint_for_blueprint, thumbnail_blueprint_for_channel
 from hermes_ui.metadata_cleaner import build_description, clean_video_metadata, list_edit_records, metadata_manifest, normalize_tags, save_edit_record, store_external_video
@@ -2824,7 +2826,7 @@ def _render_bilibili_automation_task_card(task: dict[str, Any]) -> None:
             state = str(task.get("state") or "")
             start_col, stop_col, delete_col = st.columns(3)
             with start_col:
-                if st.button("Start", key=f"bilibili_automation_start_{task_id}", width="stretch", disabled=state not in {"to_do", "blocked", "failed"}):
+                if st.button("Start", key=f"bilibili_automation_start_{task_id}", width="stretch", disabled=not _can_start_video_task(task, state)):
                     if _start_pipeline_task(task_id, state):
                         st.rerun(scope="fragment")
             with stop_col:
@@ -6042,6 +6044,13 @@ def _render_video_task_state(task: dict[str, Any], state_override: str | None = 
         st.write(state or "—")
         st.caption(VIDEO_TASK_STATE_LABELS.get(state, state.replace("_", " ").capitalize() or "Desconhecido"))
     st.progress(progress, text=f"{progress}%")
+    task_id = str(task.get("id") or "unknown")
+    if state == "blocked" and task.get("stop_reason") == "upload_uncertain":
+        st.warning("O resultado do upload é incerto. Verifique manualmente a plataforma antes de retentar; não haverá retry automático.")
+        st.checkbox(
+            "Verifiquei manualmente e o vídeo não foi publicado; autorizo tentar novamente",
+            key=f"upload_uncertain_ack_{task_id}",
+        )
     helper_status = str(task.get("video_helper_status") or "").strip()
     if state == "doing" and helper_status:
         st.caption(f"Actividade: {helper_status[-240:]}")
@@ -6077,10 +6086,24 @@ def _create_video_now_from_channel(channel: dict[str, Any]) -> bool:
     return True
 
 
+def _can_start_video_task(task: dict[str, Any], state: str) -> bool:
+    if state not in {"to_do", "blocked", "failed"}:
+        return False
+    if task.get("stop_reason") == "upload_uncertain":
+        task_id = str(task.get("id") or "unknown")
+        return bool(st.session_state.get(f"upload_uncertain_ack_{task_id}", False))
+    return True
+
+
 def _start_pipeline_task(task_id: str, state: str) -> bool:
     """Start or retry a video task from any platform automation card."""
     if state in {"blocked", "failed"}:
-        updated = retry_task_with_current_settings(task_id)
+        confirm_uncertain = bool(st.session_state.get(f"upload_uncertain_ack_{task_id}", False))
+        try:
+            updated = retry_task_with_current_settings(task_id, confirm_upload_uncertain=confirm_uncertain)
+        except ValueError as exc:
+            st.error(str(exc))
+            return False
         if updated and bool(updated.get("manual_start_required", False)):
             updated = transition_task(task_id, "doing")
     else:
@@ -6181,7 +6204,7 @@ def render_videos():
                 state = task_state
                 start_col, stop_col = st.columns(2)
                 with start_col:
-                    if st.button("Start", key=f"automation_start_{task['id']}", width="stretch", disabled=state not in {"to_do", "blocked", "failed"}):
+                    if st.button("Start", key=f"automation_start_{task['id']}", width="stretch", disabled=not _can_start_video_task(task, state)):
                         _start_pipeline_task(str(task["id"]), state)
                         st.rerun()
                 with stop_col:
@@ -6680,7 +6703,7 @@ def _render_tiktok_automation_task_list(*, posted_only: bool = False):
                     state = str(task.get("state") or "")
                     start_col, stop_col, delete_col = st.columns(3)
                     with start_col:
-                        if st.button("Start", key=f"tiktok_automation_start_{task_id}", width="stretch", disabled=state not in {"to_do", "blocked", "failed"}):
+                        if st.button("Start", key=f"tiktok_automation_start_{task_id}", width="stretch", disabled=not _can_start_video_task(task, state)):
                             if _start_pipeline_task(task_id, state):
                                 st.rerun()
                     with stop_col:
@@ -6954,7 +6977,7 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False):
                     upload_ok = bool(task.get("upload_ok") or isinstance((task.get("artifacts") or {}).get("upload"), dict))
                     start_col, stop_col, delete_col = st.columns(3)
                     with start_col:
-                        if st.button("Start", key=f"automation_start_{task['id']}", width="stretch", disabled=state not in {"to_do", "blocked", "failed"}):
+                        if st.button("Start", key=f"automation_start_{task['id']}", width="stretch", disabled=not _can_start_video_task(task, state)):
                             if _start_pipeline_task(str(task["id"]), state):
                                 st.rerun(scope="fragment")
                     with stop_col:
@@ -8054,6 +8077,19 @@ def render_upload_post():
                     st.caption(f"Request ID Upload-Post: {result.data['request_id']}")
 
 
+SAU_UPLOAD_DESTINATIONS = {
+    "Douyin (social-auto-upload)": "douyin",
+    "Kuaishou (social-auto-upload)": "kuaishou",
+    "Xiaohongshu (social-auto-upload)": "xiaohongshu",
+    "Bilibili (social-auto-upload)": "bilibili",
+    "WeChat Channels (social-auto-upload)": "tencent",
+    "Baijiahao (social-auto-upload)": "baijiahao",
+    "Alipay (social-auto-upload)": "alipay",
+    "Weibo (social-auto-upload)": "weibo",
+    "Hupu (social-auto-upload)": "hupu",
+    "YouTube (social-auto-upload CLI)": "youtube",
+}
+
 UPLOAD_DESTINATION_TARGET_KEYS = {
     "TikTok": "tiktok_accounts",
     "Bilibili": "bilibili_api_cards",
@@ -8074,7 +8110,7 @@ def upload_target_reference(target: Any) -> dict[str, str] | str | None:
     if target is None:
         return None
     if isinstance(target, dict):
-        public_fields = ("id", "name", "label", "handle", "username", "url")
+        public_fields = ("id", "name", "label", "handle", "username", "url", "platform", "account_name")
         return {field: str(target[field]) for field in public_fields if target.get(field)}
     return str(target)
 
@@ -8082,6 +8118,18 @@ def upload_target_reference(target: Any) -> dict[str, str] | str | None:
 def upload_targets_for_destination(destination: str, channels: list[dict[str, Any]], settings: dict[str, Any]) -> list[Any]:
     if destination == "YouTube":
         return [channel for channel in channels if isinstance(channel, dict) and channel.get("id") and channel.get("active", True)]
+    sau_platform = SAU_UPLOAD_DESTINATIONS.get(destination)
+    if sau_platform:
+        raw_accounts = settings.get("sau_accounts", [])
+        if not isinstance(raw_accounts, list):
+            return []
+        return [
+            dict(item)
+            for item in raw_accounts
+            if isinstance(item, dict)
+            and str(item.get("platform") or "").casefold() == sau_platform
+            and str(item.get("account_name") or "").strip()
+        ]
     setting_key = UPLOAD_DESTINATION_TARGET_KEYS.get(destination)
     if not setting_key:
         return []
@@ -8104,8 +8152,8 @@ def upload_targets_for_destination(destination: str, channels: list[dict[str, An
 def render_upload_destination_target(destination: str, channels: list[dict[str, Any]], settings: dict[str, Any]) -> Any | None:
     options = upload_targets_for_destination(destination, channels, settings)
     destination_key = re.sub(r"[^a-z0-9]+", "_", destination.lower()).strip("_")
-    select_label = "Canal" if destination == "YouTube" else ("Conta TikTok" if destination == "TikTok" else ("Conta Bilibili" if destination == "Bilibili" else "Perfil / página"))
-    empty_label = "Nenhum canal YouTube cadastrado" if destination == "YouTube" else ("Nenhuma conta TikTok cadastrada" if destination == "TikTok" else ("Nenhuma conta Bilibili activa" if destination == "Bilibili" else f"Nenhum {destination} configurado"))
+    select_label = "Canal" if destination == "YouTube" else ("Conta TikTok" if destination == "TikTok" else ("Conta Bilibili" if destination == "Bilibili" else ("Conta social-auto-upload" if destination in SAU_UPLOAD_DESTINATIONS else "Perfil / página")))
+    empty_label = "Nenhum canal YouTube cadastrado" if destination == "YouTube" else ("Nenhuma conta TikTok cadastrada" if destination == "TikTok" else ("Nenhuma conta Bilibili activa" if destination == "Bilibili" else ("Nenhuma conta social-auto-upload adicionada" if destination in SAU_UPLOAD_DESTINATIONS else f"Nenhum {destination} configurado")))
     if not options:
         st.selectbox(select_label, [""], format_func=lambda _value: empty_label, key=f"upload_target_{destination_key}")
         if destination == "YouTube":
@@ -8114,6 +8162,8 @@ def render_upload_destination_target(destination: str, channels: list[dict[str, 
             st.caption("Nenhuma conta TikTok disponível; o destino permanece vazio e pode ser escolhido mais tarde.")
         elif destination == "Bilibili":
             st.caption("Nenhuma conta Bilibili disponível; o destino permanece vazio e pode ser escolhido mais tarde.")
+        elif destination in SAU_UPLOAD_DESTINATIONS:
+            st.caption("Nenhuma conta deste destino foi adicionada; a lista permanece vazia e pode continuar sem configurar contas.")
         else:
             st.caption(f"Nenhum destino {destination} disponível; a lista permanece vazia.")
         return None
@@ -8128,13 +8178,20 @@ def render_upload_destination_target(destination: str, channels: list[dict[str, 
 def render_upload_conventional():
     st.title("Upload")
     settings = read_json("settings.json", {})
+    try:
+        recovered_uploads = reconcile_uncertain_uploads()
+        if recovered_uploads:
+            st.warning("Foi detectada uma operação social-auto-upload interrompida. Verifique manualmente a plataforma antes de retentar.")
+    except Exception as exc:
+        st.warning(f"Não foi possível reconciliar um checkpoint de upload: {type(exc).__name__}.")
     youtube = YouTubeAdapter(settings=settings)
     channels = read_json("channels.json", [])
     channel_map = {str(channel.get("id")): channel for channel in channels if channel.get("id")}
     direct_accounts = {str(account.get("id")): account for account in settings.get("youtube_batch_accounts", []) if isinstance(account, dict) and account.get("id")}
     postiz = PostizAdapter(settings)
     tasks = [t for t in read_json("tasks.json", []) if t.get("state") == "done" or t.get("artifacts", {}).get("video")]
-    destination = st.multiselect("Destinos", ["YouTube", "TikTok", "Bilibili", "Instagram", "Facebook Pages"], default=["YouTube"], key="upload_destinations", placeholder="Seleccione os destinos")
+    destination_options = ["YouTube", "TikTok", "Bilibili", *SAU_UPLOAD_DESTINATIONS, "Instagram", "Facebook Pages"]
+    destination = st.multiselect("Destinos", destination_options, default=["YouTube"], key="upload_destinations", placeholder="Seleccione os destinos")
     upload_targets: dict[str, Any | None] = {}
     if destination:
         st.markdown("**Onde enviar**")
@@ -8149,7 +8206,7 @@ def render_upload_conventional():
 
     if "YouTube" in destination:
         st.markdown("**YouTube — fluxo recomendado de envio**")
-        st.caption("Ordem automática: 1. API Oficial — até 5 envios bem-sucedidos por dia e por conta Gmail; 2. Upload directo — sessão interna YouTube; 3. Postiz — fallback final configurável.")
+        st.caption("Ordem automática: 1. API Oficial — até 5 envios bem-sucedidos por dia e por conta Gmail; 2. Upload directo — sessão interna YouTube; 3. social-auto-upload directo com Camoufox, se activado e com sessão válida; 4. Postiz — fallback final configurável.")
         status = youtube.upload_status()
         if settings.get("postiz_enabled"):
             postiz_status = postiz.status()
@@ -8174,6 +8231,7 @@ def render_upload_conventional():
     if "TikTok" in destination:
         status = TikTokAdapter(settings).status()
         (st.success if status.ok else st.warning)(status.message)
+        st.caption("TikTok não é suportado pela CLI social-auto-upload; a integração TikTok existente do Thunderbolt continua disponível separadamente.")
     if not tasks:
         st.info("Não há vídeos prontos para upload.")
         return
@@ -8317,6 +8375,81 @@ def render_upload_conventional():
                     write_json("uploads.json", uploads)
                     reconcile_persisted_notifications(force=True)
                     (st.success if result.ok else st.error)(result.message)
+            for sau_destination, sau_platform in SAU_UPLOAD_DESTINATIONS.items():
+                if sau_destination not in destination:
+                    continue
+                sau_target = upload_targets.get(sau_destination)
+                sau_account_name = str(sau_target.get("account_name") or "") if isinstance(sau_target, dict) else ""
+                st.markdown(f"**{sau_destination}**")
+                sau_title = st.text_input("Título", value=task.get("title") or task.get("topic") or "Vídeo Thunderbolt", key=f"sau_title_{sau_platform}_{task['id']}")
+                sau_description = st.text_area("Descrição", value=str(task.get("description") or ""), height=80, key=f"sau_description_{sau_platform}_{task['id']}")
+                raw_sau_tags = task.get("tags", "")
+                default_sau_tags = raw_sau_tags if isinstance(raw_sau_tags, str) else ", ".join(raw_sau_tags or [])
+                sau_tags_text = st.text_input("Tags separadas por vírgulas", value=default_sau_tags, key=f"sau_tags_{sau_platform}_{task['id']}")
+                sau_category_id = int(BILIBILI_DEFAULT_TID)
+                if sau_platform == "bilibili":
+                    sau_category_id = int(st.number_input("ID da secção Bilibili (CLI)", min_value=1, max_value=9999, value=BILIBILI_DEFAULT_TID, step=1, key=f"sau_bilibili_tid_{task['id']}"))
+                sau_checkpoint_id = ""
+                sau_checkpoint = None
+                if sau_account_name and video_path:
+                    try:
+                        sau_checkpoint_id = sau_upload_checkpoint_id(str(task.get("id") or "manual"), sau_platform, sau_account_name, video_path)
+                        sau_checkpoint = get_sau_upload_checkpoint(sau_checkpoint_id)
+                    except ValueError:
+                        sau_checkpoint = None
+                checkpoint_state = str((sau_checkpoint or {}).get("status") or "")
+                needs_manual_check = checkpoint_state in {"upload_started", "upload_uncertain"}
+                manual_check_confirmed = False
+                if needs_manual_check:
+                    st.warning("Uma tentativa anterior não teve confirmação. Verifique manualmente a plataforma antes de retentar.")
+                    manual_check_confirmed = st.checkbox("Confirmo que verifiquei a plataforma e o vídeo não foi publicado", key=f"sau_confirm_not_published_{sau_platform}_{task['id']}")
+                if checkpoint_state == "upload_confirmed":
+                    st.info("Esta tarefa já tem uma publicação confirmada para esta plataforma/conta; o botão de retry fica bloqueado para evitar duplicados.")
+                target_missing = not sau_account_name
+                button_disabled = target_missing or (needs_manual_check and not manual_check_confirmed) or checkpoint_state == "upload_confirmed"
+                if st.button(
+                    f"Enviar via CLI upstream — {sau_platform}",
+                    type="primary",
+                    key=f"sau_upload_{sau_platform}_{task['id']}",
+                    disabled=button_disabled,
+                    help="Adicione/seleccione uma conta em Configuração API > API Keys > Upload Social." if target_missing else None,
+                ):
+                    if needs_manual_check and not confirm_sau_upload_not_published(sau_checkpoint_id, str(task.get("id") or ""), manual_confirmation=manual_check_confirmed):
+                        st.error("Não foi possível validar a confirmação manual; verifique o estado do checkpoint antes de retentar.")
+                        continue
+                    sau_tags = [tag.strip() for tag in sau_tags_text.split(",") if tag.strip()]
+                    result = upload_video_via_sau(
+                        task_id=str(task.get("id") or "manual"),
+                        platform=sau_platform,
+                        account_name=sau_account_name,
+                        video_path=video_path,
+                        title=sau_title,
+                        description=sau_description,
+                        tags=sau_tags,
+                        thumbnail_path=thumbnail_path or None,
+                        category_id=sau_category_id,
+                    )
+                    result_data = result.data if isinstance(result.data, dict) else {}
+                    result_reason = str(result_data.get("reason") or "")
+                    record = {
+                        "task_id": task.get("id"),
+                        "destination": sau_destination,
+                        "target": upload_target_reference(sau_target),
+                        "status": "published" if result.ok else ("uncertain" if result_reason == "upload_uncertain" else "failed"),
+                        "message": result.message,
+                        "data": result_data,
+                        "created_at": now(),
+                    }
+                    uploads = read_json("uploads.json", [])
+                    uploads.append(record)
+                    write_json("uploads.json", uploads)
+                    reconcile_persisted_notifications(force=True)
+                    if result.ok:
+                        st.success(result.message)
+                    elif result_reason == "upload_uncertain":
+                        st.warning(result.message)
+                    else:
+                        st.error(result.message)
             if "Instagram" in destination:
                 st.button("Preparar Instagram", key=f"upload_instagram_{task['id']}", disabled=True, help="UI preparada; publicação Instagram ainda não está activa.")
             if "Facebook Pages" in destination:
@@ -9910,11 +10043,13 @@ def render_settings():
             key=f"settings_{key}",
         )
 
-    api_keys_tab, upload_api_keys_tab, subtitles_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz"])
+    api_keys_tab, upload_api_keys_tab, subtitles_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab, browser_proxy_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz", "Navegador e Proxies"])
 
     with api_keys_tab:
         with st.container(border=True):
             st.subheader("API Keys")
+            with st.expander("Upload Social (social-auto-upload)", expanded=False):
+                render_sau_accounts()
             moneyprinter_path = str(settings.get("moneyprinter_path") or "").strip()
             st.caption(f"Pasta do motor de vídeo: `{moneyprinter_path or 'não configurada'}`")
             with st.expander("Optimização de tokens — jusTokenMax", expanded=False):
@@ -10539,6 +10674,9 @@ def render_settings():
         elif preview_value:
             st.session_state.pop("voice_preview_path", None)
             st.warning("A amostra de voz anterior não é um ficheiro de áudio legível e foi removida do estado local. Teste a voz novamente.")
+
+    with browser_proxy_tab:
+        render_social_auto_upload_settings()
 
 
 def _render_telegram_notification_settings() -> None:

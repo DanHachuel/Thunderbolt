@@ -158,7 +158,7 @@ class ApiSettingsExpandersTests(unittest.TestCase):
         self.assertIn('save_clicked = st.form_submit_button("Salvar", type="primary", width="stretch", key=f"llm_card_{card_id}_save")', MAIN_SOURCE)
 
     def test_api_keys_use_direct_tabs_and_material_sources_are_inside_api_keys(self):
-        tabs_position = MAIN_SOURCE.index('api_keys_tab, upload_api_keys_tab, subtitles_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz"])')
+        tabs_position = MAIN_SOURCE.index('api_keys_tab, upload_api_keys_tab, subtitles_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab, browser_proxy_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz", "Navegador e Proxies"])')
         api_position = MAIN_SOURCE.index('    with api_keys_tab:', tabs_position)
         api_block = MAIN_SOURCE[api_position:MAIN_SOURCE.index('    with upload_api_keys_tab:', api_position)]
         material_position = api_block.index('render_material_source_api_keys(settings, embedded=True)')

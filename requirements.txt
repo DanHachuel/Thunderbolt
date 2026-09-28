@@ -27,6 +27,10 @@ kaggle>=1.6.17
 supabase>=2.4,<3
 bilibili-api-python>=17.4,<18
 playwright>=1.45,<2
+patchright==1.58.2
+camoufox[geoip]>=0.4,<1
+filelock>=3.13,<4
+social-auto-upload @ https://github.com/dreammis/social-auto-upload/archive/0012d2c355f88f683cc38dde2a2db209e14091bc.zip
 composio>=0.21,<1
 serpapi>=1.1,<2
 justokenmax @ https://github.com/Kalmantic/jusTokenMax/archive/refs/heads/main.zip#subdirectory=python

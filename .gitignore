@@ -7,6 +7,7 @@ __pycache__/
 !.env.example
 storage/state/*.json
 storage/state/*.corrupt-*
+storage/state/social_auto_upload/
 storage/state/backups/
 storage/artifacts/*
 storage/videos/*
