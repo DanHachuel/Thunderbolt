@@ -97,6 +97,19 @@ class NpxCacheCompatibilityTests(unittest.TestCase):
         self.assertIn("if (isHtml)", cache_block)
         self.assertIn('responseHeaders["cache-control"] = "no-store', cache_block)
 
+    def test_connection_recovery_handles_resume_and_timeout_after_hibernation(self):
+        source = (ROOT / "scripts" / "cli.mjs").read_text(encoding="utf-8")
+        recovery = source.split("const dynamicChunkRecoveryScript", 1)[1].split("const proxy", 1)[0]
+        self.assertIn("document.visibilityState", recovery)
+        self.assertIn('Date.now() - hiddenAt >= 20000', recovery)
+        self.assertIn('window.addEventListener("online"', recovery)
+        self.assertIn("connection timed out", recovery)
+
+    def test_proxy_enables_tcp_keepalive_for_client_and_streamlit_sockets(self):
+        source = (ROOT / "scripts" / "cli.mjs").read_text(encoding="utf-8")
+        self.assertIn("clientSocket.setKeepAlive(true, 30000)", source)
+        self.assertIn("upstreamSocket.setKeepAlive(true, 30000)", source)
+
     def test_streamlit_bootstrap_owns_sigint_without_click_shutdown(self):
         bootstrap = (ROOT / "scripts" / "streamlit_bootstrap.py").read_text(encoding="utf-8")
         self.assertIn('warnings.filterwarnings("ignore", message=r".*missing ScriptRunContext.*")', bootstrap)

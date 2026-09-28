@@ -207,27 +207,44 @@ const supportedLanguages = new Set(["en", "zh", "de", "vi", "tr", "pt", "ru", "e
 const proxySockets = new Set();
 const dynamicChunkRecoveryScript = `<script data-thunderbolt-recovery="${packageVersion}">
 (() => {
-  const key = "thunderbolt-dynamic-chunk-recovery";
-  const recover = () => {
+  const key = "thunderbolt-connection-recovery";
+  let hiddenAt = document.visibilityState === "hidden" ? Date.now() : 0;
+  const recover = (reason) => {
     try {
       const now = Date.now();
       const previous = Number(sessionStorage.getItem(key) || 0);
       if (now - previous < 30000) return;
       sessionStorage.setItem(key, String(now));
       const url = new URL(window.location.href);
-      url.searchParams.set("tb_refresh", String(now));
+      url.searchParams.set("tb_reconnect", String(now) + "-" + (reason || "unknown"));
       window.location.replace(url.href);
     } catch (_) {
       window.location.reload();
     }
   };
+  const inspectConnectionError = () => {
+    const text = String(document.body?.innerText || "");
+    if (/connection timed out|connection error|connection lost|failed to fetch|disconnected/i.test(text)) recover("connection-error");
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      hiddenAt = Date.now();
+      return;
+    }
+    if (hiddenAt && Date.now() - hiddenAt >= 20000) recover("resume");
+    hiddenAt = 0;
+  });
+  window.addEventListener("online", () => recover("online"));
+  window.addEventListener("pageshow", (event) => { if (event.persisted) recover("pageshow"); });
+  window.setInterval(inspectConnectionError, 5000);
+  new MutationObserver(inspectConnectionError).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
   window.addEventListener("unhandledrejection", (event) => {
     const message = String(event.reason?.message || event.reason || "");
-    if (/Failed to fetch dynamically imported module|Importing a module script failed/i.test(message)) recover();
+    if (/Failed to fetch dynamically imported module|Importing a module script failed|connection timed out|connection error|connection lost/i.test(message)) recover("rejection");
   });
   window.addEventListener("error", (event) => {
     const message = String(event.message || "");
-    if (/dynamically imported module|module script failed/i.test(message)) recover();
+    if (/dynamically imported module|module script failed|connection timed out|connection error|connection lost/i.test(message)) recover("error");
   });
 })();
 </script>`;
@@ -330,6 +347,7 @@ proxy.on("upgrade", (request, clientSocket, head) => {
     if (upstreamSocket && !upstreamSocket.destroyed) upstreamSocket.destroy();
   };
   clientSocket.setNoDelay(true);
+  clientSocket.setKeepAlive(true, 30000);
   clientSocket.setTimeout(15000, closeBridge);
   clientSocket.on("error", closeBridge);
   clientSocket.on("close", () => {
@@ -341,6 +359,7 @@ proxy.on("upgrade", (request, clientSocket, head) => {
     connected = true;
     clientSocket.setTimeout(0);
     upstreamSocket.setNoDelay(true);
+    upstreamSocket.setKeepAlive(true, 30000);
     // O timeout só protege o handshake inicial. Depois do primeiro byte do
     // Streamlit, a sessão pode ficar legitimamente sem tráfego por mais de
     // 15 segundos; não destruir uma aba ligada evita ciclos de reconexão.
