@@ -84,6 +84,20 @@ def _local_video_static_url(path: Path) -> str | None:
         return None
 
 
+def _local_video_download_link(path: Path, filename: str) -> str | None:
+    """Build a browser download link so video bytes are not sent during every render."""
+    static_url = _local_video_static_url(path)
+    if not static_url:
+        return None
+    safe_url = escape(static_url, quote=True)
+    safe_filename = escape(filename, quote=True)
+    return f'<a href="{safe_url}" download="{safe_filename}">Baixar Vídeo</a>'
+
+
+def _clear_youtube_automation_download_task() -> None:
+    st.session_state.pop("youtube_automation_download_task_id", None)
+
+
 def _render_local_video_player(path: Path, *, width: int | str = "stretch") -> None:
     """Render a local video through the native player without Python buffering."""
     if not path.is_file():
@@ -6892,7 +6906,20 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False):
                             st.caption("Thumbnail ainda não pronta")
                     with media_cols[1]:
                         if video_path is not None and _catalog_task_state(task) == "done":
-                            _render_local_video_player(video_path, width="stretch")
+                            player_task_id = str(task.get("id") or "")
+                            player_state_key = "youtube_automation_player_task_id"
+                            if st.session_state.get(player_state_key) == player_task_id:
+                                _render_local_video_player(video_path, width="stretch")
+                                if st.button("Fechar leitor", key=f"automation_close_player_{player_task_id}", width="stretch"):
+                                    st.session_state.pop(player_state_key, None)
+                                    st.rerun(scope="fragment")
+                            elif st.button("Reproduzir vídeo", key=f"automation_play_video_{player_task_id}", width="stretch"):
+                                st.session_state[player_state_key] = player_task_id
+                                st.rerun(scope="fragment")
+                        elif video_path is not None:
+                            st.caption("O vídeo estará disponível para reprodução quando estiver concluído.")
+                        else:
+                            st.caption("Vídeo ainda não pronto")
                     st.caption(f"ID da tarefa: {task.get('id', '')}")
                     thumbnail_download_col, prompt_download_col = st.columns(2, gap="small")
                     with thumbnail_download_col:
@@ -6947,15 +6974,27 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False):
                         )
                     with video_download_col:
                         if video_path is not None:
-                            with video_path.open("rb") as video_stream:
-                                st.download_button(
-                                    "Baixar Vídeo",
-                                    data=video_stream,
-                                    file_name=_automation_download_name("Vídeo", task, video_path, ".mp4"),
-                                    mime="video/mp4",
-                                    key=f"automation_download_video_{task['id']}",
-                                    width="stretch",
-                                )
+                            download_name = _automation_download_name("Vídeo", task, video_path, ".mp4")
+                            download_link = _local_video_download_link(video_path, download_name)
+                            if download_link:
+                                st.markdown(download_link, unsafe_allow_html=True)
+                            else:
+                                download_task_key = "youtube_automation_download_task_id"
+                                task_id = str(task.get("id") or "")
+                                if st.session_state.get(download_task_key) == task_id:
+                                    with video_path.open("rb") as video_stream:
+                                        st.download_button(
+                                            "Baixar Vídeo",
+                                            data=video_stream,
+                                            file_name=download_name,
+                                            mime="video/mp4",
+                                            key=f"automation_download_video_{task_id}",
+                                            width="stretch",
+                                            on_click=_clear_youtube_automation_download_task,
+                                        )
+                                elif st.button("Preparar download", key=f"automation_prepare_video_download_{task_id}", width="stretch"):
+                                    st.session_state[download_task_key] = task_id
+                                    st.rerun(scope="fragment")
                         else:
                             st.download_button(
                                 "Baixar Vídeo",

@@ -24,11 +24,25 @@ def test_automation_video_cards_show_state_progress_and_video_source_like_backlo
     assert "def _video_task_source(task: dict[str, Any]) -> str:" in MAIN_SOURCE
 
 
-def test_youtube_automation_uses_native_local_video_player():
+def test_youtube_automation_loads_local_video_player_only_after_explicit_request():
     block = MAIN_SOURCE.split("def _render_youtube_automation_task_list", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
-    assert 'st.button("Carregar player"' not in block
     assert '_render_local_video_player(video_path, width="stretch")' in block
     assert 'if video_path is not None and _catalog_task_state(task) == "done":' in block
+    assert 'st.button("Reproduzir vídeo"' in block
+    assert 'player_state_key = "youtube_automation_player_task_id"' in block
+    player_block = block.split('if st.session_state.get(player_state_key) == player_task_id:', 1)[1].split('elif st.button("Reproduzir vídeo"', 1)[0]
+    assert '_render_local_video_player(video_path, width="stretch")' in player_block
+
+
+def test_youtube_automation_video_download_uses_static_link_and_defers_fallback_payload():
+    assert 'def _local_video_download_link(path: Path, filename: str) -> str | None:' in MAIN_SOURCE
+    assert 'def _clear_youtube_automation_download_task() -> None:' in MAIN_SOURCE
+    block = MAIN_SOURCE.split('with video_download_col:', 1)[1].split('if st.button(\n                        "Upload"', 1)[0]
+    assert '_local_video_download_link(video_path, download_name)' in block
+    assert 'download_task_key = "youtube_automation_download_task_id"' in block
+    assert 'if st.session_state.get(download_task_key) == task_id:' in block
+    assert 'data=video_stream' in block
+    assert 'on_click=_clear_youtube_automation_download_task' in block
 
 
 def test_legacy_ready_artifacts_are_displayed_as_fully_complete():
