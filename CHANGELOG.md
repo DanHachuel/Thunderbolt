@@ -1,4 +1,8 @@
 # Changelog
+## 0.9.31 — 2026-09-28
+- Corrigido o `IndexError` ao clicar em `↓` no último cartão de **Web Images**.
+- Adicionadas verificações de limites aos botões de reordenação `↑` e `↓`, mantendo-os desactivados nos extremos e impedindo swaps fora da lista.
+
 ## 0.9.30 — 2026-09-28
 - Corrigida a activação do worker de automação para tarefas pendentes de vídeos refeitos, mesmo quando nenhum canal está actualmente com a automação ligada.
 - O launcher agora detecta tarefas `to_do` ou `doing` marcadas com `automation_worker=true` e inicia o worker sob demanda.

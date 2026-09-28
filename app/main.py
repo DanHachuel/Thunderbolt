@@ -9826,13 +9826,15 @@ def render_web_images_cards(settings: dict[str, Any], *, embedded: bool = False)
                         card["zone_name"] = st.text_input("Zone Name", value=str(card.get("zone_name") or ""), key=f"web_images_zone_{card_id}")
                         card["zone_password"] = st.text_input("Zone Password", value=str(card.get("zone_password") or ""), type="password", key=f"web_images_password_{card_id}")
                 action_cols = st.columns(5)
+                is_first = index == 0
+                is_last = index == len(cards) - 1
                 with action_cols[0]:
-                    if st.form_submit_button("↑", key=f"web_images_up_{card_id}", disabled=index == 0):
+                    if st.form_submit_button("↑", key=f"web_images_up_{card_id}", disabled=is_first) and not is_first:
                         cards[index - 1], cards[index] = cards[index], cards[index - 1]
                         _persist_web_images_cards(settings, cards)
                         st.rerun()
                 with action_cols[1]:
-                    if st.form_submit_button("↓", key=f"web_images_down_{card_id}", disabled=index == len(cards) - 1):
+                    if st.form_submit_button("↓", key=f"web_images_down_{card_id}", disabled=is_last) and not is_last:
                         cards[index + 1], cards[index] = cards[index], cards[index + 1]
                         _persist_web_images_cards(settings, cards)
                         st.rerun()
