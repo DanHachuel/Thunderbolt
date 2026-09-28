@@ -209,3 +209,13 @@ def test_pipeline_worker_remains_available_for_progress_updates():
     assert "pipelineRestartTimer = setTimeout" in block
     assert "startPipelineWorker();" in source[source.index("function monitorWorkers()"):]
     assert "hasPendingPipelineWork()" in source
+
+
+def test_automation_worker_starts_for_pending_automation_tasks_without_active_channels():
+    source = (Path(__file__).resolve().parents[1] / "scripts" / "cli.mjs").read_text(encoding="utf-8")
+    start = source.index("function hasScheduledAutomation()")
+    end = source.index("function hasPendingPipelineWork()", start)
+    block = source[start:end]
+    assert 'readStateJson("tasks.json", [])' in block
+    assert "task.automation_worker === true" in block
+    assert '["to_do", "doing"].includes' in block

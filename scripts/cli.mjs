@@ -79,7 +79,11 @@ function readStateJson(filename, fallback = []) {
 
 function hasScheduledAutomation() {
   const channels = readStateJson("channels.json", []);
-  return Array.isArray(channels) && channels.some((channel) => channel && channel.automation_on === true);
+  if (Array.isArray(channels) && channels.some((channel) => channel && channel.automation_on === true)) return true;
+  const tasks = readStateJson("tasks.json", []);
+  return Array.isArray(tasks) && tasks.some((task) => (
+    task && task.automation_worker === true && ["to_do", "doing"].includes(String(task.state || task.status || "").toLowerCase())
+  ));
 }
 
 function hasPendingPipelineWork() {

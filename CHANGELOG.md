@@ -1,4 +1,8 @@
 # Changelog
+## 0.9.30 — 2026-09-28
+- Corrigida a activação do worker de automação para tarefas pendentes de vídeos refeitos, mesmo quando nenhum canal está actualmente com a automação ligada.
+- O launcher agora detecta tarefas `to_do` ou `doing` marcadas com `automation_worker=true` e inicia o worker sob demanda.
+
 ## 0.9.29 — 2026-09-28
 - Corrigido o arranque para não importar nem autenticar o SDK Kaggle antes de uma acção explícita do Niche Finder.
 - Isolado `KAGGLE_CONFIG_DIR` numa pasta temporária vazia e adicionada compatibilidade explícita com Kaggle 1.x e 2.x através das variáveis da UI.
