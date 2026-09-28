@@ -225,7 +225,6 @@ def test_google_images_card(card: Mapping[str, Any]) -> dict[str, Any]:
 
 
 WEB_IMAGES_CARDS_KEY = "web_images_cards"
-SERPAPI_ENDPOINT = "https://serpapi.com/search.json"
 BRIGHTDATA_PROXY_HOST = "fserp.brd.superproxy.io:44445"
 WEB_IMAGES_COPYRIGHT_WARNING = "Atenção: imagens de pessoas famosas podem estar protegidas por direitos de imagem e autorais. Use com responsabilidade e prefira filtros de licença permissiva (rights=sur:cl na SerpApi)."
 
@@ -310,27 +309,40 @@ def _search_web_images_card(card: Mapping[str, Any], query: str, *, num_results:
         except ImportError as exc:
             raise RuntimeError("O SDK oficial serpapi não está instalado.") from exc
         api_key = str(card.get("api_key") or "").strip()
-        params = {
-            "engine": "google_images",
-            "q": query,
-            "num": min(100, max(1, num_results)),
-            "start": max(0, start - 1),
-            "hl": "en",
-            "gl": "us",
-        }
-        if rights:
-            params["tbs"] = rights
+        requested = max(1, int(num_results))
+        num_pages = (requested + 99) // 100
+        results: list[dict[str, Any]] = []
+        page_index = 0
         try:
             client = serpapi.Client(api_key=api_key, timeout=30)
-            response = client.search(params)
+            while len(results) < requested and page_index < num_pages and page_index < 100:
+                page_size = min(100, requested - len(results))
+                params = {
+                    "engine": "google_images",
+                    "q": query,
+                    "num": page_size,
+                    "ijn": page_index,
+                    "hl": "en",
+                    "gl": "us",
+                }
+                if rights:
+                    params["tbs"] = rights
+                response = client.search(params)
+                images = response.get("images_results", []) if isinstance(response, Mapping) else []
+                if not images:
+                    break
+                page_results = [_normalise_web_image(item, provider) for item in images if isinstance(item, Mapping)]
+                if not page_results:
+                    break
+                results.extend(page_results)
+                page_index += 1
         except serpapi.HTTPError as exc:
             status_code = getattr(exc, "status_code", None)
             suffix = f" HTTP {status_code}" if status_code is not None else ""
             raise RuntimeError(f"SerpApi{suffix}: {str(exc)[:180]}") from exc
         except serpapi.TimeoutError as exc:
             raise RuntimeError(f"SerpApi timeout: {str(exc)[:180]}") from exc
-        images = response.get("images_results", []) if isinstance(response, Mapping) else []
-        return [_normalise_web_image(item, provider) for item in images if isinstance(item, Mapping)]
+        return results[:requested]
     user = f"brd-customer-{card['customer_id']}-zone-{card['zone_name']}:{card['zone_password']}"
     proxy = f"http://{user}@{BRIGHTDATA_PROXY_HOST}"
     response = requests.get("https://www.google.com/search", params={"q": query, "udm": 2, "brd_json": 1}, headers={"x-unblock-data-format": "parsed_light"}, proxies={"http": proxy, "https": proxy}, timeout=45)
@@ -355,8 +367,8 @@ def web_images_search(settings: Mapping[str, Any], query: str, *, num_results: i
     raise MediaGenerationError("Todos os cartões de Scrapt de Imagens na Web falharam.", provider_errors=errors or ["Não existem cartões activos"])
 
 
-def serpapi_images_search(settings: Mapping[str, Any], query: str, *, num_results: int = 5, start: int = 1, rights: str = "") -> list[dict[str, Any]]:
-    """Search Google Images through the official serpapi-python Client."""
+def serpapi_images_search(settings: Mapping[str, Any], query: str, *, num_results: int = 5, rights: str = "") -> list[dict[str, Any]]:
+    """Search Google Images; ``ijn`` is a zero-based page index, not a result offset."""
     cards = [card for card in web_images_cards(settings, enabled_only=False) if card.get("provider") == "serpapi" and card.get("enabled", True)]
     if not cards and str(settings.get("serpapi_api_key") or "").strip():
         cards = [normalize_web_images_card({"provider": "serpapi", "api_key": settings.get("serpapi_api_key")})]
@@ -365,7 +377,7 @@ def serpapi_images_search(settings: Mapping[str, Any], query: str, *, num_result
         if not str(card.get("api_key") or "").strip():
             continue
         try:
-            results = [item for item in _search_web_images_card(card, str(query).strip(), num_results=num_results, start=start, rights=rights) if item.get("url")]
+            results = [item for item in _search_web_images_card(card, str(query).strip(), num_results=num_results, rights=rights) if item.get("url")]
             if results:
                 return results
             errors.append("serpapi não devolveu imagens")

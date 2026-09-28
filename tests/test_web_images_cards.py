@@ -49,10 +49,76 @@ def test_serpapi_parsing(monkeypatch):
             return {"images_results": [{"title": "cat", "link": "https://link/cat", "original": "https://img/cat.jpg", "thumbnail": "https://thumb/cat.jpg"}]}
     fake_serpapi = types.SimpleNamespace(Client=FakeClient, HTTPError=type("HTTPError", (Exception,), {}), TimeoutError=type("TimeoutError", (Exception,), {}))
     monkeypatch.setitem(sys.modules, "serpapi", fake_serpapi)
-    result = media_generation.web_images_search({"web_images_cards": [{"provider": "serpapi", "api_key": "k"}]}, "cat", num_results=7, start=3)
+    result = media_generation.web_images_search({"web_images_cards": [{"provider": "serpapi", "api_key": "k"}]}, "cat", num_results=7)
     assert result == [{"url": "https://img/cat.jpg", "thumbnail": "https://thumb/cat.jpg", "title": "cat", "source": "serpapi"}]
     assert calls["client"] == {"api_key": "k", "timeout": 30}
-    assert calls["params"] == {"engine": "google_images", "q": "cat", "num": 7, "start": 2, "hl": "en", "gl": "us"}
+    assert calls["params"] == {"engine": "google_images", "q": "cat", "num": 7, "ijn": 0, "hl": "en", "gl": "us"}
+
+
+def test_serpapi_paginates_150_results_with_page_indexes(monkeypatch):
+    calls = []
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        def search(self, params):
+            calls.append(dict(params))
+            first_index = params["ijn"] * 100
+            return {"images_results": [
+                {"title": f"image {index}", "original": f"https://img/{index}.jpg", "thumbnail": f"https://thumb/{index}.jpg"}
+                for index in range(first_index, first_index + params["num"])
+            ]}
+    fake_serpapi = types.SimpleNamespace(Client=FakeClient, HTTPError=type("HTTPError", (Exception,), {}), TimeoutError=type("TimeoutError", (Exception,), {}))
+    monkeypatch.setitem(sys.modules, "serpapi", fake_serpapi)
+
+    result = media_generation.web_images_search({"web_images_cards": [{"provider": "serpapi", "api_key": "k"}]}, "cat", num_results=150)
+
+    assert [call["ijn"] for call in calls] == [0, 1]
+    assert [call["num"] for call in calls] == [100, 50]
+    assert all("start" not in call for call in calls)
+    assert len(result) == 150
+    assert len({item["url"] for item in result}) == 150
+
+
+def test_serpapi_paginates_250_results_with_three_pages(monkeypatch):
+    calls = []
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        def search(self, params):
+            calls.append(dict(params))
+            first_index = params["ijn"] * 100
+            return {"images_results": [
+                {"title": f"image {index}", "original": f"https://img/{index}.jpg", "thumbnail": f"https://thumb/{index}.jpg"}
+                for index in range(first_index, first_index + params["num"])
+            ]}
+    fake_serpapi = types.SimpleNamespace(Client=FakeClient, HTTPError=type("HTTPError", (Exception,), {}), TimeoutError=type("TimeoutError", (Exception,), {}))
+    monkeypatch.setitem(sys.modules, "serpapi", fake_serpapi)
+
+    result = media_generation.web_images_search({"web_images_cards": [{"provider": "serpapi", "api_key": "k"}]}, "cat", num_results=250)
+
+    assert [call["ijn"] for call in calls] == [0, 1, 2]
+    assert [call["num"] for call in calls] == [100, 100, 50]
+    assert len(result) == 250
+    assert len({item["url"] for item in result}) == 250
+
+
+def test_serpapi_stops_when_a_page_is_empty(monkeypatch):
+    calls = []
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        def search(self, params):
+            calls.append(dict(params))
+            if params["ijn"] == 1:
+                return {"images_results": []}
+            return {"images_results": [
+                {"title": f"image {index}", "original": f"https://img/{index}.jpg", "thumbnail": f"https://thumb/{index}.jpg"}
+                for index in range(100)
+            ]}
+    fake_serpapi = types.SimpleNamespace(Client=FakeClient, HTTPError=type("HTTPError", (Exception,), {}), TimeoutError=type("TimeoutError", (Exception,), {}))
+    monkeypatch.setitem(sys.modules, "serpapi", fake_serpapi)
+
+    result = media_generation.web_images_search({"web_images_cards": [{"provider": "serpapi", "api_key": "k"}]}, "cat", num_results=150)
+
+    assert [call["ijn"] for call in calls] == [0, 1]
+    assert len(result) == 100
 
 
 def test_serpapi_http_429_uses_next_provider(monkeypatch):

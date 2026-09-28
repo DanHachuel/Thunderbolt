@@ -9985,7 +9985,7 @@ def render_web_images_cards(settings: dict[str, Any], *, embedded: bool = False)
                         card["cx"] = st.text_input("Custom Search Engine ID (CX)", value=str(card.get("cx") or ""), key=f"web_images_cx_{card_id}")
                         card["daily_limit"] = st.number_input("Limite diário", min_value=1, max_value=10000, value=max(1, int(card.get("daily_limit", 100))), key=f"web_images_limit_{card_id}")
                     elif provider == "serpapi":
-                        st.caption("Endpoint: serpapi.com/search.json · engine=google_images")
+                        st.caption("Endpoint: https://serpapi.com/search · engine=google_images")
                     else:
                         card["zone_name"] = st.text_input("Zone Name", value=str(card.get("zone_name") or ""), key=f"web_images_zone_{card_id}")
                         card["zone_password"] = st.text_input("Zone Password", value=str(card.get("zone_password") or ""), type="password", key=f"web_images_password_{card_id}")
