@@ -410,8 +410,16 @@ def seed_blueprints() -> None:
         return
     destination = BLUEPRINTS / "importados"
     _ensure_directory(destination)
+    legacy_finance_names = {"blueprintcanalfinanças.json", "blueprintcanalfinancas.json"}
+    legacy_finance_exists = any(
+        path.name.casefold() in legacy_finance_names
+        for path in BLUEPRINTS.rglob("*.json")
+    )
     for source in sorted(SEED_BLUEPRINTS.glob("*.json")):
         target = destination / source.name
+        if source.name == "FINANCE USA.json" and not target.exists() and legacy_finance_exists:
+            # Keep an existing installation's legacy file and ID; do not seed a duplicate.
+            continue
         if not target.exists():
             shutil.copy2(source, target)
     thumbnail_destination = BLUEPRINTS / "thumbnails"

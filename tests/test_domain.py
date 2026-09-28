@@ -155,11 +155,50 @@ def test_seed_blueprints_are_initialized_without_overwrite(tmp_path, monkeypatch
     storage.ensure_storage()
     imported = sorted((storage.BLUEPRINTS / "importados").glob("*.json"))
     assert len(imported) == 14
+    assert (storage.BLUEPRINTS / "importados" / "FINANCE USA.json").is_file()
+    assert not (storage.BLUEPRINTS / "importados" / "blueprintcanalfinanças.json").exists()
 
     preserved = imported[0]
     preserved.write_text('{"name": "personalizado"}\n', encoding="utf-8")
     storage.ensure_storage()
     assert storage.load_blueprint_file(preserved)["name"] == "personalizado"
+
+
+def test_seed_blueprints_do_not_duplicate_legacy_finance_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))
+    from hermes_ui import storage
+
+    monkeypatch.setattr(storage, "STORAGE", tmp_path / "storage")
+    monkeypatch.setattr(storage, "STATE", storage.STORAGE / "state")
+    monkeypatch.setattr(storage, "BLUEPRINTS", storage.STORAGE / "blueprints")
+    legacy = storage.BLUEPRINTS / "importados" / "blueprintcanalfinanças.json"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text('{"name": "personalizado"}\n', encoding="utf-8")
+
+    storage.ensure_storage()
+
+    assert legacy.read_text(encoding="utf-8") == '{"name": "personalizado"}\n'
+    assert not (legacy.parent / "FINANCE USA.json").exists()
+    assert len(list(legacy.parent.glob("*.json"))) == 14
+
+
+def test_seed_blueprints_avoid_duplicate_when_legacy_file_is_in_blueprint_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))
+    from hermes_ui import storage
+
+    monkeypatch.setattr(storage, "STORAGE", tmp_path / "storage")
+    monkeypatch.setattr(storage, "STATE", storage.STORAGE / "state")
+    monkeypatch.setattr(storage, "BLUEPRINTS", storage.STORAGE / "blueprints")
+    legacy = storage.BLUEPRINTS / "blueprintcanalfinanças.json"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text('{"name": "personalizado"}\n', encoding="utf-8")
+
+    storage.ensure_storage()
+
+    imported = storage.BLUEPRINTS / "importados"
+    assert legacy.read_text(encoding="utf-8") == '{"name": "personalizado"}\n'
+    assert not (imported / "FINANCE USA.json").exists()
+    assert len(list(imported.glob("*.json"))) == 13
 
 
 def test_blueprint_creation_modes(tmp_path, monkeypatch):

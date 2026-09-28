@@ -292,6 +292,14 @@ def resolve_blueprint(value: Any, catalog: Sequence[tuple[str, str]]) -> str:
     raw_key = _key(raw)
     raw_semantic = _semantic_key(raw)
     candidates = [(str(identifier), str(label)) for identifier, label in catalog if str(identifier).strip()]
+    if raw_semantic in {"financas", "finance"}:
+        preferred_finance = [
+            identifier
+            for identifier, label in candidates
+            if _key(identifier) == "financeusa" or _key(label) == "financeusa"
+        ]
+        if len(preferred_finance) == 1:
+            return preferred_finance[0]
     for identifier, label in candidates:
         if raw_key in {_key(identifier), _key(label)}:
             return identifier

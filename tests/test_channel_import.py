@@ -61,6 +61,12 @@ def test_semantic_catalog_resolution_treats_finance_names_as_same_blueprint():
     assert resolve_blueprint("Blueprint Canal Finanças", catalog) == "blueprintcanalfinanças"
 
 
+def test_legacy_finance_labels_resolve_to_renamed_seed_blueprint():
+    catalog = [("", "Sem Blueprint padrão"), ("FINANCE USA", "FINANCE USA")]
+    for value in ("finanças", "blueprint_finanças", "Blueprint Canal Finanças", "FINANCE"):
+        assert resolve_blueprint(value, catalog) == "FINANCE USA"
+
+
 def test_voice_and_google_account_resolution_accept_human_labels():
     assert resolve_voice("FranciscaNeural", ["", "pt-BR-FranciscaNeural-Female"]) == "pt-BR-FranciscaNeural-Female"
     assert resolve_google_account("owner@example.com", [{"id": "google_1", "email": "owner@example.com", "label": "Principal"}]) == (
