@@ -54,6 +54,7 @@ class NpxCacheCompatibilityTests(unittest.TestCase):
         self.assertIn('const persistedHashMatches = hashMatches || markerHash === currentHash;', source)
         self.assertIn('"yt_dlp"', source)
         self.assertIn('"youtube_transcript_api"', source)
+        self.assertIn('"serpapi"', source)
 
     def test_ffmpeg_seed_install_reuses_existing_binary(self):
         source = (ROOT / "scripts" / "install.mjs").read_text(encoding="utf-8")
