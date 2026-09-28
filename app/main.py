@@ -151,7 +151,7 @@ from hermes_ui.storage import BLUEPRINTS, DEFAULT_LLM_PROVIDER, MEDIA_DOWNLOADS,
 from hermes_ui.domain import update_task
 from app.modules.niche_finder.apify import ApifyError, DEFAULT_ACTOR_ID, abort_actor_run, build_actor_input, get_dataset_items, normalize_video_items, start_actor_run, wait_for_actor_run
 from app.modules.niche_finder.data_loader import DatasetError, load_analysis_data
-from app.modules.niche_finder.kaggle_runner import KaggleNicheError
+from app.modules.niche_finder.errors import KaggleNicheError
 from app.modules.niche_finder.summarizer import summarize_items
 from app.modules.token_optimizer.cache_manager import clear_derived_cache
 from app.modules.token_optimizer.compressor import check_installation
@@ -4982,7 +4982,10 @@ def render_niche_finder():
             record_notification("niche_analysis_completed", "Análise de nicho concluída", "A análise Kaggle remota terminou com resultados prontos para consulta.", metadata={"source": "Kaggle remote", "rows_filtered": summary.get("rows_filtered", 0)}, dedupe_key=f"niche:kaggle:{niche_key}")
             st.success("Análise remota concluída.")
         except (KaggleNicheError, DatasetError, OSError, ValueError) as exc:
-            st.error("Não foi possível concluir a análise Kaggle com a configuração actual.")
+            if isinstance(exc, KaggleNicheError) and "autentica" in str(exc).lower():
+                st.error("Credenciais Kaggle inválidas. Verifique Username e API Key.")
+            else:
+                st.error("Não foi possível concluir a análise Kaggle com a configuração actual.")
             with st.expander("Detalhes técnicos"):
                 st.caption(str(exc))
             return

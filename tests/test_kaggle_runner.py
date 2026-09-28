@@ -1,4 +1,7 @@
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -63,3 +66,24 @@ def test_required_credentials_are_checked_only_when_action_is_called(tmp_path):
         assert "Username" in str(exc) or "username" in str(exc)
     else:
         raise AssertionError("Missing Kaggle credentials should fail at action time")
+
+
+def test_importing_niche_finder_does_not_load_kaggle_sdk():
+    root = Path(__file__).parents[1]
+    result = subprocess.run(
+        [sys.executable, "-c", "import sys; import app.modules.niche_finder; print('kaggle' in sys.modules)"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PYTHONPATH": str(root)},
+    )
+    assert result.stdout.strip() == "False"
+
+
+def test_kaggle_sdk_import_is_inside_runner_constructor():
+    source = (Path(__file__).parents[1] / "app/modules/niche_finder/kaggle_runner.py").read_text(encoding="utf-8")
+    assert "from kaggle.api.kaggle_api_extended import KaggleApi" in source
+    assert source.index("class KaggleNicheRunner") < source.index("from kaggle.api.kaggle_api_extended import KaggleApi")
+    assert "KAGGLE_CONFIG_DIR" in source
+    assert "tempfile.mkdtemp" in source

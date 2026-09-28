@@ -12,21 +12,13 @@ from typing import Any
 import pandas as pd
 
 from .models import NicheAnalysisResult
-
-try:
-    from kaggle.api.kaggle_api_extended import KaggleApi
-except ImportError:  # pragma: no cover - exercised when optional dependency is absent
-    KaggleApi = None  # type: ignore[assignment,misc]
+from .errors import KaggleNicheError
 
 logger = logging.getLogger(__name__)
 KERNEL_DIR = Path(__file__).parent / "kaggle_kernel"
 DEFAULT_TIMEOUT_MIN = 20
 POLL_INTERVAL_SEC = 15
 OUTPUT_FILENAMES = ("clusters.csv", "frequent_items.csv", "association_rules.csv")
-
-
-class KaggleNicheError(RuntimeError):
-    """Raised when the remote Kaggle Niche Finder cannot complete."""
 
 
 def _required_credentials(username: str, api_key: str, kernel_slug: str) -> tuple[str, str, str]:
@@ -47,11 +39,16 @@ def _status_value(status: Any) -> str:
 class KaggleNicheRunner:
     def __init__(self, username: str, api_key: str, kernel_slug: str):
         username, api_key, kernel_slug = _required_credentials(username, api_key, kernel_slug)
-        if KaggleApi is None:
-            raise KaggleNicheError("A biblioteca Python kaggle não está instalada nesta instalação.")
+        try:
+            from kaggle.api.kaggle_api_extended import KaggleApi
+        except ImportError as exc:  # pragma: no cover - depends on installation extras
+            raise KaggleNicheError("A biblioteca Python kaggle não está instalada nesta instalação.") from exc
         self.username = username
         self.kernel_slug = kernel_slug
         self.kernel_ref = f"{username}/{kernel_slug}"
+        config_dir = Path(tempfile.mkdtemp(prefix="thunderbolt-kaggle-config-"))
+        self.config_dir = config_dir
+        os.environ["KAGGLE_CONFIG_DIR"] = str(config_dir)
         os.environ["KAGGLE_USERNAME"] = username
         os.environ["KAGGLE_KEY"] = api_key
         os.environ["KAGGLE_API_TOKEN"] = api_key

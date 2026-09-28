@@ -1,4 +1,9 @@
 # Changelog
+## 0.9.29 — 2026-09-28
+- Corrigido o arranque para não importar nem autenticar o SDK Kaggle antes de uma acção explícita do Niche Finder.
+- Isolado `KAGGLE_CONFIG_DIR` numa pasta temporária vazia e adicionada compatibilidade explícita com Kaggle 1.x e 2.x através das variáveis da UI.
+- Melhorada a mensagem apresentada na UI quando a autenticação Kaggle falha.
+
 ## 0.9.12 — 2026-09-26
 - Adicionadas as sub-abas **Pipeline** e **Videos Postados** na Automação YouTube, abaixo dos canais cadastrados.
 - Vídeos com publicação remota confirmada ou marcados manualmente como “Upload ok” são separados da fila e apresentados em **Videos Postados**.
