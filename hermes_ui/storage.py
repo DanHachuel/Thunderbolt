@@ -192,6 +192,7 @@ DEFAULTS: dict[str, Any] = {
         "gemini_image_aspect_ratio": "16:9",
         "gemini_image_size": "1K",
         "google_images_cards": [],
+        "serpapi_api_key": "",
         "web_images_cards": [],
         "media_provider_cards": [{
             "id": "media-nano-banana-default",

@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import types
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -20,12 +21,19 @@ def test_fallback_across_providers_by_priority(monkeypatch):
         {"id": "serp", "provider": "serpapi", "api_key": "bad", "priority": 1},
         {"id": "bright", "provider": "brightdata", "customer_id": "c", "zone_name": "z", "zone_password": "p", "priority": 2},
     ]}
+    class FakeHTTPError(Exception):
+        status_code = 429
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        def search(self, params): raise FakeHTTPError("quota")
+    fake_serpapi = types.SimpleNamespace(Client=FakeClient, HTTPError=FakeHTTPError, TimeoutError=type("TimeoutError", (Exception,), {}))
+    monkeypatch.setitem(sys.modules, "serpapi", fake_serpapi)
     class Response:
         def __init__(self, status, payload): self.status_code, self.payload = status, payload
         def raise_for_status(self):
             if self.status_code >= 400: raise RuntimeError("http")
         def json(self): return self.payload
-    responses = iter([Response(429, {}), Response(200, {"images": [{"title": "x", "original_image": "https://img.example/x.jpg"}]})])
+    responses = iter([Response(200, {"images": [{"title": "x", "original_image": "https://img.example/x.jpg"}]})])
     monkeypatch.setattr(media_generation.requests, "get", lambda *args, **kwargs: next(responses))
     result = media_generation.web_images_search(settings, "tema", num_results=1)
     assert result[0]["source"] == "brightdata"
@@ -33,13 +41,53 @@ def test_fallback_across_providers_by_priority(monkeypatch):
 
 
 def test_serpapi_parsing(monkeypatch):
-    class Response:
-        status_code = 200
-        def raise_for_status(self): pass
-        def json(self): return {"images_results": [{"title": "cat", "original": "https://img/cat.jpg", "thumbnail": "https://thumb/cat.jpg"}]}
-    monkeypatch.setattr(media_generation.requests, "get", lambda *args, **kwargs: Response())
-    result = media_generation.web_images_search({"web_images_cards": [{"provider": "serpapi", "api_key": "k"}]}, "cat")
+    calls = {}
+    class FakeClient:
+        def __init__(self, **kwargs): calls["client"] = kwargs
+        def search(self, params):
+            calls["params"] = params
+            return {"images_results": [{"title": "cat", "link": "https://link/cat", "original": "https://img/cat.jpg", "thumbnail": "https://thumb/cat.jpg"}]}
+    fake_serpapi = types.SimpleNamespace(Client=FakeClient, HTTPError=type("HTTPError", (Exception,), {}), TimeoutError=type("TimeoutError", (Exception,), {}))
+    monkeypatch.setitem(sys.modules, "serpapi", fake_serpapi)
+    result = media_generation.web_images_search({"web_images_cards": [{"provider": "serpapi", "api_key": "k"}]}, "cat", num_results=7, start=3)
     assert result == [{"url": "https://img/cat.jpg", "thumbnail": "https://thumb/cat.jpg", "title": "cat", "source": "serpapi"}]
+    assert calls["client"] == {"api_key": "k", "timeout": 30}
+    assert calls["params"] == {"engine": "google_images", "q": "cat", "num": 7, "start": 2, "hl": "en", "gl": "us"}
+
+
+def test_serpapi_http_429_uses_next_provider(monkeypatch):
+    class FakeHTTPError(Exception):
+        status_code = 429
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        def search(self, params): raise FakeHTTPError("quota")
+    fake_serpapi = types.SimpleNamespace(Client=FakeClient, HTTPError=FakeHTTPError, TimeoutError=type("TimeoutError", (Exception,), {}))
+    monkeypatch.setitem(sys.modules, "serpapi", fake_serpapi)
+    class Response:
+        def raise_for_status(self): pass
+        def json(self): return {"images": [{"title": "fallback", "original_image": "https://img/fallback.jpg"}]}
+    monkeypatch.setattr(media_generation.requests, "get", lambda *args, **kwargs: Response())
+    settings = {"web_images_cards": [
+        {"provider": "serpapi", "api_key": "k", "priority": 1},
+        {"provider": "brightdata", "customer_id": "c", "zone_name": "z", "zone_password": "p", "priority": 2},
+    ]}
+    result = media_generation.web_images_search(settings, "cat")
+    assert result[0]["source"] == "brightdata"
+
+
+def test_serpapi_timeout_uses_next_provider(monkeypatch):
+    class FakeTimeoutError(Exception): pass
+    class FakeClient:
+        def __init__(self, **kwargs): pass
+        def search(self, params): raise FakeTimeoutError("slow")
+    fake_serpapi = types.SimpleNamespace(Client=FakeClient, HTTPError=type("HTTPError", (Exception,), {}), TimeoutError=FakeTimeoutError)
+    monkeypatch.setitem(sys.modules, "serpapi", fake_serpapi)
+    monkeypatch.setattr(media_generation, "_search_web_images_card", lambda card, query, **kwargs: [{"url": "https://fallback/img.jpg", "source": "brightdata"}] if card["provider"] == "brightdata" else (_ for _ in ()).throw(RuntimeError("SerpApi timeout")))
+    result = media_generation.web_images_search({"web_images_cards": [
+        {"provider": "serpapi", "api_key": "k", "priority": 1},
+        {"provider": "brightdata", "customer_id": "c", "zone_name": "z", "zone_password": "p", "priority": 2},
+    ]}, "cat")
+    assert result[0]["source"] == "brightdata"
 
 
 def test_brightdata_proxy_contract(monkeypatch):
