@@ -1,4 +1,8 @@
 # Changelog
+## 0.9.32 — 2026-09-28
+- Removida a actualização automática da página ao trocar de aba, voltar após inactividade, recuperar a ligação ou detectar textos de `connection timed out`.
+- Restaurada a recuperação limitada apenas a falhas de carregamento de bundles dinâmicos, preservando o estado da sessão e deixando a actualização normal sob controlo manual/F5.
+
 ## 0.9.31 — 2026-09-28
 - Corrigido o `IndexError` ao clicar em `↓` no último cartão de **Web Images**.
 - Adicionadas verificações de limites aos botões de reordenação `↑` e `↓`, mantendo-os desactivados nos extremos e impedindo swaps fora da lista.

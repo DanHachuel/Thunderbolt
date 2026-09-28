@@ -98,13 +98,17 @@ class NpxCacheCompatibilityTests(unittest.TestCase):
         self.assertIn("if (isHtml)", cache_block)
         self.assertIn('responseHeaders["cache-control"] = "no-store', cache_block)
 
-    def test_connection_recovery_handles_resume_and_timeout_after_hibernation(self):
+    def test_connection_recovery_is_limited_to_dynamic_chunk_errors(self):
         source = (ROOT / "scripts" / "cli.mjs").read_text(encoding="utf-8")
         recovery = source.split("const dynamicChunkRecoveryScript", 1)[1].split("const proxy", 1)[0]
-        self.assertIn("document.visibilityState", recovery)
-        self.assertIn('Date.now() - hiddenAt >= 20000', recovery)
-        self.assertIn('window.addEventListener("online"', recovery)
-        self.assertIn("connection timed out", recovery)
+        self.assertIn('const key = "thunderbolt-dynamic-chunk-recovery";', recovery)
+        self.assertIn("Failed to fetch dynamically imported module", recovery)
+        self.assertNotIn("document.visibilityState", recovery)
+        self.assertNotIn('window.addEventListener("online"', recovery)
+        self.assertNotIn('window.addEventListener("pageshow"', recovery)
+        self.assertNotIn("setInterval", recovery)
+        self.assertNotIn("MutationObserver", recovery)
+        self.assertNotIn("connection timed out", recovery)
 
     def test_proxy_enables_tcp_keepalive_for_client_and_streamlit_sockets(self):
         source = (ROOT / "scripts" / "cli.mjs").read_text(encoding="utf-8")
