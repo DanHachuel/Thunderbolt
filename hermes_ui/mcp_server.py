@@ -55,8 +55,7 @@ def _task_public(task: dict[str, Any]) -> dict[str, Any]:
 
 
 def _list_blueprints() -> list[dict[str, Any]]:
-    storage.ensure_storage()
-    files = sorted(storage.BLUEPRINTS.rglob("*.json"))
+    files = storage.list_blueprint_files()
     return [
         {
             "id": path.stem,

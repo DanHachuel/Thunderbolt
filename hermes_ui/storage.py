@@ -927,7 +927,16 @@ def set_display_name(kind: str, path: Path, name: str) -> str:
 
 def list_blueprint_files() -> list[Path]:
     ensure_storage()
-    return sorted(BLUEPRINTS.rglob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return sorted(
+        (
+            path
+            for path in BLUEPRINTS.rglob("*.json")
+            if path.name.casefold() not in {"lista.txt", "lista.txt.json"}
+            and path.stem.casefold() != "lista.txt"
+        ),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
 
 
 def load_blueprint_file(path: Path) -> dict[str, Any]:
