@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from datetime import datetime, timedelta, timezone
 import tomllib
 import threading
@@ -36,6 +37,63 @@ def test_pipeline_lock_recovers_after_dead_process(tmp_path, monkeypatch):
     assert acquired == lock_path
     assert lock_path.read_text(encoding="utf-8") == f"pid={__import__('os').getpid()}\n"
     lock_path.unlink()
+
+
+def test_interrupted_pipeline_worker_fails_active_task_and_pauses_pending_queue(tmp_path, monkeypatch):
+    _isolate_storage(tmp_path, monkeypatch)
+    storage.write_json("tasks.json", [
+        {"id": "video-interrupted", "state": "doing", "stage": "video", "progress": 60},
+        {"id": "video-pending", "state": "to_do", "stage": "video", "progress": 50},
+    ])
+    storage.write_json(pipeline_worker.PIPELINE_LOG_FILENAME, {
+        "status": "running",
+        "worker_pid": 987654321,
+        "last_task_id": "video-interrupted",
+    })
+    monkeypatch.setattr(pipeline_worker, "_pid_alive", lambda _pid: False)
+
+    assert pipeline_worker._recover_interrupted_pipeline_worker() is True
+
+    tasks = storage.read_json("tasks.json")
+    assert tasks[0]["state"] == "failed"
+    assert tasks[0]["worker_interrupted"] is True
+    assert tasks[1]["state"] == "to_do"
+    status = storage.read_json(pipeline_worker.PIPELINE_LOG_FILENAME)
+    assert status["auto_paused"] is True
+    assert status["crash_task_id"] == "video-interrupted"
+    assert pipeline_worker.resume_pipeline_worker() is True
+    assert storage.read_json(pipeline_worker.PIPELINE_LOG_FILENAME)["auto_paused"] is False
+
+
+def test_run_once_does_not_start_queued_work_while_auto_paused(tmp_path, monkeypatch):
+    _isolate_storage(tmp_path, monkeypatch)
+    storage.write_json("tasks.json", [{"id": "video-pending", "state": "to_do", "stage": "video"}])
+    storage.write_json(pipeline_worker.PIPELINE_LOG_FILENAME, {
+        "status": "paused",
+        "auto_paused": True,
+        "pause_reason": "interrupted",
+    })
+    monkeypatch.setattr(pipeline_worker, "_run_task", lambda _task: pytest.fail("não deve iniciar tarefa pausada"))
+
+    result = pipeline_worker.run_once()
+
+    assert result["status"] == "paused"
+    assert storage.read_json("tasks.json")[0]["state"] == "to_do"
+
+
+def test_video_helper_output_tail_is_bounded_and_truncates_oversized_lines():
+    lines: deque[str] = deque()
+    chars = 0
+    for index in range(pipeline_worker.VIDEO_HELPER_OUTPUT_MAX_LINES + 50):
+        chars = pipeline_worker._append_bounded_video_helper_output(lines, f"line-{index}", chars)
+
+    assert len(lines) == pipeline_worker.VIDEO_HELPER_OUTPUT_MAX_LINES
+    assert chars <= pipeline_worker.VIDEO_HELPER_OUTPUT_MAX_CHARS
+    assert lines[-1].endswith(str(pipeline_worker.VIDEO_HELPER_OUTPUT_MAX_LINES + 49))
+
+    chars = pipeline_worker._append_bounded_video_helper_output(lines, "x" * 100_000, chars)
+    assert len(lines[-1]) <= pipeline_worker.VIDEO_HELPER_OUTPUT_MAX_LINE_CHARS
+    assert chars <= pipeline_worker.VIDEO_HELPER_OUTPUT_MAX_CHARS
 
 
 def test_recover_stale_task_marks_it_failed(tmp_path, monkeypatch):
@@ -372,6 +430,8 @@ def test_backlog_has_live_progress_and_stale_recovery_ui():
     assert "recover_stale_tasks()" in source
     assert "_render_pipeline_progress_panel()" in source
     assert "Worker de vídeo sem heartbeat recente" in source
+    assert "Worker de vídeo pausado por segurança" in source
+    assert "resume_pipeline_worker()" in source
     assert 'st.rerun(scope="app")' not in source
 
 

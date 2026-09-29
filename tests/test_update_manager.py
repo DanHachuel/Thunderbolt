@@ -205,10 +205,23 @@ def test_pipeline_worker_remains_available_for_progress_updates():
     start = source.index("function startPipelineWorker()")
     end = source.index("function monitorWorkers()", start)
     block = source[start:end]
-    assert "if (shuttingDown || pipelineWorker) return;" in block
+    assert "if (shuttingDown || pipelineWorker || pipelineRestartTimer || pipelineAutoRestartDisabled) return;" in block
     assert "pipelineRestartTimer = setTimeout" in block
-    assert "startPipelineWorker();" in source[source.index("function monitorWorkers()"):]
+    assert "pipelineFailureCount >= 5" in block
+    assert "Math.min(2 ** pipelineFailureCount, 32) * 1000" in block
+    assert "startPipelineWorker();" in source[source.index("function monitorWorkers()", start):]
     assert "hasPendingPipelineWork()" in source
+
+
+def test_streamlit_restart_loop_is_bounded():
+    source = (Path(__file__).resolve().parents[1] / "scripts" / "cli.mjs").read_text(encoding="utf-8")
+    start = source.index("function startStreamlit()")
+    end = source.index("startStreamlit();", start)
+    block = source[start:end]
+
+    assert "streamlitAutoRestartDisabled" in block
+    assert "streamlitFailureCount >= 5" in block
+    assert "Math.min(2 ** streamlitFailureCount, 32) * 1000" in block
 
 
 def test_automation_worker_starts_for_pending_automation_tasks_without_active_channels():

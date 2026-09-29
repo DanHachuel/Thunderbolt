@@ -19,6 +19,7 @@ import subprocess
 import threading
 import time
 import requests
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,10 @@ from hermes_ui.text_to_images import assemble_text_to_images_video, generate_ima
 
 PIPELINE_LOCK_FILENAME = "pipeline_worker.lock"
 PIPELINE_LOG_FILENAME = "pipeline_worker.json"
+VIDEO_HELPER_OUTPUT_QUEUE_SIZE = 256
+VIDEO_HELPER_OUTPUT_MAX_LINES = 2000
+VIDEO_HELPER_OUTPUT_MAX_CHARS = 1_000_000
+VIDEO_HELPER_OUTPUT_MAX_LINE_CHARS = 16_000
 VIDEO_TIMEOUT_SECONDS = 20 * 60
 LONG_STOCK_VIDEO_TIMEOUT_SECONDS = 90 * 60
 VIDEO_IDLE_TIMEOUT_SECONDS = 10 * 60
@@ -254,6 +259,67 @@ def recover_stale_tasks() -> list[str]:
 
 def _task_by_id(task_id: str) -> dict[str, Any] | None:
     return next((task for task in read_json("tasks.json", []) if isinstance(task, dict) and task.get("id") == task_id), None)
+
+
+def _recover_interrupted_pipeline_worker() -> bool:
+    """Pause automatic processing if the previous worker died mid-task."""
+    previous = read_json(PIPELINE_LOG_FILENAME, {})
+    if not isinstance(previous, dict) or previous.get("auto_paused"):
+        return bool(isinstance(previous, dict) and previous.get("auto_paused"))
+    if str(previous.get("status") or "").casefold() != "running":
+        return False
+    try:
+        previous_pid = int(previous.get("worker_pid") or 0)
+    except (TypeError, ValueError):
+        previous_pid = 0
+    if previous_pid <= 0 or previous_pid == os.getpid() or _pid_alive(previous_pid):
+        return False
+
+    task_id = str(previous.get("last_task_id") or "").strip()
+    message = (
+        "O worker de vídeo foi interrompido durante a execução. "
+        "A fila foi pausada por segurança; consulte o log do worker e clique em Start para retomar."
+    )
+    task = _task_by_id(task_id) if task_id else None
+    if task and str(task.get("state") or "") == "doing":
+        from hermes_ui.domain import update_task
+
+        failed_stage = str(task.get("stage") or "pipeline")
+        update_task(task_id, {
+            "state": "failed",
+            "error": message,
+            "failed_stage": failed_stage,
+            "worker_interrupted": True,
+            "worker_interrupted_at": _now(),
+        })
+    _write_worker_state(
+        auto_paused=True,
+        pause_reason=message,
+        crash_task_id=task_id or None,
+        status="paused",
+        stage="paused",
+        progress=0,
+        last_error=message,
+        worker_pid=os.getpid(),
+        last_heartbeat_at=_now(),
+    )
+    return True
+
+
+def resume_pipeline_worker() -> bool:
+    """Resume the persisted queue after an explicit user Start action."""
+    status = read_json(PIPELINE_LOG_FILENAME, {})
+    if not isinstance(status, dict) or not status.get("auto_paused"):
+        return False
+    _write_worker_state(
+        auto_paused=False,
+        pause_reason="",
+        status="starting",
+        stage="idle",
+        progress=0,
+        last_error="",
+    )
+    return True
 
 
 def _cascade_metadata(current: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
@@ -1038,6 +1104,28 @@ def _moneyprinter_cli_args(task: dict[str, Any], route: str, settings: dict[str,
     return args
 
 
+def _truncate_video_helper_line(line: str) -> str:
+    normalized = str(line).rstrip()
+    if len(normalized) <= VIDEO_HELPER_OUTPUT_MAX_LINE_CHARS:
+        return normalized
+    if normalized.startswith("VIDEO_FILE="):
+        return normalized[:VIDEO_HELPER_OUTPUT_MAX_LINE_CHARS]
+    marker = "[linha truncada] "
+    return marker + normalized[-(VIDEO_HELPER_OUTPUT_MAX_LINE_CHARS - len(marker)):]
+
+
+def _append_bounded_video_helper_output(lines: deque[str], line: str, current_chars: int) -> int:
+    """Retain only a bounded diagnostic tail from a potentially noisy helper."""
+    normalized = _truncate_video_helper_line(line)
+    if not normalized:
+        return current_chars
+    lines.append(normalized)
+    current_chars += len(normalized)
+    while len(lines) > VIDEO_HELPER_OUTPUT_MAX_LINES or current_chars > VIDEO_HELPER_OUTPUT_MAX_CHARS:
+        current_chars -= len(lines.popleft())
+    return current_chars
+
+
 def _run_video_helper_once(
     task: dict[str, Any],
     *,
@@ -1146,21 +1234,51 @@ def _run_video_helper_once(
         command.extend(["--custom-audio-file", str(voiceover_file.resolve())])
     elif generated_elevenlabs_audio is not None:
         command.extend(["--custom-audio-file", str(generated_elevenlabs_audio.resolve())])
-    output_lines: list[str] = []
-    line_queue: queue.Queue[str | None] = queue.Queue()
+    output_lines: deque[str] = deque()
+    output_chars = 0
+    dropped_output_lines = [0]
+    protocol_video_file_line = ""
+    line_queue: queue.Queue[str | None] = queue.Queue(maxsize=VIDEO_HELPER_OUTPUT_QUEUE_SIZE)
     started_at = time.monotonic()
     timeout_seconds = _video_timeout_seconds(task, settings)
     idle_timeout_seconds = _video_idle_timeout_seconds(task, settings)
     process: subprocess.Popen[str] | None = None
 
+    def _queue_output_line(value: str | None) -> None:
+        try:
+            line_queue.put_nowait(value)
+        except queue.Full:
+            try:
+                line_queue.get_nowait()
+                dropped_output_lines[0] += 1
+            except queue.Empty:
+                pass
+            try:
+                line_queue.put_nowait(value)
+            except queue.Full:
+                dropped_output_lines[0] += 1
+
     def _read_output() -> None:
+        nonlocal protocol_video_file_line
         if process is None or process.stdout is None:
-            line_queue.put(None)
+            _queue_output_line(None)
             return
         for line in iter(process.stdout.readline, ""):
-            line_queue.put(line.rstrip())
+            raw_line = line.rstrip()
+            normalized = _truncate_video_helper_line(raw_line)
+            if raw_line.startswith("VIDEO_FILE="):
+                protocol_video_file_line = normalized
+            _queue_output_line(normalized)
         process.stdout.close()
-        line_queue.put(None)
+        _queue_output_line(None)
+
+    def _output_text() -> str:
+        retained = list(output_lines)
+        if protocol_video_file_line and not any(line.startswith("VIDEO_FILE=") for line in retained):
+            retained.append(protocol_video_file_line)
+        if dropped_output_lines[0]:
+            retained.insert(0, f"[saída limitada: {dropped_output_lines[0]} linhas omitidas]")
+        return "\n".join(retained)
 
     try:
         process = subprocess.Popen(
@@ -1195,7 +1313,7 @@ def _run_video_helper_once(
                     output_finished = True
                 elif line:
                     last_output_line = _redact_helper_output(line).strip()
-                    output_lines.append(line)
+                    output_chars = _append_bounded_video_helper_output(output_lines, line, output_chars)
                     last_activity_at = time.monotonic()
                     match = re.search(r"full generation log:\s*(.+)$", last_output_line, flags=re.IGNORECASE)
                     if match:
@@ -1258,11 +1376,11 @@ def _run_video_helper_once(
                 )
     finally:
         reader.join(timeout=2)
-        _persist_video_diagnostics(task, "\n".join(output_lines))
+        _persist_video_diagnostics(task, _output_text())
     if process.returncode is None:
         process.wait(timeout=5)
     result_code = process.returncode
-    output = "\n".join(output_lines)
+    output = _output_text()
     _persist_video_diagnostics(task, output)
     if result_code == 10:
         metadata = _failure_attribution(task, settings, "video", output=output)
@@ -1827,6 +1945,13 @@ def run_once() -> dict[str, Any]:
     if lock is None:
         return {"ok": True, "busy": True}
     try:
+        _recover_interrupted_pipeline_worker()
+        worker_state = read_json(PIPELINE_LOG_FILENAME, {})
+        if isinstance(worker_state, dict) and worker_state.get("auto_paused"):
+            pause_reason = str(worker_state.get("pause_reason") or "Fila pausada por segurança após interrupção do worker.")
+            _worker_heartbeat(status="paused", stage="paused", progress=0, last_error=pause_reason)
+            return {"ok": True, "status": "paused", "pause_reason": pause_reason}
+        _worker_heartbeat(status="starting", stage="idle", progress=0, last_error="")
         try:
             session_health = check_all_accounts_session_info_health(STORAGE, _settings())
             session_alerts = emit_session_info_health_alerts(session_health)
@@ -1901,7 +2026,6 @@ IDLE_INTERVAL_SECONDS = 30
 def run_worker(interval_seconds: int = ACTIVE_INTERVAL_SECONDS) -> None:
     try:
         ensure_storage()
-        _worker_heartbeat(status="starting", stage="idle", progress=0, last_error="")
         while True:
             result = run_once()
             requested_interval = max(2, int(interval_seconds))

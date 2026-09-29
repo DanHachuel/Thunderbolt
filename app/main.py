@@ -162,7 +162,7 @@ from hermes_ui.domain import STAGES, create_batch, create_channel, create_tasks_
 from hermes_ui.channel_import import build_channel_template_xlsx, channel_is_duplicate, find_duplicate_channel, parse_channel_workbook, resolve_blueprint, resolve_google_account, resolve_voice
 from hermes_ui.drafts import list_drafts, save_draft
 from hermes_ui.automation_worker import create_video_now_for_channel, load_worker_status
-from hermes_ui.pipeline_worker import load_pipeline_worker_status, recover_stale_tasks, STALE_TASK_SECONDS, WORKER_HEARTBEAT_TIMEOUT_SECONDS
+from hermes_ui.pipeline_worker import load_pipeline_worker_status, recover_stale_tasks, resume_pipeline_worker, STALE_TASK_SECONDS, WORKER_HEARTBEAT_TIMEOUT_SECONDS
 from hermes_ui.storage import BLUEPRINTS, DEFAULT_LLM_PROVIDER, MEDIA_DOWNLOADS, STORAGE, TIKTOK_PROMPT_MASTERS, atomic_write, ensure_storage, get_display_name, list_blueprint_files, list_prompt_master_files, load_blueprint_file, load_prompt_master_file, now, read_json, set_display_name, update_json, write_json
 from hermes_ui.domain import update_task
 from app.modules.niche_finder.apify import ApifyError, DEFAULT_ACTOR_ID, abort_actor_run, build_actor_input, get_dataset_items, normalize_video_items, start_actor_run, wait_for_actor_run
@@ -5706,7 +5706,9 @@ def _pipeline_time_age(value: Any) -> str:
 
 
 def _render_pipeline_worker_banner(worker_status: dict[str, Any], active_count: int) -> None:
-    if worker_status.get("alive"):
+    if worker_status.get("auto_paused"):
+        st.warning(f"Worker de vídeo pausado por segurança: {worker_status.get('pause_reason') or 'clique em Start numa tarefa para retomar.'}")
+    elif worker_status.get("alive"):
         stage = _PIPELINE_STAGE_LABELS.get(str(worker_status.get("stage") or "idle"), str(worker_status.get("stage") or "idle"))
         progress = max(0, min(100, int(worker_status.get("progress") or 0)))
         st.success(f"Worker de vídeo activo · {active_count} tarefa(s) em execução · {stage} · {progress}%")
@@ -5732,6 +5734,8 @@ def _render_pipeline_progress_panel() -> None:
             active = [task for task in tasks if isinstance(task, dict) and str(task.get("state") or "") == "doing"]
             worker_status = load_pipeline_worker_status()
     if not active:
+        if worker_status.get("auto_paused"):
+            _render_pipeline_worker_banner(worker_status, 0)
         # O fragmento pode executar mais uma vez após o worker terminar.
         # Retornar mantém a actualização local e não reconstrói a página inteira.
         return
@@ -6113,6 +6117,7 @@ def _start_pipeline_task(task_id: str, state: str) -> bool:
     if not updated:
         st.error("Não foi possível iniciar este vídeo: a tarefa já não existe na fila.")
         return False
+    resume_pipeline_worker()
     return True
 
 

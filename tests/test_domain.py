@@ -115,6 +115,36 @@ def test_remake_refreshes_current_channel_video_defaults(tmp_path, monkeypatch):
     assert "audio_regeneration_requested_at" in remade
 
 
+def test_remaking_multiple_videos_requeues_existing_tasks_without_duplicates(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))
+    from hermes_ui import storage
+    from hermes_ui.domain import remake_video_task
+    from hermes_ui.pipeline_worker import _next_runnable_task
+
+    storage.STORAGE = tmp_path / "storage"
+    storage.STATE = storage.STORAGE / "state"
+    storage.BLUEPRINTS = storage.STORAGE / "blueprints"
+    storage.ensure_storage()
+    storage.write_json("channels.json", [{"id": "channel-batch"}])
+    storage.write_json("tasks.json", [
+        {
+            "id": f"video-remake-{index}",
+            "channel_id": "channel-batch",
+            "state": "done",
+            "artifacts": {"script": f"/tmp/script-{index}.md", "video": f"/tmp/video-{index}.mp4"},
+        }
+        for index in range(6)
+    ])
+
+    for index in range(6):
+        assert remake_video_task(f"video-remake-{index}") is not None
+
+    tasks = storage.read_json("tasks.json")
+    assert len(tasks) == 6
+    assert [task["state"] for task in tasks] == ["to_do"] * 6
+    assert _next_runnable_task(tasks)["id"] == "video-remake-0"
+
+
 def test_manual_stop_marks_user_reason_but_keeps_queue_state(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))
     from hermes_ui import storage

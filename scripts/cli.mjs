@@ -395,6 +395,12 @@ let automationFailureCount = 0;
 let automationFailureWindowStartedAt = 0;
 let automationStableTimer = null;
 let lastAutomationWorkerError = "";
+let pipelineFailureCount = 0;
+let pipelineStableTimer = null;
+let pipelineAutoRestartDisabled = false;
+let streamlitFailureCount = 0;
+let streamlitStableTimer = null;
+let streamlitAutoRestartDisabled = false;
 
 function scheduleAutomationWorkerRestart() {
   const now = Date.now();
@@ -461,12 +467,17 @@ function stopPipelineWorker() {
     clearTimeout(pipelineRestartTimer);
     pipelineRestartTimer = null;
   }
+  if (pipelineStableTimer) {
+    clearTimeout(pipelineStableTimer);
+    pipelineStableTimer = null;
+  }
   if (pipelineWorker && !pipelineWorker.killed) pipelineWorker.kill();
   pipelineWorker = null;
 }
 
 function startPipelineWorker() {
-  if (shuttingDown || pipelineWorker) return;
+  if (shuttingDown || pipelineWorker || pipelineRestartTimer || pipelineAutoRestartDisabled) return;
+  const startedAt = Date.now();
   pipelineWorker = spawn(python, ["-m", "hermes_ui.pipeline_worker"], {
     cwd: root,
     stdio: "inherit",
@@ -474,14 +485,35 @@ function startPipelineWorker() {
     windowsHide: false,
   });
   pipelineWorker.on("error", (error) => console.error(`Thunderbolt pipeline worker: ${error.message}`));
+  pipelineStableTimer = setTimeout(() => {
+    pipelineFailureCount = 0;
+    pipelineAutoRestartDisabled = false;
+    pipelineStableTimer = null;
+  }, 60000);
   pipelineWorker.on("exit", (code, signal) => {
     pipelineWorker = null;
     if (shuttingDown) return;
     console.error(`Thunderbolt pipeline worker: terminou (código ${code ?? "-"}, sinal ${signal ?? "-"}).`);
+    if (pipelineStableTimer) {
+      clearTimeout(pipelineStableTimer);
+      pipelineStableTimer = null;
+    }
+    if (Date.now() - startedAt >= 60000) {
+      pipelineFailureCount = 0;
+      pipelineAutoRestartDisabled = false;
+    }
+    pipelineFailureCount += 1;
+    if (pipelineFailureCount >= 5) {
+      pipelineAutoRestartDisabled = true;
+      console.error("O worker de vídeo falhou 5 vezes antes de permanecer estável. A fila foi deixada intacta; reinicie o Thunderbolt após verificar os logs.");
+      return;
+    }
+    const delay = Math.min(2 ** pipelineFailureCount, 32) * 1000;
+    console.error(`Thunderbolt pipeline worker: nova tentativa em ${delay / 1000}s (falha ${pipelineFailureCount}/5).`);
     pipelineRestartTimer = setTimeout(() => {
       pipelineRestartTimer = null;
       startPipelineWorker();
-    }, 5000);
+    }, delay);
   });
 }
 
@@ -492,7 +524,8 @@ function monitorWorkers() {
 }
 
 function startStreamlit() {
-  if (shuttingDown || child) return;
+  if (shuttingDown || child || streamlitRestartTimer || streamlitAutoRestartDisabled) return;
+  const startedAt = Date.now();
   child = spawn(python, [streamlitBootstrap, "run", main, "--server.port", String(backendPort), "--server.address", "127.0.0.1"], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"],
@@ -508,6 +541,11 @@ function startStreamlit() {
   child.on("error", (error) => {
     console.error(`Thunderbolt: não foi possível iniciar o Streamlit: ${error.message}`);
   });
+  streamlitStableTimer = setTimeout(() => {
+    streamlitFailureCount = 0;
+    streamlitAutoRestartDisabled = false;
+    streamlitStableTimer = null;
+  }, 60000);
   child.on("exit", (code, signal) => {
     child = null;
     if (shuttingDown) {
@@ -527,17 +565,31 @@ function startStreamlit() {
       stopWorker();
       process.exit(0);
     }
+    if (streamlitStableTimer) {
+      clearTimeout(streamlitStableTimer);
+      streamlitStableTimer = null;
+    }
+    if (Date.now() - startedAt >= 60000) {
+      streamlitFailureCount = 0;
+      streamlitAutoRestartDisabled = false;
+    }
     // Uma falha do Streamlit não pode terminar o launcher: os workers podem
     // estar a gerar vídeos e devem continuar vivos enquanto a interface é
     // recuperada. Isto também cobre encerramentos espontâneos no Windows,
     // onde o processo filho pode terminar sem entregar um código útil.
     console.error(`Thunderbolt: Streamlit terminou inesperadamente (código ${code ?? "-"}, sinal ${signal ?? "-"}); a tentar recuperar.`);
-    if (!streamlitRestartTimer) {
-      streamlitRestartTimer = setTimeout(() => {
-        streamlitRestartTimer = null;
-        startStreamlit();
-      }, 3000);
+    streamlitFailureCount += 1;
+    if (streamlitFailureCount >= 5) {
+      streamlitAutoRestartDisabled = true;
+      console.error("O Streamlit falhou 5 vezes antes de permanecer estável. O launcher continua activo, mas a interface não será reiniciada até o Thunderbolt ser iniciado novamente.");
+      return;
     }
+    const delay = Math.min(2 ** streamlitFailureCount, 32) * 1000;
+    console.error(`Thunderbolt: nova tentativa do Streamlit em ${delay / 1000}s (falha ${streamlitFailureCount}/5).`);
+    streamlitRestartTimer = setTimeout(() => {
+      streamlitRestartTimer = null;
+      startStreamlit();
+    }, delay);
   });
 }
 
@@ -550,6 +602,8 @@ const stopWorker = () => {
   if (streamlitRestartTimer) clearTimeout(streamlitRestartTimer);
   if (workerRestartTimer) clearTimeout(workerRestartTimer);
   if (automationStableTimer) clearTimeout(automationStableTimer);
+  if (pipelineStableTimer) clearTimeout(pipelineStableTimer);
+  if (streamlitStableTimer) clearTimeout(streamlitStableTimer);
   if (workerMonitorTimer) clearInterval(workerMonitorTimer);
   if (child && !child.killed) child.kill();
   if (worker && !worker.killed) worker.kill();
