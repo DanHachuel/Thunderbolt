@@ -24,6 +24,7 @@ sys.stdout = _force_utf8_stream(sys.stdout)
 sys.stderr = _force_utf8_stream(sys.stderr)
 
 import hashlib
+import logging
 from html import escape
 import json
 import mimetypes
@@ -46,6 +47,7 @@ def _has_script_context() -> bool:
     return get_script_run_ctx() is not None
 
 ROOT = Path(__file__).resolve().parents[1]
+logger = logging.getLogger(__name__)
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -4962,7 +4964,7 @@ def render_niche_finder():
     settings = read_json("settings.json", {})
     username = str(settings.get("kaggle_username") or "").strip()
     api_key = str(settings.get("kaggle_api_key") or "").strip()
-    kernel_slug = str(settings.get("kaggle_kernel_slug") or "thunderbolt-niche-finder").strip()
+    kernel_slug = str(settings.get("kaggle_kernel_slug") or "thunderbolt").strip()
     with st.container(border=True):
         st.subheader("Parâmetros da análise remota")
         with st.form("niche_finder_parameters", clear_on_submit=False):
@@ -9093,19 +9095,28 @@ def _render_api_test_feedback(settings: dict[str, Any], test_key: str, result: d
     if not isinstance(current, dict):
         return
     status = str(current.get("status") or "error")
+    detail = str(current.get("message") or "").strip() if test_key == "kaggle" else ""
     language = current_ui_language()
     if status == "success":
         st.success(ui_text("Último teste: API Key OK", language))
+        if detail:
+            st.caption(detail)
         return
     if status == "missing":
         st.error(ui_text("Último teste: falta configuração", language))
+        if detail:
+            st.caption(detail)
         return
     if status == "unsupported":
         st.warning(ui_text("Último teste: requer autorização ou endpoint seguro", language))
+        if detail:
+            st.caption(detail)
         return
     code = current.get("status_code")
     suffix = f" (HTTP {int(code)})" if isinstance(code, int) and code > 0 else ""
     st.error(ui_text("Último teste: chamada falhou", language) + suffix)
+    if detail:
+        st.caption(detail)
 
 
 def _render_api_test_control(
@@ -9129,6 +9140,7 @@ def _render_api_test_control(
                     persist_callback()
                 result = callback()
             except Exception:
+                logger.exception("Falha no diagnóstico de API test_key=%s", test_key)
                 result = {"status": "error", "message": "A chamada de diagnóstico falhou."}
         _persist_api_test_result(settings, test_key, result)
         _render_api_test_feedback(settings, test_key, result)
@@ -10078,18 +10090,18 @@ def render_settings():
                         st.caption("O dataset permanece no Kaggle. O Thunderbolt usa estas credenciais apenas para publicar/executar a kernel e obter os resultados pequenos da análise.")
                         kaggle_cols = st.columns(3)
                         with kaggle_cols[0]:
-                            kaggle_username = text_setting("Kaggle Username", "kaggle_username", help_text="Nome de utilizador da sua conta Kaggle, sem @ e sem URL.")
+                            kaggle_username = text_setting("Kaggle Username", "kaggle_username", help_text="Nome de utilizador da kernel, sem @ e sem URL; opcional quando usar um token moderno KGAT_.")
                         with kaggle_cols[1]:
-                            kaggle_api_key = text_setting("Kaggle API Key", "kaggle_api_key", secret=True, help_text="Chave criada em Kaggle > Settings > API. Nunca é incluída no notebook ou no GitHub.")
+                            kaggle_api_key = text_setting("Kaggle API Key", "kaggle_api_key", secret=True, help_text="Use uma API key legada com o username, ou um token moderno KGAT_...; a credencial nunca é incluída no notebook ou no GitHub.")
                         with kaggle_cols[2]:
-                            kaggle_kernel_slug = text_setting("Slug da kernel", "kaggle_kernel_slug", help_text="Identificador da kernel remota, por exemplo thunderbolt-niche-finder.")
+                            kaggle_kernel_slug = text_setting("Slug da kernel", "kaggle_kernel_slug", help_text="Identificador da kernel remota; o valor por omissão é thunderbolt.")
                         _render_credential_status(kaggle_api_key)
                         kaggle_action_cols = st.columns(2)
                         with kaggle_action_cols[0]:
                             _render_api_test_control(
                                 settings,
                                 "kaggle",
-                                lambda: test_kaggle_credentials(kaggle_username, kaggle_api_key),
+                                lambda: test_kaggle_credentials(kaggle_username, kaggle_api_key, kaggle_kernel_slug),
                                 widget_key="api_test_kaggle",
                             )
                         with kaggle_action_cols[1]:
@@ -10336,7 +10348,7 @@ def render_settings():
                 if save_all_settings:
                     settings.update({
                         "moneyprinter_path": moneyprinter_path,
-                        "kaggle_username": kaggle_username.strip(), "kaggle_api_key": kaggle_api_key.strip(), "kaggle_kernel_slug": kaggle_kernel_slug.strip() or "thunderbolt-niche-finder",
+                        "kaggle_username": kaggle_username.strip(), "kaggle_api_key": kaggle_api_key.strip(), "kaggle_kernel_slug": kaggle_kernel_slug.strip() or "thunderbolt",
                         "apify_api_token": apify_api_token.strip(), "apify_actor_id": apify_actor_id.strip() or DEFAULT_ACTOR_ID, "apify_poll_interval_seconds": int(apify_poll_interval), "apify_run_timeout_seconds": int(apify_run_timeout),
                         "kalodata_api_key": kalodata_api_key.strip(), "kalodata_base_url": kalodata_base_url.strip() or "https://www.kalodata.com/openapi/v1",
                         "llm_rpm_limit_enabled": bool(llm_rpm_limit_enabled), "llm_rpm_limit": int(llm_rpm_limit), "llm_rpm_window_seconds": int(llm_rpm_window_seconds),

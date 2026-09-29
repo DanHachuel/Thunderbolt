@@ -168,7 +168,7 @@ DEFAULTS: dict[str, Any] = {
         },
         "kaggle_username": "",
         "kaggle_api_key": "",
-        "kaggle_kernel_slug": "thunderbolt-niche-finder",
+        "kaggle_kernel_slug": "thunderbolt",
         "apify_api_token": "",
         "apify_actor_id": "streamers~youtube-scraper",
         "apify_poll_interval_seconds": 10,

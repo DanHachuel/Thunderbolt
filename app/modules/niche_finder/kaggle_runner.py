@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -19,14 +20,16 @@ KERNEL_DIR = Path(__file__).parent / "kaggle_kernel"
 DEFAULT_TIMEOUT_MIN = 20
 POLL_INTERVAL_SEC = 15
 OUTPUT_FILENAMES = ("clusters.csv", "frequent_items.csv", "association_rules.csv")
+_KAGGLE_IDENTIFIER_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$")
 
 
 def _required_credentials(username: str, api_key: str, kernel_slug: str) -> tuple[str, str, str]:
     values = (str(username or "").strip(), str(api_key or "").strip(), str(kernel_slug or "").strip())
-    if not all(values):
-        raise KaggleNicheError("Preencha Kaggle Username, Kaggle API Key e Slug da kernel para continuar.")
-    if any(char in values[0] for char in " /\\") or any(char in values[2] for char in " /\\"):
-        raise KaggleNicheError("Username e slug da kernel devem ser identificadores simples, sem URL ou caminho.")
+    modern_token = values[1].startswith("KGAT_")
+    if not values[1] or not values[2] or (not values[0] and not modern_token):
+        raise KaggleNicheError("Preencha a API key/token e o slug da kernel; o username é obrigatório para chave legada e opcional para token KGAT_.")
+    if (values[0] and not _KAGGLE_IDENTIFIER_RE.fullmatch(values[0])) or not _KAGGLE_IDENTIFIER_RE.fullmatch(values[2]):
+        raise KaggleNicheError("Username e slug devem conter apenas letras minúsculas, números e hífens, com até 50 caracteres e sem hífen inicial/final.")
     return values
 
 
@@ -36,34 +39,85 @@ def _status_value(status: Any) -> str:
     return str(getattr(status, "status", status) or "").strip().lower()
 
 
+def _exception_status_code(exc: BaseException) -> int | None:
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        response = getattr(current, "response", None)
+        status = getattr(response, "status_code", None) or getattr(current, "status_code", None)
+        try:
+            code = int(status)
+        except (TypeError, ValueError):
+            code = 0
+        if 100 <= code <= 599:
+            return code
+        current = current.__cause__ or current.__context__
+    return None
+
+
+def _load_kaggle_api():
+    """Import the SDK only for an explicit action; Kaggle 2.x authenticates on package import."""
+    from kaggle.api.kaggle_api_extended import KaggleApi
+
+    return KaggleApi
+
+
+def _authenticated_username(api: Any) -> str:
+    """Return the username established by modern access-token authentication."""
+    config_values = getattr(api, "config_values", {})
+    if isinstance(config_values, dict):
+        config_key = str(getattr(api, "CONFIG_NAME_USER", "username"))
+        value = config_values.get(config_key) or config_values.get("username")
+    else:
+        value = getattr(config_values, "username", "")
+    return str(value or "").strip()
+
+
 class KaggleNicheRunner:
     def __init__(self, username: str, api_key: str, kernel_slug: str):
         username, api_key, kernel_slug = _required_credentials(username, api_key, kernel_slug)
-        try:
-            from kaggle.api.kaggle_api_extended import KaggleApi
-        except ImportError as exc:  # pragma: no cover - depends on installation extras
-            raise KaggleNicheError("A biblioteca Python kaggle não está instalada nesta instalação.") from exc
         self.username = username
         self.kernel_slug = kernel_slug
-        self.kernel_ref = f"{username}/{kernel_slug}"
+        self.kernel_ref = f"{username}/{kernel_slug}" if username else ""
         config_dir = Path(tempfile.mkdtemp(prefix="thunderbolt-kaggle-config-"))
         self.config_dir = config_dir
         os.environ["KAGGLE_CONFIG_DIR"] = str(config_dir)
-        os.environ["KAGGLE_USERNAME"] = username
-        os.environ["KAGGLE_KEY"] = api_key
-        os.environ["KAGGLE_API_TOKEN"] = api_key
-        self.api = KaggleApi()
+        # Kaggle 2.x tries KAGGLE_API_TOKEN before legacy credentials. Keep the
+        # two formats distinct; a legacy API key must not be sent as a bearer token.
+        if api_key.startswith("KGAT_"):
+            os.environ["KAGGLE_API_TOKEN"] = api_key
+            os.environ.pop("KAGGLE_USERNAME", None)
+            os.environ.pop("KAGGLE_KEY", None)
+        else:
+            os.environ.pop("KAGGLE_API_TOKEN", None)
+            os.environ["KAGGLE_USERNAME"] = username
+            os.environ["KAGGLE_KEY"] = api_key
         try:
+            KaggleApi = _load_kaggle_api()
+        except ImportError as exc:  # pragma: no cover - depends on installation extras
+            raise KaggleNicheError("A biblioteca Python kaggle não está instalada nesta instalação.") from exc
+        try:
+            self.api = KaggleApi()
             self.api.authenticate()
+        except SystemExit as exc:
+            logger.exception("O SDK Kaggle terminou a autenticação para %s", username)
+            raise KaggleNicheError("A autenticação Kaggle falhou. Verifique o username e a API key ou token configurados.") from exc
         except Exception as exc:
-            raise KaggleNicheError(f"Falha na autenticação Kaggle: {exc}") from exc
+            logger.exception("Falha na autenticação Kaggle para %s", username)
+            raise KaggleNicheError("A autenticação Kaggle falhou. Verifique o username e a API key ou token configurados.") from exc
+        if not self.username:
+            self.username = _authenticated_username(self.api)
+            if not _KAGGLE_IDENTIFIER_RE.fullmatch(self.username):
+                raise KaggleNicheError("O token moderno não forneceu um username Kaggle válido para localizar a kernel.")
+            self.kernel_ref = f"{self.username}/{self.kernel_slug}"
 
     def test_connection(self) -> bool:
         try:
             self.api.kernels_list(user=self.username, page_size=1)
             return True
-        except Exception as exc:
-            logger.warning("Falha ao testar a ligação Kaggle: %s", exc)
+        except Exception:
+            logger.exception("Falha ao testar a ligação Kaggle para %s", self.username)
             return False
 
     def _staged_kernel(self, n_clusters: int, min_support: float) -> tempfile.TemporaryDirectory:
@@ -79,6 +133,7 @@ class KaggleNicheRunner:
         )
         (destination / "script.py").write_text(script, encoding="utf-8")
         metadata = json.loads((KERNEL_DIR / "kernel-metadata.json").read_text(encoding="utf-8"))
+        # The checked-in template uses the public default; always overwrite it with the runtime owner/slug.
         metadata["id"] = self.kernel_ref
         (destination / "kernel-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
         return temporary
@@ -93,7 +148,15 @@ class KaggleNicheRunner:
             try:
                 state = _status_value(self.api.kernels_status(self.kernel_ref))
             except Exception as exc:
-                logger.info("Não foi possível ler o estado da kernel: %s", exc)
+                status_code = _exception_status_code(exc)
+                detail = str(exc).lower()
+                if status_code == 404:
+                    logger.warning("Kernel Kaggle %s não encontrada (HTTP 404)", self.kernel_ref, exc_info=True)
+                    raise KaggleNicheError(f"A kernel Kaggle '{self.kernel_ref}' não foi encontrada. Confirme o slug.") from exc
+                if status_code in {401, 403} or "cannot access kernel" in detail:
+                    logger.warning("Kaggle recusou acesso à kernel %s", self.kernel_ref, exc_info=True)
+                    raise KaggleNicheError(f"Sem acesso à kernel '{self.kernel_ref}'. Verifique o slug, a visibilidade e a permissão kernels.get.") from exc
+                logger.warning("Falha ao consultar o estado da kernel Kaggle %s", self.kernel_ref, exc_info=True)
                 state = "unknown"
             logger.info("Kaggle kernel %s: %s", self.kernel_ref, state or "unknown")
             if state in {"complete", "completed"}:

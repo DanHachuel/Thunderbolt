@@ -1,10 +1,10 @@
 {
-  "id": "danhachuel/thunderbolt-niche-finder",
+  "id": "danhachuel/thunderbolt",
   "title": "Thunderbolt Niche Finder",
   "code_file": "script.py",
   "language": "python",
   "kernel_type": "script",
-  "is_private": true,
+  "is_private": false,
   "enable_gpu": false,
   "enable_internet": false,
   "dataset_sources": ["asaniczka/trending-youtube-videos-113-countries"],

@@ -77,6 +77,24 @@ def _get(url: str, **kwargs: Any) -> dict[str, Any]:
     return _response_result(response)
 
 
+def _exception_status_code(exc: BaseException) -> int | None:
+    """Extract an HTTP status from SDK errors and their chained causes."""
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        response = getattr(current, "response", None)
+        status = getattr(response, "status_code", None) or getattr(current, "status_code", None)
+        try:
+            code = int(status)
+        except (TypeError, ValueError):
+            code = 0
+        if 100 <= code <= 599:
+            return code
+        current = current.__cause__ or current.__context__
+    return None
+
+
 def _post(url: str, **kwargs: Any) -> dict[str, Any]:
     try:
         response = requests.post(url, timeout=DEFAULT_TIMEOUT, **kwargs)
@@ -85,13 +103,41 @@ def _post(url: str, **kwargs: Any) -> dict[str, Any]:
     return _response_result(response)
 
 
-def test_kaggle_credentials(username: str, api_key: str) -> dict[str, Any]:
-    """Validate Kaggle Basic Auth with a read-only user lookup."""
+def test_kaggle_credentials(username: str, api_key: str, kernel_slug: str) -> dict[str, Any]:
+    """Validate Kaggle credentials and the requested kernel through the official read-only SDK."""
     username = str(username or "").strip()
     api_key = str(api_key or "").strip()
-    if not username or not api_key:
-        return _missing("Introduza o username e a API key Kaggle antes de testar.")
-    return _get(f"https://www.kaggle.com/api/v1/users/list/{quote(username, safe='')}", auth=(username, api_key))
+    kernel_slug = str(kernel_slug or "").strip()
+    modern_token = api_key.startswith("KGAT_")
+    if (not username and not modern_token) or not api_key or not kernel_slug:
+        return _missing("Introduza a API key/token e o slug; o username é obrigatório para chave legada e opcional para token KGAT_.")
+    from app.modules.niche_finder.errors import KaggleNicheError
+    from app.modules.niche_finder.kaggle_runner import KaggleNicheRunner
+
+    kernel_ref = f"{username}/{kernel_slug}".strip("/") or kernel_slug
+    runner = None
+    try:
+        runner = KaggleNicheRunner(username, api_key, kernel_slug)
+        kernel_ref = runner.kernel_ref
+        runner.api.kernels_status(runner.kernel_ref)
+    except Exception as exc:
+        status_code = _exception_status_code(exc)
+        detail = str(exc).lower()
+        if isinstance(exc, KaggleNicheError):
+            message = str(exc)
+        elif status_code == 404:
+            message = f"A kernel Kaggle '{kernel_ref}' não foi encontrada. Confirme o username e o slug."
+        elif "cannot access kernel" in detail or "permission 'kernels.get'" in detail:
+            message = f"Kaggle recusou o acesso à kernel '{kernel_ref}'. Confirme o slug e se a kernel é pública/acessível."
+        elif status_code == 401:
+            message = "Kaggle rejeitou a credencial. Verifique o username e a API key/token."
+        elif status_code == 403:
+            message = f"Sem permissão para consultar a kernel '{kernel_ref}'. Verifique as credenciais e o acesso kernels.get."
+        else:
+            message = f"Não foi possível validar a kernel '{kernel_ref}' no Kaggle. Verifique as credenciais e tente novamente."
+        LOGGER.error("Kaggle kernel diagnostic failed user=%s slug=%s error_type=%s", username, kernel_slug, type(exc).__name__)
+        return _result("error", message, status_code=status_code)
+    return _result("success", f"Kernel Kaggle '{kernel_ref}' acessível.", status_code=200)
 
 
 def test_apify_credentials(api_token: str) -> dict[str, Any]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import shutil
 import tempfile
 from pathlib import Path
@@ -9,10 +10,7 @@ import pandas as pd
 
 from hermes_ui.storage import STORAGE
 
-try:
-    import kagglehub
-except ImportError:  # pragma: no cover - exercised in installations before the extra dependency is installed
-    kagglehub = None
+logger = logging.getLogger(__name__)
 
 
 DATA_DIR = STORAGE / "data" / "niches"
@@ -39,6 +37,15 @@ OPTIONAL_COLUMNS = (
 
 class DatasetError(RuntimeError):
     """Raised when the automatic Niche Finder dataset cannot be read or validated."""
+
+
+def _load_kagglehub() -> Any | None:
+    """Load KaggleHub only when an explicit data download is requested."""
+    try:
+        import kagglehub
+    except ImportError:  # pragma: no cover - exercised in installations without the optional extra
+        return None
+    return kagglehub
 
 
 def ensure_data_dir() -> Path:
@@ -74,9 +81,7 @@ def _has_usable_cached_dataset() -> bool:
     return set(REQUIRED_COLUMNS).issubset(columns)
 
 
-def _download_with_kagglehub() -> Path | None:
-    if kagglehub is None:
-        return None
+def _download_with_kagglehub(kagglehub_client: Any) -> Path | None:
     ensure_data_dir()
     # KaggleHub rejects a non-empty output_dir on Windows. Use a new temporary
     # directory for every download, then copy only the validated CSV into the
@@ -85,17 +90,18 @@ def _download_with_kagglehub() -> Path | None:
         temporary_path = Path(temporary_root)
         try:
             try:
-                downloaded = kagglehub.dataset_download(
+                downloaded = kagglehub_client.dataset_download(
                     DEFAULT_DATASET_SLUG,
                     output_dir=str(temporary_path),
                     force_download=True,
                 )
             except TypeError:  # compatibility with older KaggleHub releases
-                downloaded = kagglehub.dataset_download(
+                downloaded = kagglehub_client.dataset_download(
                     DEFAULT_DATASET_SLUG,
                     output_dir=str(temporary_path),
                 )
         except Exception as exc:  # pragma: no cover - depends on network/provider state
+            logger.exception("Falha ao descarregar o dataset público do KaggleHub")
             raise DatasetError(f"O Thunderbolt não conseguiu preparar os dados automáticos: {exc}") from exc
         source = _find_csv(Path(downloaded))
         if source is None:
@@ -108,9 +114,10 @@ def download_kaggle_dataset() -> Path:
     ensure_data_dir()
     if _has_usable_cached_dataset():
         return DEFAULT_DATASET_PATH
-    if kagglehub is None:
+    kagglehub_client = _load_kagglehub()
+    if kagglehub_client is None:
         raise DatasetError("O componente automático de dados não está disponível nesta instalação.")
-    downloaded = _download_with_kagglehub()
+    downloaded = _download_with_kagglehub(kagglehub_client)
     if downloaded is None:
         raise DatasetError("O componente automático de dados não devolveu um caminho válido.")
     return downloaded

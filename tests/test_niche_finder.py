@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import ast
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -123,7 +126,7 @@ def test_automatic_loader_reuses_valid_existing_cache(tmp_path, monkeypatch):
         def dataset_download(self, *args, **kwargs):
             raise AssertionError("KaggleHub não deveria ser chamado para uma cache válida")
 
-    monkeypatch.setattr(data_loader, "kagglehub", UnexpectedKaggleHub())
+    monkeypatch.setattr(data_loader, "_load_kagglehub", lambda: UnexpectedKaggleHub())
     assert data_loader.download_kaggle_dataset() == cached_path
 
 
@@ -150,12 +153,25 @@ def test_automatic_loader_downloads_into_empty_temporary_directory(tmp_path, mon
 
     from pathlib import Path
 
-    monkeypatch.setattr(data_loader, "kagglehub", FakeKaggleHub())
+    monkeypatch.setattr(data_loader, "_load_kagglehub", lambda: FakeKaggleHub())
     result = data_loader.download_kaggle_dataset()
     assert result == cached_path
     assert cached_path.exists()
     assert calls[0][0] == data_loader.DEFAULT_DATASET_SLUG
     assert not list(data_dir.parent.glob(".niche-kaggle-*"))
+
+
+def test_importing_data_loader_does_not_load_kagglehub(tmp_path):
+    root = Path(__file__).parents[1]
+    result = subprocess.run(
+        [sys.executable, "-c", "import sys; import app.modules.niche_finder.data_loader; print('kagglehub' in sys.modules)"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PYTHONPATH": str(root), "THUNDERBOLT_STORAGE_DIR": str(tmp_path / "storage")},
+    )
+    assert result.stdout.strip() == "False"
 
 
 def test_niche_finder_navigation_has_kaggle_and_apify_pages():

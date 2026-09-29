@@ -116,9 +116,73 @@ class ApiKeyDiagnosticsTests(unittest.TestCase):
         self.assertEqual(result["message"], "Não foi possível contactar o serviço.")
         self.assertNotIn("SECRET-KEY-123", str(result))
 
-    def test_read_only_endpoints_for_kaggle_nano_upload_post_and_postiz(self):
+    def test_kaggle_credentials_check_requested_kernel_through_official_runner(self):
+        from app.modules.niche_finder import kaggle_runner
+
+        runner = Mock()
+        runner.kernel_ref = "user/thunderbolt"
+        with patch.object(kaggle_runner, "KaggleNicheRunner", return_value=runner) as constructor:
+            result = api_key_tests.test_kaggle_credentials("user", "SECRET-KEY-123", "thunderbolt")
+
+        constructor.assert_called_once_with("user", "SECRET-KEY-123", "thunderbolt")
+        runner.api.kernels_status.assert_called_once_with("user/thunderbolt")
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["status_code"], 200)
+        self.assertIn("user/thunderbolt", result["message"])
+        self.assertNotIn("SECRET-KEY-123", str(result))
+
+    def test_kaggle_missing_slug_does_not_create_runner(self):
+        from app.modules.niche_finder import kaggle_runner
+
+        with patch.object(kaggle_runner, "KaggleNicheRunner") as constructor:
+            result = api_key_tests.test_kaggle_credentials("user", "key", "")
+        self.assertEqual(result["status"], "missing")
+        self.assertIn("slug", result["message"].lower())
+        constructor.assert_not_called()
+
+    def test_kaggle_modern_token_does_not_require_username(self):
+        from app.modules.niche_finder import kaggle_runner
+
+        runner = Mock()
+        runner.kernel_ref = "token-owner/thunderbolt"
+        with patch.object(kaggle_runner, "KaggleNicheRunner", return_value=runner) as constructor:
+            result = api_key_tests.test_kaggle_credentials("", "KGAT_example-token", "thunderbolt")
+        constructor.assert_called_once_with("", "KGAT_example-token", "thunderbolt")
+        runner.api.kernels_status.assert_called_once_with("token-owner/thunderbolt")
+        self.assertEqual(result["status"], "success")
+        self.assertIn("token-owner/thunderbolt", result["message"])
+
+    def test_kaggle_404_and_permission_errors_are_clear_and_redacted(self):
+        from app.modules.niche_finder import kaggle_runner
+
+        runner = Mock()
+        runner.kernel_ref = "user/missing-kernel"
+        not_found = api_key_tests.requests.HTTPError("404 Not Found SECRET-KEY-123")
+        not_found.response = self.response(404)
+        runner.api.kernels_status.side_effect = not_found
+        with patch.object(kaggle_runner, "KaggleNicheRunner", return_value=runner):
+            missing = api_key_tests.test_kaggle_credentials("user", "SECRET-KEY-123", "missing-kernel")
+        self.assertEqual(missing["status"], "error")
+        self.assertEqual(missing["status_code"], 404)
+        self.assertIn("não foi encontrada", missing["message"])
+        self.assertNotIn("SECRET-KEY-123", str(missing))
+
+        runner = Mock()
+        runner.kernel_ref = "user/private-kernel"
+        cause = api_key_tests.requests.HTTPError("403 Forbidden")
+        cause.response = self.response(403)
+        denied = ValueError("Cannot access kernel 'user/private-kernel' (Permission 'kernels.get' was denied).")
+        denied.__cause__ = cause
+        runner.api.kernels_status.side_effect = denied
+        with patch.object(kaggle_runner, "KaggleNicheRunner", return_value=runner):
+            forbidden = api_key_tests.test_kaggle_credentials("user", "SECRET-KEY-123", "private-kernel")
+        self.assertEqual(forbidden["status"], "error")
+        self.assertEqual(forbidden["status_code"], 403)
+        self.assertIn("pública/acessível", forbidden["message"])
+        self.assertNotIn("SECRET-KEY-123", str(forbidden))
+
+    def test_read_only_endpoints_for_nano_upload_post_and_postiz(self):
         cases = [
-            (lambda: api_key_tests.test_kaggle_credentials("user", "key"), "https://www.kaggle.com/api/v1/users/list/user"),
             (lambda: api_key_tests.test_nano_banana_credentials("key", "gemini-3.1-flash-image"), "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image"),
             (lambda: api_key_tests.test_upload_post_credentials("key"), "https://api.upload-post.com/api/uploadposts/me"),
             (lambda: api_key_tests.test_postiz_credentials("key"), "https://api.postiz.com/public/v1/integrations"),
