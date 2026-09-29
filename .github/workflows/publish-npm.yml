@@ -8,13 +8,12 @@ on:
         required: false
         type: string
       dist_tag:
-        description: "NPM dist-tag para execuções manuais"
+        description: "NPM dist-tag para execuções manuais (staging)"
         required: false
         default: next
         type: choice
         options:
           - next
-          - latest
   push:
     tags:
       - "v*"
@@ -61,15 +60,16 @@ jobs:
           test -d "$TEST_ROOT/storage/blueprints/importados"
 
       - name: Publish to npm
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           REQUESTED_DIST_TAG: ${{ inputs.dist_tag }}
         run: |
           PACKAGE="@danhachuel/thunderbolt"
           VERSION=$(node -p "require('./package.json').version")
-          DIST_TAG="${REQUESTED_DIST_TAG:-latest}"
+          DIST_TAG="${REQUESTED_DIST_TAG:-next}"
           case "$DIST_TAG" in
-            next|latest) ;;
+            next) ;;
             *) echo "Unsupported npm dist-tag: $DIST_TAG" >&2; exit 1 ;;
           esac
           if npm view "${PACKAGE}@${VERSION}" version >/dev/null 2>&1; then
@@ -81,27 +81,56 @@ jobs:
 
       - name: Verify published tarball is downloadable
         run: |
+          PACKAGE="@danhachuel/thunderbolt"
           VERSION=$(node -p "require('./package.json').version")
+          MAX_ATTEMPTS=18
+          DELAY=10
           TARBALL=""
-          for attempt in $(seq 1 72); do
-            TARBALL=$(npm view "@danhachuel/thunderbolt@${VERSION}" dist.tarball 2>/dev/null || true)
+          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+            TARBALL=$(npm view --prefer-online "${PACKAGE}@${VERSION}" dist.tarball 2>/dev/null || true)
             if [ -n "$TARBALL" ]; then
               break
             fi
-            echo "Published metadata not available yet (attempt ${attempt}/72); waiting 5 seconds..."
-            sleep 5
+            if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+              echo "Published metadata not available yet (attempt ${attempt}/${MAX_ATTEMPTS}); waiting ${DELAY}s..."
+              sleep "$DELAY"
+              if [ "$DELAY" -lt 60 ]; then
+                DELAY=$((DELAY * 2))
+                if [ "$DELAY" -gt 60 ]; then DELAY=60; fi
+              fi
+            fi
           done
           if [ -z "$TARBALL" ]; then
-            echo "Published metadata was not available for @danhachuel/thunderbolt@${VERSION}"
+            echo "Published metadata was not available for ${PACKAGE}@${VERSION}"
             exit 1
           fi
-          for attempt in $(seq 1 72); do
+          DELAY=10
+          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
             if curl --fail --location --silent --show-error --output /dev/null "$TARBALL"; then
               echo "Published tarball is available: $TARBALL"
               exit 0
             fi
-            echo "Tarball not available yet (attempt ${attempt}/72); waiting 5 seconds..."
-            sleep 5
+            if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+              echo "Tarball not available yet (attempt ${attempt}/${MAX_ATTEMPTS}); waiting ${DELAY}s..."
+              sleep "$DELAY"
+              if [ "$DELAY" -lt 60 ]; then
+                DELAY=$((DELAY * 2))
+                if [ "$DELAY" -gt 60 ]; then DELAY=60; fi
+              fi
+            fi
           done
           echo "Published tarball was not downloadable: $TARBALL"
           exit 1
+
+      - name: Promote verified release to npm latest
+        if: ${{ github.event_name == 'push' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          PACKAGE="@danhachuel/thunderbolt"
+          VERSION=$(node -p "require('./package.json').version")
+          if ! npm view --prefer-online "${PACKAGE}@${VERSION}" version >/dev/null 2>&1; then
+            echo "Refusing to promote ${PACKAGE}@${VERSION}: no published package to verify." >&2
+            exit 1
+          fi
+          npm dist-tag add "${PACKAGE}@${VERSION}" latest
