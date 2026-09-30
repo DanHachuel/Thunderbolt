@@ -105,7 +105,6 @@ function ensureDirs() {
     join(storageRoot, "blueprints", "importados"),
     join(storageRoot, "blueprints", "brandings"),
     join(storageRoot, "blueprints", "thumbnails"),
-    join(storageRoot, "blueprints", "conteudo"),
     join(storageRoot, "blueprints", "music"),
     join(storageRoot, "tiktok"),
     join(storageRoot, "tiktok", "prompts_master"),
@@ -186,12 +185,13 @@ function copySeedMusicBlueprints(storageRoot) {
   }
 }
 function copySeedContentBlueprints(storageRoot) {
-  const seedRoot = join(root, "seed", "blueprints", "conteudo");
-  const destination = join(storageRoot, "blueprints", "conteudo");
+  const seedRoot = join(root, "seed", "blueprints");
+  const destination = join(storageRoot, "blueprints");
   if (!existsSync(seedRoot)) return;
   mkdirSync(destination, { recursive: true });
   for (const filename of readdirSync(seedRoot)) {
     if (!filename.endsWith(".md")) continue;
+    if (filename === "FINANCE_Thumbnail_Blueprint.md") continue;
     const source = join(seedRoot, filename);
     const target = join(destination, filename);
     if (!existsSync(target)) copyFileSync(source, target);

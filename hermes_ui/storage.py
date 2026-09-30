@@ -19,14 +19,14 @@ LEGACY_DEFAULT_LLM_PROVIDERS = {"", "moonshot"}
 STATE = STORAGE / "state"
 BLUEPRINTS = STORAGE / "blueprints"
 MUSIC_BLUEPRINTS = BLUEPRINTS / "music"
-CONTENT_BLUEPRINTS = BLUEPRINTS / "conteudo"
+CONTENT_BLUEPRINTS = BLUEPRINTS
 TIKTOK_PROMPT_MASTERS = STORAGE / "tiktok" / "prompts_master"
 MEDIA_DOWNLOADS = STORAGE / "downloads"
 NICHES_DATA = STORAGE / "data" / "niches"
 SEED_BLUEPRINTS = ROOT / "seed" / "blueprints"
 SEED_THUMBNAIL_BLUEPRINTS = SEED_BLUEPRINTS / "thumbnails"
 SEED_MUSIC_BLUEPRINTS = SEED_BLUEPRINTS / "music"
-SEED_CONTENT_BLUEPRINTS = SEED_BLUEPRINTS / "conteudo"
+SEED_CONTENT_BLUEPRINTS = SEED_BLUEPRINTS
 SEED_TIKTOK_PROMPT_MASTERS = ROOT / "seed" / "prompt_masters"
 
 _READ_CACHE_LOCK = RLock()
@@ -438,6 +438,16 @@ def seed_blueprints() -> None:
             shutil.copy2(source, target)
     content_destination = CONTENT_BLUEPRINTS
     _ensure_directory(content_destination)
+    legacy_content_destination = BLUEPRINTS / "conteudo"
+    if legacy_content_destination.is_dir():
+        for source in sorted(legacy_content_destination.glob("*.md")):
+            target = content_destination / source.name
+            if not target.exists():
+                shutil.move(str(source), str(target))
+        try:
+            legacy_content_destination.rmdir()
+        except OSError:
+            pass
     for source in sorted(thumbnail_destination.glob("FINANCE*.md")):
         if source.name == "FINANCE_Thumbnail_Blueprint.md":
             continue
@@ -642,7 +652,7 @@ def _migrate_settings(settings: Any) -> tuple[dict[str, Any], bool]:
 
 
 def ensure_storage() -> None:
-    for path in [STATE, BLUEPRINTS / "canais", BLUEPRINTS / "nichos", BLUEPRINTS / "importados", BLUEPRINTS / "brandings", BLUEPRINTS / "thumbnails", CONTENT_BLUEPRINTS, MUSIC_BLUEPRINTS, TIKTOK_PROMPT_MASTERS, MEDIA_DOWNLOADS, STORAGE / "brand", STORAGE / "scripts", STORAGE / "thumbnails", STORAGE / "videos", STORAGE / "artifacts", STORAGE / "python_editor", STORAGE / "influencers", STORAGE / "metadata_cleaner", STORAGE / "metadata_cleaner" / "outputs", STORAGE / "music", STORAGE / "voice_previews", STORAGE / "python_editor", NICHES_DATA]:
+    for path in [STATE, BLUEPRINTS / "canais", BLUEPRINTS / "nichos", BLUEPRINTS / "importados", BLUEPRINTS / "brandings", BLUEPRINTS / "thumbnails", MUSIC_BLUEPRINTS, TIKTOK_PROMPT_MASTERS, MEDIA_DOWNLOADS, STORAGE / "brand", STORAGE / "scripts", STORAGE / "thumbnails", STORAGE / "videos", STORAGE / "artifacts", STORAGE / "python_editor", STORAGE / "influencers", STORAGE / "metadata_cleaner", STORAGE / "metadata_cleaner" / "outputs", STORAGE / "music", STORAGE / "voice_previews", STORAGE / "python_editor", NICHES_DATA]:
         _ensure_directory(path)
     seed_blueprints()
     seed_prompt_masters()
@@ -963,7 +973,7 @@ def list_content_blueprint_files() -> list[Path]:
 
 
 def load_content_blueprint_file(path: Path) -> str:
-    if path.parent != CONTENT_BLUEPRINTS:
+    if path.parent != BLUEPRINTS:
         raise ValueError("O blueprint de conteúdo está fora da biblioteca permitida.")
     return path.read_text(encoding="utf-8")
 
