@@ -224,6 +224,26 @@ def test_streamlit_restart_loop_is_bounded():
     assert "Math.min(2 ** streamlitFailureCount, 32) * 1000" in block
 
 
+def test_home_update_is_disabled_while_video_tasks_are_doing():
+    source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+    start = source.index("def render_home_update_controls")
+    end = source.index("def ", start + 5)
+    block = source[start:end]
+    assert 'read_json("tasks.json", [])' in block
+    assert 'str(task.get("state") or "").casefold() == "doing"' in block
+    assert "disabled=update_blocked" in block
+    assert "Actualização bloqueada enquanto houver tarefas de vídeo em execução." in block
+
+
+def test_pipeline_panel_recovers_immediately_when_worker_is_not_alive():
+    source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+    start = source.index("def _render_pipeline_progress_panel")
+    end = source.index("VIDEO_TASK_STATE_LABELS", start)
+    block = source[start:end]
+    assert 'if not worker_status.get("alive") and active:' in block
+    assert "recovered = recover_stale_tasks()" in block
+
+
 def test_automation_worker_starts_for_pending_automation_tasks_without_active_channels():
     source = (Path(__file__).resolve().parents[1] / "scripts" / "cli.mjs").read_text(encoding="utf-8")
     start = source.index("function hasScheduledAutomation()")

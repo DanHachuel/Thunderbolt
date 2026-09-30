@@ -18,6 +18,7 @@ import signal
 import subprocess
 import threading
 import time
+import psutil
 import requests
 from collections import deque
 from datetime import datetime, timezone
@@ -48,12 +49,12 @@ VIDEO_HELPER_OUTPUT_QUEUE_SIZE = 256
 VIDEO_HELPER_OUTPUT_MAX_LINES = 2000
 VIDEO_HELPER_OUTPUT_MAX_CHARS = 1_000_000
 VIDEO_HELPER_OUTPUT_MAX_LINE_CHARS = 16_000
-VIDEO_TIMEOUT_SECONDS = 20 * 60
+VIDEO_TIMEOUT_SECONDS = 10 * 60
 LONG_STOCK_VIDEO_TIMEOUT_SECONDS = 90 * 60
 VIDEO_IDLE_TIMEOUT_SECONDS = 10 * 60
 # O helper do MoneyPrinterTurbo pode ficar silencioso durante downloads/API.
 # Mantemos uma janela de inactividade maior para Pixabay, sem remover o watchdog.
-STOCK_VIDEO_IDLE_TIMEOUT_SECONDS = 30 * 60
+STOCK_VIDEO_IDLE_TIMEOUT_SECONDS = 5 * 60
 STALE_TASK_SECONDS = VIDEO_TIMEOUT_SECONDS + 5 * 60
 WORKER_HEARTBEAT_TIMEOUT_SECONDS = 15
 TASK_HEARTBEAT_INTERVAL_SECONDS = 5
@@ -818,27 +819,65 @@ def _persist_video_diagnostics(task: dict[str, Any], output: str) -> dict[str, s
 
 
 def _stop_process(process: subprocess.Popen[str]) -> None:
+    process_id = getattr(process, "pid", None)
+    terminated_children = 0
+    killed_children = 0
     if process.poll() is None:
         try:
-            process_id = getattr(process, "pid", None)
             if os.name != "nt" and process_id:
+                try:
+                    terminated_children = len(psutil.Process(process_id).children(recursive=True))
+                except psutil.Error:
+                    terminated_children = 0
                 os.killpg(os.getpgid(process_id), signal.SIGKILL)
             elif os.name == "nt" and process_id:
-                subprocess.run(
-                    ["taskkill", "/PID", str(process_id), "/T", "/F"],
-                    check=False,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+                root = psutil.Process(process_id)
+                children = root.children(recursive=True)
+                for child in reversed(children):
+                    try:
+                        child.terminate()
+                        terminated_children += 1
+                    except psutil.Error:
+                        continue
+                _, alive_children = psutil.wait_procs(children, timeout=3)
+                for child in alive_children:
+                    try:
+                        child.kill()
+                        killed_children += 1
+                    except psutil.Error:
+                        continue
+                try:
+                    root.terminate()
+                except psutil.Error:
+                    pass
+                try:
+                    root.wait(timeout=3)
+                except (psutil.Error, psutil.TimeoutExpired):
+                    try:
+                        root.kill()
+                    except psutil.Error:
+                        pass
             else:
                 process.kill()
-        except (OSError, ProcessLookupError):
-            process.kill()
+        except (OSError, ProcessLookupError, psutil.Error):
+            try:
+                process.kill()
+            except (OSError, ProcessLookupError):
+                pass
     try:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait()
+    try:
+        _write_worker_state(last_stop_process={
+            "at": _now(),
+            "root_pid": process_id,
+            "children_terminated": terminated_children,
+            "children_killed": killed_children,
+        })
+    except Exception:
+        pass
 
 
 def _normalise_video_route(task: dict[str, Any], settings: dict[str, Any]) -> str:
@@ -939,9 +978,9 @@ def _video_idle_timeout_seconds(task: dict[str, Any], settings: dict[str, Any] |
     effective_settings = settings if isinstance(settings, dict) else _settings()
     route = _normalise_video_route(task, effective_settings)
     if route == "pixabay":
-        return max(configured, STOCK_VIDEO_IDLE_TIMEOUT_SECONDS)
+        return STOCK_VIDEO_IDLE_TIMEOUT_SECONDS
     if route == "pexels":
-        return max(configured, STOCK_VIDEO_IDLE_TIMEOUT_SECONDS)
+        return STOCK_VIDEO_IDLE_TIMEOUT_SECONDS
     return configured
 
 
@@ -1200,6 +1239,18 @@ def _run_video_helper_once(
         message = f"Configure pelo menos uma API key de {source_label} em Configurações > Configuração API > Fontes de materiais."
         metadata = _failure_attribution(task, settings, "video", error=message)
         raise PipelineError(_failure_message(message, metadata), failure_metadata=metadata)
+    if route == "pexels":
+        invalid_keys = [key for key in source_keys if len(str(key).strip()) < 20]
+        if invalid_keys:
+            message = "A API key do Pexels é inválida: deve ter pelo menos 20 caracteres."
+            metadata = _failure_attribution(task, settings, "video", error=message)
+            metadata.update({
+                "failure_api": "Pexels API",
+                "failure_provider": "pexels",
+                "failure_service": "Pexels",
+                "failure_config_fields": "pexels_api_keys",
+            })
+            raise PipelineError(_failure_message(message, metadata), failure_metadata=metadata)
     if configured_root:
         try:
             sync_moneyprinter_config(settings, str(configured_root))
@@ -1410,8 +1461,14 @@ def _run_video_helper_once(
                     fallback_eligible=True,
                 )
     finally:
-        reader.join(timeout=2)
-        _persist_video_diagnostics(task, _output_text())
+        try:
+            reader.join(timeout=2)
+        except Exception:
+            pass
+        try:
+            _persist_video_diagnostics(task, _output_text())
+        except Exception:
+            pass
     if process.returncode is None:
         process.wait(timeout=5)
     result_code = process.returncode

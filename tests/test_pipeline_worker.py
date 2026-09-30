@@ -468,7 +468,7 @@ def test_worker_progress_is_monotonic_when_resuming_old_checkpoints():
 def test_stock_video_uses_total_timeout_instead_of_false_idle_watchdog(tmp_path, monkeypatch):
     _isolate_storage(tmp_path, monkeypatch)
     settings = {"video_source": "pixabay"}
-    task = {"style_wide": "pixabay", "video_script": "roteiro curto"}
+    task = {"style_wide": "pixabay", "video_script": "word " * 300}
 
     assert pipeline_worker._video_timeout_seconds(task, settings) == pipeline_worker.LONG_STOCK_VIDEO_TIMEOUT_SECONDS
     assert pipeline_worker._video_idle_timeout_seconds(task, settings) == pipeline_worker.STOCK_VIDEO_IDLE_TIMEOUT_SECONDS
@@ -517,7 +517,7 @@ def test_video_helper_uses_configured_root_and_persists_helper_diagnostics(tmp_p
     (root / "config.toml").write_text("[app]\n", encoding="utf-8")
     video_path = tmp_path / "generated.mp4"
     video_path.write_bytes(b"mp4")
-    storage.write_json("settings.json", {"moneyprinter_path": str(root), "pexels_api_keys": ["pexels-test-key"]})
+    storage.write_json("settings.json", {"moneyprinter_path": str(root), "pexels_api_keys": ["pexels-test-key-1234567890123456"]})
     storage.write_json("tasks.json", [{"id": "video_root", "state": "doing", "stage": "video", "progress": 68, "topic": "Tema"}])
     captured = {}
 
@@ -550,7 +550,7 @@ def test_video_helper_reports_each_missing_moneyprinter_api(tmp_path, monkeypatc
     root.mkdir()
     (root / "cli.py").write_text("# fake", encoding="utf-8")
     (root / "config.toml").write_text("[app]\n", encoding="utf-8")
-    storage.write_json("settings.json", {"moneyprinter_path": str(root), "pexels_api_keys": ["pexels-test-key"]})
+    storage.write_json("settings.json", {"moneyprinter_path": str(root), "pexels_api_keys": ["pexels-test-key-1234567890123456"]})
     storage.write_json("tasks.json", [{"id": "video-missing-mpt-api", "state": "doing", "stage": "video", "topic": "Tema"}])
 
     def fake_popen(command, **kwargs):
@@ -652,7 +652,7 @@ def test_video_helper_falls_back_from_pexels_to_pixabay_by_priority(tmp_path, mo
             "moneyprinter_path": str(root),
             "video_source": "pexels",
             "material_source_cards": [
-                {"id": "pexels-primary", "provider": "pexels", "api_key": "pexels-broken", "enabled": True, "priority": 1},
+                {"id": "pexels-primary", "provider": "pexels", "api_key": "pexels-broken-1234567890123456", "enabled": True, "priority": 1},
                 {"id": "pixabay-fallback", "provider": "pixabay", "api_key": "pixabay-good", "enabled": True, "priority": 2},
             ],
             "material_active_card_id": "pexels-primary",
@@ -673,7 +673,7 @@ def test_video_helper_falls_back_from_pexels_to_pixabay_by_priority(tmp_path, mo
 
     assert result == video_path
     assert [command[command.index("--video-source") + 1] for command, _env in video_commands] == ["pexels", "pixabay"]
-    assert video_commands[0][1]["MPT_PEXELS_API_KEY"] == "pexels-broken"
+    assert video_commands[0][1]["MPT_PEXELS_API_KEY"] == "pexels-broken-1234567890123456"
     assert video_commands[0][1].get("MPT_PIXABAY_API_KEY", "") == ""
     assert video_commands[1][1]["MPT_PIXABAY_API_KEY"] == "pixabay-good"
     assert video_commands[1][1].get("MPT_PEXELS_API_KEY", "") == ""
@@ -683,15 +683,14 @@ def test_material_video_attempts_rotate_each_prioritized_key_before_next_provide
     settings = {
         "video_source": "pexels",
         "material_source_cards": [
-            {"id": "pexels-1", "provider": "pexels", "api_key": "pexels-one", "enabled": True, "priority": 1},
-            {"id": "pexels-2", "provider": "pexels", "api_key": "pexels-two", "enabled": True, "priority": 2},
+            {"id": "pexels-1", "provider": "pexels", "api_key": "pexels-one-1234567890123456", "enabled": True, "priority": 1},
+            {"id": "pexels-2", "provider": "pexels", "api_key": "pexels-two-1234567890123456", "enabled": True, "priority": 2},
             {"id": "pixabay-1", "provider": "pixabay", "api_key": "pixabay-one", "enabled": True, "priority": 3},
         ],
     }
 
     assert pipeline_worker._material_video_attempts({"style_wide": "pexels"}, settings) == [
-        ("pexels", "pexels-one"),
-        ("pexels", "pexels-two"),
+        ("pexels", "pexels-one-1234567890123456"),
         ("pixabay", "pixabay-one"),
     ]
 
@@ -708,7 +707,7 @@ def test_video_helper_does_not_fallback_when_moneyprinter_reports_llm_credential
             "moneyprinter_path": str(root),
             "video_source": "pexels",
             "material_source_cards": [
-                {"id": "pexels-primary", "provider": "pexels", "api_key": "pexels-good", "enabled": True, "priority": 1},
+                {"id": "pexels-primary", "provider": "pexels", "api_key": "pexels-good-1234567890123456", "enabled": True, "priority": 1},
                 {"id": "pixabay-fallback", "provider": "pixabay", "api_key": "pixabay-good", "enabled": True, "priority": 2},
             ],
         },
@@ -777,7 +776,7 @@ def test_video_helper_rejects_missing_azure_speech_sdk_v2_credentials(tmp_path, 
     root.mkdir()
     (root / "cli.py").write_text("# fake", encoding="utf-8")
     (root / "config.toml").write_text("[app]\n", encoding="utf-8")
-    storage.write_json("settings.json", {"moneyprinter_path": str(root), "pexels_api_keys": ["pexels-test-key"]})
+    storage.write_json("settings.json", {"moneyprinter_path": str(root), "pexels_api_keys": ["pexels-test-key-1234567890123456"]})
     storage.write_json("tasks.json", [{"id": "video-no-azure", "state": "doing", "stage": "video", "topic": "Tema"}])
     monkeypatch.setattr(pipeline_worker.subprocess, "Popen", lambda *args, **kwargs: pytest.fail("não deve iniciar MPT sem credenciais Azure"))
 
@@ -922,7 +921,7 @@ def test_video_helper_passes_uploaded_voiceover_to_moneyprinterturbo(tmp_path, m
     voiceover.write_bytes(b"audio")
     video_path = tmp_path / "generated.mp4"
     video_path.write_bytes(b"mp4")
-    storage.write_json("settings.json", {"moneyprinter_path": str(root), "pexels_api_keys": ["pexels-test-key"]})
+    storage.write_json("settings.json", {"moneyprinter_path": str(root), "pexels_api_keys": ["pexels-test-key-1234567890123456"]})
     storage.write_json("tasks.json", [{"id": "video_voiceover", "state": "doing", "stage": "video", "progress": 68, "topic": "Tema"}])
     captured = {}
 
@@ -945,7 +944,7 @@ def test_video_helper_passes_uploaded_voiceover_to_moneyprinterturbo(tmp_path, m
 
 def test_video_helper_rejects_upload_mode_without_audio_file(tmp_path, monkeypatch):
     _isolate_storage(tmp_path, monkeypatch)
-    storage.write_json("settings.json", {"pexels_api_keys": ["pexels-test-key"]})
+    storage.write_json("settings.json", {"pexels_api_keys": ["pexels-test-key-1234567890123456"]})
     with pytest.raises(pipeline_worker.PipelineError, match="ficheiro de narração válido"):
         pipeline_worker._run_video_helper(
             {
@@ -958,7 +957,7 @@ def test_video_helper_rejects_upload_mode_without_audio_file(tmp_path, monkeypat
 
 def test_video_helper_timeout_kills_subprocess_and_returns_pipeline_error(tmp_path, monkeypatch):
     _isolate_storage(tmp_path, monkeypatch)
-    storage.write_json("settings.json", {"pexels_api_keys": ["pexels-test-key"]})
+    storage.write_json("settings.json", {"pexels_api_keys": ["pexels-test-key-1234567890123456"]})
     storage.write_json("tasks.json", [{"id": "video_timeout", "state": "doing", "stage": "video", "progress": 68, "topic": "Tema"}])
     process = _FakePopen([], stays_alive=True)
     monkeypatch.setattr(pipeline_worker.subprocess, "Popen", lambda *args, **kwargs: process)
@@ -972,7 +971,7 @@ def test_video_helper_timeout_kills_subprocess_and_returns_pipeline_error(tmp_pa
 
 def test_video_helper_idle_timeout_kills_process_with_no_activity(tmp_path, monkeypatch):
     _isolate_storage(tmp_path, monkeypatch)
-    storage.write_json("settings.json", {"pexels_api_keys": ["pexels-test-key"]})
+    storage.write_json("settings.json", {"pexels_api_keys": ["pexels-test-key-1234567890123456"]})
     storage.write_json("tasks.json", [{"id": "video_idle", "state": "doing", "stage": "video", "progress": 68, "topic": "Tema"}])
     process = _FakePopen([], stays_alive=True)
     monkeypatch.setattr(pipeline_worker.subprocess, "Popen", lambda *args, **kwargs: process)
@@ -1034,8 +1033,9 @@ def test_short_or_non_stock_video_keeps_default_timeout(tmp_path, monkeypatch):
 def test_stock_video_allows_slow_provider_activity_without_false_idle_failure(tmp_path, monkeypatch):
     _isolate_storage(tmp_path, monkeypatch)
 
-    assert pipeline_worker._video_idle_timeout_seconds({"style_wide": "pexels"}, {}) == pipeline_worker.STOCK_VIDEO_IDLE_TIMEOUT_SECONDS
-    assert pipeline_worker._video_idle_timeout_seconds({"style_wide": "pixabay"}, {}) == pipeline_worker.STOCK_VIDEO_IDLE_TIMEOUT_SECONDS
+    long_stock = {"style_wide": "pexels", "video_script": "word " * 300}
+    assert pipeline_worker._video_idle_timeout_seconds(long_stock, {}) == pipeline_worker.STOCK_VIDEO_IDLE_TIMEOUT_SECONDS
+    assert pipeline_worker._video_idle_timeout_seconds({**long_stock, "style_wide": "pixabay"}, {}) == pipeline_worker.STOCK_VIDEO_IDLE_TIMEOUT_SECONDS
     assert pipeline_worker._video_idle_timeout_seconds({"style_wide": "full_ia"}, {}) == pipeline_worker.VIDEO_IDLE_TIMEOUT_SECONDS
 
 

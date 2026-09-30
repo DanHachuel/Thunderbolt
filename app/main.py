@@ -1985,6 +1985,11 @@ def render_home_update_controls() -> None:
         notice_message = f"Nova versão disponível: {display_version(version_status.latest_version)}. A versão actual é {APP_VERSION_LABEL or 'desconhecida'}."
         notice_kind = "info"
     notice_visible = bool(notice_message) and not st.session_state.get("home_update_notice_dismissed")
+    active_update_tasks = [
+        task for task in read_json("tasks.json", [])
+        if isinstance(task, dict) and str(task.get("state") or "").casefold() == "doing"
+    ]
+    update_blocked = bool(active_update_tasks)
 
     update_area, notice_area, close_area = st.columns([1.45, 3.55, 0.42], gap="small")
     with update_area:
@@ -2018,7 +2023,9 @@ def render_home_update_controls() -> None:
             """,
             unsafe_allow_html=True,
         )
-        if st.button("Atualizar Versão", key="home_update_version", type="primary", icon=":material/system_update:"):
+        if update_blocked:
+            st.warning("Actualização bloqueada enquanto houver tarefas de vídeo em execução.")
+        if st.button("Atualizar Versão", key="home_update_version", type="primary", icon=":material/system_update:", disabled=update_blocked):
             with st.spinner("A instalar a versão mais recente…"):
                 update_result = update_to_latest(APP_VERSION)
                 st.session_state["home_update_result"] = update_result
@@ -5779,7 +5786,7 @@ def _render_pipeline_worker_banner(worker_status: dict[str, Any], active_count: 
         st.warning("Worker de vídeo sem heartbeat recente. O launcher deve estar aberto para processar as tarefas.")
     heartbeat = worker_status.get("last_heartbeat_at") or worker_status.get("updated_at")
     if heartbeat:
-        st.caption(f"{_pipeline_time_age(heartbeat)} · vídeo: até 90 min com watchdog de inactividade de 10 min")
+        st.caption(f"{_pipeline_time_age(heartbeat)} · vídeo: até 10 min com watchdog de inactividade de 5 min")
     if worker_status.get("last_error"):
         st.error(f"Último erro do worker: {worker_status['last_error']}")
 

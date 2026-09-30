@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import re
@@ -576,7 +577,7 @@ def _validate_pexels_key(api_key: str) -> str:
         if exc.code in {401, 403, 429}:
             return "rejected"
         return "unknown"
-    except (TimeoutError, urllib.error.URLError):
+    except (TimeoutError, urllib.error.URLError, OSError, http.client.HTTPException):
         return "unknown"
 
 
