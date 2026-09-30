@@ -56,6 +56,7 @@ VIDEO_IDLE_TIMEOUT_SECONDS = 10 * 60
 STOCK_VIDEO_IDLE_TIMEOUT_SECONDS = 30 * 60
 STALE_TASK_SECONDS = VIDEO_TIMEOUT_SECONDS + 5 * 60
 WORKER_HEARTBEAT_TIMEOUT_SECONDS = 15
+TASK_HEARTBEAT_INTERVAL_SECONDS = 5
 UPLOAD_HEARTBEAT_INTERVAL_SECONDS = 5
 CASCADE_STAGE_ORDER = ("topic", "script", "title", "keywords", "video", "thumbnail_prompt", "thumbnail", "upload")
 
@@ -197,6 +198,32 @@ def _worker_heartbeat(**updates: Any) -> None:
     )
 
 
+def _task_heartbeat_loop(task_id: str, stop_event: threading.Event) -> None:
+    """Keep a running task alive while a provider call blocks between stages."""
+    while not stop_event.wait(TASK_HEARTBEAT_INTERVAL_SECONDS):
+        try:
+            task = _task_by_id(task_id)
+            if not task or str(task.get("state") or "") != "doing":
+                return
+            from hermes_ui.domain import update_task
+            heartbeat_at = _now()
+            updated = update_task(task_id, {
+                "task_heartbeat_at": heartbeat_at,
+                "heartbeat_stage": str(task.get("stage") or "pipeline"),
+            })
+            if updated:
+                _worker_heartbeat(
+                    task_id=task_id,
+                    status="running",
+                    stage=str(updated.get("stage") or task.get("stage") or "pipeline"),
+                    progress=int(updated.get("progress") or task.get("progress") or 0),
+                    task_heartbeat_at=heartbeat_at,
+                )
+        except Exception:
+            # A heartbeat must never terminate the pipeline; retry next tick.
+            continue
+
+
 def _parse_timestamp(value: Any) -> datetime | None:
     text = str(value or "").strip()
     if not text:
@@ -231,10 +258,18 @@ def _recover_stale_tasks() -> list[str]:
     for task in read_json("tasks.json", []):
         if not isinstance(task, dict) or str(task.get("state") or "") != "doing":
             continue
-        updated_at = _parse_timestamp(task.get("updated_at"))
-        if not updated_at:
+        timestamps = [
+            parsed
+            for parsed in (
+                _parse_timestamp(task.get("updated_at")),
+                _parse_timestamp(task.get("task_heartbeat_at")),
+            )
+            if parsed is not None
+        ]
+        if not timestamps:
             continue
-        age_seconds = (current_time - updated_at.astimezone(timezone.utc)).total_seconds()
+        latest_activity = max(timestamps)
+        age_seconds = (current_time - latest_activity.astimezone(timezone.utc)).total_seconds()
         timeout_seconds = _task_stale_timeout_seconds(task)
         if age_seconds <= timeout_seconds:
             continue
@@ -1977,6 +2012,14 @@ def run_once() -> dict[str, Any]:
             return {"ok": True, "status": "idle", "recovered_task_ids": recovered}
         task_id = str(candidate.get("id") or "")
         _worker_heartbeat(last_task_id=task_id, status="running", stage=str(candidate.get("stage") or "pipeline"), progress=int(candidate.get("progress") or 0), last_error="", recovered_task_ids=recovered)
+        heartbeat_stop = threading.Event()
+        heartbeat_thread = threading.Thread(
+            target=_task_heartbeat_loop,
+            args=(task_id, heartbeat_stop),
+            name=f"task-heartbeat-{task_id}",
+            daemon=True,
+        )
+        heartbeat_thread.start()
         try:
             result = _run_task(candidate)
             result_state = str(result.get("state") or "")
@@ -2012,6 +2055,9 @@ def run_once() -> dict[str, Any]:
             update_task(task_id, failure_updates)
             _worker_heartbeat(status="failed", last_error=message, stage=failed_stage, progress=int(current_task.get("progress") or 0), task_id=task_id)
             return {"ok": False, "task_id": task_id, "error": message, "failure_metadata": failure_metadata, "recovered_task_ids": recovered}
+        finally:
+            heartbeat_stop.set()
+            heartbeat_thread.join(timeout=2)
     finally:
         try:
             lock.unlink()

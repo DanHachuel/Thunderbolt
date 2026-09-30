@@ -121,6 +121,29 @@ def test_recover_stale_task_marks_it_failed(tmp_path, monkeypatch):
     assert "heartbeat" in task["error"]
 
 
+def test_task_heartbeat_keeps_blocked_provider_call_alive(tmp_path, monkeypatch):
+    _isolate_storage(tmp_path, monkeypatch)
+    monkeypatch.setattr(pipeline_worker, "TASK_HEARTBEAT_INTERVAL_SECONDS", 0.01)
+    old_timestamp = (datetime.now(timezone.utc) - timedelta(seconds=pipeline_worker.STALE_TASK_SECONDS + 10)).isoformat()
+    storage.write_json("tasks.json", [{
+        "id": "video-provider-blocked",
+        "state": "doing",
+        "stage": "video",
+        "progress": 60,
+        "updated_at": old_timestamp,
+    }])
+    stop_event = threading.Event()
+    thread = threading.Thread(target=pipeline_worker._task_heartbeat_loop, args=("video-provider-blocked", stop_event), daemon=True)
+    thread.start()
+    thread.join(timeout=0.2)
+    stop_event.set()
+    thread.join(timeout=1)
+    task = storage.read_json("tasks.json")[0]
+    assert task["state"] == "doing"
+    assert task["task_heartbeat_at"]
+    assert pipeline_worker.recover_stale_tasks() == []
+
+
 def test_manual_saved_script_is_not_selected_until_start(tmp_path, monkeypatch):
     _isolate_storage(tmp_path, monkeypatch)
     tasks = [
