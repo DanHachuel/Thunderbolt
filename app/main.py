@@ -190,6 +190,7 @@ from hermes_ui.media_providers import FULL_IA_VIDEO_PROVIDER_CODES, KIE_MEDIA_MO
 from hermes_ui.media_generation import GOOGLE_IMAGES_COPYRIGHT_WARNING, WEB_IMAGES_COPYRIGHT_WARNING, ensure_web_images_cards, new_web_images_card, test_web_images_card
 from hermes_ui.music import create_music_task, list_music_files, list_music_tasks, materialize_suno_audio, request_suno_generation, run_music_task, store_music_file, store_voiceover_file, transition_music_task
 from hermes_ui.music_generation import MUSIC_GENRES, MUSIC_VOCAL_OPTIONS, generate_music_fields
+from hermes_ui.music_blueprints import list_music_blueprint_documents, read_music_blueprint, save_music_blueprint
 from hermes_ui.media_downloader import AUDIO_FORMATS, IMAGE_CONTAINERS, IMAGE_QUALITY_OPTIONS, VIDEO_CONTAINERS, VIDEO_QUALITY_OPTIONS, MediaDownloadError, build_download_options, clear_media_download_history, dependency_status, download_media, list_media_downloads, media_download_file
 from hermes_ui.notifications import clear_notifications, list_notifications, mark_all_notifications_read, mark_notification_read, notification_event_catalog, notification_preferences, record_notification, reconcile_persisted_notifications as _do_reconcile_persisted_notifications, save_notification_preferences, unread_notification_count
 from hermes_ui.influencers import BACKEND_OPTIONS, DOCUMENT_EXTENSIONS, IMAGE_EXTENSIONS, backend_name, backend_status, get_repository, test_backend
@@ -2372,6 +2373,53 @@ def render_blueprints():
             except Exception as exc:
                 with st.expander(f"Inválido — {path.stem}"):
                     st.error(str(exc))
+
+
+def render_music_blueprints():
+    """Create and browse reusable Markdown music-style blueprints."""
+    st.title("Music Blueprint")
+    st.caption("Crie estilos musicais reutilizáveis em Markdown com o mesmo formulário da criação de músicas.")
+    settings = read_json("settings.json", {})
+    with st.form("create_music_blueprint"):
+        blueprint_name = st.text_input("Nome do Music Blueprint", placeholder="Ex.: Fado cinematográfico — voz feminina")
+        theme = st.text_input("Tema / assunto principal", placeholder="Ex.: uma viagem nocturna pela costa portuguesa")
+        language = st.selectbox("Idioma da letra/música", list(LANGUAGE_CODES), format_func=language_label)
+        genre = st.selectbox("Género musical", list(MUSIC_GENRES))
+        vocal = st.selectbox("Vocal", list(MUSIC_VOCAL_OPTIONS))
+        references = st.text_area(
+            "Referências culturais, paisagens, clima ou artistas similares (opcional)",
+            placeholder="Ex.: pôr do sol mediterrânico, estrada molhada e arranjos acústicos contemporâneos",
+            height=90,
+        )
+        submitted = st.form_submit_button("Criar Music Blueprint", type="primary")
+    if submitted:
+        if not blueprint_name.strip() or not theme.strip():
+            st.error("Informe o nome do Music Blueprint e o tema antes de criar.")
+        else:
+            try:
+                with st.spinner("A criar o Music Blueprint Markdown original…"):
+                    generated = generate_music_fields(settings, theme=theme, language=language, genre=genre, vocal=vocal, references=references)
+                    path = save_music_blueprint(blueprint_name, generated["prompt"])
+                st.success(f"Music Blueprint criado: {path.name}")
+                st.rerun()
+            except (CreativeGenerationError, OSError, ValueError) as exc:
+                st.error(str(exc))
+    st.divider()
+    documents = list_music_blueprint_documents()
+    st.subheader(f"Music Blueprints disponíveis ({len(documents)})")
+    search = st.text_input("Pesquisar Music Blueprints", key="music_blueprint_search")
+    if not documents:
+        st.info("Ainda não existem Music Blueprints na biblioteca local.")
+    for path in documents:
+        if search and search.casefold() not in path.name.casefold():
+            continue
+        try:
+            with st.expander(path.stem):
+                st.caption(f"Ficheiro: `{path.name}`")
+                st.markdown(read_music_blueprint(path))
+        except (OSError, ValueError) as exc:
+            with st.expander(f"Inválido — {path.stem}"):
+                st.error(str(exc))
 
 
 def render_youtube_brandings():
@@ -11457,6 +11505,7 @@ def main():
     ]
     blueprint_items = [
         ("Blueprints Youtube", ":material/library_books:", "Blueprints Youtube"),
+        ("Music Blueprint", ":material/music_note:", "Music Blueprint"),
         ("Thumbnail Blueprints", ":material/image:", "Thumbnail Blueprints"),
         ("Brandings Youtube", ":material/brush:", "Brandings Youtube"),
         ("Prompt-Masters Tiktok", ":material/auto_awesome:", "Prompt-Masters Tiktok"),
@@ -11552,7 +11601,7 @@ def main():
         "Niche Finder": "/niche-finder", "Niche Finder Kaggle": "/niche-finder/kaggle", "Niche Finder Apify": "/niche-finder/apify",
         "Pipeline Vídeos": "/pipeline-videos", "Criação de Vídeos": "/pipeline-videos/criacao", "Criação de Shorts": "/pipeline-videos/shorts", "Backlog Vídeos": "/pipeline-videos/backlog", "Roteiros": "/pipeline-videos/roteiros", "Thumbnails": "/pipeline-videos/thumbnails", "Upload": "/pipeline-videos/upload", "Update Youtube Vídeos": "/pipeline-videos/update-youtube",
         "Pipeline Música": "/pipeline-musica", "Criação de Músicas": "/pipeline-musica/criacao", "Music Backlog": "/pipeline-musica/backlog", "Vozes Personalizadas": "/pipeline-musica/vozes-personalizadas", "Upload Música": "/pipeline-musica/upload",
-        "Canais/Perfis (Vídeos)": "/canais-perfis-videos", "Canais YouTube": "/canais-perfis-videos/canais-youtube", "Canais Tiktok": "/canais-perfis-videos/canais-tiktok", "Contas Instagram": "/canais-perfis-videos/contas-instagram", "Facebook Pages": "/canais-perfis-videos/facebook-pages", "Blueprints Youtube": "/blueprints/youtube", "Thumbnail Blueprints": "/blueprints/thumbnails", "Brandings Youtube": "/blueprints/brandings-youtube", "Prompt-Masters Tiktok": "/blueprints/prompt-masters-tiktok", "Facebook Blueprint": "/blueprints/facebook",
+        "Canais/Perfis (Vídeos)": "/canais-perfis-videos", "Canais YouTube": "/canais-perfis-videos/canais-youtube", "Canais Tiktok": "/canais-perfis-videos/canais-tiktok", "Contas Instagram": "/canais-perfis-videos/contas-instagram", "Facebook Pages": "/canais-perfis-videos/facebook-pages", "Blueprints Youtube": "/blueprints/youtube", "Music Blueprint": "/blueprints/music", "Thumbnail Blueprints": "/blueprints/thumbnails", "Brandings Youtube": "/blueprints/brandings-youtube", "Prompt-Masters Tiktok": "/blueprints/prompt-masters-tiktok", "Facebook Blueprint": "/blueprints/facebook",
         "AI Influencers": "/ai-influencers", "Personagens": "/ai-influencers/personagens", "Geração de Conteúdo IA": "/ai-influencers/geracao-conteudo", "Motion Control": "/ai-influencers/motion-control", "UGC Products": "/ai-influencers/ugc-products",
         "Edição": "/edicao", "Limpador de Metadados": "/edicao/limpador-metadados", "Cortes": "/edicao/cortes", "Editor Python": "/edicao/editor-python", "Download Mídia": "/edicao/download-midia",
         "Growth": "/growth", "Analise Growth": "/growth/analise", "Growth Youtube": "/growth/analise/youtube", "Growth Tiktok": "/growth/analise/tiktok", "Growth Instagram": "/growth/analise/instagram", "Facebook Pages": "/growth/analise/facebook-pages", "Growth Bilibili": "/growth/analise/bilibili",
@@ -11679,6 +11728,7 @@ def main():
         "Upload": render_upload,
         "Update Youtube Vídeos": render_update_youtube_videos,
         "Blueprints Youtube": render_blueprints,
+        "Music Blueprint": render_music_blueprints,
         "Thumbnail Blueprints": render_thumbnail_blueprints,
         "Brandings Youtube": render_youtube_brandings,
         "Prompt-Masters Tiktok": render_tiktok_prompt_masters,

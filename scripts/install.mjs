@@ -105,6 +105,7 @@ function ensureDirs() {
     join(storageRoot, "blueprints", "importados"),
     join(storageRoot, "blueprints", "brandings"),
     join(storageRoot, "blueprints", "thumbnails"),
+    join(storageRoot, "blueprints", "music"),
     join(storageRoot, "tiktok"),
     join(storageRoot, "tiktok", "prompts_master"),
     join(storageRoot, "metadata_cleaner"),
@@ -119,6 +120,7 @@ function ensureDirs() {
   ];
   for (const directory of directories) mkdirSync(directory, { recursive: true });
   copySeedBlueprints(storageRoot);
+  copySeedMusicBlueprints(storageRoot);
   copySeedPromptMasters(storageRoot);
 }
 
@@ -169,7 +171,18 @@ function copySeedPromptMasters(storageRoot) {
     if (!existsSync(target)) copyFileSync(source, target);
   }
 }
-
+function copySeedMusicBlueprints(storageRoot) {
+  const seedRoot = join(root, "seed", "blueprints", "music");
+  const destination = join(storageRoot, "blueprints", "music");
+  if (!existsSync(seedRoot)) return;
+  mkdirSync(destination, { recursive: true });
+  for (const filename of readdirSync(seedRoot)) {
+    if (!filename.endsWith(".md")) continue;
+    const source = join(seedRoot, filename);
+    const target = join(destination, filename);
+    if (!existsSync(target)) copyFileSync(source, target);
+  }
+}
 function copyMissingTree(source, target) {
   if (!existsSync(source)) return 0;
   let copied = 0;
