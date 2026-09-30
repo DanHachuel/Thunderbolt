@@ -62,6 +62,22 @@ function moduleAvailable(moduleName) {
   return spawnSync(python, ["-c", code], { stdio: "ignore", env: pythonEnvironment }).status === 0;
 }
 
+const requiredWorkerModules = ["psutil", "serpapi", "playwright", "patchright"];
+const optionalWorkerModules = ["camoufox"];
+
+function checkWorkerDependencies(label) {
+  const missing = requiredWorkerModules.filter((moduleName) => !moduleAvailable(moduleName));
+  const optionalMissing = optionalWorkerModules.filter((moduleName) => !moduleAvailable(moduleName));
+  if (optionalMissing.length) {
+    console.warn(`Thunderbolt: dependências opcionais ausentes (${optionalMissing.join(", ")}); funcionalidades opcionais ficarão indisponíveis.`);
+  }
+  if (!missing.length) return true;
+  console.error(`Thunderbolt: ${label} não iniciado; imports obrigatórios ausentes: ${missing.join(", ")}.`);
+  console.error("Execute: npx.cmd --yes --prefer-online @danhachuel/thunderbolt install");
+  console.error("Depois confirme com: npx.cmd --yes --prefer-online @danhachuel/thunderbolt --check");
+  return false;
+}
+
 function configuredMoneyPrinterPath() {
   if (!existsSync(settingsPath)) return join(thunderboltHome, "MoneyPrinterTurbo");
   try {
@@ -189,10 +205,12 @@ const runtimeEnv = {
 };
 
 if (args[0] === "worker" || args.includes("--worker")) {
+  if (!checkWorkerDependencies("o worker de automação")) process.exit(1);
   run(python, ["-m", "hermes_ui.automation_worker", ...args.filter((arg) => arg !== "worker" && arg !== "--worker")], "worker de automação", runtimeEnv);
 }
 
 if (args[0] === "pipeline-worker" || args.includes("--pipeline-worker")) {
+  if (!checkWorkerDependencies("o worker do pipeline de vídeos")) process.exit(1);
   run(python, ["-m", "hermes_ui.pipeline_worker", ...args.filter((arg) => arg !== "pipeline-worker" && arg !== "--pipeline-worker")], "worker do pipeline de vídeos", runtimeEnv);
 }
 
@@ -401,6 +419,8 @@ let pipelineAutoRestartDisabled = false;
 let streamlitFailureCount = 0;
 let streamlitStableTimer = null;
 let streamlitAutoRestartDisabled = false;
+let workerDependencyFailureReported = false;
+let pipelineDependencyFailureReported = false;
 
 function scheduleAutomationWorkerRestart() {
   const now = Date.now();
@@ -422,7 +442,11 @@ function scheduleAutomationWorkerRestart() {
 }
 
 function startAutomationWorker() {
-  if (shuttingDown || worker || !hasScheduledAutomation()) return;
+  if (shuttingDown || worker || !hasScheduledAutomation() || workerDependencyFailureReported) return;
+  if (!checkWorkerDependencies("o worker de automação")) {
+    workerDependencyFailureReported = true;
+    return;
+  }
   const startedAt = Date.now();
   lastAutomationWorkerError = "";
   worker = spawn(python, ["-m", "hermes_ui.automation_worker"], {
@@ -476,7 +500,11 @@ function stopPipelineWorker() {
 }
 
 function startPipelineWorker() {
-  if (shuttingDown || pipelineWorker || pipelineRestartTimer || pipelineAutoRestartDisabled) return;
+  if (shuttingDown || pipelineWorker || pipelineRestartTimer || pipelineAutoRestartDisabled || pipelineDependencyFailureReported) return;
+  if (!checkWorkerDependencies("o worker do pipeline de vídeos")) {
+    pipelineDependencyFailureReported = true;
+    return;
+  }
   const startedAt = Date.now();
   pipelineWorker = spawn(python, ["-m", "hermes_ui.pipeline_worker"], {
     cwd: root,

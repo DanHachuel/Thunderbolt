@@ -587,7 +587,7 @@ function writeSettings(moneyprinterPath) {
 
 function installThunderboltDependencies(python) {
   if (!existsSync(pythonBin)) run(python.command, [...python.args, "-m", "venv", venvPath]);
-  installRequirementIfNeeded(join(root, "requirements.txt"), "thunderbolt_requirements_sha256", ["streamlit", "requests", "pandas", "toml", "imageio_ffmpeg", "edge_tts", "google.auth", "google_auth_oauthlib", "googleapiclient", "yt_dlp", "deno", "youtube_transcript_api", "huggingface_hub", "playwright", "patchright", "camoufox", "filelock", "uploader", "sau_cli", "serpapi"], "Thunderbolt");
+  installRequirementIfNeeded(join(root, "requirements.txt"), "thunderbolt_requirements_sha256", ["psutil", "streamlit", "requests", "pandas", "toml", "imageio_ffmpeg", "edge_tts", "google.auth", "google_auth_oauthlib", "googleapiclient", "yt_dlp", "deno", "youtube_transcript_api", "huggingface_hub", "playwright", "patchright", "camoufox", "filelock", "uploader", "sau_cli", "serpapi"], "Thunderbolt");
   installPlaywrightBrowsers();
   installPatchrightBrowser();
 }
