@@ -163,7 +163,7 @@ from hermes_ui.channel_import import build_channel_template_xlsx, channel_is_dup
 from hermes_ui.drafts import list_drafts, save_draft
 from hermes_ui.automation_worker import create_video_now_for_channel, load_worker_status
 from hermes_ui.pipeline_worker import load_pipeline_worker_status, recover_stale_tasks, resume_pipeline_worker, STALE_TASK_SECONDS, WORKER_HEARTBEAT_TIMEOUT_SECONDS
-from hermes_ui.storage import BLUEPRINTS, DEFAULT_LLM_PROVIDER, MEDIA_DOWNLOADS, STORAGE, TIKTOK_PROMPT_MASTERS, atomic_write, ensure_storage, get_display_name, list_blueprint_files, list_prompt_master_files, load_blueprint_file, load_prompt_master_file, now, read_json, set_display_name, update_json, write_json
+from hermes_ui.storage import BLUEPRINTS, DEFAULT_LLM_PROVIDER, MEDIA_DOWNLOADS, STORAGE, TIKTOK_PROMPT_MASTERS, atomic_write, ensure_storage, get_display_name, list_blueprint_files, list_content_blueprint_files, list_prompt_master_files, load_blueprint_file, load_content_blueprint_file, load_prompt_master_file, now, read_json, set_display_name, update_json, write_json
 from hermes_ui.domain import update_task
 from app.modules.niche_finder.apify import ApifyError, DEFAULT_ACTOR_ID, abort_actor_run, build_actor_input, get_dataset_items, normalize_video_items, start_actor_run, wait_for_actor_run
 from app.modules.niche_finder.data_loader import DatasetError, load_analysis_data
@@ -2371,6 +2371,21 @@ def render_blueprints():
                     _render_card_pencil(f"rename_blueprints_{card_key}")
                 _render_library_name_editor("blueprints", path, title)
             except Exception as exc:
+                with st.expander(f"Inválido — {path.stem}"):
+                    st.error(str(exc))
+        content_files = list_content_blueprint_files()
+        st.divider()
+        st.subheader(f"Blueprints de conteúdo ({len(content_files)})")
+        st.caption("Blueprints de roteiro e estratégia de conteúdo; não são templates de thumbnail.")
+        content_search = st.text_input("Pesquisar Blueprints de conteúdo", key="content_blueprint_search")
+        for path in content_files:
+            if content_search and content_search.casefold() not in path.name.casefold():
+                continue
+            try:
+                with st.expander(path.stem):
+                    st.caption(f"Ficheiro: `{path.name}`")
+                    st.markdown(load_content_blueprint_file(path))
+            except (OSError, ValueError) as exc:
                 with st.expander(f"Inválido — {path.stem}"):
                     st.error(str(exc))
 

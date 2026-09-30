@@ -105,6 +105,7 @@ function ensureDirs() {
     join(storageRoot, "blueprints", "importados"),
     join(storageRoot, "blueprints", "brandings"),
     join(storageRoot, "blueprints", "thumbnails"),
+    join(storageRoot, "blueprints", "conteudo"),
     join(storageRoot, "blueprints", "music"),
     join(storageRoot, "tiktok"),
     join(storageRoot, "tiktok", "prompts_master"),
@@ -120,6 +121,7 @@ function ensureDirs() {
   ];
   for (const directory of directories) mkdirSync(directory, { recursive: true });
   copySeedBlueprints(storageRoot);
+  copySeedContentBlueprints(storageRoot);
   copySeedMusicBlueprints(storageRoot);
   copySeedPromptMasters(storageRoot);
 }
@@ -174,6 +176,18 @@ function copySeedPromptMasters(storageRoot) {
 function copySeedMusicBlueprints(storageRoot) {
   const seedRoot = join(root, "seed", "blueprints", "music");
   const destination = join(storageRoot, "blueprints", "music");
+  if (!existsSync(seedRoot)) return;
+  mkdirSync(destination, { recursive: true });
+  for (const filename of readdirSync(seedRoot)) {
+    if (!filename.endsWith(".md")) continue;
+    const source = join(seedRoot, filename);
+    const target = join(destination, filename);
+    if (!existsSync(target)) copyFileSync(source, target);
+  }
+}
+function copySeedContentBlueprints(storageRoot) {
+  const seedRoot = join(root, "seed", "blueprints", "conteudo");
+  const destination = join(storageRoot, "blueprints", "conteudo");
   if (!existsSync(seedRoot)) return;
   mkdirSync(destination, { recursive: true });
   for (const filename of readdirSync(seedRoot)) {
