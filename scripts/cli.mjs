@@ -2,7 +2,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import http from "node:http";
 import net from "node:net";
-import { existsSync, mkdirSync, readFileSync, copyFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, copyFileSync, readdirSync, appendFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,8 +31,31 @@ const python = process.env.THUNDERBOLT_PYTHON || process.env.HERMES_PYTHON || (e
 const main = resolve(root, "app", "main.py");
 const streamlitBootstrap = resolve(root, "scripts", "streamlit_bootstrap.py");
 const storageDir = process.env.THUNDERBOLT_STORAGE_DIR || join(thunderboltHome, "storage");
+const diagnosticsDir = join(storageDir, "state");
+const launcherDiagnosticsPath = join(diagnosticsDir, "launcher_diagnostics.jsonl");
 const settingsPath = join(storageDir, "state", "settings.json");
 const pythonEnvironment = { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", PYTHONLEGACYWINDOWSSTDIO: "1", CLICK_NO_WIN_CONSOLE: "1" };
+
+function diagnostic(event, payload = {}) {
+  try {
+    mkdirSync(diagnosticsDir, { recursive: true });
+    appendFileSync(launcherDiagnosticsPath, `${JSON.stringify({ timestamp: new Date().toISOString(), event, ...payload })}\n`, "utf8");
+  } catch { /* logging never changes launcher behaviour */ }
+}
+
+function captureCrashSnapshot(lastWorkerLine = "") {
+  const result = spawnSync(python, ["-c", "import json,psutil; p=[{'pid':x.pid,'rss_mb':round(x.memory_info().rss/1048576,2),'name':x.name()} for x in psutil.process_iter(['name']) if 'python' in (x.info.get('name') or '').lower()]; print(json.dumps({'python_processes':p,'memory_available_mb':round(psutil.virtual_memory().available/1048576,2)}))"], { encoding: "utf8", env: pythonEnvironment });
+  let snapshot = {};
+  try { snapshot = JSON.parse(result.stdout || "{}"); } catch { snapshot = { snapshot_error: result.stderr || "não foi possível recolher snapshot" }; }
+  diagnostic("streamlit_crash_snapshot", { ...snapshot, last_worker_line: String(lastWorkerLine).slice(-500) });
+}
+
+function captureBaselineSnapshot() {
+  const result = spawnSync(python, ["-c", "import json,psutil; p=[{'pid':x.pid,'rss_mb':round(x.memory_info().rss/1048576,2),'name':x.name()} for x in psutil.process_iter(['name']) if 'python' in (x.info.get('name') or '').lower()]; m=psutil.virtual_memory(); print(json.dumps({'python_processes':p,'memory_total_mb':round(m.total/1048576,2),'memory_available_mb':round(m.available/1048576,2),'memory_used_mb':round(m.used/1048576,2),'memory_percent':m.percent}))"], { encoding: "utf8", env: pythonEnvironment });
+  let snapshot = {};
+  try { snapshot = JSON.parse(result.stdout || "{}"); } catch { snapshot = { snapshot_error: result.stderr || "não foi possível recolher baseline" }; }
+  diagnostic("baseline_snapshot", snapshot);
+}
 
 function run(command, commandArgs, label = "comando", environment = process.env) {
   console.log(`Thunderbolt: a iniciar ${label}...`);
@@ -455,6 +478,7 @@ function startAutomationWorker() {
     env: runtimeEnv,
     windowsHide: false,
   });
+  diagnostic("worker_started", { pid: worker.pid, worker: "automation", uptime_seconds: 0 });
   worker.stderr?.setEncoding("utf8");
   worker.stderr?.on("data", (chunk) => {
     const message = String(chunk).trim();
@@ -462,6 +486,7 @@ function startAutomationWorker() {
   });
   worker.on("error", (error) => console.error(`Thunderbolt worker: ${error.message}`));
   worker.on("exit", (code, signal) => {
+    diagnostic("worker_exited", { pid: worker?.pid, worker: "automation", code, signal, uptime_seconds: (Date.now() - startedAt) / 1000 });
     worker = null;
     if (shuttingDown) return;
     console.error(`Thunderbolt worker: terminou (código ${code ?? "-"}, sinal ${signal ?? "-"}).`);
@@ -512,6 +537,7 @@ function startPipelineWorker() {
     env: runtimeEnv,
     windowsHide: false,
   });
+  diagnostic("worker_started", { pid: pipelineWorker.pid, worker: "pipeline", uptime_seconds: 0 });
   pipelineWorker.on("error", (error) => console.error(`Thunderbolt pipeline worker: ${error.message}`));
   pipelineStableTimer = setTimeout(() => {
     pipelineFailureCount = 0;
@@ -519,6 +545,7 @@ function startPipelineWorker() {
     pipelineStableTimer = null;
   }, 60000);
   pipelineWorker.on("exit", (code, signal) => {
+    diagnostic("worker_exited", { pid: pipelineWorker?.pid, worker: "pipeline", code, signal, uptime_seconds: (Date.now() - startedAt) / 1000 });
     pipelineWorker = null;
     if (shuttingDown) return;
     console.error(`Thunderbolt pipeline worker: terminou (código ${code ?? "-"}, sinal ${signal ?? "-"}).`);
@@ -560,6 +587,7 @@ function startStreamlit() {
     env: { ...runtimeEnv, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", PYTHONLEGACYWINDOWSSTDIO: "1", CLICK_NO_WIN_CONSOLE: "1", THUNDERBOLT_LAUNCHER_RESTART: "1" },
     windowsHide: false,
   });
+  diagnostic("streamlit_started", { pid: child.pid, uptime_seconds: 0 });
   child.stdout?.on("data", (chunk) => {
     if (!shuttingDown) process.stdout.write(chunk);
   });
@@ -575,12 +603,15 @@ function startStreamlit() {
     streamlitStableTimer = null;
   }, 60000);
   child.on("exit", (code, signal) => {
+    diagnostic("streamlit_exited", { pid: child?.pid, code, signal, uptime_seconds: (Date.now() - startedAt) / 1000 });
+    if (!shuttingDown && code !== restartExitCode) captureCrashSnapshot(lastAutomationWorkerError);
     child = null;
     if (shuttingDown) {
       stopWorker();
       process.exit(code ?? (signal ? 1 : 0));
     }
     if (code === restartExitCode) {
+      diagnostic("restart_triggered", { reason: "streamlit_exit_code", code });
       const executable = platform() === "win32" ? "npx.cmd" : "npx";
       const replacement = spawn(executable, ["--yes", "--prefer-online", "@danhachuel/thunderbolt"], {
         cwd: userHome,
@@ -616,11 +647,13 @@ function startStreamlit() {
     console.error(`Thunderbolt: nova tentativa do Streamlit em ${delay / 1000}s (falha ${streamlitFailureCount}/5).`);
     streamlitRestartTimer = setTimeout(() => {
       streamlitRestartTimer = null;
+      diagnostic("restart_triggered", { reason: "streamlit_recovery", failure_count: streamlitFailureCount + 1 });
       startStreamlit();
     }, delay);
   });
 }
 
+captureBaselineSnapshot();
 startStreamlit();
 
 const stopWorker = () => {

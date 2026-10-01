@@ -32,6 +32,7 @@ from hermes_ui.creative_generation import CreativeGenerationError, generate_crea
 from hermes_ui.script_documents import save_script_document
 from hermes_ui.script_generation import generate_script_document
 from hermes_ui.storage import STORAGE, atomic_write, ensure_storage, get_display_name, list_blueprint_files, load_blueprint_file, read_json, write_json
+from hermes_ui.diagnostics import append_diagnostic_event
 from hermes_ui.llm_providers import active_llm_card, provider_definition
 from hermes_ui.media_generation import MediaGenerationError, _append_generation_constraints, generate_image_from_pool, generate_video_from_pool, web_images_search
 from hermes_ui.media_providers import FULL_IA_VIDEO_PROVIDER_CODES, media_cards_for_pool, media_provider_definition
@@ -818,7 +819,7 @@ def _persist_video_diagnostics(task: dict[str, Any], output: str) -> dict[str, s
         return {"log_file": log_file, "result_file": result_file}
 
 
-def _stop_process(process: subprocess.Popen[str]) -> None:
+def _stop_process(process: subprocess.Popen[str], *, reason: str = "unknown") -> None:
     process_id = getattr(process, "pid", None)
     terminated_children = 0
     killed_children = 0
@@ -869,6 +870,14 @@ def _stop_process(process: subprocess.Popen[str]) -> None:
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait()
+    append_diagnostic_event(
+        "mpt_diagnostics.jsonl",
+        "stop_process_called",
+        reason=str(reason),
+        pid_raiz=process_id,
+        filhos_terminados=terminated_children,
+        filhos_killed=killed_children,
+    )
     try:
         _write_worker_state(last_stop_process={
             "at": _now(),
@@ -1329,6 +1338,8 @@ def _run_video_helper_once(
     timeout_seconds = _video_timeout_seconds(task, settings)
     idle_timeout_seconds = _video_idle_timeout_seconds(task, settings)
     process: subprocess.Popen[str] | None = None
+    rss_peak_mb = 0.0
+    process_monitor: psutil.Process | None = None
 
     def _queue_output_line(value: str | None) -> None:
         try:
@@ -1352,6 +1363,13 @@ def _run_video_helper_once(
         for line in iter(process.stdout.readline, ""):
             raw_line = line.rstrip()
             normalized = _truncate_video_helper_line(raw_line)
+            append_diagnostic_event(
+                "mpt_diagnostics.jsonl",
+                "mpt_output",
+                stream="stdout_stderr",
+                pid=getattr(process, "pid", None),
+                tail=_redact_helper_output(normalized[-200:]),
+            )
             if raw_line.startswith("VIDEO_FILE="):
                 protocol_video_file_line = normalized
             _queue_output_line(normalized)
@@ -1376,6 +1394,19 @@ def _run_video_helper_once(
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+        )
+        try:
+            process_monitor = psutil.Process(process.pid)
+            process_monitor.cpu_percent(None)
+        except psutil.Error:
+            process_monitor = None
+        append_diagnostic_event(
+            "mpt_diagnostics.jsonl",
+            "mpt_spawn",
+            pid=process.pid,
+            command=[str(item) for item in command],
+            cwd=str(helper_dir),
+            env_keys=sorted(str(key) for key in env),
         )
     except FileNotFoundError as exc:
         message = "O comando uv não está instalado; não foi possível iniciar a geração de vídeo."
@@ -1414,13 +1445,30 @@ def _run_video_helper_once(
                 if not last_output_line:
                     last_output_line = "[MoneyPrinterTurbo] actividade de geração confirmada"
             if elapsed - last_heartbeat >= 5:
+                rss_mb = 0.0
+                cpu_percent = 0.0
+                if process_monitor is not None:
+                    try:
+                        rss_mb = process_monitor.memory_info().rss / (1024 * 1024)
+                        rss_peak_mb = max(rss_peak_mb, rss_mb)
+                        cpu_percent = process_monitor.cpu_percent(None)
+                    except psutil.Error:
+                        pass
+                append_diagnostic_event(
+                    "mpt_diagnostics.jsonl",
+                    "mpt_heartbeat",
+                    pid=getattr(process, "pid", None),
+                    elapsed=round(elapsed, 2),
+                    rss_mb=round(rss_mb, 2),
+                    cpu_percent=round(cpu_percent, 2),
+                )
                 # O helper expõe o resultado final, mas não uma percentagem estável.
                 # Mantemos uma faixa reservada para a etapa de vídeo e avançamos-a
                 # lentamente enquanto o processo responde, sem fingir conclusão.
                 video_progress = min(79, 52 + int(elapsed // 15))
                 current_task = _task_by_id(task_id)
                 if current_task and str(current_task.get("state") or "") in {"blocked", "cancelled"}:
-                    _stop_process(process)
+                    _stop_process(process, reason="cancel")
                     raise PipelineStopped("A tarefa foi parada pelo utilizador.")
                 _update(
                     task_id,
@@ -1440,7 +1488,7 @@ def _run_video_helper_once(
             if process.poll() is not None and output_finished:
                 break
             if elapsed >= timeout_seconds:
-                _stop_process(process)
+                _stop_process(process, reason="timeout")
                 message = f"A etapa Vídeo excedeu o limite de {timeout_seconds // 60} minutos e foi encerrada."
                 metadata = _failure_attribution(task, settings, "video", error=message)
                 raise PipelineError(
@@ -1449,7 +1497,7 @@ def _run_video_helper_once(
                     fallback_eligible=True,
                 )
             if time.monotonic() - last_activity_at >= idle_timeout_seconds:
-                _stop_process(process)
+                _stop_process(process, reason="idle")
                 message = (
                     "A etapa Vídeo não apresentou actividade comprovada do motor durante "
                     f"{idle_timeout_seconds // 60} minutos e foi encerrada."
@@ -1469,6 +1517,14 @@ def _run_video_helper_once(
             _persist_video_diagnostics(task, _output_text())
         except Exception:
             pass
+        append_diagnostic_event(
+            "mpt_diagnostics.jsonl",
+            "mpt_exit",
+            pid=getattr(process, "pid", None),
+            returncode=process.poll() if process is not None else None,
+            rss_peak_mb=round(rss_peak_mb, 2),
+            duration_seconds=round(time.monotonic() - started_at, 2),
+        )
     if process.returncode is None:
         process.wait(timeout=5)
     result_code = process.returncode
