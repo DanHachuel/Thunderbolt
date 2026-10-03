@@ -47,9 +47,18 @@ jobs:
             echo "Version $CURRENT_VERSION already selected; no change needed."
           fi
 
+      - name: Sync pyproject.toml version with package.json
+        run: |
+          # "Bump duplo" obrigatório: o runtime Python (pyproject.toml) acompanha
+          # sempre a versão npm publicada (REAL-BUG #2 da release 0.9.47).
+          # Falhar aqui obriga o commit a trazer os dois ficheiros sincronizados
+          # (execute localmente: node scripts/sync_pyproject_version.mjs).
+          node scripts/sync_pyproject_version.mjs --check
+
       - name: Validate package metadata
         run: |
           node --check scripts/cli.mjs
+          node --check scripts/sync_pyproject_version.mjs
           node -e "const p=require('./package.json'); if (!p.name.startsWith('@danhachuel/')) process.exit(1); if (!p.bin || !p.bin['thunderbolt']) process.exit(1); console.log(p.name + '@' + p.version)"
           npm pack --dry-run
 

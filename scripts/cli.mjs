@@ -2,7 +2,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import http from "node:http";
 import net from "node:net";
-import { existsSync, mkdirSync, readFileSync, copyFileSync, readdirSync, appendFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, copyFileSync, readdirSync, appendFileSync, writeFileSync, rmSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,6 +34,10 @@ const storageDir = process.env.THUNDERBOLT_STORAGE_DIR || join(thunderboltHome, 
 const diagnosticsDir = join(storageDir, "state");
 const launcherDiagnosticsPath = join(diagnosticsDir, "launcher_diagnostics.jsonl");
 const settingsPath = join(storageDir, "state", "settings.json");
+// Single-instance guard: o lock por ficheiro sobrevive a overrides de porta
+// (THUNDERBOLT_PORT/HERMES_PORT) que derrotavam o bind 3030 como lock.
+const launcherLockPath = join(diagnosticsDir, "launcher.lock");
+const killTreeHelper = resolve(root, "scripts", "kill_tree.py");
 const pythonEnvironment = { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", PYTHONLEGACYWINDOWSSTDIO: "1", CLICK_NO_WIN_CONSOLE: "1" };
 
 function diagnostic(event, payload = {}) {
@@ -55,6 +59,54 @@ function captureBaselineSnapshot() {
   let snapshot = {};
   try { snapshot = JSON.parse(result.stdout || "{}"); } catch { snapshot = { snapshot_error: result.stderr || "não foi possível recolher baseline" }; }
   diagnostic("baseline_snapshot", snapshot);
+}
+
+function runKillTreeHelper(modeArgs) {
+  // O venv do Thunderbolt tem sempre psutil (os workers dependem dele); o
+  // Python de sistema pode não ter, por isso é tentado primeiro o venv.
+  const candidates = [venvPython, python].filter(Boolean).filter((candidate, index, all) => all.indexOf(candidate) === index);
+  for (const candidate of candidates) {
+    if (!existsSync(candidate) && candidate !== "python" && candidate !== "python3") continue;
+    try {
+      const result = spawnSync(candidate, [killTreeHelper, ...modeArgs], { encoding: "utf8", env: pythonEnvironment, timeout: 60000 });
+      if (result.status === 0 && result.stdout) {
+        try { return JSON.parse(result.stdout); } catch { /* saída não-JSON */ }
+      }
+    } catch { /* tenta o próximo interpretador */ }
+  }
+  return null;
+}
+
+function stopPreviousThunderboltStacks() {
+  // Single-instance guard: no Windows uma morte abrupta do launcher deixa os
+  // filhos órfãos vivos, e um segundo arranque (npx) criava uma segunda stack
+  // completa que disputava os locks do storage — a causa-raiz do ciclo
+  // "servidor encerra sozinho". Antes de arrancar a nova stack, termina-se
+  // toda a árvore Thunderbolt anterior (o helper psutil exclui este launcher
+  // e a cadeia de processos que o iniciou).
+  const summary = runKillTreeHelper(["--cleanup", String(process.pid)]);
+  if (!summary) {
+    diagnostic("single_instance_guard_error", { error: "kill_tree.py indisponível; a limpeza da instância anterior não correu" });
+    return;
+  }
+  if (Array.isArray(summary.killed) && summary.killed.length > 0) {
+    diagnostic("previous_instance_stopped", { killed: summary.killed, survivors: summary.survivors || [] });
+    console.log(`Thunderbolt: terminada a instância anterior (${summary.killed.length} processo(s)).`);
+  }
+}
+
+function claimLauncherLock() {
+  try {
+    mkdirSync(diagnosticsDir, { recursive: true });
+    writeFileSync(launcherLockPath, JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() }), "utf8");
+  } catch { /* o lock é defesa extra; falhar a escrevê-lo não bloqueia o arranque */ }
+}
+
+function launcherExiting(reason) {
+  // Telemetria de saída: sem isto, mortes abruptas/externas eram
+  // indistinguíveis de exits silenciosos nos diagnósticos.
+  diagnostic("launcher_exiting", { reason, pid: process.pid, uptime_seconds: Math.round(process.uptime()) });
+  try { rmSync(launcherLockPath, { force: true }); } catch { /* best effort */ }
 }
 
 function run(command, commandArgs, label = "comando", environment = process.env) {
@@ -414,8 +466,16 @@ proxy.on("error", (error) => {
   console.error(`Thunderbolt: não foi possível abrir a interface em ${publicPort}: ${error.message}`);
   // A porta pública funciona como lock de instância do launcher: uma segunda
   // instância não deve continuar a arrancar workers depois do bind falhar.
+  // O guard de ficheiro (launcher.lock + kill_tree) é a defesa principal; o
+  // bind falhado só acontece se outra aplicação ocupar a porta.
+  launcherExiting("crash");
   process.exit(1);
 });
+// Single-instance guard: nenhum bind, worker ou Streamlit arranca antes de a
+// instância anterior estar totalmente terminada. A ordem importa: o bind da
+// porta pública (3030) falharia se a stack antiga ainda a mantivesse.
+stopPreviousThunderboltStacks();
+claimLauncherLock();
 proxy.listen(publicPort, "127.0.0.1", () => {
   console.log(`Thunderbolt: interface disponível em http://localhost:${publicPort}/`);
 });
@@ -607,11 +667,18 @@ function startStreamlit() {
     if (!shuttingDown && code !== restartExitCode) captureCrashSnapshot(lastAutomationWorkerError);
     child = null;
     if (shuttingDown) {
-      stopWorker();
+      launcherExiting(shutdownReason || "unknown");
       process.exit(code ?? (signal ? 1 : 0));
     }
     if (code === restartExitCode) {
       diagnostic("restart_triggered", { reason: "streamlit_exit_code", code });
+      // Termina a stack actual ANTES de spawnar a reposição: a ordem anterior
+      // (spawn primeiro, exit depois) deixava a árvore antiga a morrer em
+      // paralelo com a nova a arrancar, duplicando workers e a disputa pelos
+      // locks do storage. A reposição traz o próprio guard como defesa extra.
+      shuttingDown = true;
+      stopStackComponents();
+      proxy.close();
       const executable = platform() === "win32" ? "npx.cmd" : "npx";
       const replacement = spawn(executable, ["--yes", "--prefer-online", "@danhachuel/thunderbolt"], {
         cwd: userHome,
@@ -621,7 +688,7 @@ function startStreamlit() {
         windowsHide: false,
       });
       replacement.unref();
-      stopWorker();
+      launcherExiting("update");
       process.exit(0);
     }
     if (streamlitStableTimer) {
@@ -653,12 +720,15 @@ function startStreamlit() {
   });
 }
 
+// Single-instance guard + lock: nenhum worker/streamlit é arrancado antes de
+// a instância anterior estar totalmente terminada (o guard corre antes do
+// bind da porta pública, logo esta sequência já encontra a via livre).
 captureBaselineSnapshot();
 startStreamlit();
 
-const stopWorker = () => {
-  if (shuttingDown) return;
-  shuttingDown = true;
+let shutdownReason = "unknown";
+
+function stopStackComponents() {
   for (const socket of proxySockets) socket.destroy();
   if (streamlitRestartTimer) clearTimeout(streamlitRestartTimer);
   if (workerRestartTimer) clearTimeout(workerRestartTimer);
@@ -669,9 +739,17 @@ const stopWorker = () => {
   if (child && !child.killed) child.kill();
   if (worker && !worker.killed) worker.kill();
   stopPipelineWorker();
+}
+
+const stopWorker = (reason = "unknown") => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  shutdownReason = reason;
+  stopStackComponents();
   const finishShutdown = () => {
     if (shutdownForceTimer) clearTimeout(shutdownForceTimer);
     shutdownForceTimer = null;
+    launcherExiting(shutdownReason);
     process.exit(0);
   };
   proxy.close(finishShutdown);
@@ -680,8 +758,16 @@ const stopWorker = () => {
 };
 // O Ctrl+C tem de encerrar o launcher, o Streamlit e os workers. Ignorar SIGINT
 // deixava a porta pública 3030 ocupada e impedia iniciar uma nova versão.
-process.on("SIGINT", stopWorker);
-process.on("SIGTERM", stopWorker);
+process.on("SIGINT", () => stopWorker("ctrl+c"));
+process.on("SIGTERM", () => stopWorker("external_kill"));
+process.on("uncaughtException", (error) => {
+  diagnostic("launcher_uncaught_exception", { error: String((error && (error.stack || error.message)) || error).slice(-500) });
+  launcherExiting("crash");
+  process.exit(1);
+});
+process.on("unhandledRejection", (rejection) => {
+  diagnostic("launcher_unhandled_rejection", { reason: String(rejection).slice(-500) });
+});
 monitorWorkers();
 // O pipeline worker permanece disponível para recolher imediatamente tarefas
 // colocadas em `doing` pelo botão Start, mesmo quando a fila estava vazia.

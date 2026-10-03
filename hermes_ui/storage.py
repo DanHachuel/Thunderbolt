@@ -739,9 +739,31 @@ def _state_lock(path: Path, *, read_only: bool = False) -> Iterator[None]:
         try:
             os.close(descriptor)
         finally:
-            try:
-                lock_path.unlink()
-            except FileNotFoundError:
+            # REAL-BUG #1 (Windows): um PermissionError transitório no unlink do
+            # lock (antivírus/outro handle a segurar o ficheiro) deixava o lock
+            # no disco; como o pid do dono continuava vivo, o stale-reclaim não
+            # o removia e todas as escritas seguintes falhavam com TimeoutError
+            # de 30s. Espelha o padrão de retry do os.replace em
+            # _atomic_write_unlocked: retry curto antes de desistir.
+            unlink_error: OSError | None = None
+            for delay in (0.0, 0.05, 0.05):
+                if delay:
+                    time.sleep(delay)
+                try:
+                    lock_path.unlink()
+                    unlink_error = None
+                    break
+                except FileNotFoundError:
+                    unlink_error = None
+                    break
+                except PermissionError as exc:
+                    unlink_error = exc
+            if unlink_error is not None:
+                # Mesmo após os retries o ficheiro continuou ocupado: o lock fica
+                # no disco, mas o caso é transitório na prática (o antivírus
+                # liberta o handle em milissegundos; os retries cobrem-no).
+                # Não propagar: o falhanho de diagnóstico nunca deve partir a
+                # escrita que já foi concluída com sucesso.
                 pass
 
 
