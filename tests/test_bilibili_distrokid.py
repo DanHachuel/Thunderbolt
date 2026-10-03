@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from integrations import bilibili_upload, distrokid_upload
-from integrations.bilibili_upload import BilibiliApiAdapter, normalise_bilibili_api_cards
+from integrations.bilibili_upload import BILIBILI_API_VERSION, BilibiliApiAdapter, normalise_bilibili_api_cards
 from integrations.distrokid_upload import DistroKidAdapter, _cookie_header_to_context_cookies
 
 
@@ -16,9 +16,18 @@ def test_bilibili_cards_migrate_legacy_credentials_and_keep_values_out_of_public
     assert cards[0]["label"] == "Conta Bilibili 1"
     assert cards[0]["sessdata"] == "session-secret"
     result = BilibiliApiAdapter(cards[0]).status()
-    assert result.ok is False
+    # O bilibili-api-python é dependência declarada desde o commit dde0d8b
+    # ("add bilibili and distrokid uploads") e está instalado (17.4.2), logo
+    # status() agora detecta o SDK e devolve ok=True; o intent mantém-se: o
+    # status público expõe apenas a conta e a versão do SDK, nunca as
+    # credenciais migradas (SESSDATA/bili_jct/buvid3).
+    assert result.ok is True
+    assert result.data["account"] == "Conta Bilibili 1"
+    assert result.data["sdk"] == BILIBILI_API_VERSION
     assert "session-secret" not in result.message
     assert "session-secret" not in repr(result.data)
+    assert "csrf-secret" not in repr(result.data)
+    assert "buvid-secret" not in repr(result.data)
 
 
 def test_bilibili_connection_uses_credential_check_without_exposing_cookies():

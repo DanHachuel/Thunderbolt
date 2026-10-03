@@ -1,9 +1,12 @@
+import json
+import re
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 MAIN_SOURCE = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 PACKAGE_SOURCE = (ROOT / "package.json").read_text(encoding="utf-8")
+PYPROJECT_SOURCE = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
 THEME_CONFIG = (ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8")
 
 
@@ -18,8 +21,20 @@ def test_streamlit_theme_config_defaults_to_dark_with_moneyprinter_style_semanti
 
 
 def test_package_distributes_streamlit_theme_config_and_new_release_version():
-    assert '"version": "0.9.12"' in PACKAGE_SOURCE
+    # Desde sempre este teste confirmava a versão da release em curso; fixar uma
+    # versão literal torna-o obsoleto a cada publicação. A verificação com
+    # significado duradouro é a consistência: a versão do pacote npm e a do
+    # runtime Python (pyproject.toml) têm de acompanhar-se. Uma divergência aqui
+    # indica que uma publicação esqueceu de atualizar um dos dois ficheiros
+    # (estado actual: package.json 0.9.47 vs pyproject 0.9.46 — ver REAL-BUGs).
     assert '".streamlit/config.toml"' in PACKAGE_SOURCE
+
+    package_version = json.loads(PACKAGE_SOURCE)["version"]
+    pyproject_version = re.search(r'^version\s*=\s*"([^"]+)"', PYPROJECT_SOURCE, re.MULTILINE).group(1)
+    assert package_version == pyproject_version, (
+        f"package.json ({package_version}) e pyproject.toml ({pyproject_version}) têm versões diferentes; "
+        "a publicação npm deve atualizar os dois."
+    )
 
 
 def test_native_streamlit_theme_menu_is_preserved_without_internal_theme_selector():
@@ -102,6 +117,11 @@ def test_theme_bootstrap_uses_streamlit_html_without_deprecated_components():
 def test_no_deprecated_components_html_in_python_sources():
     for path in Path(__file__).parents[1].rglob("*.py"):
         if path == Path(__file__):
+            continue
+        # .venv e node_modules contêm código de terceiros (incluindo ficheiros
+        # não-UTF-8) fora do âmbito do projecto; a verificação cobre apenas as
+        # fontes do próprio Thunderbolt.
+        if ".venv" in path.parts or "node_modules" in path.parts:
             continue
         source = path.read_text(encoding="utf-8")
         assert "components.v1.html" not in source, f"Ocorrência em {path}"

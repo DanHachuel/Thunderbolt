@@ -153,6 +153,8 @@ def test_thumbnail_gallery_does_not_use_deprecated_container_width_image_argumen
     end = source.index("def ", start + len("def render_thumbnails"))
     block = source[start:end]
     assert 'st.image(str(image_path), width="stretch")' not in block
-    assert "image_bytes = image_path.read_bytes()" in block
+    # Commit 6f1219b passou a carregar os bytes pela cache _file_bytes em vez de
+    # image_path.read_bytes(); o intent anti-use_container_width é mantido.
+    assert "image_bytes = _file_bytes(image_path)" in block
     assert "st.image(image_bytes)" in block
     assert "data=image_bytes" in block

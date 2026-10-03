@@ -5,6 +5,16 @@ import pytest
 from hermes_ui import media_downloader, storage
 
 
+@pytest.fixture(autouse=True)
+def _restore_storage_globals():
+    """Desfaz as atribuições directas a globals do storage feitas por
+    _isolated_storage (que não usa monkeypatch); sem isto os globals ficam
+    apontando para tmp dirs mortos durante o resto da sessão."""
+    before = (storage.STORAGE, storage.STATE, storage.BLUEPRINTS, storage.TIKTOK_PROMPT_MASTERS, storage.MEDIA_DOWNLOADS)
+    yield
+    storage.STORAGE, storage.STATE, storage.BLUEPRINTS, storage.TIKTOK_PROMPT_MASTERS, storage.MEDIA_DOWNLOADS = before
+
+
 def _isolated_storage(tmp_path):
     storage.STORAGE = tmp_path / "storage"
     storage.STATE = storage.STORAGE / "state"

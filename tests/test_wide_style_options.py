@@ -36,17 +36,19 @@ def _load_source_helpers():
 
 def test_wide_style_options_are_exactly_the_final_five_in_order():
     namespace = _load_source_helpers()
+    # Desde a332304 a terceira opção é o pool genérico de Web Images
+    # (antes: "Montage: Google Imagem API"/google_images).
     assert namespace["WIDE_STYLE_OPTIONS"] == [
         "Montage: Pexels/Pixabay",
         "Montage: Text-to-Images",
-        "Montage: Google Imagem API",
+        "Montage: Web Images",
         "Full IA: Text-to-Video",
         "Remotion",
     ]
     assert namespace["VIDEO_SOURCE_VALUES"] == {
         "Montage: Pexels/Pixabay": "pexels",
         "Montage: Text-to-Images": "text_to_images",
-        "Montage: Google Imagem API": "google_images",
+        "Montage: Web Images": "web_images",
         "Full IA: Text-to-Video": "full_ia",
         "Remotion": "remotion",
     }

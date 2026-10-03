@@ -4,9 +4,12 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 
 
-def test_backlog_defaults_to_done_filter_and_normalizes_state():
+def test_backlog_defaults_to_todos_filter_and_normalizes_state():
     block = SOURCE.split("def render_videos():", 1)[1].split("def _music_backlog_records", 1)[0]
-    assert 'st.session_state["videos_state_filter"] = "done"' in block
+    # Commit bea908e ("fix: separar estado do video de upload no backlog")
+    # passou a mostrar todos os estados por defeito ("Todos") em vez de apenas
+    # "done", separando a conclusão do vídeo do estado de upload.
+    assert 'st.session_state["videos_state_filter"] = "Todos"' in block
     assert 'task_state = _catalog_task_state(task)' in block
     assert 'str(state_filter).strip().casefold()' in block
 

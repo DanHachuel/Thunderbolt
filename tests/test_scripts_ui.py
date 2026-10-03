@@ -13,8 +13,15 @@ def test_scripts_is_between_music_and_upload_in_pipeline():
     assert music_item in MAIN_SOURCE
     assert scripts_item in MAIN_SOURCE
     assert upload_item in MAIN_SOURCE
-    assert MAIN_SOURCE.index(music_item) < MAIN_SOURCE.index(scripts_item) < MAIN_SOURCE.index(upload_item)
+    # A reorganização por caminhos (commit 7eda7c5, "reorganize UI navigation")
+    # moveu "Criação de Músicas" para o grupo Pipeline Música e manteve
+    # "Roteiros" no grupo Pipeline Vídeos, imediatamente antes de "Upload" — a
+    # ordem anterior na fonte (Músicas < Roteiros < Upload) foi substituída por
+    # deliberação nesse commit.
+    pipeline_block = MAIN_SOURCE.split("    pipeline_video_items = [", 1)[1].split("    ]", 1)[0]
+    assert pipeline_block.index(scripts_item) < pipeline_block.index(upload_item)
     assert '"Roteiros": render_scripts' in MAIN_SOURCE
+    assert '"Roteiros": "/pipeline-videos/roteiros"' in MAIN_SOURCE
 
 
 def test_scripts_ui_exposes_storage_paths_and_blueprint_generation():

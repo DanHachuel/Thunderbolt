@@ -5,22 +5,14 @@ ROOT = Path(__file__).resolve().parents[1]
 MAIN_SOURCE = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 
 
-def test_global_notification_toast_runs_outside_notifications_page():
-    cycle_start = MAIN_SOURCE.index("def _render_notification_toast_cycle()")
-    cycle_end = MAIN_SOURCE.index("def localized_tab_labels", cycle_start)
-    cycle_source = MAIN_SOURCE[cycle_start:cycle_end]
-    main_start = MAIN_SOURCE.index("def main():")
-    main_source = MAIN_SOURCE[main_start:]
-
-    assert "reconcile_persisted_notifications()" in cycle_source
-    assert "list_notifications(limit=500, unread_only=True)" in cycle_source
-    assert "NOTIFICATION_TOAST_SEEN_KEY" in MAIN_SOURCE
-    assert "NOTIFICATION_TOAST_INITIALISED_KEY" in MAIN_SOURCE
-    assert "st.toast(body)" in cycle_source
-    assert "pending[:NOTIFICATION_TOAST_MAX_PER_CYCLE]" in cycle_source
-    assert '@st.fragment(run_every=NOTIFICATION_TOAST_INTERVAL)' in cycle_source
-    assert "render_global_notification_toasts()" in main_source
-    assert main_source.index("render_global_notification_toasts()") < main_source.index("renderers.get(current_page")
+# test_global_notification_toast_runs_outside_notifications_page foi removido
+# de propósito: o commit 9fb03dc ("fix: remover reconciliacao global no arranque
+# das paginas", 2026-09-17, pré-0.9.32) retirou deliberadamente a chamada
+# `render_global_notification_toasts()` de main(), desligando o toast global no
+# arranque das páginas (a reconciliação passou a ser manual, pelo botão
+# "Actualizar notificações"). Verificar essa ligação seria verificar um
+# comportamento removido; os testes restantes cobrem propriedades que
+# continuam reais (CSS do toast e não-marcacão de lidas no ciclo).
 
 
 def test_global_notification_toast_is_positioned_at_bottom_right():

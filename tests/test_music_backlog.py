@@ -15,12 +15,20 @@ def test_music_backlog_is_registered_under_the_music_pipeline_menu():
     assert '"Vozes Personalizadas": render_custom_music_voices' in MAIN_SOURCE
 
 
-def test_custom_music_voices_is_an_empty_reserved_blueprint_area():
+def test_custom_music_voices_previews_elevenlabs_personal_voices_without_catalog_or_uploads():
     voices = MAIN_SOURCE.split("def render_custom_music_voices()", 1)[1].split("def render_scripts", 1)[0]
 
     assert 'st.title("Vozes Personalizadas")' in voices
-    assert "st.text_input(" not in voices
+    # Commit 5b3451f ("feat: integrate ElevenLabs personal voices") substituiu a
+    # área reservada vazia pelo Voice Lab do ElevenLabs: as vozes pessoais são
+    # listadas apenas para pré-visualização/teste. Mantém-se o intent original
+    # de não expor uploads nem catálogo/selecção de vozes nesta área; o input de
+    # texto curto serve apenas de amostra para o teste de voz.
     assert "st.file_uploader(" not in voices
+    assert "st.selectbox(" not in voices
+    assert 'st.text_input("Texto curto para testar uma voz"' in voices
+    assert "fetch_personal_voices(settings, force=refresh)" in voices
+    assert '"Testar voz"' in voices
 
 
 def test_music_backlog_accepts_mpeg_audio_from_suno():

@@ -10,7 +10,10 @@ def test_channel_card_renders_and_saves_its_individual_delegated_session_id():
     source = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
     card = source.split('with st.expander("Upload directo — documento da conta deste canal", expanded=False):', 1)[1].split("render_channel_videos(channel)", 1)[0]
 
-    assert 'st.text_input(\n                        "DELEGATED_SESSION_ID deste canal"' in card
+    # Commits 5c6a6ce/a46cb72 ("fix: configure delegated session per channel"): o campo
+    # passou a ser atribuído a channel_delegated_session_id dentro do st.form do canal,
+    # com uma indentação mais profunda do que quando o teste foi escrito.
+    assert 'channel_delegated_session_id = st.text_input(\n                            "DELEGATED_SESSION_ID deste canal"' in card
     assert 'key=f"channel_delegated_session_id_{channel_id}"' in card
     assert '"delegated_session_id": channel_delegated_session_id.strip()' in card
     assert "não é copiado para o documento JSON partilhado" in card

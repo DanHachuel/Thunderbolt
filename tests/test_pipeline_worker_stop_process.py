@@ -92,16 +92,22 @@ def test_stop_process_windows_only_terminates_mpt_descendants(monkeypatch):
 def test_stop_process_posix_keeps_killpg_path(monkeypatch):
     process = FakeProcess(5151)
     calls = []
+    # os.getpgid/os.killpg/signal.SIGKILL existem apenas em anfitriões POSIX.
+    # Em Windows injectam-se equivalentes (SIGKILL == 9, como em Linux) para que
+    # o caminho POSIX continue testável em qualquer plataforma; raising=False
+    # evita AttributeError quando o atributo não existe no anfitrião.
+    expected_signal = getattr(signal, "SIGKILL", 9)
     monkeypatch.setattr(pipeline_worker.os, "name", "posix")
-    monkeypatch.setattr(pipeline_worker.os, "getpgid", lambda pid: calls.append(("getpgid", pid)) or 5151)
-    monkeypatch.setattr(pipeline_worker.os, "killpg", lambda pgid, sig: calls.append(("killpg", pgid, sig)))
+    monkeypatch.setattr(pipeline_worker.os, "getpgid", lambda pid: calls.append(("getpgid", pid)) or 5151, raising=False)
+    monkeypatch.setattr(pipeline_worker.os, "killpg", lambda pgid, sig: calls.append(("killpg", pgid, sig)), raising=False)
+    monkeypatch.setattr(pipeline_worker.signal, "SIGKILL", expected_signal, raising=False)
     monkeypatch.setattr(pipeline_worker, "_write_worker_state", lambda **updates: calls.append(("state", updates)))
     monkeypatch.setattr(pipeline_worker.psutil, "Process", lambda pid: SimpleNamespace(children=lambda recursive=True: []))
 
     pipeline_worker._stop_process(process)
 
     assert ("getpgid", 5151) in calls
-    assert ("killpg", 5151, signal.SIGKILL) in calls
+    assert ("killpg", 5151, expected_signal) in calls
     assert any(item[0] == "state" for item in calls)
 
 

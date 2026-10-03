@@ -3,6 +3,20 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _restore_storage_globals():
+    """Desfaz as atribuições directas a globals do storage feitas pelos testes
+    deste ficheiro (sem monkeypatch); sem isto os globals ficam apontando para
+    tmp dirs mortos durante o resto da sessão."""
+    from hermes_ui import storage
+
+    before = (storage.STORAGE, storage.STATE, storage.BLUEPRINTS, storage.TIKTOK_PROMPT_MASTERS, storage.MEDIA_DOWNLOADS)
+    yield
+    storage.STORAGE, storage.STATE, storage.BLUEPRINTS, storage.TIKTOK_PROMPT_MASTERS, storage.MEDIA_DOWNLOADS = before
+
 
 def test_storage_and_batch_modes(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))
@@ -234,9 +248,14 @@ def test_seed_blueprints_avoid_duplicate_when_legacy_file_is_in_blueprint_root(t
 def test_blueprint_creation_modes(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))
     from hermes_ui import blueprints, storage
-    storage.STORAGE = tmp_path / "storage"
-    storage.STATE = storage.STORAGE / "state"
-    storage.BLUEPRINTS = storage.STORAGE / "blueprints"
+    storage_root = tmp_path / "storage"
+    monkeypatch.setattr(storage, "STORAGE", storage_root)
+    monkeypatch.setattr(storage, "STATE", storage_root / "state")
+    monkeypatch.setattr(storage, "BLUEPRINTS", storage_root / "blueprints")
+    # blueprints.py faz from .storage import BLUEPRINTS — o nome vive também no
+    # namespace de blueprints; sem este patch o teste lê/escreve no storage
+    # real do repo (brandings acumulavam-se entre execuções da suíte).
+    monkeypatch.setattr(blueprints, "BLUEPRINTS", storage_root / "blueprints")
     storage.ensure_storage()
 
     blueprint, branding = blueprints.create_blueprint_from_link("https://youtu.be/abc123", "história", "Português (pt-BR)", False)

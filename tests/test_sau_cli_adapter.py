@@ -56,7 +56,9 @@ def test_runtime_conf_uses_base_dir_instead_of_unsupported_environment_variables
     env, runtime = backend._sau_environment()
     config = (runtime / "conf.py").read_text(encoding="utf-8")
     assert "BASE_DIR = Path(" in config
-    assert str(backend.session_directory()) in config
+    # No Windows o caminho no conf.py aparece com barras invertidas; normalizar
+    # ambos os lados mantém a asserção multiplataforma.
+    assert str(backend.session_directory()).replace("\\", "/") in config.replace("\\\\", "/").replace("\\", "/")
     assert "YT_PROXY = None" in config
     assert str(runtime) in env["PYTHONPATH"].split(os.pathsep)
     assert "BASE_DIR" not in env
@@ -164,7 +166,7 @@ def test_bilibili_login_uses_interactive_terminal_without_browser_flags(tmp_path
     assert result["success"] is True
     assert captured["command"] == ["sau-test", "bilibili", "login", "--account", "creator"]
     assert "--headed" not in captured["command"]
-    assert result["cookie_path"].endswith("cookies/bilibili_creator.json")
+    assert result["cookie_path"].replace("\\", "/").endswith("cookies/bilibili_creator.json")
 
 
 def test_cli_upload_failure_is_uncertain_and_manual_verification_is_required(tmp_path, monkeypatch):

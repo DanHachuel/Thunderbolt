@@ -13,7 +13,7 @@ def test_create_post_uses_local_storage_and_caps_image_count(monkeypatch, tmp_pa
     post = automation.create_post({"id": "page-1", "name": "Page", "url": "https://facebook.com/page"}, image_count=9)
     assert post["image_count"] == 5
     assert post["status"] == "tema_pendente"
-    assert post["folder"].endswith("/images")
+    assert post["folder"].replace("\\", "/").endswith("/images")
     assert saved[-1][0] == automation.POSTS_FILE
 
 

@@ -59,11 +59,16 @@ class DraftVideoTests(unittest.TestCase):
 
     def test_creation_page_exposes_saved_draft_tab_and_creates_normal_tasks(self):
         self.assertIn('"Gerar de Rascunho"', MAIN_SOURCE)
-        self.assertIn("def render_video_from_draft()", MAIN_SOURCE)
+        # Commit 48adc9b ("fix: isolate video and shorts draft tab state")
+        # adicionou o parâmetro prefix para isolar o estado da tab de rascunho
+        # entre Criação de Vídeos e Criação de Shorts.
+        self.assertIn('def render_video_from_draft(prefix: str = "new_video") -> None:', MAIN_SOURCE)
         self.assertIn("list_script_documents()", MAIN_SOURCE)
         self.assertIn("list_drafts()", MAIN_SOURCE)
         self.assertIn("create_tasks_for_batch(batch)", MAIN_SOURCE)
-        self.assertIn('key="new_video_resume_submit"', MAIN_SOURCE)
+        # A chave do botão passou a ser parametrizada por prefix; na página de
+        # Criação de Vídeos continua a resolver para "new_video_resume_submit".
+        self.assertIn('key=f"{prefix}_resume_submit"', MAIN_SOURCE)
         self.assertIn('sections=selected_sections', MAIN_SOURCE)
         self.assertIn('"video_script": script', MAIN_SOURCE)
         self.assertIn('"video_keywords": keywords', MAIN_SOURCE)

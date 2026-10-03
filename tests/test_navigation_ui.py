@@ -63,8 +63,13 @@ def test_settings_children_include_logs_between_notifications_and_api():
 def test_models_ai_has_meta_tutorial_renderer():
     assert '("Meta", ":material/menu_book:", "Meta")' in MAIN_SOURCE
     assert '"Meta": render_models_ai_tutorial' in MAIN_SOURCE
-    assert 'https://github.com/gyoridavid/ai_agents_az/blob/main/episode_8/guide-instagram.md' in MAIN_SOURCE
+    # A ligação à fonte externa foi removida (commit 41d2dc6, "remove
+    # unauthorized documentation sources"); o tutorial Meta é renderizado apenas
+    # a partir do ficheiro empacotado seed/references/guide-instagram.md
+    # (package.json inclui seed/references/*.md).
+    assert 'https://github.com/gyoridavid/ai_agents_az/blob/main/episode_8/guide-instagram.md' not in MAIN_SOURCE
     assert 'ROOT / "seed" / "references" / "guide-instagram.md"' in MAIN_SOURCE
+    assert 'st.caption("Guia de configuração de uma conta Instagram profissional e das credenciais Meta para automações com n8n.")' in MAIN_SOURCE
 
 
 def test_google_configuration_keeps_account_fields_and_api_page_does_not_duplicate_them():
@@ -92,7 +97,12 @@ def test_tutorial_reference_is_packaged_and_contains_meta_setup_sections():
     assert "### 3. Create a Facebook application" in tutorial
     assert "pages_show_list" in tutorial
     assert "instagram_content_publish" in tutorial
-    assert "https://github.com/gyoridavid/ai_agents_az/blob/main/episode_8/guide-instagram.md" in tutorial
+    # A URL do repositório externo foi removida do guia empacotado (commit
+    # 41d2dc6, "remove unauthorized documentation sources"); o conteúdo mantém
+    # as secções de setup Meta/n8n e o fecho com os dois artefactos esperados.
+    assert "gyoridavid" not in tutorial
+    assert "You will use the page token to setup the Facebook Graph node in n8n." in tutorial
+    assert "The Instagram account id which you'll need to set in the `Configure` node in the n8n workflow" in tutorial
     assert "Join our Skool community" not in tutorial
     assert "Be part of a growing community" not in tutorial
 
@@ -138,7 +148,11 @@ def test_api_keys_contains_material_sources_expander_with_multi_key_controls():
     assert 'render_material_source_api_keys(settings, embedded=True)' in settings_page
     assert 'with ai_influencers_tab:' in settings_page
     assert 'render_ai_influencers_api_status(effective_settings)' in settings_page
-    assert 'with tiktok_api_tab:' in settings_page
+    # Os cards TikTok deixaram de ter tab própria (tiktok_api_tab) e passaram a
+    # viver no expander "API Tiktok" dentro da tab API Keys (commit 6b70ef1,
+    # "move all upload settings into API Keys Upload"), junto aos expanders
+    # "API Instagram" e "API Facebook Pages".
+    assert 'with st.expander("API Tiktok", expanded=False):' in settings_page
     assert 'render_tiktok_api_cards(settings)' in settings_page
     assert 'with st.expander("Imagem e Video Montagem/MoviePy", expanded=False):' in material_sources_page
     assert 'with st.expander("Imagem e Video IA", expanded=False):' in MAIN_SOURCE
@@ -171,7 +185,11 @@ def test_supabase_tutorial_is_packaged_and_added_to_ai_influencers():
     assert "instagram-images" in tutorial
     assert "Join our Skool community" not in tutorial
     assert "Be part of a growing community" not in tutorial
-    assert '("Tutorial Supabase", ":material/storage:", "Tutorial Supabase")' in MAIN_SOURCE
+    # O item de navegação passou de "Tutorial Supabase" para "Supabase" (commit
+    # d887ac2, "reorganizar abas de documentacao"); o nome antigo ficou como
+    # alias para não quebrar ligações existentes.
+    assert '("Supabase", ":material/storage:", "Supabase")' in MAIN_SOURCE
+    assert '"Tutorial Supabase": "Supabase"' in MAIN_SOURCE
     assert '"Supabase": render_supabase_tutorial' in MAIN_SOURCE
     assert 'guide-supabase.md' in MAIN_SOURCE
 
@@ -189,7 +207,10 @@ def test_growth_pages_keep_other_placeholders_and_render_youtube_auditor():
 
 def test_youtube_cards_format_large_counts_with_pt_separators():
     assert 'def _format_channel_count(value: Any) -> str:' in MAIN_SOURCE
-    assert 'f"{int(value):,}".replace(",", ".")' in MAIN_SOURCE
+    # O formatador passou a normalizar o valor via _channel_count_value (commit
+    # ccf55ae, "reuse dependencies and preserve counts") em vez de int(value),
+    # mantendo o separador de milhar com ponto.
+    assert 'f"{_channel_count_value(value):,}".replace(",", ".")' in MAIN_SOURCE
     assert 'st.metric("Visualizações", _format_channel_count(channel.get("view_count")))' in MAIN_SOURCE
 
 

@@ -45,7 +45,11 @@ def test_report_contains_tiktok_metrics_and_private_data_limitation():
 
 
 def test_growth_tiktok_route_uses_real_renderer():
-    assert '"Analista Growth Tiktok": render_growth_tiktok' in MAIN_SOURCE
+    # Commit 560d696 ("reorganizar abas de growth") renomeou a rota
+    # "Analista Growth Tiktok" para "Growth Tiktok", mantendo o nome antigo
+    # como alias; o renderer real continua ligado e sem placeholder.
+    assert '"Analista Growth Tiktok": "Growth Tiktok"' in MAIN_SOURCE
+    assert '"Growth Tiktok": render_growth_tiktok' in MAIN_SOURCE
     assert "render_edit_placeholder(\"Analista Growth Tiktok\"" not in MAIN_SOURCE
 
 

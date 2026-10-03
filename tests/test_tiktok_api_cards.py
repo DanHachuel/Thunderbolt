@@ -76,7 +76,8 @@ def test_normalise_tiktok_cards_keeps_first_complete_card_order(monkeypatch):
 def test_tiktok_card_renderer_exposes_only_requested_credentials_and_actions():
     source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
     start = source.index("def render_tiktok_api_cards(")
-    end = source.index("def render_google_accounts():", start)
+    # A assinatura de render_google_accounts ganhou parâmetros; fatiar sem os parênteses.
+    end = source.index("def render_google_accounts(", start)
     renderer = source[start:end]
 
     assert renderer.count('st.text_input("TikTok Client ID"') == 1

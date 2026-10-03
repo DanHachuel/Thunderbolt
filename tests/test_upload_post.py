@@ -76,6 +76,9 @@ def test_upload_post_rejects_missing_video(tmp_path):
 def test_upload_post_platforms_are_typed_in_api_settings_and_normalised_from_text():
     from pathlib import Path
     source = Path(__file__).parents[1].joinpath("app", "main.py").read_text(encoding="utf-8")
-    assert 'text_setting("Plataformas Upload-Post", "upload_post_platforms"' in source
-    assert 'upload_post_platforms_selector' in source
-    assert 'help_text="Escreva as plataformas separadas por vírgulas' in source
+    # As plataformas são digitadas como texto nas configurações (com defeito
+    # "youtube,tiktok") e normalizadas para valores canónicos no selector do
+    # upload via normalize_upload_post_platforms.
+    assert 'st.text_input("Plataformas Upload-Post", value=str(settings.get("upload_post_platforms") or "youtube,tiktok")' in source
+    assert 'normalize_upload_post_platforms(uploader.platforms)' in source
+    assert 'key="upload_post_platforms_selector"' in source

@@ -33,7 +33,9 @@ def test_mpt_agent_requires_moneyprinter_moviepy_release(tmp_path, monkeypatch):
     command, cwd = calls[0]
     assert cwd == tmp_path
     assert command[:4] == ["uv", "run", "--with", "moviepy==2.2.1"]
-    assert command[-2:] == ["-c", "import moviepy; assert moviepy.__version__ == '2.2.1'"]
+    # O mpt_agent passou a reportar a versão instalada (importlib.metadata) em
+    # vez de afirmar moviepy.__version__ dentro do comando.
+    assert command[-2:] == ["-c", "import importlib.metadata; print(f\"moviepy {importlib.metadata.version('moviepy')}\")"]
 
 
 def test_split_text_keeps_chunks_below_safe_request_size():

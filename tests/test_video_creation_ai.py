@@ -92,12 +92,16 @@ class VideoCreationAITests(unittest.TestCase):
         video_position = PIPELINE_SOURCE.index('_update(task_id, stage="video", state="doing", progress=max(52')
         prompt_position = PIPELINE_SOURCE.index('_update(\n        task_id,\n        stage="thumbnail_prompt",\n        state="doing",\n        progress=max(84')
         thumbnail_position = PIPELINE_SOURCE.index('_update(task_id, stage="thumbnail", state="doing", progress=max(86')
-        upload_position = PIPELINE_SOURCE.index('_update(task_id, stage="upload", state="doing", progress=max(94')
+        # Commit dde82bb ("feat: add YouTube automation upload controls") mudou o
+        # estágio final: a conclusão sem rota de publicação usa o estágio
+        # "ready_upload" e o upload "doing" agora corre a progress=100.
+        upload_position = PIPELINE_SOURCE.index('_update(task_id, stage="upload", state="doing", progress=100')
         video_artifact_position = PIPELINE_SOURCE.index('artifacts["video"] = str(video_path)')
         self.assertLess(video_position, prompt_position)
         self.assertLess(prompt_position, thumbnail_position)
         self.assertLess(thumbnail_position, upload_position)
         self.assertLess(video_position, video_artifact_position)
+        self.assertIn('_update(task_id, stage="ready_upload", state="done", progress=100', PIPELINE_SOURCE)
         self.assertIn('video_ready=True', PIPELINE_SOURCE)
         self.assertIn('o vídeo já está disponível em {video_path}', PIPELINE_SOURCE)
 
