@@ -190,7 +190,11 @@ def test_websocket_timeout_is_removed_after_streamlit_handshake_data():
 def test_sigint_handlers_shutdown_launcher_and_release_port():
     launcher = (Path(__file__).resolve().parents[1] / "scripts" / "cli.mjs").read_text(encoding="utf-8")
     bootstrap = (Path(__file__).resolve().parents[1] / "scripts" / "streamlit_bootstrap.py").read_text(encoding="utf-8")
-    assert 'process.on("SIGINT", stopWorker);' in launcher
+    # Desde 0.9.48 os handlers passam o motivo de saída à telemetria
+    # (launcher_exiting); o comportamento de encerrar o launcher e libertar a
+    # porta mantém-se idêntico.
+    assert 'process.on("SIGINT", () => stopWorker("ctrl+c"));' in launcher
+    assert 'process.on("SIGTERM", () => stopWorker("external_kill"));' in launcher
     assert "if (child && !child.killed) child.kill();" in launcher
     assert 'stdio: ["ignore", "pipe", "pipe"]' in launcher
     assert 'if (!shuttingDown) process.stderr.write(chunk);' in launcher

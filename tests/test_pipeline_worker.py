@@ -199,7 +199,8 @@ def test_run_task_reuses_prepared_title_and_thumbnail_without_full_creative_gene
     assert result["state"] == "done"
     assert result["title"] == "Título preparado"
     assert any(update.get("thumbnail_prompt") == "prompt preparado" and update.get("thumbnail_text") == "TEMA REAL" for update in updates)
-    assert any(update.get("stage") == "upload" and update.get("state") == "done" for update in updates)
+    # Sem youtube_automation_auto_upload a pipeline termina em ready_upload (pronta para publicar).
+    assert any(update.get("stage") == "ready_upload" and update.get("state") == "done" for update in updates)
 
 
 def test_existing_thumbnail_path_is_reused_from_pipeline_artifacts(tmp_path, monkeypatch):
@@ -304,7 +305,9 @@ def test_run_task_resumes_from_persisted_artifacts_without_regenerating_previous
     storage.write_json("tasks.json", [task])
     calls = {"upload": 0}
 
-    monkeypatch.setattr(pipeline_worker, "_settings", lambda: {"youtube_batch_accounts": [{"id": "account-resume"}]})
+    # O interruptor mestre youtube_automation_auto_upload (novo na pipeline) precisa
+    # estar activo para que a rota de publicação seja tentada.
+    monkeypatch.setattr(pipeline_worker, "_settings", lambda: {"youtube_batch_accounts": [{"id": "account-resume"}], "youtube_automation_auto_upload": True})
     monkeypatch.setattr(pipeline_worker, "_channel_for_task", lambda value: channel)
     monkeypatch.setattr(pipeline_worker, "_blueprint_for_channel", lambda value: {})
     monkeypatch.setattr(pipeline_worker, "save_script_document", lambda *args, **kwargs: pytest.fail("não deve guardar novamente o roteiro"))
@@ -365,7 +368,9 @@ def test_run_task_completes_locally_when_no_upload_route_is_configured(tmp_path,
     monkeypatch.setattr(
         pipeline_worker,
         "_settings",
-        lambda: {"youtube_batch_accounts": [], "upload_post_enabled": False, "upload_post_auto_upload": False, "postiz_enabled": False, "postiz_auto_publish": False},
+        # youtube_automation_auto_upload activo, mas nenhuma rota configurada:
+        # a tarefa completa localmente com artefacto de upload local/skipped.
+        lambda: {"youtube_batch_accounts": [], "youtube_automation_auto_upload": True, "upload_post_enabled": False, "upload_post_auto_upload": False, "postiz_enabled": False, "postiz_auto_publish": False, "social_auto_upload_enabled": False},
     )
     monkeypatch.setattr(pipeline_worker, "_channel_for_task", lambda value: channel)
     monkeypatch.setattr(pipeline_worker, "_blueprint_for_channel", lambda value: {})
@@ -420,9 +425,13 @@ def test_upload_with_heartbeat_refreshes_worker_and_task_until_completion(tmp_pa
     monkeypatch.setattr(pipeline_worker, "_worker_heartbeat", lambda **updates: worker_heartbeats.append(updates))
     release = threading.Event()
 
+    # Cada ciclo de heartbeat faz uma escrita real de storage (lock+fsync), que
+    # no Windows pode demorar dezenas de ms (antivírus); a margem antiga de
+    # 0.18s só garantia 1 ciclo nesta plataforma. 1.2s garante >= 2 heartbeats
+    # em qualquer máquina mantendo o intent do teste (refrescar durante upload).
     result = pipeline_worker._upload_with_heartbeat(
         "upload-long",
-        lambda: (release.wait(0.18), {"ok": True})[1],
+        lambda: (release.wait(1.2), {"ok": True})[1],
     )
 
     assert result == {"ok": True}
@@ -497,6 +506,11 @@ class _FakePopen:
         self.stdout = _FakeStdout(lines)
         self.returncode = None if stays_alive else returncode
         self._stays_alive = stays_alive
+        # A produção agora monitora o processo filho via psutil.Process(process.pid)
+        # e registra o pid em diagnósticos; um pid inexistente cai no
+        # except psutil.Error -> process_monitor = None, que é o caminho determinístico
+        # esperado para este fake.
+        self.pid = 999999
 
     def poll(self):
         return self.returncode

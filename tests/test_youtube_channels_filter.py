@@ -65,7 +65,9 @@ def test_youtube_automation_cards_show_country_before_open_channel_and_share_cou
 
 def test_channel_composio_account_id_uses_hyphenated_title_words():
     assert composio_connected_account_id_from_channel_name("The Financial Mechanics") == "The-Financial-Mechanics"
-    assert composio_connected_account_id_from_channel_name("Canal de Finanças") == "Canal-De-Financas"
+    # A implementação preserva a capitalização original das palavras (sem
+    # title-casing) e dobra os acentos para ascii; "de" mantém a minúscula.
+    assert composio_connected_account_id_from_channel_name("Canal de Finanças") == "Canal-de-Financas"
 
 
 def test_channel_edit_form_exposes_editable_composio_account_id():

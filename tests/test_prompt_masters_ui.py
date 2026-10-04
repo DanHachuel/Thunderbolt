@@ -8,10 +8,17 @@ PACKAGE_SOURCE = (ROOT / "package.json").read_text(encoding="utf-8")
 
 
 def test_tiktok_pipeline_is_separate_and_expansible():
-    assert 'pipeline_tiktok_items = [' in MAIN_SOURCE
-    assert '("Prompts Master", ":material/auto_awesome:", "Prompts Master")' in MAIN_SOURCE
-    assert 'elif target == "Pipeline TikTok":' in MAIN_SOURCE
-    assert '"Prompts Master": render_tiktok_prompt_masters' in MAIN_SOURCE
+    # Desde a reorganização da navegação por caminhos, a área de Prompt Masters
+    # do TikTok é um item de nível superior ("Prompt-Masters Tiktok") dentro de
+    # blueprint_items, com caminho próprio, aliases dos nomes antigos
+    # ("Prompts Master"/"Pipeline TikTok") e renderer dedicado — separada e
+    # expansível como na estrutura anterior.
+    assert 'blueprint_items = [' in MAIN_SOURCE
+    assert '("Prompt-Masters Tiktok", ":material/auto_awesome:", "Prompt-Masters Tiktok"),' in MAIN_SOURCE
+    assert '"Prompt-Masters Tiktok": "/blueprints/prompt-masters-tiktok"' in MAIN_SOURCE
+    assert '"Prompts Master": "Prompt-Masters Tiktok",' in MAIN_SOURCE
+    assert '"Prompt-Masters Tiktok": render_tiktok_prompt_masters,' in MAIN_SOURCE
+    assert 'def render_tiktok_prompt_masters():' in MAIN_SOURCE
 
 
 def test_prompt_master_storage_is_not_blueprints_storage():
@@ -21,7 +28,8 @@ def test_prompt_master_storage_is_not_blueprints_storage():
     assert 'seed/prompt_masters/**/*.md' in PACKAGE_SOURCE
     assert 'storage/tiktok/prompts_master/**/*.md' not in PACKAGE_SOURCE
     assert 'BLUEPRINTS / "importados"' in STORAGE_SOURCE
-    assert '"display_names.json": {"blueprints": {}, "prompt_masters": {}}' in STORAGE_SOURCE
+    # O default de display_names ganhou as secções music e music_lyrics.
+    assert '"display_names.json": {"blueprints": {}, "prompt_masters": {}, "music": {}, "music_lyrics": {}}' in STORAGE_SOURCE
     assert 'def get_display_name(kind: str, path: Path, fallback: str)' in STORAGE_SOURCE
     assert 'def set_display_name(kind: str, path: Path, name: str)' in STORAGE_SOURCE
 

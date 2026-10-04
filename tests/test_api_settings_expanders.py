@@ -15,7 +15,10 @@ class ApiSettingsExpandersTests(unittest.TestCase):
             "Imagem e Video Montagem/MoviePy",
             "Imagem e Video IA",
             "Remotion",
-            "Google Imagem API",
+            # Commit a332304 ("Add prioritized web image scraping providers")
+            # trocou o expander "Google Imagem API" pela função
+            # render_web_images_cards, com o expander "Scrapt de Imagens na Web".
+            "Scrapt de Imagens na Web",
             "LLM — providers e modelos",
             "Voz, TTS e música — Azure Speech, restantes serviços e Suno",
             "Upload-Post",
@@ -106,13 +109,18 @@ class ApiSettingsExpandersTests(unittest.TestCase):
         self.assertIn('with st.expander("Imagem e Video Montagem/MoviePy", expanded=False)', MAIN_SOURCE)
         self.assertIn('with st.expander("Imagem e Video IA", expanded=False)', MAIN_SOURCE)
         remotion_position = MAIN_SOURCE.index('with st.expander("Remotion", expanded=False)', settings_position)
-        google_images_position = MAIN_SOURCE.index('with st.expander("Google Imagem API", expanded=False)', settings_position)
+        # Commit a332304: o expander "Google Imagem API" foi substituído pela
+        # função render_web_images_cards (expander "Scrapt de Imagens na Web"),
+        # chamada entre o expander Remotion e o expander de Voz/TTS.
+        web_images_position = MAIN_SOURCE.index('render_web_images_cards(settings, embedded=True)', settings_position)
         voice_position = MAIN_SOURCE.index('with st.expander("Voz, TTS e música — Azure Speech, restantes serviços e Suno", expanded=False)', settings_position)
         self.assertLess(media_position, remotion_position)
-        self.assertLess(remotion_position, google_images_position)
-        self.assertLess(google_images_position, voice_position)
+        self.assertLess(remotion_position, web_images_position)
+        self.assertLess(web_images_position, voice_position)
         self.assertIn('Integração do Remotion como provedor de vídeo será implementada na Etapa 2.', MAIN_SOURCE)
-        self.assertIn('Integração da API do Google Custom Search (Google Images) será implementada na Etapa 2.', MAIN_SOURCE)
+        # A nota de placeholder do Google Custom Search foi substituída pelo pool
+        # real de providers de imagens na web (commit a332304).
+        self.assertIn('provider_labels = {"google_images": "Google Images", "serpapi": "SerpApi", "brightdata": "Bright Data"}', MAIN_SOURCE)
         self.assertNotIn('Nano Banana — geração de thumbnails', MAIN_SOURCE)
         self.assertNotIn('Niche Finder — execução remota no Kaggle', MAIN_SOURCE)
         self.assertNotIn('Niche Finder — execução através da Apify', MAIN_SOURCE)
@@ -274,7 +282,8 @@ class ApiSettingsExpandersTests(unittest.TestCase):
             "Imagem e Video IA",
             "Voz, TTS e música — Azure Speech, restantes serviços e Suno",
             "Remotion",
-            "Google Imagem API",
+            # Commit a332304: "Google Imagem API" → "Scrapt de Imagens na Web".
+            "Scrapt de Imagens na Web",
         ):
             self.assertIn(f'st.expander("{label}", expanded=False)', MAIN_SOURCE)
 

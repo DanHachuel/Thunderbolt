@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -15,9 +16,11 @@ def _isolated_storage(tmp_path, monkeypatch):
     monkeypatch.setenv("THUNDERBOLT_STORAGE_DIR", str(storage_root))
     from hermes_ui import storage
 
-    storage.STORAGE = storage_root
-    storage.STATE = storage_root / "state"
-    storage.BLUEPRINTS = storage_root / "blueprints"
+    # monkeypatch.setattr restaura os globals no fim de cada teste; atribuição
+    # directa vazava STORAGE/STATE para os testes seguintes da sessão.
+    monkeypatch.setattr(storage, "STORAGE", storage_root)
+    monkeypatch.setattr(storage, "STATE", storage_root / "state")
+    monkeypatch.setattr(storage, "BLUEPRINTS", storage_root / "blueprints")
     storage.ensure_storage()
     return storage
 
@@ -38,6 +41,40 @@ def test_concurrent_task_mutations_preserve_every_video(tmp_path, monkeypatch):
     tasks = storage.read_json("tasks.json")
     assert len(tasks) == 32
     assert {task["id"] for task in tasks} == {f"video-{index}" for index in range(32)}
+
+
+def test_state_lock_unlink_tolerates_transient_permission_error(tmp_path, monkeypatch):
+    """REAL-BUG #1 (fix 0.9.48): no Windows o unlink do lock pode receber um
+    PermissionError transitório (antivírus a segurar o ficheiro); sem retry o
+    lock vazava e todas as escritas seguintes falhavam com TimeoutError de
+    30s enquanto o pid do dono estivesse vivo. O retry curto (3 tentativas,
+    50ms) liberta o lock sem partir a escrita já concluída."""
+    storage = _isolated_storage(tmp_path, monkeypatch)
+    storage.write_json("tasks.json", [])
+    real_unlink = os.unlink
+    failures = {"count": 0}
+
+    def flaky_unlink(path, *args, **kwargs):
+        if str(path).endswith(".tasks.json.lock") and failures["count"] < 2:
+            failures["count"] += 1
+            raise PermissionError(13, "O arquivo já está sendo usado por outro processo")
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(storage.os, "unlink", flaky_unlink)
+
+    def mutate(tasks):
+        tasks.append({"id": "video-lock", "state": "to_do"})
+
+    storage.update_json("tasks.json", [], mutate)
+
+    # O retry absorveu os dois erros transitórios e a escrita foi concluída.
+    assert failures["count"] == 2
+    assert storage.read_json("tasks.json")[0]["id"] == "video-lock"
+    # O lock foi realmente libertado: uma segunda escrita segue sem esperar
+    # pelo stale-reclaim (que não remove locks de pids vivos).
+    assert not (storage.STATE / ".tasks.json.lock").exists()
+    storage.update_json("tasks.json", [], lambda tasks: tasks.append({"id": "video-second", "state": "to_do"}))
+    assert len(storage.read_json("tasks.json")) == 2
 
 
 def test_corrupt_protected_task_file_is_not_replaced_by_empty_list(tmp_path, monkeypatch):
@@ -102,7 +139,14 @@ def test_atomic_write_retries_transient_replace_permission_error(tmp_path, monke
 
 def test_install_merges_legacy_tasks_when_new_storage_already_exists(tmp_path):
     legacy_state = tmp_path / "Hermes-UI" / "storage" / "state"
-    current_state = tmp_path / ".thunderbolt" / "storage" / "state"
+    # No Windows o install.mjs usa LOCALAPPDATA/THUNDERBOLT como home por omissão
+    # (não .thunderbolt); THUNDERBOLT_HOME NÃO pode ser definido porque desativa
+    # a migração (migrateLegacyInstallation retorna cedo). Isolar LOCALAPPDATA
+    # mantém o teste hermético em ambas as plataformas.
+    if sys.platform == "win32":
+        current_state = tmp_path / "AppData" / "Local" / "THUNDERBOLT" / "storage" / "state"
+    else:
+        current_state = tmp_path / ".thunderbolt" / "storage" / "state"
     legacy_state.mkdir(parents=True)
     current_state.mkdir(parents=True)
     (legacy_state / "tasks.json").write_text(
@@ -114,7 +158,13 @@ def test_install_merges_legacy_tasks_when_new_storage_already_exists(tmp_path):
     (current_state / "queues.json").write_text(json.dumps({"script": []}), encoding="utf-8")
 
     environment = os.environ.copy()
+    # HOME cobre sistemas POSIX; USERPROFILE/LOCALAPPDATA cobrem as resoluções
+    # do install.mjs no Windows (getUserHome e o home por omissão).
+    # THUNDERBOLT_HOME é removido propositadamente: um valor explícito desativa
+    # a migração legada (migrateLegacyInstallation).
     environment["HOME"] = str(tmp_path)
+    environment["USERPROFILE"] = str(tmp_path)
+    environment["LOCALAPPDATA"] = str(tmp_path / "AppData" / "Local")
     environment.pop("THUNDERBOLT_HOME", None)
     completed = subprocess.run(
         ["node", str(ROOT / "scripts" / "install.mjs"), "--skip-python-deps", "--skip-moneyprinter"],
@@ -122,6 +172,9 @@ def test_install_merges_legacy_tasks_when_new_storage_already_exists(tmp_path):
         env=environment,
         capture_output=True,
         text=True,
+        # install.mjs escreve UTF-8; sem isto o Windows decodifica com cp1252
+        # e as asserções de mensagens em português falham por mojibake.
+        encoding="utf-8",
         check=False,
     )
 

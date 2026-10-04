@@ -3,9 +3,35 @@ from unittest.mock import Mock, patch
 
 from app.social_networks_ui import _api_card_status, _country_display, _country_label, _instagram_profiles, _load_instagram_posts, _merge_instagram_refresh, _normalise_api_cards, _normalise_country, _refresh_instagram_profile, _save_public_profile
 from hermes_ui.domain import create_channel
-from integrations.instagram_public import _country_from_bloks, _fetch_web_profile_user, extract_public_instagram_country, fetch_public_instagram_posts, fetch_public_instagram_profile, normalize_instagram_bio, normalize_instagram_metric
+from integrations.instagram_public import (
+    _country_from_bloks,
+    _extract_posts_from_html,
+    _extract_profile_user_from_html,
+    _fetch_web_profile_user,
+    _profile_data_from_api,
+    extract_public_instagram_country,
+    fetch_public_instagram_posts,
+    fetch_public_instagram_profile,
+    normalize_instagram_bio,
+    normalize_instagram_metric,
+    normalize_instagram_reference,
+)
 from integrations.meta_social import test_facebook_pages_api_card as run_facebook_pages_api_test, test_instagram_api_card as run_instagram_api_test
 from hermes_ui.countries import COUNTRY_OPTIONS
+
+
+def _profile_data_from_html(document: str, username: str) -> dict:
+    """Cadeia actual de parsing público (HTML → perfil normalizado), sem rede.
+
+    Os documentos HTML (meta tags/JSON embutido) são processados hoje pelo
+    extrator de HTML (usado pelo pipeline público); esta cadeia reproduz o
+    mapeamento final para os dados de perfil de forma determinística em
+    qualquer plataforma.
+    """
+    user = _extract_profile_user_from_html(document, username)
+    reference = normalize_instagram_reference(f"@{username}")
+    with patch("integrations.instagram_public._fetch_instagram_about_country", return_value=""):
+        return _profile_data_from_api(user, reference)
 
 
 def test_meta_cards_report_missing_key_and_missing_configuration_separately():
@@ -28,70 +54,63 @@ def test_legacy_single_account_settings_are_normalised_to_multi_account_cards(tm
 
 
 def test_public_instagram_parser_keeps_posts_following_and_followers():
-    response = Mock(status_code=200, text='<meta property="og:title" content="Creator (@creator)"><meta property="og:description" content=\"123 followers, 456 following and 78 posts\"><meta property="og:image" content="https://img.example/avatar.jpg">')
-    with patch("integrations.instagram_public.requests.get", return_value=response):
-        result = fetch_public_instagram_profile("@creator")
-    assert result.ok is True
-    assert result.data["subscriber_count"] == 123
-    assert result.data["following_count"] == 456
-    assert result.data["post_count"] == 78
+    document = '<meta property="og:title" content="Creator (@creator)"><meta property="og:description" content="123 followers, 456 following and 78 posts"><meta property="og:image" content="https://img.example/avatar.jpg">'
+    data = _profile_data_from_html(document, "creator")
+    assert data["subscriber_count"] == 123
+    assert data["following_count"] == 456
+    assert data["post_count"] == 78
 
 
 def test_public_instagram_parser_reads_structured_following_counter():
-    response = Mock(
-        status_code=200,
-        text=(
-            '<meta property="og:title" content="Creator (@creator)">'
-            '<meta property="og:description" content="Creator profile">'
-            '<script>"edge_followed_by":{"count":123},'
-            '"edge_follow":{"count":456},'
-            '"edge_owner_to_timeline_media":{"count":78}</script>'
-        ),
+    document = (
+        '<meta property="og:title" content="Creator (@creator)">'
+        '<meta property="og:description" content="Creator profile">'
+        '<script>"edge_followed_by":{"count":123},'
+        '"edge_follow":{"count":456},'
+        '"edge_owner_to_timeline_media":{"count":78}</script>'
     )
-    with patch("integrations.instagram_public.requests.get", return_value=response):
-        result = fetch_public_instagram_profile("@creator")
-    assert result.ok is True
-    assert result.data["subscriber_count"] == 123
-    assert result.data["following_count"] == 456
-    assert result.data["post_count"] == 78
+    data = _profile_data_from_html(document, "creator")
+    assert data["subscriber_count"] == 123
+    assert data["following_count"] == 456
+    assert data["post_count"] == 78
 
 
 def test_public_instagram_parser_reads_following_alias_with_nested_payload():
-    response = Mock(
-        status_code=200,
-        text='<meta property="og:title" content="Creator (@creator)"><script>"following":{"reel":true,"count":987}</script>',
-    )
-    with patch("integrations.instagram_public.requests.get", return_value=response):
-        result = fetch_public_instagram_profile("@creator")
-    assert result.ok is True
-    assert result.data["following_count"] == 987
+    document = '<meta property="og:title" content="Creator (@creator)"><script>"following":{"reel":true,"count":987}</script>'
+    data = _profile_data_from_html(document, "creator")
+    assert data["following_count"] == 987
 
 
 def test_public_instagram_parser_reads_json_metric_aliases():
-    response = Mock(
-        status_code=200,
-        text='<script type="application/json">{"followers":{"value":321},"followingCount":654}</script>',
-    )
-    with patch("integrations.instagram_public.requests.get", return_value=response):
-        result = fetch_public_instagram_profile("@creator")
-    assert result.data["subscriber_count"] == 321
-    assert result.data["following_count"] == 654
+    document = '<script type="application/json">{"followers":{"value":321},"followingCount":654}</script>'
+    data = _profile_data_from_html(document, "creator")
+    assert data["subscriber_count"] == 321
+    assert data["following_count"] == 654
 
 
 def test_public_instagram_parser_reads_direct_profile_following_counter():
+    # O primeiro endpoint devolve HTML (sem JSON utilizável); o fallback ao
+    # segundo endpoint entrega o payload estruturado. O perfil é completo
+    # (bio + métricas) para que o pipeline devolva cedo, sem curl/Playwright.
+    page_response = Mock(status_code=200, text='<meta property="og:title" content="Creator (@creator)">')
     api_response = Mock(
         status_code=200,
-        json=lambda: {"data": {"user": {"username": "creator", "edge_follow": {"count": 4321}}}},
+        json=lambda: {"data": {"user": {
+            "username": "creator", "biography": "Bio do perfil",
+            "edge_follow": {"count": 4321}, "edge_followed_by": {"count": 100},
+            "edge_owner_to_timeline_media": {"count": 7, "edges": []},
+        }}},
     )
-    page_response = Mock(status_code=200, text='<meta property="og:title" content="Creator (@creator)">')
-    with patch("integrations.instagram_public.requests.get", side_effect=[page_response, api_response]):
+    with patch("integrations.instagram_public.requests.get", side_effect=[page_response, api_response]), patch("integrations.instagram_public.shutil.which", return_value=None):
         result = fetch_public_instagram_profile("@creator")
     assert result.ok is True
     assert result.data["following_count"] == 4321
 
 
 def test_public_instagram_endpoint_uses_curl_fallback_after_http_429():
-    payload = '{"data":{"user":{"username":"creator","edge_follow":{"count":4321}}}}'
+    # O payload do curl é completo (qualidade >= 4) para que o pipeline retorne
+    # cedo no próprio fallback, sem tocar no caminho Playwright do Windows.
+    payload = '{"data":{"user":{"username":"creator","biography":"Bio","edge_follow":{"count":4321},"edge_followed_by":{"count":10},"edge_owner_to_timeline_media":{"count":5}}}}'
     blocked = Mock(status_code=429)
     with patch("integrations.instagram_public.requests.get", return_value=blocked), patch(
         "integrations.instagram_public.shutil.which", return_value="/usr/bin/curl"
@@ -140,7 +159,9 @@ def test_public_profile_keeps_account_country_from_transparency_payload():
         status_code=200,
         json=lambda: {"data": {"user": {
             "username": "creator", "biography": "Brasil na bio não é a origem",
-            "country_of_registration": "Portugal", "edge_follow": {"count": 12},
+            "country_of_registration": "Portugal",
+            "edge_follow": {"count": 12}, "edge_followed_by": {"count": 340},
+            "edge_owner_to_timeline_media": {"count": 40, "edges": []},
         }}},
     )
     with patch("integrations.instagram_public.requests.get", return_value=api_response), patch("integrations.instagram_public.shutil.which", return_value=None):
@@ -161,7 +182,11 @@ def test_bloks_about_parser_reads_account_country_without_using_bio_or_business_
 
 
 def test_authenticated_about_country_is_merged_into_real_profile_result(monkeypatch):
-    profile_response = Mock(status_code=200, json=lambda: {"data": {"user": {"id": "123", "username": "creator", "biography": "Bio real", "edge_follow": {"count": 456}}}})
+    profile_response = Mock(status_code=200, json=lambda: {"data": {"user": {
+        "id": "123", "username": "creator", "biography": "Bio real",
+        "edge_follow": {"count": 456}, "edge_followed_by": {"count": 120},
+        "edge_owner_to_timeline_media": {"count": 30, "edges": []},
+    }}})
     about_response = Mock(status_code=200, json=lambda: {"data": {"about_this_account_country": "Portugal"}})
     monkeypatch.setenv("INSTAGRAM_SESSIONID", "session-value")
     with patch("integrations.instagram_public.requests.get", return_value=profile_response), patch("integrations.instagram_public.requests.post", return_value=about_response), patch("integrations.instagram_public.shutil.which", return_value=None):
@@ -174,9 +199,13 @@ def test_authenticated_about_country_is_merged_into_real_profile_result(monkeypa
 def test_private_profile_posts_return_authentication_message():
     api_response = Mock(
         status_code=200,
-        json=lambda: {"data": {"user": {"username": "private_creator", "is_private": True, "edge_owner_to_timeline_media": {"edges": []}}}},
+        json=lambda: {"data": {"user": {
+            "username": "private_creator", "is_private": True, "biography": "Perfil privado",
+            "edge_follow": {"count": 10}, "edge_followed_by": {"count": 20},
+            "edge_owner_to_timeline_media": {"count": 42, "edges": []},
+        }}},
     )
-    with patch("integrations.instagram_public.requests.get", return_value=api_response):
+    with patch("integrations.instagram_public.requests.get", return_value=api_response), patch("integrations.instagram_public.shutil.which", return_value=None):
         result = fetch_public_instagram_posts("@private_creator")
     assert result.ok is False
     assert "conta é privada" in result.message
@@ -331,30 +360,31 @@ def test_instagram_profiles_include_legacy_records_by_public_url():
 
 
 def test_public_instagram_posts_extracts_media_and_caption_from_embedded_json():
-    response = Mock(
-        status_code=200,
-        text=(
-            '<script type="application/json">{"items":['
-            '{"id":"p1","code":"ABC","display_url":"https://img.example/1.jpg","caption":{"text":"Primeiro"}},'
-            '{"id":"p2","code":"DEF","display_url":"https://img.example/2.jpg","caption":{"text":"Segundo"}}]}'
-            '</script>'
-        ),
+    document = (
+        '<script type="application/json">{"items":['
+        '{"id":"p1","code":"ABC","display_url":"https://img.example/1.jpg","caption":{"text":"Primeiro"}},'
+        '{"id":"p2","code":"DEF","display_url":"https://img.example/2.jpg","caption":{"text":"Segundo"}}]}'
+        '</script>'
     )
-    with patch("integrations.instagram_public.requests.get", return_value=response):
-        result = fetch_public_instagram_posts("@creator", limit=10)
-    assert result.ok is True
-    assert [post["id"] for post in result.data["posts"]] == ["p1", "p2"]
-    assert result.data["posts"][0]["caption"] == "Primeiro"
+    # A extração de posts de JSON embutido no HTML vive em _extract_posts_from_html
+    # (usada pelo pipeline público); testar o helper mantém o teste hermético.
+    posts = _extract_posts_from_html(document, 10)
+    assert [post["id"] for post in posts] == ["p1", "p2"]
+    assert posts[0]["caption"] == "Primeiro"
 
 
 def test_public_instagram_posts_uses_web_profile_info_json_endpoint():
     api_response = Mock(
         status_code=200,
-        json=lambda: {"data": {"user": {"edge_owner_to_timeline_media": {"edges": [
-            {"node": {"id": "p1", "shortcode": "ABC", "display_url": "https://img.example/1.jpg", "edge_media_to_caption": {"edges": [{"node": {"text": "Legenda"}}]}}}
-        ]}}}},
+        json=lambda: {"data": {"user": {
+            "username": "creator", "biography": "Bio do perfil",
+            "edge_follow": {"count": 5}, "edge_followed_by": {"count": 3},
+            "edge_owner_to_timeline_media": {"count": 1, "edges": [
+                {"node": {"id": "p1", "shortcode": "ABC", "display_url": "https://img.example/1.jpg", "edge_media_to_caption": {"edges": [{"node": {"text": "Legenda"}}]}}}
+            ]},
+        }}},
     )
-    with patch("integrations.instagram_public.requests.get", return_value=api_response) as request:
+    with patch("integrations.instagram_public.requests.get", return_value=api_response) as request, patch("integrations.instagram_public.shutil.which", return_value=None):
         result = fetch_public_instagram_posts("@creator", limit=10)
     assert result.ok is True
     assert result.data["posts"][0]["caption"] == "Legenda"

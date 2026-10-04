@@ -16,7 +16,8 @@ LANGUAGES_SOURCE = (ROOT / "hermes_ui" / "languages.py").read_text(encoding="utf
 
 class GlobalInnertubeApiKeyTests(unittest.TestCase):
     def test_google_accounts_ui_has_one_global_field_without_account_selector(self):
-        start = MAIN_SOURCE.index("def render_google_accounts():")
+        # A assinatura ganhou parâmetros (include_innertube); fatiar sem os parênteses.
+        start = MAIN_SOURCE.index("def render_google_accounts(")
         end = MAIN_SOURCE.find("\ndef ", start + 1)
         renderer = MAIN_SOURCE[start:end if end != -1 else None]
 
@@ -29,17 +30,20 @@ class GlobalInnertubeApiKeyTests(unittest.TestCase):
         self.assertNotIn('key=f"innertube_api_key_{selected_key_account_id}"', renderer)
 
     def test_google_account_cards_show_shared_configured_badge(self):
-        start = MAIN_SOURCE.index("def render_google_accounts():")
+        start = MAIN_SOURCE.index("def render_google_accounts(")
         end = MAIN_SOURCE.find("\ndef ", start + 1)
         renderer = MAIN_SOURCE[start:end if end != -1 else None]
 
         self.assertIn('with st.container(border=True):', renderer)
-        self.assertIn('account_ready = bool(', renderer)
-        self.assertIn('_api_status_badge("Configured" if account_ready else "Missing configuration"', renderer)
+        # Os cartões mostram dois badges: estado Google (client_id/secret) e estado
+        # de upload (documento de credenciais); ambos derivam de flags *_ready.
+        self.assertIn('google_ready = bool(', renderer)
+        self.assertIn('google_status_label = "Configured" if google_ready', renderer)
+        self.assertIn('_api_status_badge(google_status_label, "ready" if google_ready else "missing")', renderer)
         self.assertIn('with st.expander("Detalhes da conta Google", expanded=False):', renderer)
 
     def test_global_innertube_key_shows_shared_configured_badge(self):
-        start = MAIN_SOURCE.index("def render_google_accounts():")
+        start = MAIN_SOURCE.index("def render_google_accounts(")
         end = MAIN_SOURCE.find("\ndef ", start + 1)
         renderer = MAIN_SOURCE[start:end if end != -1 else None]
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import tempfile
 import unittest
 from pathlib import Path
@@ -44,6 +45,10 @@ class AIInfluencerRepositoryTests(unittest.TestCase):
                 updated = repository.update_content(content["id"], {"state": "completed", "artifact_path": str(root / "video.mp4")})
                 self.assertEqual(updated["state"], "completed")
                 self.assertEqual(repository.list_content(character["id"])[0]["artifact_path"], str(root / "video.mp4"))
+                # O repositório delega o fecho das ligações sqlite3 ao GC (o with
+                # do sqlite3 só faz commit); no Windows o ficheiro aberto impediria
+                # a limpeza do TemporaryDirectory (WinError 32).
+                gc.collect()
 
     def test_standalone_workflow_owner_keeps_motion_and_ugc_content_in_history(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -59,6 +64,8 @@ class AIInfluencerRepositoryTests(unittest.TestCase):
                 self.assertEqual({row["id"] for row in rows}, {motion["id"], ugc["id"]})
                 self.assertIn("motion_control", rows[1]["metadata_json"] + rows[0]["metadata_json"])
                 self.assertIn("ugc_products", rows[1]["metadata_json"] + rows[0]["metadata_json"])
+                # Idem: fechar ligações sqlite pendentes de GC antes da limpeza no Windows.
+                gc.collect()
 
     def test_supabase_repository_uses_expected_tables_with_mock_client(self):
         class Query:
@@ -146,6 +153,8 @@ class AIInfluencerRepositoryTests(unittest.TestCase):
             repository = influencers.get_repository(settings)
             self.assertIsInstance(repository, influencers.SQLiteInfluencerRepository)
             self.assertTrue(influencers.test_backend(settings)["ok"])
+            # Idem: fechar ligações sqlite pendentes de GC antes da limpeza no Windows.
+            gc.collect()
 
 
 class ReplicateAdapterTests(unittest.TestCase):

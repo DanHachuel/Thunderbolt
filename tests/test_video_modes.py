@@ -20,9 +20,21 @@ def test_ai_style_options_are_complete_and_ordered():
 
 
 def test_wide_style_labels_and_music_background_rule_are_present():
-    assert _constant("WIDE_STYLE_OPTIONS") == ["Pexels/Pixabay", "full_ia", "Apenas Música"]
+    options = _constant("WIDE_STYLE_OPTIONS")
+    # Desde a332304 ("prioritized web image scraping providers") a opção Google
+    # Imagem API passou a ser o pool genérico "Montage: Web Images". Este teste
+    # verifica presença das etiquetas e da regra de fundo musical; a ordem exata
+    # da lista fica verificada em test_wide_style_options.py.
+    assert "Montage: Pexels/Pixabay" in options
+    assert "Montage: Text-to-Images" in options
+    assert "Montage: Web Images" in options
+    assert "Full IA: Text-to-Video" in options
+    assert "Remotion" in options
+    assert "Only Music" in Path(__file__).parents[1].joinpath("app", "main.py").read_text(encoding="utf-8")
     source = Path(__file__).parents[1].joinpath("app", "main.py").read_text(encoding="utf-8")
-    assert '"background_mode": "none" if style == "music"' in source
+    # A regra cobre os modos musicais actuais (only_music e music_clips);
+    # full_ia usa fundo de IA e os restantes usam stock.
+    assert '"background_mode": "none" if style in {"only_music", "music_clips"} else ("ai" if style == "full_ia" else "stock")' in source
     assert 'st.selectbox("Estilo IA", AI_STYLE_OPTIONS' in source
 
 

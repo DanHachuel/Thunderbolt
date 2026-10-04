@@ -68,21 +68,31 @@ class NavigationReorganizationTests(unittest.TestCase):
             self.assertIn(f'"{label}"', MAIN_SOURCE)
 
     def test_channel_profile_children_match_requested_order(self):
+        # Commit 28176b8 ("reorganizar blueprints e modelos instagram") moveu
+        # Blueprints/Thumbnails/Brandings/Prompt-Masters do grupo de perfis para o
+        # grupo próprio "Blueprints" (caminhos /blueprints/*); o grupo de perfis
+        # ficou só com os 4 perfis pedidos, na ordem pedida.
         channel_block = MAIN_SOURCE.split("    channel_profile_items = [", 1)[1].split("    ]", 1)[0]
         expected_children = [
             '("Canais YouTube",',
             '("Canais Tiktok",',
             '("Contas Instagram",',
             '("Facebook Pages",',
-            '("Blueprints Youtube",',
-            '("Thumbnail Blueprints",',
-            '("Brandings Youtube",',
-            '("Prompt Masters",',
         ]
         positions = [channel_block.index(item) for item in expected_children]
         self.assertEqual(positions, sorted(positions))
-        self.assertIn('"Thumbnail Blueprints": "/canais-perfis-videos/thumbnail-blueprints"', MAIN_SOURCE)
-        self.assertIn('"Brandings Youtube": "/canais-perfis-videos/brandings-youtube"', MAIN_SOURCE)
+        blueprint_block = MAIN_SOURCE.split("    blueprint_items = [", 1)[1].split("    ]", 1)[0]
+        expected_blueprints = [
+            '("Blueprints Youtube",',
+            '("Thumbnail Blueprints",',
+            '("Brandings Youtube",',
+            '("Prompt-Masters Tiktok",',
+        ]
+        blueprint_positions = [blueprint_block.index(item) for item in expected_blueprints]
+        self.assertEqual(blueprint_positions, sorted(blueprint_positions))
+        # Caminhos migrados de /canais-perfis-videos/* para /blueprints/* (commit 28176b8).
+        self.assertIn('"Thumbnail Blueprints": "/blueprints/thumbnails"', MAIN_SOURCE)
+        self.assertIn('"Brandings Youtube": "/blueprints/brandings-youtube"', MAIN_SOURCE)
         self.assertIn('"Thumbnail Blueprints": render_thumbnail_blueprints', MAIN_SOURCE)
         self.assertIn('"Brandings Youtube": render_youtube_brandings', MAIN_SOURCE)
         self.assertIn('def render_thumbnail_blueprints():', MAIN_SOURCE)
@@ -90,10 +100,19 @@ class NavigationReorganizationTests(unittest.TestCase):
     def test_requested_empty_automation_pages_are_present(self):
         automation_block = MAIN_SOURCE.split("    automation_items = [", 1)[1].split("    ]", 1)[0]
         labels = ("Automação Facebook", "Automação Musicas", "Automação UGC", "Automação Influencer Content", "Automação Bilibili")
+        # "Automação Musicas" e "Automação Bilibili" deixaram de ser placeholders
+        # (lambda: None) e passaram a ter renderers reais; UGC e Influencer Content
+        # continuam como páginas pedidas mas ainda vazias.
+        expected_renderers = {
+            "Automação Facebook": "render_facebook_automation",
+            "Automação Musicas": "render_music_automation",
+            "Automação UGC": "lambda: None",
+            "Automação Influencer Content": "lambda: None",
+            "Automação Bilibili": "render_bilibili_automation",
+        }
         for label in labels:
             self.assertIn(f'("{label}",', automation_block)
-            expected_renderer = 'render_facebook_automation' if label == "Automação Facebook" else 'lambda: None'
-            self.assertIn(f'"{label}": {expected_renderer}', MAIN_SOURCE)
+            self.assertIn(f'"{label}": {expected_renderers[label]}', MAIN_SOURCE)
 
     def test_instagram_and_facebook_pages_are_video_profile_children(self):
         channel_block = MAIN_SOURCE.split("    channel_profile_items = [", 1)[1].split("    ]", 1)[0]
@@ -102,7 +121,10 @@ class NavigationReorganizationTests(unittest.TestCase):
         self.assertIn('"Facebook Pages": render_facebook_pages', MAIN_SOURCE)
 
     def test_video_backlog_is_not_nested_inside_video_creation(self):
-        self.assertIn('tab_labels = ["Criar vídeo"] + (["Gerar de Rascunho"] if page_title == "Criação de Vídeos" else [])', MAIN_SOURCE)
+        # A tab "Gerar de Rascunho" passou a valer também para "Criação de Shorts"
+        # (commit a072ddc, "add TikTok channels shorts and automation"); o Backlog
+        # Vídeos continua a ser página própria fora da criação de vídeos.
+        self.assertIn('tab_labels = ["Criar vídeo"] + (["Gerar de Rascunho"] if page_title in {"Criação de Vídeos", "Criação de Shorts"} else [])', MAIN_SOURCE)
         self.assertIn('draft_tab = tabs[1] if len(tabs) > 1 else None', MAIN_SOURCE)
         self.assertNotIn("with videos_tab:", MAIN_SOURCE)
         self.assertIn('"Backlog Vídeos": render_videos', MAIN_SOURCE)
@@ -174,19 +196,27 @@ if __name__ == "__main__":
 
 
 def test_confirmed_video_profiles_children_are_ordered_and_base_files_is_removed():
+    # Commit 28176b8 ("reorganizar blueprints e modelos instagram") separou os
+    # blueprints num grupo próprio; os perfis confirmados guardam apenas os 4
+    # perfis pedidos e os blueprints mantêm a ordem pedida no grupo "Blueprints".
     channel_block = MAIN_SOURCE.split("    channel_profile_items = [", 1)[1].split("    ]", 1)[0]
     expected_children = [
         '("Canais YouTube",',
         '("Canais Tiktok",',
         '("Contas Instagram",',
         '("Facebook Pages",',
-        '("Blueprints Youtube",',
-        '("Thumbnail Blueprints",',
-        '("Brandings Youtube",',
-        '("Prompt Masters",',
     ]
     positions = [channel_block.index(item) for item in expected_children]
     assert positions == sorted(positions)
+    blueprint_block = MAIN_SOURCE.split("    blueprint_items = [", 1)[1].split("    ]", 1)[0]
+    expected_blueprints = [
+        '("Blueprints Youtube",',
+        '("Thumbnail Blueprints",',
+        '("Brandings Youtube",',
+        '("Prompt-Masters Tiktok",',
+    ]
+    blueprint_positions = [blueprint_block.index(item) for item in expected_blueprints]
+    assert blueprint_positions == sorted(blueprint_positions)
     assert 'base_files_items = [' not in MAIN_SOURCE
     assert '("Arquivos Base", ":material/folder:", "Arquivos Base")' not in MAIN_SOURCE
     assert '"Arquivos Base": base_files_items' not in MAIN_SOURCE

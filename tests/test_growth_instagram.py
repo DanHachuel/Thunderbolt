@@ -59,6 +59,11 @@ def test_run_audit_uses_public_profile_and_writes_report(tmp_path, monkeypatch):
 
 
 def test_growth_instagram_route_and_platform_classifier_are_wired():
-    assert '"Analista Growth Instagram": render_growth_instagram' in MAIN_SOURCE
+    # Commit 560d696 ("reorganizar abas de growth") renomeou a rota
+    # "Analista Growth Instagram" para "Growth Instagram", mantendo o nome
+    # antigo como alias; renderer real e classificador de plataforma continuam
+    # ligados, sem placeholder.
+    assert '"Analista Growth Instagram": "Growth Instagram"' in MAIN_SOURCE
+    assert '"Growth Instagram": render_growth_instagram' in MAIN_SOURCE
     assert 'if value in {"instagram", "ig"}:' in MAIN_SOURCE
     assert 'render_edit_placeholder("Analista Growth Instagram"' not in MAIN_SOURCE

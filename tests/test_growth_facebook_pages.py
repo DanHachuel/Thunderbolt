@@ -40,5 +40,10 @@ def test_run_audit_uses_local_public_posts_and_persists_report(tmp_path, monkeyp
 
 
 def test_growth_facebook_route_is_real_renderer():
-    assert '"Analista Facebook Pages": render_growth_facebook_pages' in MAIN_SOURCE
+    # Commit 560d696 ("reorganizar abas de growth") renomeou a rota
+    # "Analista Facebook Pages" para "Facebook Pages", mantendo o nome antigo
+    # como alias; o renderer real continua ligado e sem placeholder.
+    assert '"Analista Facebook Pages": "Facebook Pages"' in MAIN_SOURCE
+    assert '"Facebook Pages": render_growth_facebook_pages' in MAIN_SOURCE
     assert 'render_edit_placeholder("Analista Facebook Pages"' not in MAIN_SOURCE
+    assert 'render_edit_placeholder("Facebook Pages"' not in MAIN_SOURCE

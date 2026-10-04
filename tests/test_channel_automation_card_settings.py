@@ -24,6 +24,9 @@ def test_both_automation_pages_group_registered_channels_in_closed_expanders():
 def test_channel_source_legacy_values_are_normalized():
     from app.main import channel_video_source_value
 
-    assert channel_video_source_value("pexels") == "Pexels/Pixabay"
-    assert channel_video_source_value("full_ia") == "full_ia"
-    assert channel_video_source_value("portrait") == "Pexels/Pixabay"
+    # Valores legados normalizam para as etiquetas actuais das opções wide
+    # ("Montage: Pexels/Pixabay", "Full IA: Text-to-Video"); valores sem
+    # mapeamento caem na primeira opção por defeito.
+    assert channel_video_source_value("pexels") == "Montage: Pexels/Pixabay"
+    assert channel_video_source_value("full_ia") == "Full IA: Text-to-Video"
+    assert channel_video_source_value("portrait") == "Montage: Pexels/Pixabay"
