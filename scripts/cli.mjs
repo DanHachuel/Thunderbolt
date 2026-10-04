@@ -47,34 +47,28 @@ function diagnostic(event, payload = {}) {
   } catch { /* logging never changes launcher behaviour */ }
 }
 
-function captureCrashSnapshot(lastWorkerLine = "") {
-  const result = spawnSync(python, ["-c", "import json,psutil; p=[{'pid':x.pid,'rss_mb':round(x.memory_info().rss/1048576,2),'name':x.name()} for x in psutil.process_iter(['name']) if 'python' in (x.info.get('name') or '').lower()]; print(json.dumps({'python_processes':p,'memory_available_mb':round(psutil.virtual_memory().available/1048576,2)}))"], { encoding: "utf8", env: pythonEnvironment });
-  let snapshot = {};
-  try { snapshot = JSON.parse(result.stdout || "{}"); } catch { snapshot = { snapshot_error: result.stderr || "não foi possível recolher snapshot" }; }
-  diagnostic("streamlit_crash_snapshot", { ...snapshot, last_worker_line: String(lastWorkerLine).slice(-500) });
-}
-
-function captureBaselineSnapshot() {
-  const result = spawnSync(python, ["-c", "import json,psutil; p=[{'pid':x.pid,'rss_mb':round(x.memory_info().rss/1048576,2),'name':x.name()} for x in psutil.process_iter(['name']) if 'python' in (x.info.get('name') or '').lower()]; m=psutil.virtual_memory(); print(json.dumps({'python_processes':p,'memory_total_mb':round(m.total/1048576,2),'memory_available_mb':round(m.available/1048576,2),'memory_used_mb':round(m.used/1048576,2),'memory_percent':m.percent}))"], { encoding: "utf8", env: pythonEnvironment });
-  let snapshot = {};
-  try { snapshot = JSON.parse(result.stdout || "{}"); } catch { snapshot = { snapshot_error: result.stderr || "não foi possível recolher baseline" }; }
-  diagnostic("baseline_snapshot", snapshot);
-}
-
 function runKillTreeHelper(modeArgs) {
   // O venv do Thunderbolt tem sempre psutil (os workers dependem dele); o
   // Python de sistema pode não ter, por isso é tentado primeiro o venv.
+  // O helper devolve exit 1 quando há sobreviventes (o JSON continua válido),
+  // por isso o resultado é aceite sempre que o stdout é JSON parseable —
+  // exigir status 0 fazia o guard registar falsos "indisponível" e tentar de
+  // novo com um interpretador sem psutil.
   const candidates = [venvPython, python].filter(Boolean).filter((candidate, index, all) => all.indexOf(candidate) === index);
+  let lastFailure = null;
   for (const candidate of candidates) {
     if (!existsSync(candidate) && candidate !== "python" && candidate !== "python3") continue;
+    let result = null;
     try {
-      const result = spawnSync(candidate, [killTreeHelper, ...modeArgs], { encoding: "utf8", env: pythonEnvironment, timeout: 60000 });
-      if (result.status === 0 && result.stdout) {
-        try { return JSON.parse(result.stdout); } catch { /* saída não-JSON */ }
-      }
+      result = spawnSync(candidate, [killTreeHelper, ...modeArgs], { encoding: "utf8", env: pythonEnvironment, timeout: 60000 });
     } catch { /* tenta o próximo interpretador */ }
+    if (!result) continue;
+    if (result.stdout) {
+      try { return JSON.parse(result.stdout); } catch { /* saída não-JSON */ }
+    }
+    lastFailure = { interpreter: candidate, status: result.status, stderr: String(result.stderr || result.error || "").slice(-300) };
   }
-  return null;
+  return { helper_failure: lastFailure };
 }
 
 function stopPreviousThunderboltStacks() {
@@ -83,11 +77,19 @@ function stopPreviousThunderboltStacks() {
   // completa que disputava os locks do storage — a causa-raiz do ciclo
   // "servidor encerra sozinho". Antes de arrancar a nova stack, termina-se
   // toda a árvore Thunderbolt anterior (o helper psutil exclui este launcher
-  // e a cadeia de processos que o iniciou).
-  const summary = runKillTreeHelper(["--cleanup", String(process.pid)]);
+  // e a cadeia de processos que o iniciou). Se sobrar algum sobrevivente
+  // (processos a terminar devagar), a limpeza é repetida uma vez.
+  let summary = runKillTreeHelper(["--cleanup", String(process.pid)]);
+  if (summary && summary.helper_failure) {
+    diagnostic("single_instance_guard_error", { error: "kill_tree.py indisponível; a limpeza da instância anterior não correu", ...summary.helper_failure });
+    return;
+  }
   if (!summary) {
     diagnostic("single_instance_guard_error", { error: "kill_tree.py indisponível; a limpeza da instância anterior não correu" });
     return;
+  }
+  if (Array.isArray(summary.survivors) && summary.survivors.length > 0) {
+    summary = runKillTreeHelper(["--cleanup", String(process.pid)]) || summary;
   }
   if (Array.isArray(summary.killed) && summary.killed.length > 0) {
     diagnostic("previous_instance_stopped", { killed: summary.killed, survivors: summary.survivors || [] });
@@ -538,7 +540,6 @@ function startAutomationWorker() {
     env: runtimeEnv,
     windowsHide: false,
   });
-  diagnostic("worker_started", { pid: worker.pid, worker: "automation", uptime_seconds: 0 });
   worker.stderr?.setEncoding("utf8");
   worker.stderr?.on("data", (chunk) => {
     const message = String(chunk).trim();
@@ -546,7 +547,6 @@ function startAutomationWorker() {
   });
   worker.on("error", (error) => console.error(`Thunderbolt worker: ${error.message}`));
   worker.on("exit", (code, signal) => {
-    diagnostic("worker_exited", { pid: worker?.pid, worker: "automation", code, signal, uptime_seconds: (Date.now() - startedAt) / 1000 });
     worker = null;
     if (shuttingDown) return;
     console.error(`Thunderbolt worker: terminou (código ${code ?? "-"}, sinal ${signal ?? "-"}).`);
@@ -597,7 +597,6 @@ function startPipelineWorker() {
     env: runtimeEnv,
     windowsHide: false,
   });
-  diagnostic("worker_started", { pid: pipelineWorker.pid, worker: "pipeline", uptime_seconds: 0 });
   pipelineWorker.on("error", (error) => console.error(`Thunderbolt pipeline worker: ${error.message}`));
   pipelineStableTimer = setTimeout(() => {
     pipelineFailureCount = 0;
@@ -605,7 +604,6 @@ function startPipelineWorker() {
     pipelineStableTimer = null;
   }, 60000);
   pipelineWorker.on("exit", (code, signal) => {
-    diagnostic("worker_exited", { pid: pipelineWorker?.pid, worker: "pipeline", code, signal, uptime_seconds: (Date.now() - startedAt) / 1000 });
     pipelineWorker = null;
     if (shuttingDown) return;
     console.error(`Thunderbolt pipeline worker: terminou (código ${code ?? "-"}, sinal ${signal ?? "-"}).`);
@@ -647,11 +645,9 @@ function startStreamlit() {
     env: { ...runtimeEnv, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", PYTHONLEGACYWINDOWSSTDIO: "1", CLICK_NO_WIN_CONSOLE: "1", THUNDERBOLT_LAUNCHER_RESTART: "1" },
     windowsHide: false,
   });
-  diagnostic("streamlit_started", { pid: child.pid, uptime_seconds: 0 });
   child.stdout?.on("data", (chunk) => {
     if (!shuttingDown) process.stdout.write(chunk);
-  });
-  child.stderr?.on("data", (chunk) => {
+  });  child.stderr?.on("data", (chunk) => {
     if (!shuttingDown) process.stderr.write(chunk);
   });
   child.on("error", (error) => {
@@ -663,15 +659,12 @@ function startStreamlit() {
     streamlitStableTimer = null;
   }, 60000);
   child.on("exit", (code, signal) => {
-    diagnostic("streamlit_exited", { pid: child?.pid, code, signal, uptime_seconds: (Date.now() - startedAt) / 1000 });
-    if (!shuttingDown && code !== restartExitCode) captureCrashSnapshot(lastAutomationWorkerError);
     child = null;
     if (shuttingDown) {
       launcherExiting(shutdownReason || "unknown");
       process.exit(code ?? (signal ? 1 : 0));
     }
     if (code === restartExitCode) {
-      diagnostic("restart_triggered", { reason: "streamlit_exit_code", code });
       // Termina a stack actual ANTES de spawnar a reposição: a ordem anterior
       // (spawn primeiro, exit depois) deixava a árvore antiga a morrer em
       // paralelo com a nova a arrancar, duplicando workers e a disputa pelos
@@ -714,7 +707,6 @@ function startStreamlit() {
     console.error(`Thunderbolt: nova tentativa do Streamlit em ${delay / 1000}s (falha ${streamlitFailureCount}/5).`);
     streamlitRestartTimer = setTimeout(() => {
       streamlitRestartTimer = null;
-      diagnostic("restart_triggered", { reason: "streamlit_recovery", failure_count: streamlitFailureCount + 1 });
       startStreamlit();
     }, delay);
   });
@@ -723,7 +715,6 @@ function startStreamlit() {
 // Single-instance guard + lock: nenhum worker/streamlit é arrancado antes de
 // a instância anterior estar totalmente terminada (o guard corre antes do
 // bind da porta pública, logo esta sequência já encontra a via livre).
-captureBaselineSnapshot();
 startStreamlit();
 
 let shutdownReason = "unknown";

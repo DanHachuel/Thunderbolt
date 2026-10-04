@@ -51,8 +51,6 @@ logger = logging.getLogger(__name__)
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from hermes_ui.diagnostics import save_baseline_snapshot, save_diagnostics_zip
-
 
 @st.cache_data(show_spinner=False, max_entries=256)
 def _cached_file_bytes(path_string: str, modified_ns: int, size: int) -> bytes:
@@ -7421,23 +7419,6 @@ def _render_youtube_automation_channel_cards():
 def render_automation():
     st.title("Automação Youtube")
     st.caption("Agendamento diário da geração por canal. O worker verifica o relógio local do computador e coloca os lotes agendados na fila.")
-    refresh_col, baseline_col, diagnostics_col = st.columns([1, 1, 1], gap="small")
-    with refresh_col:
-        if st.button("Actualizar agora", key="youtube_automation_refresh", width="stretch"):
-            st.rerun()
-    with baseline_col:
-        if st.button("Registar baseline", key="youtube_automation_baseline", width="stretch"):
-            save_baseline_snapshot()
-            st.success("Baseline registado. Execute agora o cenário que falha.")
-    with diagnostics_col:
-        if st.button("Guardar diagnóstico agora", key="youtube_automation_save_diagnostics", width="stretch"):
-            try:
-                diagnostics_zip = save_diagnostics_zip(limit=100)
-                st.success(f"Diagnóstico guardado em {diagnostics_zip.name}.")
-                with diagnostics_zip.open("rb") as handle:
-                    st.download_button("Baixar diagnóstico", handle.read(), file_name=diagnostics_zip.name, mime="application/zip", key="youtube_automation_download_diagnostics", width="stretch")
-            except OSError as exc:
-                st.error(f"Não foi possível guardar o diagnóstico: {exc}")
     _sync_saved_scripts_to_youtube_automation()
     worker_status = load_worker_status()
     local_now = datetime.now().astimezone()

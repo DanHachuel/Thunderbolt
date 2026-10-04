@@ -67,9 +67,39 @@ def test_cli_guard_uses_the_psutil_helper_with_cleanup_mode():
     assert "const candidates = [venvPython, python]" in CLI_SOURCE
 
 
+def test_ci_kill_tree_helper_accepts_survivor_exit_codes_and_retries_cleanup():
+    # 0.9.49: o helper devolve exit 1 quando há sobreviventes (o JSON continua
+    # válido); exigir status 0 fazia o guard registar falsos "indisponível" e
+    # tentar de novo com um interpretador sem psutil. O resultado é aceite
+    # sempre que o stdout é JSON, e sobreviventes repetem a limpeza uma vez.
+    assert "if (result.stdout) {" in CLI_SOURCE
+    assert "result.status === 0" not in CLI_SOURCE
+    assert "summary = runKillTreeHelper" in CLI_SOURCE
+    retry_block = CLI_SOURCE.split("if (Array.isArray(summary.survivors)", 1)[1].split("}", 1)[0]
+    assert "runKillTreeHelper" in retry_block
+
+
 def test_ci_registries_previous_instance_and_guard_errors():
     assert 'diagnostic("previous_instance_stopped"' in CLI_SOURCE
     assert 'diagnostic("single_instance_guard_error"' in CLI_SOURCE
+    # 0.9.49: o guard inclui a causa do falhanço do helper (exit status/stderr).
+    assert "helper_failure" in CLI_SOURCE
+
+
+def test_cli_lifecycle_instrumentation_was_removed_but_exit_telemetry_stays():
+    # 0.9.49 (Remover a instrumentação de diagnóstico): os eventos de
+    # baseline/crash/lifecycle saíram; permanecem apenas a telemetria de saída
+    # (launcher_exiting) e os eventos do single-instance guard.
+    for removed in (
+        "captureBaselineSnapshot",
+        "captureCrashSnapshot",
+        'diagnostic("streamlit_started"',
+        'diagnostic("streamlit_exited"',
+        'diagnostic("worker_started"',
+        'diagnostic("worker_exited"',
+        'diagnostic("restart_triggered"',
+    ):
+        assert removed not in CLI_SOURCE, removed
 
 
 def test_ci_replacement_stops_the_old_stack_before_spawning_the_new_one():

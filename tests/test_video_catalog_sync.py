@@ -80,7 +80,6 @@ def test_youtube_automation_cards_do_not_poll_each_browser_session():
     assert 'tasks = load_automation_tasks_for_platform("youtube")' in MAIN_SOURCE
     assert 'st.rerun()' not in block
     assert 'st.rerun(scope="fragment")' in MAIN_SOURCE
-    assert 'key="youtube_automation_refresh"' in MAIN_SOURCE
 
 
 def test_facebook_automation_does_not_poll_each_browser_session():
