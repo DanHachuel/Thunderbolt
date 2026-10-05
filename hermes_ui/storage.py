@@ -700,14 +700,21 @@ def _state_lock(path: Path, *, read_only: bool = False) -> Iterator[None]:
             descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             os.write(descriptor, f"pid={os.getpid()}\n".encode("ascii"))
         except PermissionError:
-            if not read_only:
-                raise
-            # Windows pode manter um lock residual aberto por outro processo
-            # (ou por antivírus). Leituras de JSON continuam seguras porque as
-            # escritas usam replace atómico; não bloquear a leitura evita que
-            # uma página inteira falhe por causa de um lock de metadados.
-            yield
-            return
+            if read_only:
+                # Windows pode manter um lock residual aberto por outro processo
+                # (ou por antivírus). Leituras de JSON continuam seguras porque as
+                # escritas usam replace atómico; não bloquear a leitura evita que
+                # uma página inteira falhe por causa de um lock de metadados.
+                yield
+                return
+            # Escritores: o O_CREAT|O_EXCL recebe Errno 13 transitório quando o
+            # antivírus/Windows ainda segura o handle do ficheiro que o dono
+            # anterior acabou de remover. Poll até ao deadline como o branch do
+            # FileExistsError, em vez de propagar imediatamente (REAL-BUG #1,
+            # segunda face — detectada pela suíte concorrente no Windows).
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"Não foi possível obter o lock de storage: {path.name}")
+            time.sleep(_LOCK_POLL_SECONDS)
         except FileExistsError:
             try:
                 lock_age = time.time() - lock_path.stat().st_mtime
