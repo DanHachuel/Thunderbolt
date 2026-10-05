@@ -1,4 +1,65 @@
 # Changelog
+## 0.9.50 — 2026-10-05
+- Corrigida a causa-raiz do guard de instância única falhar no Windows: os marcadores de processo do `kill_tree` usavam barras normais (`@danhachuel/thunderbolt`) mas o cmdline do Windows usa barras invertidas, pelo que o guard matava os filhos Python e deixava o launcher `node.exe` vivo a segurar a porta 3030 — o launcher novo crashava no bind com `EADDRINUSE`.
+- Normalizado o cmdline (barras invertidas convertidas em barras normais) antes do matching no `is_thunderbolt_process`, com três novos testes de caminhos Windows.
+
+## 0.9.49 — 2026-10-05
+- Removida toda a instrumentação de diagnóstico da 0.9.47: módulo `hermes_ui/diagnostics.py` apagado, botões de baseline/diagnóstico removidos da UI e eventos de diagnóstico retirados do worker e do launcher; mantêm-se os artefactos por tarefa, a telemetria de saída com motivo e os eventos de erro do guard.
+- Tornado o guard tolerante a sobreviventes: o helper `kill_tree` aceita sair com processos vivos (saída JSON interpretável) e o launcher repete a limpeza; os erros do guard passam a incluir status e stderr do helper.
+- Corrigida a segunda face do REAL-BUG #1: os escritores do lock de storage fazem agora poll até ao prazo quando o `os.open(O_CREAT|O_EXCL)` devolve um `PermissionError` transitório do antivírus, em vez de propagar o erro.
+
+## 0.9.48 — 2026-10-04
+- Corrigido o ciclo “servidor encerra sozinho” no Windows: o guard de instância única passa a correr antes do bind da porta pública, termina a stack anterior (launcher, Streamlit, workers, mpt_agent), incluindo órfãos de launchers mortos abruptamente, e reclama `storage/state/launcher.lock`, usando o novo helper `scripts/kill_tree.py` com psutil.
+- Corrigido o REAL-BUG #1: adicionado um retry curto (3×50ms) no unlink do lock de estado — um `PermissionError` transitório do antivírus deixava o lock vazado e envenenava todas as escritas seguintes (TimeoutError de 30s).
+- Corrigido o REAL-BUG #2 (bump duplo): `package.json` e `pyproject.toml` passam a ser mantidos sincronizados por `scripts/sync_pyproject_version.mjs`, com passo obrigatório no workflow de publicação que falha o release em divergência.
+- Adicionada telemetria de saída com motivo em todos os caminhos do launcher (Ctrl+C, external kill, crash, update) e registo de `uncaughtException`/`unhandledRejection`.
+- Realinhada a suite de testes com a UI actual: 101 falhas do baseline eliminadas com evidência git por teste, testes herméticos no Windows (sem rede nem paths reais) e a suite de social networks ~2,7× mais rápida.
+
+## 0.9.47 — 2026-10-01
+- Adicionados baseline e snapshots aos diagnósticos de crash do launcher e do worker: novo módulo `hermes_ui/diagnostics.py`, botões de registo/exportação na UI e eventos de ciclo de vida no launcher.
+
+## 0.9.46 — 2026-09-30
+- Adicionadas instalação e validação das dependências dos workers no arranque, com a psutil declarada em `pyproject.toml` e verificação no launcher.
+
+## 0.9.45 — 2026-09-30
+- Protegido o Streamlit durante a recriação de vídeos, com paragem segura de processos via psutil e validação HTTP das respostas do Pexels.
+- Adicionados testes de paragem de processos, de validação HTTP do Pexels e regressões do gestor de actualizações.
+
+## 0.9.44 — 2026-09-30
+- Colocados os blueprints financeiros na raiz de `seed/blueprints`, simplificando o catálogo e a importação.
+
+## 0.9.43 — 2026-09-30
+- Reclassificados os blueprints financeiros (FINANCE) como conteúdo, com migração dos seeds de `thumbnails` para `conteudo` e actualização do catálogo e do instalador.
+
+## 0.9.42 — 2026-09-30
+- Adicionado o Music Blueprint com cerca de 50 seeds Markdown de géneros musicais por idioma e tipo de voz, novo módulo `hermes_ui/music_blueprints.py` e integração na UI e no instalador.
+
+## 0.9.41 — 2026-09-30
+- Mantido o heartbeat do worker activo durante as chamadas longas de geração de vídeo, evitando falsas detecções de bloqueio.
+
+## 0.9.40 — 2026-09-30
+- Impedidos os ciclos de crash do worker de vídeos, com protecção adicional do launcher contra reinícios em loop.
+
+## 0.9.39 — 2026-09-29
+- Melhorados os diagnósticos e a robustez da kernel Kaggle do Niche Finder: execução, mensagens de erro, metadata da kernel e verificação das chaves de API.
+- Endurecida a verificação do tarball npm no workflow de publicação: espera activa pela metadata publicada e confirmação de que o tarball é descarregável.
+
+## 0.9.38 — 2026-09-28
+- Ocultado o ficheiro `LISTA.txt` dos catálogos de blueprints, na UI e no MCP server.
+
+## 0.9.37 — 2026-09-28
+- Renomeado o seed de blueprint financeiro para **FINANCE USA**, com actualização do catálogo e da importação de canais.
+
+## 0.9.36 — 2026-09-28
+- Paginada a pesquisa de imagens do Google (SerpApi) com o parâmetro `ijn`, permitindo recolher resultados além da primeira página nos Web Images.
+
+## 0.9.35 — 2026-09-28
+- Integrado o motor social-auto-upload para publicação com browsers reais e proxies próprios: novo backend (`hermes_ui/social_auto_upload_backend.py`), UI dedicada (`app/social_auto_upload_ui.py`) e encaminhamento de uploads por alvo (`integrations/upload_routing.py`).
+- Adicionados os gestores de browsers (`hermes_ui/browser_manager.py`) e de proxies (`hermes_ui/proxy_manager.py`), com dependências, exclusões de pacote e testes próprios.
+
+## 0.9.34 — 2026-09-28
+- Adicionado carregamento tardio (lazy) da media da Automação YouTube: os vídeos locais só são lidos quando pedidos, em vez de carregar tudo ao abrir a aba.
+
 ## 0.9.33 — 2026-09-28
 - Integrada a pipeline editorial **Facebook Storytelling** em três fases: tema, produção e publicação controlada.
 - Adicionado SQLite dedicado em `storage/state/facebook.db`, com isolamento por Facebook Page, histórico de estados, cards de imagens e migração não destrutiva dos JSON legados.
