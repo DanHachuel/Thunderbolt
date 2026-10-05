@@ -144,6 +144,11 @@ def test_kill_tree_marker_matching_covers_the_real_stack_shapes():
         r"C:\venv\Scripts\python.exe -m hermes_ui.pipeline_worker": True,
         "/usr/bin/python3 -m hermes_ui.automation_worker": True,
         r"C:\app\scripts\streamlit_bootstrap.py run app\main.py": True,
+        # 0.9.50: caminhos Windows com barras invertidas têm de ser
+        # normalizados — sem isto o launcher node.exe nunca era apanhado.
+        r"C:\Users\danha\AppData\Local\npm-cache\_npx\abc\node_modules\@danhachuel\thunderbolt\scripts\cli.mjs": True,
+        r"C:\cache\@danhachuel\thunderbolt\scripts\cli.mjs": True,
+        r"node C:\Users\danha\AppData\Local\npm-cache\_npx\abc\node_modules\@danhachuel\thunderbolt\scripts\cli.mjs": True,
         "node C:/cache/node_modules/@danhachuel/thunderbolt/scripts/cli.mjs": True,
         "npx.cmd --yes --prefer-online @danhachuel/thunderbolt": True,
         r"C:\MoneyPrinterTurbo\mpt_agent.py --root X": True,
