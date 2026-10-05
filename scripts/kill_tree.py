@@ -57,6 +57,13 @@ def is_thunderbolt_process(process: psutil.Process) -> bool:
     # This helper runs inside the package; never match the kill helper itself.
     if "kill_tree.py" in cmdline:
         return False
+    # CRITICAL FIX (0.9.50): no Windows o cmdline usa barras invertidas
+    # (@danhachuel\thunderbolt\scripts\cli.mjs) e os marcadores usam barras
+    # normais (@danhachuel/thunderbolt). Sem normalizar, o launcher node.exe
+    # nunca era apanhado — o guard matava os filhos Python mas deixava o
+    # launcher vivo a segurar a porta 3030, e o launcher novo crashava no
+    # bind com EADDRINUSE.
+    cmdline = cmdline.replace("\\", "/")
     return any(marker in cmdline for marker in THUNDERBOLT_MARKERS)
 
 
