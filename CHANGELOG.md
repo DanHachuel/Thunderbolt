@@ -1,4 +1,9 @@
 # Changelog
+## 0.9.51 — 2026-10-05
+- Preenchido o CHANGELOG com o histórico das versões 0.9.34 a 0.9.50.
+- Adicionadas ao `AGENTS.md` as regras permanentes das sessões de agente: push obrigatório após commits e regras de release (bump duplo, publicação sempre via GitHub Actions, transparência pós-versão, comandos de instalação obrigatórios e UX sem travas de pré-registo).
+- Bump duplo 0.9.51 (`package.json` + `pyproject.toml`).
+
 ## 0.9.50 — 2026-10-05
 - Corrigida a causa-raiz do guard de instância única falhar no Windows: os marcadores de processo do `kill_tree` usavam barras normais (`@danhachuel/thunderbolt`) mas o cmdline do Windows usa barras invertidas, pelo que o guard matava os filhos Python e deixava o launcher `node.exe` vivo a segurar a porta 3030 — o launcher novo crashava no bind com `EADDRINUSE`.
 - Normalizado o cmdline (barras invertidas convertidas em barras normais) antes do matching no `is_thunderbolt_process`, com três novos testes de caminhos Windows.
