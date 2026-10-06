@@ -42,6 +42,13 @@ from hermes_ui.voice_preview import synthesize_preview
 from hermes_ui.script_voice import narration_text_from_script
 from hermes_ui.only_music import run_only_music_task
 from hermes_ui.text_to_images import assemble_text_to_images_video, generate_image_prompts_for_scenes, split_script_into_scenes, synthesize_text_to_images_audio
+from hermes_ui.remotion_provider import (
+    COMPOSITION_SIZES,
+    RemotionProviderError,
+    audio_duration_seconds,
+    prepare_input_props,
+    run_remotion_render,
+)
 
 PIPELINE_LOCK_FILENAME = "pipeline_worker.lock"
 PIPELINE_LOG_FILENAME = "pipeline_worker.json"
@@ -1636,6 +1643,66 @@ def _read_json_artifact(value: Any) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+def _run_remotion_video(
+    task: dict[str, Any],
+    *,
+    settings: dict[str, Any],
+    script: dict[str, Any],
+    audio_path: Path,
+    composition_id: str,
+) -> Path:
+    """Renderiza o vídeo com o provider Remotion (subprocesso Node.js).
+
+    O roteiro Markdown é convertido em inputProps pelo adaptador
+    scriptToInputProps (dentro do Node) e o render corre no wrapper
+    packages/remotion/render.mjs com heartbeat, timeout e cancelamento.
+    """
+    task_id = str(task.get("id") or "")
+    channel = _channel_for_task(task)
+    generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else {}
+    fps = int(generation_settings.get("remotion_fps") or generation_settings.get("text_to_images_fps") or 30)
+    width, height = COMPOSITION_SIZES.get(composition_id, (1920, 1080))
+    config = {
+        "videoId": task_id,
+        "title": str(task.get("title") or task.get("topic") or ""),
+        "language": str(task.get("language") or channel.get("language") or "Português"),
+        "fps": fps,
+        "width": width,
+        "height": height,
+        "audioUrl": str(audio_path),
+        "totalAudioSeconds": audio_duration_seconds(audio_path),
+        "metadata": {
+            "channel": str(channel.get("name") or ""),
+            "style": str(task.get("blueprint_name") or ""),
+            "music": "",
+        },
+    }
+    try:
+        input_props = prepare_input_props(script, config)
+    except RemotionProviderError as exc:
+        message = f"Pipeline Remotion: {exc}"
+        metadata = _failure_attribution(task, settings, "video", error=str(exc))
+        metadata.update({
+            "failure_service": "Remotion",
+            "failure_provider": "remotion",
+            "failure_config_fields": "node,packages/remotion",
+        })
+        raise PipelineError(_failure_message(message, metadata), failure_metadata=metadata) from exc
+    video_path = STORAGE / "videos" / f"{task_id}-remotion.mp4"
+    try:
+        run_remotion_render(task, video_path, composition_id, input_props)
+    except RemotionProviderError as exc:
+        message = f"Pipeline Remotion: {exc}"
+        metadata = _failure_attribution(task, settings, "video", error=str(exc))
+        metadata.update({
+            "failure_service": "Remotion",
+            "failure_provider": "remotion",
+            "failure_config_fields": "node,packages/remotion",
+        })
+        raise PipelineError(_failure_message(message, metadata), failure_metadata=metadata) from exc
+    return video_path
+
+
 def _run_task(task: dict[str, Any]) -> dict[str, Any]:
     """Run one resumable local-cascade task, reusing valid persisted artefacts."""
     task_id = str(task.get("id") or "")
@@ -1687,8 +1754,8 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
         )
         return _task_by_id(task_id) or task
 
-    if route in {"remotion", "music_clips"}:
-        raise PipelineError(f"A fonte {route} é um placeholder e não está disponível nesta versão.")
+    if route == "music_clips":
+        raise PipelineError("A fonte Clipes de Música é um placeholder e não está disponível nesta versão.")
 
     if route == "only_music":
         _update(task_id, stage="thumbnail", state="doing", progress=82, error=None)
@@ -1860,6 +1927,33 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                     str(task.get("format") or "wide"),
                     fps=int(generation_settings.get("text_to_images_fps") or 30),
                     ken_burns=bool(generation_settings.get("text_to_images_ken_burns", False)),
+                )
+            elif route == "remotion":
+                # Remotion (renderização local React): a narração é garantida
+                # pela mesma cadeia TTS das outras fontes e o roteiro Markdown
+                # é convertido em inputProps pelo adaptador dentro do Node.
+                audio_path = _valid_audio_artifact(
+                    generation_settings.get("voiceover_file") or artifacts.get("audio") or artifacts.get("narration")
+                )
+                if audio_path is None:
+                    audio_path = synthesize_text_to_images_audio(
+                        narration_text_from_script(str(script.get("content") or "")),
+                        {**settings, **generation_settings},
+                        str(task.get("voice") or generation_settings.get("voice") or channel.get("default_voice") or channel.get("voice") or "pt-BR-FranciscaNeural-Female"),
+                        STORAGE / "audio" / f"{task_id}-remotion.mp3",
+                    )
+                    artifacts["audio"] = str(audio_path)
+                composition_id = (
+                    "ShortVideo"
+                    if str(task.get("format") or "wide").strip().casefold() in {"shorts", "portrait", "vertical"}
+                    else "LongFormVideo"
+                )
+                video_path = _run_remotion_video(
+                    task,
+                    settings=settings,
+                    script=script,
+                    audio_path=audio_path,
+                    composition_id=composition_id,
                 )
             else:
                 video_path = _run_video_helper({

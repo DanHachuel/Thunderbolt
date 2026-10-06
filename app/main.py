@@ -188,6 +188,7 @@ from hermes_ui.material_sources import apply_material_source_cards_to_settings, 
 from hermes_ui.llm_providers import LLM_CARDS_KEY, LLM_PROVIDER_CATALOG, apply_llm_cards_to_settings, ensure_llm_provider_cards, new_llm_card, normalize_llm_card, provider_definition, test_llm_provider_card, stamp_test_result
 from hermes_ui.media_providers import FULL_IA_VIDEO_PROVIDER_CODES, KIE_MEDIA_MODEL_CATALOG, MEDIA_CARDS_KEY, MEDIA_IMAGE_ACTIVE_CARD_KEY, MEDIA_VIDEO_ACTIVE_CARD_KEY, apply_media_provider_cards_to_settings, cloudflare_workers_ai_models_url, cloudflare_workers_ai_run_base_url, cloudflare_workers_ai_token, ensure_media_provider_cards, media_cards_for_pool, media_provider_catalog, media_provider_definition, new_media_card, normalize_media_card
 from hermes_ui.media_generation import GOOGLE_IMAGES_COPYRIGHT_WARNING, WEB_IMAGES_COPYRIGHT_WARNING, ensure_web_images_cards, new_web_images_card, test_web_images_card
+from hermes_ui.remotion_provider import get_remotion_status
 from hermes_ui.music import create_music_task, list_music_files, list_music_tasks, materialize_suno_audio, request_suno_generation, run_music_task, store_music_file, store_voiceover_file, transition_music_task
 from hermes_ui.music_generation import MUSIC_GENRES, MUSIC_VOCAL_OPTIONS, generate_music_fields
 from hermes_ui.music_blueprints import list_music_blueprint_documents, read_music_blueprint, save_music_blueprint
@@ -301,7 +302,15 @@ VIDEO_SOURCE_LABELS.update({
     "music_clips": "Clipes de Música",
     "clips": "Clipes de Música",
 })
-UNAVAILABLE_VIDEO_SOURCES = {"remotion", "music_clips"}
+UNAVAILABLE_VIDEO_SOURCES = {"music_clips"}
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _remotion_availability() -> dict[str, Any]:
+    """Estado do Remotion (Node.js, FFmpeg, Chromium, dependências) com cache."""
+    return get_remotion_status()
+
+
 CHANNEL_ASPECT_RATIO_OPTIONS = ["Landscape 16:9", "Portrait 9:16", "Square 1:1"]
 CHANNEL_FORMAT_OPTIONS = ["wide", "Shorts", "Music"]
 
@@ -4381,6 +4390,18 @@ def render_new_video(page_title: str = "Criação de Vídeos", prefix: str = "ne
                 with st.form(f"{prefix}_form"):
                     st.form_submit_button("Criar tarefas", type="primary", disabled=True)
                 st.stop()
+            if style == "remotion":
+                # Fonte activa, gated pelo ambiente: o botão só fica habilitado
+                # quando o Remotion local está operacional (spec tarefa 7).
+                remotion_availability = _remotion_availability()
+                if not remotion_availability.get("available"):
+                    st.warning("Remotion (renderização local com React/@remotion/renderer) não está disponível neste ambiente:")
+                    for reason in remotion_availability.get("reasons", []):
+                        st.markdown(f"- {reason}")
+                    st.info("Depois de resolver os requisitos, reinicie o Thunderbolt para revalidar o estado do Remotion.")
+                    with st.form(f"{prefix}_form"):
+                        st.form_submit_button("Criar tarefas", type="primary", disabled=True)
+                    st.stop()
             material_source = (
                 {"Pexels": "pexels", "Pixabay": "pixabay"}.get(str(generation_settings.get("material_source") or ""), "")
                 if style == "pexels"
@@ -10264,8 +10285,15 @@ def render_settings():
                 render_media_provider_cards(settings, embedded=True)
 
                 with st.expander("Remotion", expanded=False):
-                    st.caption("Integração do Remotion como provedor de vídeo será implementada na Etapa 2.")
-                    st.info("Esta seção está reservada para a configuração do Remotion (renderização local com React/@remotion/renderer).")
+                    st.caption("Renderização local de vídeos com React/@remotion/renderer — subprocesso Node.js invocado pelo pipeline_worker.")
+                    remotion_status = _remotion_availability()
+                    if remotion_status.get("available"):
+                        st.success("Remotion disponível: Node.js, Chromium do Playwright, FFmpeg e dependências validados.")
+                    else:
+                        st.warning("Remotion indisponível neste ambiente:")
+                        for reason in remotion_status.get("reasons", []):
+                            st.markdown(f"- {reason}")
+                        st.info("Corra a instalação do Thunderbolt (npx.cmd --yes @danhachuel/thunderbolt@<versão> install) ou `npm install` dentro de packages/remotion/ e reinicie.")
 
                 render_web_images_cards(settings, embedded=True)
 

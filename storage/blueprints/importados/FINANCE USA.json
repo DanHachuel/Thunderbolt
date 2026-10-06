@@ -1,0 +1,329 @@
+{
+  "metadata": {
+    "task_type": "forensic_content_blueprint_extraction",
+    "sample_count": 7,
+    "dominant_domain_inferred": "long-form financial/wealth-psychology YouTube essays",
+    "core_promise_of_system": "Make abstract money topics feel urgent, personal, morally loaded, and immediately actionable by translating macro finance into high-stakes life consequences.",
+    "primary_content_engine": "History/metaphor-driven warning essay that reframes a familiar financial idea as misunderstood, structurally rigged, psychologically dangerous, and still navigable if the viewer adopts the creator's framework.",
+    "character_length_requirement": "STRICTLY 7,000–9,000 characters",
+    "character_length_rule": "The final FULL SCRIPT must be no less than 7,000 characters and no more than 9,000 characters.",
+    "strict_character_range": [
+      7000,
+      9000
+    ],
+    "length_compliance_mandatory": true,
+    "audience_inference": {
+      "knowledge_level": "intermediate aspirational retail investor / financially anxious knowledge worker",
+      "psychological_state": "skeptical, economically uneasy, wants clarity and edge, feels mainstream advice is incomplete",
+      "aspirational_identity": "calm, informed, anti-hype, system-level thinker who sees traps before the crowd"
+    },
+    "channel_persona": {
+      "role": "translator of hidden financial mechanics",
+      "voice": "calm but severe, analytical but conversational, anti-guru while still authoritative",
+      "authority_basis": [
+        "claims personal investing experience",
+        "references long study time and obscure documents",
+        "uses historical analogies",
+        "frames advice as mechanical rather than motivational",
+        "signals distance from scams/courses/hype"
+      ]
+    }
+  },
+  "cross_sample_system": {
+    "dominant_pattern": "Each video opens with a striking anecdote or historical event, converts it into a present-day parallel, exposes a hidden structural trap, escalates consequences from portfolio-level to life-level, then resolves with a practical protocol and a worldview shift.",
+    "what_is_repeated_across_samples": [
+      "Title promises revelation plus correction of a false belief.",
+      "Cold open uses vivid story, person, or date cluster before thesis.",
+      "Immediate pivot: 'this is happening again/right now/for you.'",
+      "Presenter positions himself as obsessive researcher, not entertainer.",
+      "Viewer is told mainstream advice is directionally true but dangerously incomplete.",
+      "Concepts are reduced to one central metaphor carried across the script.",
+      "Repeated contrast between spreadsheet math and human psychology.",
+      "Frequent use of named characters or mini-case studies to concretize abstractions.",
+      "Action steps appear after fear/diagnosis, not before.",
+      "Endings compress message into 3 takeaways or a concise doctrine."
+    ],
+    "what_is_intentionally_avoided": [
+      "No dry textbook exposition without emotional framing.",
+      "No purely optimistic wealth-building tone.",
+      "No jargon left untranslated for long.",
+      "No absolute certainty; uses probabilistic seriousness.",
+      "No purely technical CTA; CTAs are embedded as practical tools, not hard sells.",
+      "No celebratory finance bro energy, no luxury signaling, no macho alpha posture."
+    ],
+    "exceptions_used_strategically": [
+      "Video 4 is simpler and more direct; less nuanced than the others because it targets urgency and beginner conversion.",
+      "Video 6 leans more speculative/conspiratorial but protects credibility with repeated disclaimers about lack of proof.",
+      "Video 7 is more constructive and motivational, but still framed through pain, misperception, and psychological failure."
+    ]
+  },
+  "title_analysis": {
+    "title_mechanics": {
+      "structure": "Shock claim + topic + implied hidden truth/correction",
+      "common_forms": [
+        "X Explained",
+        "If You Want X, This Is What to Do",
+        "What's Coming Is Worse Than X",
+        "They're About to X Your Y",
+        "Group/Institution Is In Big Trouble",
+        "The Math That Will Blow Your Mind"
+      ],
+      "click_drivers": [
+        "threat escalation ('worse than a recession')",
+        "identity relevance ('your money', 'you want to invest')",
+        "forbidden mechanism ('loophole', 'trap', 'reset')",
+        "compressed certainty ('this is what to do')",
+        "reversal of common belief ('passive income' isn't passive)"
+      ],
+      "tone_signature": "High-stakes, corrective, anti-naive, not playful.",
+      "number_usage": "Years, percentages, counts, and money figures increase perceived seriousness and intellectual legitimacy.",
+      "title_psychology": "The viewer clicks because the title suggests they are unknowingly exposed to a system-level risk that others are missing."
+    },
+    "implied_enemies_and_allies": {
+      "implied_enemy": [
+        "financial industry",
+        "bad incentives",
+        "mainstream simplified advice",
+        "political institutions",
+        "the viewer's own undisciplined psychology"
+      ],
+      "implied_ally": [
+        "the narrator",
+        "historical truth",
+        "math",
+        "the prepared, disciplined viewer"
+      ]
+    }
+  },
+  "script_architecture": {
+    "macro_flow": [
+      "1. Pattern interrupt opening: bizarre anecdote, historical collapse, or jarring scenario.",
+      "2. Snap-link to present relevance: 'same pattern is happening now.'",
+      "3. Presenter framing: why he is qualified/why this isn't hype.",
+      "4. Promise stack: explicit list of what viewer will understand by the end.",
+      "5. Tool CTA early: free calculator/report framed as corrective utility.",
+      "6. Core metaphor introduced and sustained.",
+      "7. Conceptual explanation with simple language and arithmetic.",
+      "8. Historical precedent or analogical proof.",
+      "9. Psychological complication: why humans fail even when math works.",
+      "10. Concrete examples/case studies with named people and specific numbers.",
+      "11. Action protocol / rules / allocation / checklist.",
+      "12. Identity-level conclusion: freedom comes from mindset/system, not mere returns.",
+      "13. Final compression into takeaways + soft internal CTA to another video/subscribe."
+    ],
+    "opening_pattern": {
+      "method": "Start with a highly specific anecdote before the thesis so the viewer is mentally hooked by narrative, not argument.",
+      "why_it_works": "The viewer unconsciously asks 'why are you telling me this?' and the script answers by connecting the anecdote to their money/life.",
+      "opening_variants": [
+        "historical scam/collapse",
+        "three-case rapid montage",
+        "date-stamped macro timeline",
+        "ordinary person scenario with hidden flaw"
+      ]
+    },
+    "pacing_model": {
+      "rhythm": "Dense but segmented. Short to medium sentences dominate, broken by longer explanatory runs after hooks land.",
+      "acceleration_pattern": "Hook -> explanation -> new danger -> deeper mechanism -> practical release.",
+      "retention_devices": [
+        "forward promises ('here's what we're doing today')",
+        "mid-script escalations ('it gets worse')",
+        "counterintuitive turns ('the math works, human psychology doesn't')",
+        "repeated reframing",
+        "alternation between macro and personal examples"
+      ]
+    },
+    "information_release_timing": {
+      "front_loaded": [
+        "danger",
+        "pattern recognition",
+        "what viewer will learn"
+      ],
+      "mid_loaded": [
+        "underlying mechanism",
+        "historical parallels",
+        "examples and equations"
+      ],
+      "back_loaded": [
+        "protocol",
+        "identity shift",
+        "summary takeaways"
+      ]
+    }
+  },
+  "micro_writing_mechanics": {
+    "sentence_design": {
+      "dominant_shapes": [
+        "Short declarative shock sentence.",
+        "Question-answer sequence.",
+        "Analogy sentence followed by translation sentence.",
+        "Claim -> immediate caveat -> stronger restatement.",
+        "Numeric sentence -> emotional interpretation sentence."
+      ],
+      "feel": "Controlled urgency. The prose sounds like spoken thinking, but it is tightly engineered.",
+      "cadence_trick": "Uses short punch lines after data-heavy passages to reset attention."
+    },
+    "word_choice": {
+      "preferred_lexicon": [
+        "trap",
+        "mechanism",
+        "system",
+        "math",
+        "psychology",
+        "freedom",
+        "optionality",
+        "structure",
+        "concentration",
+        "cash flow",
+        "sequence risk",
+        "the game",
+        "what nobody talks about",
+        "quietly",
+        "actually",
+        "here's the thing"
+      ],
+      "language_behavior": "Abstract finance terms are almost always paired with tangible verbs or objects: geese, bathtub, snowball, beams, stool, lease, house.",
+      "credibility_words": "specific dates, named firms, exact percentages, historical names, concrete dollar amounts"
+    },
+    "rhetorical_devices": {
+      "most_common": [
+        "extended metaphor",
+        "strategic repetition",
+        "contrast pairs",
+        "mock dialogue",
+        "false belief -> corrected truth",
+        "stacked examples",
+        "escalating hypothetical scenario"
+      ],
+      "contrast_structure": [
+        "fantasy vs reality",
+        "gross revenue vs net income",
+        "average return vs sequence of return",
+        "looking rich vs being rich",
+        "recession vs monetary transition",
+        "retiring from vs retiring to"
+      ]
+    },
+    "tone_layering": {
+      "surface_tone": "helpful explainer",
+      "underlayer": "mild alarm, anti-naive skepticism",
+      "deeper_emotional_register": "betrayal by institutions, relief through understanding, dignity through disciplined realism"
+    }
+  },
+  "psychological_and_persuasive_mechanisms": {
+    "core_psychology": [
+      "Uses fear, but not random fear; fear is tied to mechanism, making it feel intelligent rather than sensational.",
+      "Creates relief by converting vague anxiety into understandable structure.",
+      "Makes viewer feel smarter than the passive majority if they keep watching.",
+      "Uses anti-hype disclaimers to increase trust before making strong claims.",
+      "Frames action as self-defense, not greed."
+    ],
+    "emotional_sequence": [
+      "confusion",
+      "recognition",
+      "alarm",
+      "clarity",
+      "agency",
+      "identity reinforcement"
+    ],
+    "credibility_engineering": {
+      "methods": [
+        "references institutions by name",
+        "admits uncertainty selectively",
+        "says 'this isn't about motivation'",
+        "uses personal skin-in-the-game statements",
+        "calls out bad incentives rather than cartoon villains",
+        "translates documents/research into plain English"
+      ],
+      "effect": "The narrator sounds like a sober insider decoding reality for outsiders."
+    },
+    "retention_psychology": {
+      "curiosity_loops": [
+        "What is the hidden pattern?",
+        "Why doesn't the obvious strategy work?",
+        "Who is actually winning?",
+        "What happens when the system breaks?",
+        "What should I do instead?"
+      ],
+      "tension_creation": "Tension is built by showing the viewer they are exposed to a risk they previously thought was safety.",
+      "relief_timing": "Relief arrives only after the system is fully diagnosed, which increases perceived value of the solution."
+    }
+  },
+  "worldview_embedded_in_scripts": {
+    "beliefs": [
+      "Most financial pain comes from incentives and psychology, not lack of information alone.",
+      "Institutions optimize for system preservation, not your well-being.",
+      "Conventional advice is often half-true and dangerous when decontextualized.",
+      "Freedom is more about flexibility, margin, and enoughness than maximizing returns.",
+      "The disciplined ordinary person can outperform the emotional crowd."
+    ],
+    "status_framing": "High status is attached to calm realism, delayed gratification, and structural understanding, not flashy consumption.",
+    "fear_framing": "The real danger is not one crash or one bad pick; it is building your life on false assumptions.",
+    "transformation_promise": "Move from reactive participant to system-aware allocator who can't be easily trapped."
+  },
+  "replication_logic": {
+    "content_formula": {
+      "step_1": "Choose a financial topic with mainstream familiarity and hidden complexity.",
+      "step_2": "Find a historical analogy, strange anecdote, or sharp mini-story that mirrors the modern issue.",
+      "step_3": "Frame the common understanding as incomplete or dangerously naive.",
+      "step_4": "Introduce one sticky metaphor that can carry the full explanation.",
+      "step_5": "Translate the mechanism into plain arithmetic with concrete numbers.",
+      "step_6": "Add a human-failure layer: why people still mess this up even when the math is knowable.",
+      "step_7": "Insert one or more case studies with names, ages, incomes, balances, outcomes.",
+      "step_8": "Escalate from portfolio consequence to lifestyle, identity, or societal consequence.",
+      "step_9": "Offer a protocol/ruleset that feels practical, not magical.",
+      "step_10": "End with worldview compression and a concise memorable doctrine."
+    },
+    "stylistic_rules_for_future_outputs": [
+      "Always make the invisible visible.",
+      "Never explain a concept without an image/object/metaphor.",
+      "Use numbers to anchor trust, not to overwhelm.",
+      "Alternate macro systems and individual stories.",
+      "Speak as if correcting a dangerous misunderstanding.",
+      "Let skepticism and humility coexist: strong thesis, selective uncertainty.",
+      "Avoid sounding like a trader; sound like a strategic realist.",
+      "Give the viewer dignity through understanding, not through hype."
+    ],
+    "title_generation_rules": [
+      "Center danger, reversal, or hidden mechanism.",
+      "Use direct second-order implications: not just 'recession' but 'worse than a recession.'",
+      "Make titles feel like practical protection against a trap.",
+      "Keep phrasing blunt, not clever."
+    ],
+    "hook_generation_rules": [
+      "Open on a vivid story or date cluster before introducing topic.",
+      "Reveal the present-day relevance within the first 5-8 lines.",
+      "Promise a deeper mechanism, not just surface explanation."
+    ]
+  },
+  "sample_specific_context": {
+    "video_1": "Blueprint for 'freedom fantasy versus mechanical reality.' Strong on metaphor, optionality, lifestyle creep, psychology of enough.",
+    "video_2": "Blueprint for 'historical concentration mania repeated today.' Strong on structural analogy, anti-indexing revisionism, explicit portfolio protocol.",
+    "video_3": "Blueprint for 'macro regime change.' Strong on date-stacking, institutional references, reserve-currency collapse framing, existential stakes.",
+    "video_4": "Blueprint for 'policy move translated into household consequences.' Simpler, more beginner-targeted, more direct villain/system framing.",
+    "video_5": "Blueprint for 'generational systemic failure.' Strong on metaphor (three-legged stool), demographic scaling, sympathy mixed with indictment.",
+    "video_6": "Blueprint for 'conspiracy-adjacent mechanism explained with legal/financial precedent.' Strong on debt spiral metaphor and disclaimer-based credibility protection.",
+    "video_7": "Blueprint for 'slow boring compounding made emotionally compelling.' Strong on motivational psychology without becoming inspirational fluff."
+  },
+  "generation_instructions_for_another_model": {
+    "objective": "Produce long-form finance scripts that feel like hidden-system exposés rather than generic educational content.",
+    "must_include": [
+      "one strong metaphor",
+      "one historical or structural parallel",
+      "one explicit false belief being corrected",
+      "one psychological trap",
+      "one practical protocol",
+      "one identity-level takeaway"
+    ],
+    "must_avoid": [
+      "generic optimism",
+      "surface-level listicles",
+      "purely technical teaching without tension",
+      "guru posturing",
+      "advice without mechanism"
+    ],
+    "success_condition": "The final script should make the viewer feel simultaneously alarmed, intellectually satisfied, and more in control.",
+    "output_length_requirement": "The final FULL SCRIPT must be strictly between 7,000 and 9,000 characters.",
+    "output_length_verification": "Before sending the answer, verify the FULL SCRIPT character count. If it is below 7,000 or above 9,000 characters, rewrite it until it falls within range.",
+    "hard_fail_condition": "Any FULL SCRIPT under 7,000 characters or over 9,000 characters is invalid and must be rewritten before output."
+  }
+}

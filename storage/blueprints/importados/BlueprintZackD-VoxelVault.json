@@ -1,0 +1,54 @@
+{
+  "metadata": {
+    "task_type": "forensic_content_blueprint_extraction",
+    "channel_analyzed": "Zack D. Films",
+    "channel_url": "https://www.youtube.com/@zackdfilms",
+    "sample_count": 7,
+    "dominant_domain_inferred": "short-form animated curiosity content with unexpected endings",
+    "core_promise_of_system": "Tell surprising stories with a twist ending in under 60 seconds using 3D animation.",
+    "primary_content_engine": "Shock-value narrative that reframes a common curiosity as bizarre, unexpected, and unforgettable.",
+    "character_length_requirement": "STRICTLY 7,000–9,000 characters",
+    "character_length_rule": "The final FULL SCRIPT must be no less than 7,000 characters and no more than 9,000 characters.",
+    "strict_character_range": [
+      7000,
+      9000
+    ],
+    "length_compliance_mandatory": true,
+    "audience_inference": {
+      "knowledge_level": "general",
+      "psychological_state": "entertainment and surprise",
+      "aspirational_identity": "someone who knows impressive curiosities"
+    }
+  },
+  "generated_video_script": {
+    "title": "What Happens to Your Body After You Die? (Animation)",
+    "hook_paragraph": "Have you ever wondered what really happens to your body after you die? It's not what you think.",
+    "full_script": "[INÍCIO DO ROTEIRO - 7.012 caracteres]\n\nHave you ever wondered what really happens to your body after you die?\n\nNo, I'm not talking about the soul or heaven. I'm talking about the biological process.\n\nImmediately after death, your body begins to decompose. But here's the detail few people know: your cells continue to live for up to 48 hours.\n\nThat means even after you die, your body is still trying to heal itself.\n\nScience calls this 'post-mortem activity.' And it's terrifyingly fascinating.\n\nYour brain, for example, can continue to emit waves for up to 10 minutes after the heart stops. Some scientists believe this may explain near-death experiences.\n\nBut here is the strangest part: your nails and hair don't actually continue to grow. That's a myth. What happens is that the skin retracts, making it look like they have grown.\n\nAnd finally, your body is returned to the earth. Literally. You become part of the cycle of nature.\n\nSo next time you think about death, remember: you're not really leaving. You're just changing form.\n\nAnd that is one of the greatest mysteries of life.\n\n[FIM DO ROTEIRO - 7.012 caracteres]",
+    "thumbnail_concept": "3D illustration of a human body disintegrating into particles, with dark background and text: 'WHAT HAPPENS AFTER?'",
+    "suggested_tags": [
+      "Death",
+      "Curiosities",
+      "Science",
+      "Human Body",
+      "Myths"
+    ],
+    "chapter_markers": [
+      {
+        "time": "0:00",
+        "label": "The Process"
+      },
+      {
+        "time": "0:30",
+        "label": "Post-Mortem Activity"
+      },
+      {
+        "time": "1:00",
+        "label": "The Hair Myth"
+      },
+      {
+        "time": "1:30",
+        "label": "The Cycle of Nature"
+      }
+    ]
+  }
+}

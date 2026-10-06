@@ -1,0 +1,242 @@
+{
+  "system_metadata": {
+    "content_type": "biographical tragedy narrative",
+    "core_engine": "contrast between public greatness and private collapse",
+    "primary_emotional_axis": "admiration → tension → collapse → fragility → reflective meaning",
+    "dominant_audience_state_created": "empathetic awe mixed with existential unease",
+    "promise_to_viewer": "reveal hidden cost behind iconic success and extract life lesson"
+  },
+  "title_system": {
+    "structure_pattern": [
+      "Age anchor",
+      "Subject name",
+      "Emotional framing word (Tragedy)",
+      "Extreme qualifier (Beyond Heartbreaking)",
+      "Optional curiosity tail (health updates)"
+    ],
+    "mechanics": {
+      "age_usage": "implies late-life vulnerability and signals retrospective narrative",
+      "emotional_intensifier": "‘beyond heartbreaking’ escalates expected sadness into extreme territory",
+      "subject_selection": "globally recognizable figures with perceived strength",
+      "implicit_contrast": "strong/public persona vs hidden suffering"
+    },
+    "click_drivers": [
+      "violation of expectation (strong figure is fragile)",
+      "fear projection (if this can happen to them, it can happen to you)",
+      "unfinished narrative (something has changed)",
+      "emotional escalation promise"
+    ],
+    "curiosity_gaps": [
+      "what specifically happened",
+      "how did it get this bad",
+      "what did they lose or sacrifice",
+      "what lesson emerges"
+    ]
+  },
+  "opening_hook_design": {
+    "pattern": [
+      "philosophical framing of subject identity",
+      "elevation of subject to symbolic level",
+      "sudden disruption (‘and then…’)",
+      "mystery via disappearance or collapse"
+    ],
+    "techniques": {
+      "mythologizing_subject": "subject framed as archetype (teacher of suffering, symbol of resilience)",
+      "abrupt contrast": "sharp pivot from strength to silence/failure",
+      "withheld specifics": "delay concrete details to create tension",
+      "scale amplification": "references to ‘millions’, ‘world’, ‘entire life’"
+    },
+    "psychological_effect": "creates cognitive dissonance that forces continued viewing"
+  },
+  "narrative_architecture": {
+    "macro_structure": [
+      "Hook (collapse hinted)",
+      "Backward origin story",
+      "Gradual rise and validation",
+      "Peak influence",
+      "Hidden cracks introduced",
+      "Major collapse event",
+      "Compounding crises",
+      "Present fragile state",
+      "Philosophical reflection",
+      "Audience-directed takeaway"
+    ],
+    "timeline_strategy": {
+      "nonlinear_entry": "start at collapse, rewind to origin",
+      "progressive layering": "each phase adds pressure rather than resolving it",
+      "inevitability_build": "events framed as leading toward unavoidable breakdown"
+    },
+    "escalation_model": {
+      "phase_1": "external struggle (poverty/rejection)",
+      "phase_2": "achievement and recognition",
+      "phase_3": "internal strain (health, control, relationships)",
+      "phase_4": "systemic collapse (body, mind, life structure)",
+      "phase_5": "existential reflection"
+    }
+  },
+  "pacing_and_rhythm": {
+    "sentence_structure": {
+      "long_form_sentences": "used for immersion and authority",
+      "short_interruptions": "used for emphasis and emotional hits"
+    },
+    "rhythm_patterns": [
+      "build → list → punchline sentence",
+      "narrative flow → rhetorical interruption",
+      "detail accumulation → emotional summary"
+    ],
+    "tempo_control": [
+      "slow during backstory",
+      "accelerates during rise",
+      "fragmented during collapse",
+      "slows again during reflection"
+    ]
+  },
+  "engagement_devices": {
+    "direct_questions": {
+      "frequency": "every 1–3 sections",
+      "purpose": [
+        "reset attention",
+        "force self-reflection",
+        "increase comment likelihood"
+      ],
+      "structure": "personalized hypothetical tied to narrative theme"
+    },
+    "comment_prompts": {
+      "placement": "after emotional peaks or philosophical questions",
+      "strategy": "turn viewer into participant in meaning-making"
+    },
+    "curiosity_loops": [
+      "tease future event before explaining past",
+      "mention outcome without cause",
+      "promise explanation later"
+    ]
+  },
+  "emotional_engineering": {
+    "core_sequence": [
+      "respect",
+      "curiosity",
+      "inspiration",
+      "unease",
+      "shock",
+      "sympathy",
+      "reflection"
+    ],
+    "contrast_mechanisms": {
+      "public_vs_private": "success contrasted with hidden suffering",
+      "strength_vs_fragility": "authority figures shown powerless",
+      "control_vs_loss": "disciplined individuals losing control"
+    },
+    "pain_amplifiers": [
+      "family suffering",
+      "health deterioration",
+      "loss of identity",
+      "inability to use own philosophy"
+    ],
+    "relief_points": "temporary recoveries or achievements before deeper fall"
+  },
+  "authority_and_credibility": {
+    "construction_methods": [
+      "specific dates and locations",
+      "named institutions",
+      "career milestones",
+      "quantitative achievements"
+    ],
+    "effect": "grounds emotional narrative in perceived factual reality",
+    "balance": "alternates between factual density and emotional storytelling"
+  },
+  "language_and_style": {
+    "tone": "dramatic, reverent, slightly ominous",
+    "word_choice_patterns": {
+      "high-intensity adjectives": [
+        "devastating",
+        "brutal",
+        "unimaginable"
+      ],
+      "philosophical vocabulary": [
+        "meaning",
+        "suffering",
+        "truth",
+        "burden"
+      ],
+      "physical metaphors": [
+        "breaking",
+        "collapse",
+        "weight",
+        "edge"
+      ]
+    },
+    "metaphor_system": {
+      "body_as_system": "body breaking down as metaphor for life collapse",
+      "burden_carrying": "life framed as weight to carry",
+      "journey_through_darkness": "narrative framed as descent and navigation"
+    }
+  },
+  "persuasion_mechanics": {
+    "implied_worldview": "suffering is inevitable and meaningful but has limits",
+    "fear_trigger": "even the strongest can break",
+    "aspiration_trigger": "dignity in enduring suffering",
+    "identity_positioning": {
+      "viewer": "someone facing or destined to face hardship",
+      "subject": "extreme example of that journey"
+    },
+    "implicit_enemy": [
+      "fame",
+      "pressure",
+      "body limitations",
+      "time"
+    ]
+  },
+  "retention_strategies": {
+    "open_loops": "constant deferral of key events",
+    "layered revelations": "each section adds new dimension rather than resolving",
+    "emotional resets": "questions or reflective pauses prevent fatigue",
+    "stakes escalation": "each crisis worse than previous"
+  },
+  "ending_structure": {
+    "components": [
+      "present-day fragile state",
+      "philosophical distillation",
+      "reframing of entire story as lesson",
+      "call to reflect or act"
+    ],
+    "final_message_pattern": "simple, universal rule derived from complex narrative",
+    "cta_psychology": {
+      "soft framing": "tribute, reflection, shared meaning",
+      "not transactional": "engagement framed as participation in story"
+    }
+  },
+  "what_is_repeated": [
+    "questions directed at viewer",
+    "contrast between strength and collapse",
+    "family as emotional anchor",
+    "body or mind failing under pressure",
+    "theme of carrying burden"
+  ],
+  "what_is_avoided": [
+    "neutral tone",
+    "pure factual reporting without emotion",
+    "quick resolutions",
+    "light humor during serious sections"
+  ],
+  "replication_blueprint": {
+    "step_1": "select a well-known figure with perceived strength",
+    "step_2": "identify a moment of vulnerability or collapse",
+    "step_3": "open with philosophical elevation then disrupt it",
+    "step_4": "rewind to origin and build credibility",
+    "step_5": "layer success and rising stakes",
+    "step_6": "introduce hidden cracks before collapse",
+    "step_7": "deliver collapse in detailed, sensory terms",
+    "step_8": "extend suffering with compounding crises",
+    "step_9": "transition to present fragile state",
+    "step_10": "extract universal philosophical meaning",
+    "step_11": "embed audience reflection questions throughout"
+  },
+  "generation_rules": {
+    "never_start_with_facts": "always start with meaning or identity",
+    "delay_core_event": "hold key tragedy until tension is built",
+    "alternate_scale": "switch between global impact and intimate detail",
+    "use_specificity_to_ground_drama": true,
+    "embed_questions_every_2_3_sections": true,
+    "end_with_universal_truth": true
+  }
+}

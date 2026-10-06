@@ -1,4 +1,15 @@
 # Changelog
+## 0.9.52 — 2026-10-06
+- Implementado o **Remotion** como provedor de vídeo local, substituindo o placeholder "Em breve": novo pacote `packages/remotion/` com as composições React `LongFormVideo` (1920×1080) e `ShortVideo` (1080×1920) e os componentes NarrationAudio, TextOverlay, AnimatedBackground, SceneTransition, DataVisualization e HandDrawnCanvas.
+- Adicionado o adaptador `scriptToInputProps` (roteiro Markdown → inputProps JSON): secções GANCHO/CENA/ENCERRAMENTO em PT e EN, durações estimadas por palavras e recalculadas proporcionalmente quando o áudio TTS real existe.
+- Adicionado o wrapper `render.mjs` — bundle cacheado em `storage/remotion-cache/bundle/` com invalidação por hash, protocolo `OUTPUT=`/`PROGRESS=`, concorrência CPU−1 — e o provider `hermes_ui/remotion_provider.py` (`get_remotion_status`, `prepare_input_props`, `run_remotion_render`) com heartbeat de 5s, timeout de 15 minutos, cancelamento e `_stop_process` (psutil).
+- Integrada a rota `remotion` no `pipeline_worker.py` com a mesma banda de progresso (52–79%) e cadeia TTS das outras fontes; as pipelines pexels, text_to_images, web_images e full_ia ficam inalteradas.
+- Actualizada a UI: a fonte Remotion habilita-se quando o ambiente está operacional e, caso contrário, apresenta as razões com o botão "Criar tarefas" bloqueado; o expander da Configuração API mostra o estado real (Node.js, Chromium do Playwright, FFmpeg do imageio-ffmpeg e dependências).
+- Ajustado o single-instance guard: processos com `--thunderbolt-role=remotion-render` (e as respectivas árvores Chromium/FFmpeg) ficam excluídos da limpeza da instância anterior, mantendo a normalização `\` → `/` do 0.9.50.
+- Incluída a skill **hand-drawn-canvas-animation** (alesha-pro/tools) como motor HandDrawnCanvas — cinco looks (`hand_drawn_paperInk`, `risoPop`, `screenSea`, `pencilMinimal`, `doodlePastel`), aleatoriedade com seed, exposição intencional (twos) e a fórmula de timebase 24 fps da skill; resumo operacional em `seed/skills/remotion.md`.
+- Adicionado o passo `npm install` em `packages/remotion/` ao instalador (best-effort, contornável com `--skip-remotion`) e os ficheiros do pacote Remotion ao pacote npm publicado.
+- Adicionados os testes do provider e do guard (Python), os testes Node do wrapper e do adaptador (37 verificações sem node_modules) e o e2e opt-in (`THUNDERBOLT_REMOTION_E2E=1`); documentação completa em `docs/remotion.md`. Suite: 1174 passed, 2 skipped, 10 subtests.
+
 ## 0.9.51 — 2026-10-05
 - Preenchido o CHANGELOG com o histórico das versões 0.9.34 a 0.9.50.
 - Adicionadas ao `AGENTS.md` as regras permanentes das sessões de agente: push obrigatório após commits e regras de release (bump duplo, publicação sempre via GitHub Actions, transparência pós-versão, comandos de instalação obrigatórios e UX sem travas de pré-registo).

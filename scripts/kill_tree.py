@@ -46,16 +46,38 @@ THUNDERBOLT_MARKERS = (
     "mpt_agent.py",
 )
 
+# Marcador único do subprocesso de render Remotion (spec: integração Remotion).
+# O render corre como `node packages/remotion/render.mjs ... --thunderbolt-role=
+# remotion-render` e, instalado via npx, o cmdline contém o path do pacote
+# (@danhachuel/thunderbolt/packages/remotion) — seria morto por engano pelo
+# guard. Processos com este marcador (e as suas árvores) ficam protegidos.
+REMOTION_RENDER_MARKER = "--thunderbolt-role=remotion-render"
 
-def is_thunderbolt_process(process: psutil.Process) -> bool:
+
+def _normalized_cmdline(process: psutil.Process) -> str:
+    """cmdline normalizado: minúsculas e barras invertidas convertidas em
+    normais (lição do incidente 0.9.50 — o cmdline do Windows usa `\`)."""
     try:
         cmdline = " ".join(process.cmdline()).lower()
     except (psutil.Error, OSError):
-        return False
+        return ""
+    return cmdline.replace("\\", "/")
+
+
+def is_remotion_render_process(process: psutil.Process) -> bool:
+    """True quando o processo é um render Remotion activo do Thunderbolt."""
+    return REMOTION_RENDER_MARKER in _normalized_cmdline(process)
+
+
+def is_thunderbolt_process(process: psutil.Process) -> bool:
+    cmdline = _normalized_cmdline(process)
     if not cmdline.strip():
         return False
     # This helper runs inside the package; never match the kill helper itself.
     if "kill_tree.py" in cmdline:
+        return False
+    # Renders Remotion activos ficam de fora da limpeza da instância anterior.
+    if REMOTION_RENDER_MARKER in cmdline:
         return False
     # CRITICAL FIX (0.9.50): no Windows o cmdline usa barras invertidas
     # (@danhachuel\thunderbolt\scripts\cli.mjs) e os marcadores usam barras
@@ -63,7 +85,6 @@ def is_thunderbolt_process(process: psutil.Process) -> bool:
     # nunca era apanhado — o guard matava os filhos Python mas deixava o
     # launcher vivo a segurar a porta 3030, e o launcher novo crashava no
     # bind com EADDRINUSE.
-    cmdline = cmdline.replace("\\", "/")
     return any(marker in cmdline for marker in THUNDERBOLT_MARKERS)
 
 
@@ -145,13 +166,34 @@ def terminate(targets: list[psutil.Process], wait_seconds: float = 3.0) -> tuple
     return killed, survivors
 
 
+def _remotion_render_subtree_pids() -> set[int]:
+    """Pids de renders Remotion activos e dos seus descendentes.
+
+    O render é um subprocesso Node com ciclo de vida próprio (pode
+    sobreviver a um restart do launcher e terminar o MP4 no storage);
+    o guard nunca o termina, nem aos Chromium/FFmpeg que ele spawna.
+    """
+    render_protected: set[int] = set()
+    for process in psutil.process_iter(["pid"]):
+        if not is_remotion_render_process(process):
+            continue
+        render_protected.add(process.pid)
+        try:
+            for child in process.children(recursive=True):
+                render_protected.add(child.pid)
+        except (psutil.Error, OSError):
+            continue
+    return render_protected
+
+
 def cleanup(exclude_pid: int | None) -> dict[str, list[int]]:
     protected = protected_pids(exclude_pid)
+    render_protected = _remotion_render_subtree_pids()
     roots: list[psutil.Process] = []
     targeted: set[int] = set()
     for process in psutil.process_iter(["pid"]):
         pid = process.pid
-        if pid in protected or pid in targeted:
+        if pid in protected or pid in targeted or pid in render_protected:
             continue
         if not is_thunderbolt_process(process):
             continue
@@ -159,7 +201,7 @@ def cleanup(exclude_pid: int | None) -> dict[str, list[int]]:
         # is not targeted twice.
         for member in collect_tree(process):
             try:
-                if member.pid in protected:
+                if member.pid in protected or member.pid in render_protected:
                     continue
                 if member.pid not in targeted:
                     targeted.add(member.pid)
@@ -167,7 +209,7 @@ def cleanup(exclude_pid: int | None) -> dict[str, list[int]]:
             except (psutil.Error, OSError):
                 continue
     killed, survivors = terminate(roots)
-    return {"killed": killed, "survivors": survivors, "excluded": sorted(protected)}
+    return {"killed": killed, "survivors": survivors, "excluded": sorted(protected | render_protected)}
 
 
 def kill_pid(pid: int) -> dict[str, list[int]]:

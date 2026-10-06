@@ -218,3 +218,61 @@ def test_kill_tree_pid_mode_reports_a_missing_pid_gracefully():
     summary = json.loads(completed.stdout)
     assert summary["killed"] == []
     assert summary["survivors"] == []
+
+
+# ── 0.9.52: exclusão dos renders Remotion (spec tarefa 9/11.2) ────────────────
+
+
+def test_guard_excludes_active_remotion_renders():
+    # O render corre como `node ... packages/remotion/render.mjs
+    # --thunderbolt-role=remotion-render`; instalado via npx, o cmdline contém
+    # @danhachuel/thunderbolt — sem a exclusão, o guard matava o render a meio.
+    module = _load_kill_tree()
+    render = _FakeProcess(
+        101,
+        [
+            "node",
+            "C:\\npx-cache\\@danhachuel\\thunderbolt\\packages\\remotion\\render.mjs",
+            "--thunderbolt-role=remotion-render",
+        ],
+    )
+    launcher = _FakeProcess(102, ["node", "C:\\npx-cache\\@danhachuel\\thunderbolt\\scripts\\cli.mjs"])
+    assert module.is_remotion_render_process(render) is True
+    assert module.is_thunderbolt_process(render) is False
+    # O launcher continua a ser apanhado (o guard em si não foi enfraquecido).
+    assert module.is_thunderbolt_process(launcher) is True
+
+
+def test_guard_marker_matching_normalises_windows_backslashes():
+    # Lição 0.9.50: a comparação de cmdline normaliza `\` → `/` — válida
+    # também para o marcador do Remotion e para paths de processo mistos.
+    module = _load_kill_tree()
+    render = _FakeProcess(103, ["node", "C:\\apps\\thunderbolt\\packages\\remotion\\render.mjs", "--thunderbolt-role=remotion-render"])
+    assert module.is_remotion_render_process(render) is True
+    assert module.is_thunderbolt_process(render) is False
+    forward_slash_render = _FakeProcess(104, ["node", "C:/apps/thunderbolt/packages/remotion/render.mjs", "--thunderbolt-role=remotion-render"])
+    assert module.is_remotion_render_process(forward_slash_render) is True
+
+
+def test_remotion_render_subtrees_are_protected_from_cleanup(monkeypatch):
+    # O cleanup não pode matar o render (nem os Chromium/FFmpeg que ele
+    # spawna) quando recolhe as árvores dos processos apanhados pelos
+    # marcadores (ex.: o próprio worker pai).
+    module = _load_kill_tree()
+    render = _FakeProcess(
+        105,
+        ["node", "/npx/@danhachuel/thunderbolt/packages/remotion/render.mjs", "--thunderbolt-role=remotion-render"],
+    )
+    chromium_child = _FakeProcess(106, ["chrome", "--headless", "--user-data-dir=x"])
+    render.children = lambda recursive=True: [chromium_child]
+    monkeypatch.setattr(module.psutil, "process_iter", lambda attrs=None: [render])
+    assert module._remotion_render_subtree_pids() == {105, 106}
+
+
+def test_kill_tree_declares_the_remotion_marker_constants():
+    source = KILL_TREE_PATH.read_text(encoding="utf-8")
+    assert 'REMOTION_RENDER_MARKER = "--thunderbolt-role=remotion-render"' in source
+    assert "def is_remotion_render_process(" in source
+    # O cleanup salta membros protegidos pelo marcador antes de os terminar.
+    assert "render_protected" in source
+    assert "sorted(protected | render_protected)" in source

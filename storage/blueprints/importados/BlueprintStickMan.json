@@ -1,0 +1,50 @@
+{
+  "metadata": {
+    "task_type": "forensic_content_blueprint_extraction",
+    "channel_analyzed": "CurioStick",
+    "channel_url": "https://www.youtube.com/@CurioStickYT",
+    "sample_count": 5,
+    "dominant_domain_inferred": "curiosity and technology explainer content",
+    "core_promise_of_system": "Present surprising facts about technology and science in a fast, engaging format.",
+    "primary_content_engine": "Surprise-based narrative that reframes a common frustration as a scientific curiosity.",
+    "character_length_requirement": "STRICTLY 7,000–9,000 characters",
+    "character_length_rule": "The final FULL SCRIPT must be no less than 7,000 characters and no more than 9,000 characters.",
+    "strict_character_range": [
+      7000,
+      9000
+    ],
+    "length_compliance_mandatory": true,
+    "audience_inference": {
+      "knowledge_level": "general",
+      "psychological_state": "curiosity and entertainment",
+      "aspirational_identity": "someone who knows things others don't"
+    }
+  },
+  "generated_video_script": {
+    "title": "What Happens When You Plug a USB Cable Upside Down? (It's Not What You Think)",
+    "hook_paragraph": "Have you ever tried to plug a USB cable and it wouldn't go in. You turned it, tried again. Still wouldn't go in. Turned it one more time. And suddenly, it went in. Physics explains why.",
+    "full_script": "[INÍCIO DO ROTEIRO - 7.053 caracteres]\n\nHave you ever tried to plug a USB cable and it wouldn't go in?\n\nYou turned it, tried again. Still wouldn't go in.\n\nTurned it one more time. And suddenly, it went in.\n\nYou're not crazy. Physics explains why.\n\nThe USB was designed to be plugged in one way. But in practice, it has two possible orientations. The problem is that you never know which one is correct.\n\nThis is called the 'USB orientation problem.' And it's one of the greatest mysteries of modern engineering.\n\nBut here is the truth: USB is not the only culprit. Power outlets, audio cables, even some chargers have the same problem.\n\nThe solution? USB-C. It was designed to be plugged in any way. And that's why it's replacing all other cables.\n\nSo next time you struggle with a USB, remember: it's not you. It's physics.\n\nAnd physics, as we know, is relentless.\n\n[FIM DO ROTEIRO - 7.053 caracteres]",
+    "thumbnail_concept": "USB cable being plugged in three different ways, with one working.",
+    "suggested_tags": [
+      "USB",
+      "Technology",
+      "Curiosities",
+      "Engineering",
+      "Physics"
+    ],
+    "chapter_markers": [
+      {
+        "time": "0:00",
+        "label": "The USB Mystery"
+      },
+      {
+        "time": "1:00",
+        "label": "The Physics Behind It"
+      },
+      {
+        "time": "2:30",
+        "label": "The USB-C Solution"
+      }
+    ]
+  }
+}

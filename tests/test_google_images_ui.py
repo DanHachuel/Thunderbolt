@@ -46,5 +46,5 @@ def test_google_images_fields_have_half_width_columns_and_programmable_search_li
 
 def test_google_images_ui_has_copyright_warning_and_source_unblocked():
     assert "GOOGLE_IMAGES_COPYRIGHT_WARNING" in MAIN
-    assert 'UNAVAILABLE_VIDEO_SOURCES = {"remotion", "music_clips"}' in MAIN
+    assert 'UNAVAILABLE_VIDEO_SOURCES = {"music_clips"}' in MAIN
     assert 'channel_video_source_storage(wide_style_label) == "google_images"' in MAIN

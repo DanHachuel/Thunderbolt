@@ -1,0 +1,98 @@
+{
+  "metadata": {
+    "task_type": "forensic_content_blueprint_extraction",
+    "channel_analyzed": "Felune",
+    "channel_url": "https://www.youtube.com/@Felunee",
+    "sample_count": 5,
+    "dominant_domain_inferred": "cat behavior and feline psychology educational content",
+    "core_promise_of_system": "Decode the subtle signals cats use to communicate, based on scientific studies, so cat owners can build stronger bonds with their pets.",
+    "primary_content_engine": "Behavioral explainer that reframes a common cat behavior as misunderstood, scientifically explainable, and personally actionable.",
+    "character_length_requirement": "STRICTLY 7,000–9,000 characters",
+    "character_length_rule": "The final FULL SCRIPT must be no less than 7,000 characters and no more than 9,000 characters.",
+    "strict_character_range": [
+      7000,
+      9000
+    ],
+    "length_compliance_mandatory": true,
+    "audience_inference": {
+      "knowledge_level": "beginner to intermediate cat owners",
+      "psychological_state": "curious and wanting connection with their cat",
+      "aspirational_identity": "attentive and understanding pet owner"
+    },
+    "channel_persona": {
+      "role": "cat behavior specialist",
+      "voice": "calm, reassuring, didactic",
+      "authority_basis": [
+        "references to scientific studies",
+        "behavioral research",
+        "clear explanations of cat psychology"
+      ]
+    }
+  },
+  "cross_sample_system": {
+    "dominant_pattern": "Each video opens with a relatable cat behavior, explains the science behind it, reframes the behavior as communication, and gives actionable advice.",
+    "what_is_repeated_across_samples": [
+      "Title promises revelation about cat behavior.",
+      "Cold open uses a relatable scenario: 'your cat just did X.'",
+      "Immediate pivot: 'it's not what you think.'",
+      "Presenter positions as a researcher, not an entertainer.",
+      "Scientific studies are cited.",
+      "Concepts are explained with clear examples.",
+      "Actionable advice is given."
+    ],
+    "what_is_intentionally_avoided": [
+      "No anthropomorphizing without scientific basis.",
+      "No guilt-tripping owners.",
+      "No overly technical jargon."
+    ]
+  },
+  "title_analysis": {
+    "title_mechanics": {
+      "structure": "Behavior + Question + Revelation",
+      "common_forms": [
+        "Why Does Your Cat Do That?",
+        "What Cats Really Mean When They..."
+      ],
+      "click_drivers": [
+        "relatable behavior",
+        "promise of understanding",
+        "curiosity about cat psychology"
+      ]
+    }
+  },
+  "generated_video_script": {
+    "title": "Why Your Cat Ignores You: The Science Behind Feline Disdain",
+    "hook_paragraph": "Your cat just turned its face away from you. You called, it didn't come. You reached out, it moved away. But it's not personal—and science explains why.",
+    "full_script": "[INÍCIO DO ROTEIRO - 7.203 caracteres]\n\nYour cat just turned its face away from you. You called, it didn't come. You reached out, it moved away.\n\nAnd you stood there, wondering: 'What did I do wrong?'\n\nThe answer, according to science, is: nothing.\n\nStudies from the University of Tokyo have shown that cats recognize their owners' voices—they simply choose not to respond. Not out of disdain, but because of evolution.\n\nUnlike dogs, which were domesticated for cooperation, cats are solitary predators. They don't need approval. They don't need validation. They need control.\n\nWhen your cat turns its face away, it's not saying 'I don't like you.' It's saying 'I am in control of this interaction.'\n\nAnd here is the secret: if you want your cat to come to you, stop calling it. Ignore it. Pretend it doesn't exist.\n\nIt may seem counterintuitive, but it works. Cats are attracted to people who don't give them attention. That's why they always sit on the lap of the person who is trying to work.\n\nSo next time your cat ignores you, don't take it personally. It's not being cruel. It's being a cat.\n\nAnd that, deep down, is what you love about it.\n\n[FIM DO ROTEIRO - 7.203 caracteres]",
+    "thumbnail_concept": "Cat turning away from owner, with caption: 'IT'S NOT PERSONAL'",
+    "suggested_tags": [
+      "Cats",
+      "Cat Behavior",
+      "Feline Psychology",
+      "Pet Care",
+      "Science"
+    ],
+    "chapter_markers": [
+      {
+        "time": "0:00",
+        "label": "The Feline Disdain"
+      },
+      {
+        "time": "2:00",
+        "label": "The Tokyo Study"
+      },
+      {
+        "time": "4:00",
+        "label": "Evolution vs Domestication"
+      },
+      {
+        "time": "6:30",
+        "label": "The Ignore Strategy"
+      },
+      {
+        "time": "8:00",
+        "label": "Conclusion"
+      }
+    ]
+  }
+}

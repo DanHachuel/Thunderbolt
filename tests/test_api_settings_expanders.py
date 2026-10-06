@@ -117,7 +117,7 @@ class ApiSettingsExpandersTests(unittest.TestCase):
         self.assertLess(media_position, remotion_position)
         self.assertLess(remotion_position, web_images_position)
         self.assertLess(web_images_position, voice_position)
-        self.assertIn('Integração do Remotion como provedor de vídeo será implementada na Etapa 2.', MAIN_SOURCE)
+        self.assertIn('Renderização local de vídeos com React/@remotion/renderer — subprocesso Node.js invocado pelo pipeline_worker.', MAIN_SOURCE)
         # A nota de placeholder do Google Custom Search foi substituída pelo pool
         # real de providers de imagens na web (commit a332304).
         self.assertIn('provider_labels = {"google_images": "Google Images", "serpapi": "SerpApi", "brightdata": "Bright Data"}', MAIN_SOURCE)

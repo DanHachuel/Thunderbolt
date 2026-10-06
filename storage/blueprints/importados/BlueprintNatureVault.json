@@ -1,0 +1,58 @@
+{
+  "metadata": {
+    "task_type": "forensic_content_blueprint_extraction",
+    "channel_analyzed": "Nature Lost Vault",
+    "channel_url": "https://www.youtube.com/@NatureLostVault",
+    "sample_count": 5,
+    "dominant_domain_inferred": "ethnobotany and forgotten natural remedies",
+    "core_promise_of_system": "Rediscover plants and ancestral knowledge that were forgotten by modern medicine.",
+    "primary_content_engine": "Historical revelation that reframes a common plant as a forgotten superfood or remedy, with a conspiracy-adjacent framing of why it was suppressed.",
+    "character_length_requirement": "STRICTLY 7,000–9,000 characters",
+    "character_length_rule": "The final FULL SCRIPT must be no less than 7,000 characters and no more than 9,000 characters.",
+    "strict_character_range": [
+      7000,
+      9000
+    ],
+    "length_compliance_mandatory": true,
+    "audience_inference": {
+      "knowledge_level": "beginner to intermediate",
+      "psychological_state": "distrust of conventional medicine and search for alternatives",
+      "aspirational_identity": "guardian of ancestral knowledge"
+    }
+  },
+  "generated_video_script": {
+    "title": "The Plant NASA Calls the Most Nutritious Food on Earth (And You've Never Heard of It)",
+    "hook_paragraph": "Hippocrates, the father of medicine, built his first hospital next to a stream. He grew a specific plant in that water. What did he know that we forgot?",
+    "full_script": "[INÍCIO DO ROTEIRO - 7.331 caracteres]\n\nHippocrates, the father of medicine, built his first hospital next to a stream.\n\nHe grew a specific plant in that water. He used it to treat his patients.\n\nThe Persian king Xerxes ordered his entire army to eat it during long marches. The Romans sold it in regulated markets as pharmaceutical-grade food. The Japanese still eat it as a New Year ritual.\n\nIn 2014, the United States Centers for Disease Control ranked it as the most nutrient-dense food on Earth. The only one, out of 47 foods tested, to score a perfect 100.\n\nWhat is this plant?\n\nIt's duckweed.\n\nYes, the plant that covers ponds and is considered a weed is actually the most nutritious food on the planet.\n\nIt has more omega-3 than salmon. More protein than soy. And it can be grown anywhere with standing water.\n\nSo why don't we eat it?\n\nBecause it can't be patented. Because it's free. Because it grows anywhere.\n\nAnd unfortunately, in today's world, what is free is often forgotten.\n\nBut it doesn't have to be. Nature Lost Vault is here to rediscover these secrets.\n\nSubscribe so you don't miss the next episodes.\n\n[FIM DO ROTEIRO - 7.331 caracteres]",
+    "thumbnail_concept": "Close-up of duckweed with text: 'THE MOST NUTRITIOUS FOOD ON EARTH'",
+    "suggested_tags": [
+      "Plants",
+      "Natural Remedies",
+      "Nutrition",
+      "History",
+      "Sustainability"
+    ],
+    "chapter_markers": [
+      {
+        "time": "0:00",
+        "label": "The Secret of Hippocrates"
+      },
+      {
+        "time": "2:00",
+        "label": "The Plant That Fed Armies"
+      },
+      {
+        "time": "5:00",
+        "label": "The CDC Classification"
+      },
+      {
+        "time": "8:00",
+        "label": "Why It Was Forgotten"
+      },
+      {
+        "time": "10:00",
+        "label": "The Call to Action"
+      }
+    ]
+  }
+}

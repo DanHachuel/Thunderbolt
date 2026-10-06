@@ -1,0 +1,329 @@
+{
+  "metadata": {
+    "task_type": "forensic_content_blueprint_extraction",
+    "channel_analyzed": "Cocomelon - Nursery Rhymes",
+    "channel_url": "https://www.youtube.com/@cocomelon",
+    "sample_count": 7,
+    "dominant_domain_inferred": "Educação Infantil / Entretenimento para Bebês e Pré-escolares",
+    "core_promise_of_system": "Ensinar habilidades fundamentais (letras, números, cores, rotinas) através de músicas repetitivas, animações 3D coloridas e histórias de situações cotidianas da família",
+    "primary_content_engine": "Canções infantis tradicionais e originais com repetição massiva, reforço de vocabulário e modelagem de comportamentos sociais positivos",
+    "character_length_requirement": "STRICTLY 7,000–9,000 characters",
+    "character_length_rule": "The final FULL SCRIPT must be no less than 7,000 characters and no more than 9,000 characters.",
+    "strict_character_range": [
+      7000,
+      9000
+    ],
+    "length_compliance_mandatory": true,
+    "audience_inference": {
+      "knowledge_level": "Pré-alfabetizado (0 a 5 anos) - conhecimento básico de objetos, animais e sons do dia a dia",
+      "psychological_state": "Curiosidade natural, atenção curta, necessidade de repetição para fixação de conceitos, busca por segurança e previsibilidade",
+      "aspirational_identity": "Criança que quer aprender e se divertir como os personagens do canal, imitando comportamentos positivos"
+    },
+    "channel_persona": {
+      "role": "Amigo animado e paciente que ensina brincando",
+      "voice": "Tom alegre, energético, entusiástico, com entonação exagerada e clara para facilitar a compreensão",
+      "authority_basis": [
+        "Autoridade de um adulto carinhoso (mãe/pai/professor) que guia a criança",
+        "Autoridade de um amigo mais velho (JJ) que mostra como fazer as coisas",
+        "Autoridade da repetição e da música como ferramenta de memorização"
+      ]
+    }
+  },
+  "cross_sample_system": {
+    "dominant_pattern": "Estrutura musical: Abertura com introdução instrumental + refrão repetido múltiplas vezes + encerramento com finalização musical e mensagem positiva",
+    "what_is_repeated_across_samples": [
+      "Uso da mesma família de personagens (JJ, YoYo, TomTom, pais, animais)",
+      "Cenários domésticos e escolares familiares (banho, refeições, escola, parque)",
+      "Estrutura de 'chamada e resposta' (pergunta seguida de resposta cantada)",
+      "Foco em uma única habilidade ou tema por vídeo (ex: cores, números, higiene)",
+      "Transições visuais rápidas com mudanças de cor e movimento constante",
+      "Repetição da música pelo menos 3 vezes com variações mínimas",
+      "Finalização com 'obrigado' e mensagem de amor/carinho"
+    ],
+    "what_is_intentionally_avoided": [
+      "Conflitos ou tensões dramáticas entre personagens",
+      "Linguagem complexa ou vocabulário avançado",
+      "Silêncios ou pausas prolongadas",
+      "Animações com movimentos lentos ou mudanças sutis",
+      "Críticas ou correções negativas (apenas reforço positivo)",
+      "Temas assustadores, tristes ou que gerem ansiedade"
+    ],
+    "exceptions_used_strategically": [
+      "Vídeos temáticos especiais (ex: Halloween, Natal) com pequenas variações visuais e musicais",
+      "Vídeos de maior duração (compilações) com múltiplas músicas encadeadas para momentos de 'tranquilidade'"
+    ]
+  },
+  "title_analysis": {
+    "title_mechanics": {
+      "structure": "[Nome da Música] + [Tema/Atividade] + [Personagem ou Contexto]",
+      "common_forms": [
+        "\"The [X] Song\" (ex: The Bath Song, The Potty Song)",
+        "\"[Atividade] with [Personagem]\" (ex: Playtime with JJ)",
+        "\"Learn [Tema] with CoComelon\" (ex: Learn Colors with CoComelon)",
+        "\"[Personagem]'s [Atividade]\" (ex: JJ's Animal Songs)"
+      ],
+      "click_drivers": [
+        "Palavras-chave de rotina infantil (bath, potty, school, bed)",
+        "Nomes dos personagens amados (JJ, Cody, Nina)",
+        "Promessas de aprendizado claro (Learn ABCs, Learn Numbers)",
+        "Uso de 'Song' como gatilho de familiaridade musical"
+      ],
+      "tone_signature": "Direto, descritivo, positivo e extremamente claro sobre o conteúdo",
+      "number_usage": "Raro em títulos; usado em compilações (ex: 'Best of Bath Songs') ou contagens específicas ('Ten Little Duckies')",
+      "title_psychology": "Os títulos funcionam como uma promessa explícita para os pais: a criança vai aprender algo específico de forma divertida. A previsibilidade reduz a ansiedade dos pais e aumenta a confiança no conteúdo."
+    },
+    "implied_enemies_and_allies": {
+      "implied_enemy": [
+        "Tédio e falta de estímulo",
+        "Comportamentos negativos (não querer tomar banho, não escovar os dentes)",
+        "Dificuldade de aprendizado de habilidades básicas"
+      ],
+      "implied_ally": [
+        "Os pais que buscam conteúdo educativo e seguro",
+        "A rotina e a previsibilidade do dia a dia",
+        "A música e a repetição como ferramentas de aprendizado",
+        "Os personagens como modelos de comportamento positivo"
+      ]
+    }
+  },
+  "script_architecture": {
+    "macro_flow": [
+      "1. ABERTURA: Entrada musical animada com o logotipo e os personagens principais aparecendo",
+      "2. APRESENTAÇÃO DO TEMA: Uma breve introdução verbal sobre o que será aprendido (ex: 'Hoje vamos aprender sobre as cores!')",
+      "3. PRIMEIRA PARTE DA MÚSICA: Verso inicial com a apresentação do conceito (ex: 'O vermelho é a cor da maçã...')",
+      "4. REFRÃO CANTADO: Melodia principal, repetida com uma progressão visual",
+      "5. DEMONSTRAÇÃO PRÁTICA: Os personagens aplicam o conceito em uma situação cotidiana (ex: JJ escolhe uma camisa vermelha)",
+      "6. SEGUNDA PARTE DA MÚSICA: Novo elemento ou variação do conceito (ex: 'O azul é a cor do céu...')",
+      "7. REFRÃO REPETIDO: Mesma melodia, com nova demonstração visual",
+      "8. CHAMADA E RESPOSTA: Personagem faz uma pergunta e a criança é incentivada a responder (ex: 'Que cor é essa?')",
+      "9. INTERAÇÃO COM A CÂMERA: Personagem olha para a câmera e convida a criança a participar",
+      "10. REPETIÇÃO FINAL DO REFRÃO: Versão mais animada e acelerada para reforço",
+      "11. ENCERRAMENTO MUSICAL: Conclusão da música com finalização instrumental",
+      "12. MENSAGEM POSITIVA: Personagem agradece e diz algo carinhoso (ex: 'Você é incrível!')",
+      "13. TELA FINAL: Logotipo do CoComelon com um 'tchau' animado"
+    ],
+    "opening_pattern": {
+      "method": "Animação 3D rápida com os personagens dançando e o título da música aparecendo na tela, acompanhado de uma melodia instrumental vibrante",
+      "why_it_works": "Captura imediatamente a atenção da criança com movimento, cor e som, criando uma associação positiva com o conteúdo que virá",
+      "opening_variants": [
+        "Personagem principal (JJ) acena e diz 'Olá!'",
+        "Todos os personagens aparecem juntos em um cenário divertido",
+        "Uma cena do cotidiano é mostrada antes da música começar"
+      ]
+    },
+    "pacing_model": {
+      "rhythm": "Rápido e constante, com mudanças visuais a cada 2-3 segundos",
+      "acceleration_pattern": "Começa com ritmo moderado, acelera no refrão, desacelera levemente nas partes educativas, e acelera novamente na repetição final",
+      "retention_devices": [
+        "Refrão extremamente repetitivo (mínimo 3 repetições por vídeo)",
+        "Mudanças visuais sutis a cada repetição para manter o interesse",
+        "Personagens que fazem perguntas diretas à criança",
+        "Textos grandes e coloridos na tela acompanhando a música"
+      ]
+    },
+    "information_release_timing": {
+      "front_loaded": [
+        "Tema principal do vídeo é declarado nos primeiros 10 segundos",
+        "A música principal começa nos primeiros 15 segundos"
+      ],
+      "mid_loaded": [
+        "Novos elementos do conceito são introduzidos a cada 30-45 segundos",
+        "Perguntas interativas são feitas à criança no meio do vídeo"
+      ],
+      "back_loaded": [
+        "Reforço final de todo o conteúdo nos últimos 30 segundos",
+        "Mensagem de carinho e incentivo no encerramento"
+      ]
+    },
+    "rhetorical_devices": {
+      "most_common": [
+        "Repetição ('The wheels on the bus go round and round...')",
+        "Onomatopeias ('Vroom vroom!', 'Splash splash!')",
+        "Chamada e resposta ('Can you say it with me?')",
+        "Enumeração ('One, two, three...')"
+      ],
+      "contrast_structure": [
+        "Grande vs Pequeno (ex: um elefante grande e um rato pequeno)",
+        "Alto vs Baixo (ex: sons de animais)",
+        "Dentro vs Fora (ex: brinquedos dentro e fora da caixa)"
+      ]
+    },
+    "tone_layering": {
+      "surface_tone": "Alegre, divertido, enérgico",
+      "underlayer": "Educacional, estruturado, com objetivos claros de aprendizado",
+      "deeper_emotional_register": "Segurança, conforto, amor familiar, pertencimento"
+    }
+  },
+  "psychological_and_persuasive_mechanisms": {
+    "core_psychology": [
+      "Aprendizagem por repetição (memorização de padrões musicais e linguísticos)",
+      "Modelagem social (crianças imitam os personagens em comportamentos positivos)",
+      "Reforço positivo (elogios constantes e celebração de acertos)",
+      "Redução da ansiedade (rotinas previsíveis, cenários familiares)"
+    ],
+    "emotional_sequence": [
+      "CURIOSIDADE (abertura com personagens e música)",
+      "ALEGRIA (ritmo contagiante e cores vibrantes)",
+      "ENGAJAMENTO (chamada para participar)",
+      "SATISFAÇÃO (repetição que permite antecipação e acerto)",
+      "AMOR (mensagem final de carinho)"
+    ],
+    "credibility_engineering": {
+      "methods": [
+        "Uso de personagens consistentes e reconhecíveis que criam vínculo emocional",
+        "Cenários do dia a dia que os pais reconhecem como relevantes",
+        "Conteúdo alinhado com marcos de desenvolvimento infantil (cores, números, letras)",
+        "Transmissão em múltiplas plataformas (Netflix, Spotify) que validam a marca"
+      ],
+      "effect": "Pais confiam no canal como uma ferramenta educacional segura e eficaz; crianças se sentem conectadas aos personagens"
+    },
+    "retention_psychology": {
+      "curiosity_loops": [
+        "'O que vai acontecer quando JJ apertar o botão?'",
+        "'Qual será a próxima cor que vamos aprender?'",
+        "'O que o TomTom vai construir agora?'"
+      ],
+      "tension_creation": "Baixa tensão; a 'tensão' é apenas a antecipação da resposta correta (ex: 'Você consegue adivinhar qual é a cor?')",
+      "relief_timing": "O alívio vem imediatamente após a resposta ser revelada, com celebração e reforço positivo"
+    }
+  },
+  "worldview_embedded_in_scripts": {
+    "beliefs": [
+      "Aprender é divertido e acontece naturalmente através da música e da brincadeira",
+      "A família é um ambiente seguro e amoroso onde todos se ajudam",
+      "Todas as crianças são capazes de aprender e merecem ser celebradas",
+      "A repetição é a chave para o domínio de qualquer habilidade",
+      "O mundo é um lugar colorido, cheio de coisas interessantes para descobrir"
+    ],
+    "status_framing": "Todas as crianças são especiais e inteligentes; não há hierarquia entre os personagens, apenas colaboração",
+    "fear_framing": "Não há medo; os desafios são sempre apresentados como oportunidades divertidas de aprendizado",
+    "transformation_promise": "A criança que assiste ao vídeo sairá sabendo algo novo (uma cor, um número, uma palavra) e se sentirá mais confiante e amada"
+  },
+  "replication_logic": {
+    "content_formula": {
+      "step_1": "Escolha uma habilidade ou tema central (ex: cor, número, rotina, animal)",
+      "step_2": "Selecione uma música infantil tradicional ou crie uma melodia original simples e repetitiva",
+      "step_3": "Crie uma história simples onde os personagens da família enfrentam uma situação relacionada ao tema",
+      "step_4": "Estruture a música com: introdução instrumental, verso, refrão, verso 2, refrão, ponte, refrão final",
+      "step_5": "Insira elementos de chamada e resposta onde a criança é convidada a participar",
+      "step_6": "Adicione dicas visuais claras (cores, números, objetos) que reforcem o tema",
+      "step_7": "Inclua uma demonstração prática dos personagens aplicando o conceito",
+      "step_8": "Repita o refrão pelo menos 3 vezes com variações visuais",
+      "step_9": "Finalize com uma mensagem positiva e de incentivo",
+      "step_10": "Produza com animação 3D colorida, movimento constante e transições rápidas"
+    },
+    "stylistic_rules_for_future_outputs": [
+      "Use linguagem simples, frases curtas e vocabulário adequado para 0-5 anos",
+      "Mantenha um tom sempre positivo, alegre e encorajador",
+      "Inclua repetição de palavras-chave e frases pelo menos 3 vezes",
+      "Estruture o conteúdo com começo, meio e fim claros",
+      "Use perguntas diretas à criança para incentivar participação",
+      "Inclua elementos visuais que reforcem o tema (ex: a cor aparece na tela)",
+      "Termine sempre com uma mensagem de amor, carinho ou celebração",
+      "Evite qualquer conteúdo que possa ser interpretado como assustador, triste ou negativo"
+    ],
+    "title_generation_rules": [
+      "Use 'The [X] Song' para músicas temáticas",
+      "Use '[Tema] with [Personagem]' para vídeos focados em um personagem",
+      "Use 'Learn [Tema] with CoComelon' para vídeos educativos explícitos",
+      "Mantenha os títulos entre 3 e 7 palavras para máxima clareza",
+      "Inclua a palavra-chave principal do tema no título"
+    ],
+    "hook_generation_rules": [
+      "Abra com uma pergunta que capture a atenção da criança (ex: 'Você sabe qual é a sua cor favorita?')",
+      "Use uma onomatopeia divertida (ex: 'Vroom vroom!')",
+      "Mostre um personagem fazendo algo interessante e inesperado",
+      "Use uma melodia conhecida que a criança já reconheça"
+    ]
+  },
+  "sample_specific_context": {},
+  "generation_instructions_for_another_model": {
+    "objective": "Gerar um roteiro de vídeo infantil no estilo CoComelon que ensine cores, números ou uma rotina diária (como escovar os dentes ou tomar banho), utilizando uma música cativante e repetitiva, com personagens da família e cenários do dia a dia.",
+    "must_include": [
+      "Abertura com os personagens principais (JJ, YoYo, TomTom e os pais) em um cenário familiar",
+      "Uma música original com melodia simples e refrão repetitivo (mínimo 3 repetições)",
+      "Pelo menos uma pergunta direta à criança (ex: 'Você consegue contar comigo?')",
+      "Demonstração prática do conceito pelos personagens",
+      "Elementos visuais que reforcem o tema (números aparecendo na tela, cores destacadas)",
+      "Reforço positivo e celebração a cada acerto",
+      "Encerramento com mensagem de carinho e incentivo",
+      "Transições visuais rápidas (mudança de cena a cada 2-3 segundos)",
+      "Personagens olhando para a câmera e interagindo diretamente com a criança",
+      "Uso de onomatopeias e sons divertidos"
+    ],
+    "must_avoid": [
+      "Linguagem complexa ou vocabulário avançado para a faixa etária",
+      "Silêncios ou pausas prolongadas",
+      "Conflitos, tensões ou emoções negativas",
+      "Cenas com movimento lento ou pouca variação visual",
+      "Críticas ou correções negativas (apenas reforço positivo)",
+      "Temas que possam gerar medo ou ansiedade"
+    ],
+    "success_condition": "O roteiro deve ser cativante, educativo e visualmente estimulante para crianças de 0 a 5 anos, seguindo fielmente o estilo e a estrutura dos vídeos do CoComelon.",
+    "output_length_requirement": "The final FULL SCRIPT must be strictly between 7,000 and 9,000 characters.",
+    "output_length_verification": "Before sending the answer, verify the FULL SCRIPT character count. If it is below 7,000 or above 9,000 characters, rewrite it until it falls within range.",
+    "hard_fail_condition": "Any FULL SCRIPT under 7,000 characters or over 9,000 characters is invalid and must be rewritten before output."
+  },
+  "generated_video_script": {
+    "title": "The Colors Song with JJ!",
+    "hook_paragraph": "Era uma vez um menino chamado JJ que adorava cores. Um dia, ele acordou e viu que o mundo ao seu redor estava cheio de cores lindas. Mas ele ficou curioso: 'Será que eu sei o nome de todas as cores?' Então, JJ chamou sua família para uma aventura colorida. Mamãe, papai, YoYo e TomTom se reuniram no jardim, prontos para cantar e aprender todas as cores juntos. Vamos cantar com eles?",
+    "full_script": "🎵 (Introdução musical animada com acordes de piano e batidas leves. A tela mostra o logotipo do CoComelon com estrelas coloridas explodindo ao redor. Os personagens principais aparecem dançando: JJ, YoYo, TomTom, Mamãe e Papai.)\n\n[JJ]: Oi, pessoal! Hoje vamos aprender sobre as CORES! Vocês estão prontos para cantar comigo?\n\n(Os personagens acenam e sorriem para a câmera. A cena muda para um jardim ensolarado com flores de todas as cores.)\n\n🎵 (Começa a música com uma melodia alegre e contagiante.)\n\n🎵 VERMELHO é a cor do amor,\nÉ a cor da maçã que eu como com sabor!\nO morango, a cereja, o coração a bater,\nVermelho, vermelho, vamos aprender!\n\n( JJ segura uma maçã vermelha e a mostra para a câmera. A palavra 'VERMELHO' aparece em letras grandes e vermelhas na tela.)\n\n[JJ]: Que cor é essa? Isso mesmo! É VERMELHO!\n\n🎵 AZUL é a cor do céu,\nÉ a cor do mar que encanta o olhar!\nO azul da camisa que eu vou vestir,\nAzul, azul, vamos repetir!\n\n(JJ veste uma camisa azul. A palavra 'AZUL' aparece em letras grandes e azuis na tela. O céu azul e o mar aparecem ao fundo.)\n\n[YoYo]: Olha, JJ! O céu é tão azul! Você consegue ver?\n\n🎵 AMARELO é a cor do sol,\nÉ a cor do girassol que dança no ar!\nO amarelo do patinho a nadar,\nAmarelo, amarelo, vamos cantar!\n\n(Uma imagem do sol sorridente e de um girassol aparece. A palavra 'AMARELO' é mostrada em amarelo. Um patinho amarelo nada em um lago próximo.)\n\n[TomTom]: O sol está tão brilhante e amarelo hoje!\n\n🎵 VERDE é a cor da natureza,\nÉ a cor da grama, da folha com certeza!\nO verde da rã que pula no jardim,\nVerde, verde, vamos cantar assim!\n\n(Uma paisagem verde com árvores e grama aparece. Uma rã verde pula. A palavra 'VERDE' aparece na tela.)\n\n[Mamãe]: Que lindo verde! As plantas estão tão felizes!\n\n🎵 LARANJA é a cor da fruta,\nÉ a cor da cenoura, tão bonita e astuta!\nA laranja da tangerina a brilhar,\nLaranja, laranja, vamos festejar!\n\n(Uma laranja e uma cenoura são mostradas. A palavra 'LARANJA' aparece na tela em laranja. JJ morde uma cenoura.)\n\n[JJ]: Hummm! A cenoura é tão crocante e laranja!\n\n🎵 ROXO é a cor da uva,\nÉ a cor da flor que a brisa renova!\nO roxo da violeta a florescer,\nRoxo, roxo, vamos aprender!\n\n(Uvas e uma flor roxa são mostradas. A palavra 'ROXO' aparece em roxo na tela. YoYo cheira uma flor.)\n\n[YoYo]: Que cheiro gostoso! A flor roxa é tão perfumada!\n\n🎵 ROSA é a cor do carinho,\nÉ a cor do porquinho que vive no chão!\nO rosa da flor no meu cabelo a brilhar,\nRosa, rosa, vamos cantar!\n\n(Uma flor rosa e um porquinho rosa são mostrados. A palavra 'ROSA' aparece em rosa na tela. JJ coloca uma flor rosa em seu cabelo.)\n\n[JJ]: Eu sou tão bonito com essa flor rosa!\n\n(Os personagens se reúnem em um círculo. A música acelera.)\n\n🎵 CORES, CORES, EM TODA PARTE,\nVermelho, azul, amarelo a brilhar!\nVerde, laranja, roxo e rosa,\nVamos todas as cores agora cantar!\n\n(Todas as palavras das cores aparecem na tela em seus respectivos tons, formando um arco-íris. Os personagens dançam e pulam.)\n\n[JJ]: Agora vamos brincar de adivinhar!\n\n( JJ segura um objeto e faz perguntas.)\n\n[JJ]: Qual é a cor da maçã?\n\n(Os personagens respondem em coro.)\n\n[Todos]: VERMELHO!\n\n[JJ]: Isso mesmo! E qual é a cor do céu?\n\n[Todos]: AZUL!\n\n[JJ]: Perfeito! E qual é a cor do sol?\n\n[Todos]: AMARELO!\n\n[JJ]: Parabéns, amigos! Vocês são muito inteligentes!\n\n(A cena volta para o jardim. Os personagens estão todos sentados, sorrindo.)\n\n🎵 Aprendemos as cores com muita alegria,\nVermelho, azul, amarelo, verde, laranja, roxo e rosa, que maravilha!\nCom a família e a música a cantar,\nCores, cores, sempre vamos amar!\n\n(Os personagens se levantam e dançam em círculo. A música toca mais uma vez com todos cantando juntos.)\n\n🎵 CORES, CORES, EM TODA PARTE,\nVermelho, azul, amarelo a brilhar!\nVerde, laranja, roxo e rosa,\nVamos todas as cores agora cantar!\n\n(A música diminui gradualmente. Os personagens se despedem.)\n\n[JJ]: Muito obrigado por cantar comigo!\n\n[YoYo]: Vocês são incríveis!\n\n[TomTom]: Até a próxima aventura!\n\n[Mamãe]: Nós amamos vocês!\n\n[Papai]: Tchau, tchau!\n\n(Os personagens acenam. A tela mostra o logotipo do CoComelon com um arco-íris ao fundo. A música termina com um acorde final.)\n\n🎵 (Som de 'tchau' animado e risadinhas infantis.)\n\nFim.\n\n---\n\n**DURAÇÃO ESTIMADA:** 3 a 4 minutos\n\n**PÚBLICO-ALVO:** Crianças de 0 a 5 anos\n\n**TEMAS ABORDADOS:** Cores (vermelho, azul, amarelo, verde, laranja, roxo, rosa), vocabulário básico, associação de objetos a cores, participação ativa\n\n**ESTRUTURA MUSICAL:** Introdução instrumental → Verso 1 (Vermelho) → Refrão Parcial → Verso 2 (Azul) → Refrão Parcial → Verso 3 (Amarelo) → Refrão Parcial → Verso 4 (Verde) → Refrão Parcial → Verso 5 (Laranja) → Refrão Parcial → Verso 6 (Roxo) → Refrão Parcial → Verso 7 (Rosa) → Refrão Completo → Ponte (Perguntas e Respostas) → Refrão Final → Encerramento\n\n**PERSONAGENS PRESENTES:** JJ, YoYo, TomTom, Mamãe, Papai\n\n**CENÁRIO PRINCIPAL:** Jardim ensolarado com flores, árvores, um lago e um céu azul\n\n**ELEMENTOS VISUAIS:** A palavra da cor aparece na tela em sua respectiva cor sempre que a cor é mencionada; objetos relacionados à cor são mostrados (maçã, camisa, sol, grama, cenoura, uva, flor)",
+    "thumbnail_concept": "JJ no centro, sorrindo, com uma camisa listrada de todas as cores do arco-íris. Ao seu redor, pequenos círculos coloridos (vermelho, azul, amarelo, verde, laranja, roxo, rosa) flutuam como balões. O fundo é um céu azul claro com nuvens brancas. O título 'The Colors Song with JJ!' aparece em letras grandes e coloridas na parte superior. Os rostos de YoYo e TomTom aparecem nos cantos inferiores, também sorrindo.",
+    "suggested_tags": [
+      "CoComelon",
+      "The Colors Song",
+      "Cores para Crianças",
+      "Música Infantil",
+      "Aprender Cores",
+      "JJ",
+      "Nursery Rhymes",
+      "Vídeo Educativo para Bebês",
+      "Cores em Português",
+      "Canção das Cores",
+      "CoComelon Português",
+      "Desenho Animado Educativo"
+    ],
+    "chapter_markers": [
+      {
+        "time": "0:00",
+        "label": "Abertura e Introdução"
+      },
+      {
+        "time": "0:30",
+        "label": "A Cor Vermelha"
+      },
+      {
+        "time": "1:00",
+        "label": "A Cor Azul"
+      },
+      {
+        "time": "1:30",
+        "label": "A Cor Amarela"
+      },
+      {
+        "time": "2:00",
+        "label": "A Cor Verde"
+      },
+      {
+        "time": "2:30",
+        "label": "A Cor Laranja"
+      },
+      {
+        "time": "3:00",
+        "label": "A Cor Roxa"
+      },
+      {
+        "time": "3:30",
+        "label": "A Cor Rosa"
+      },
+      {
+        "time": "4:00",
+        "label": "Refrão Final e Brincadeira"
+      },
+      {
+        "time": "4:30",
+        "label": "Encerramento e Tchau"
+      }
+    ]
+  }
+}

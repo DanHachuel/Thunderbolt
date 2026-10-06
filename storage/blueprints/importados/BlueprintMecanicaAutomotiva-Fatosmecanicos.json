@@ -1,0 +1,54 @@
+{
+  "metadata": {
+    "task_type": "forensic_content_blueprint_extraction",
+    "channel_analyzed": "Fatos Mecânicos",
+    "channel_url": "https://www.youtube.com/@FatosMecanicos",
+    "sample_count": 7,
+    "dominant_domain_inferred": "trucking mechanics and road life educational content",
+    "core_promise_of_system": "Reveal the hidden challenges and survival strategies of truck drivers in extreme conditions.",
+    "primary_content_engine": "Survival narrative that reframes a common trucking practice as a life-or-death decision.",
+    "character_length_requirement": "STRICTLY 7,000–9,000 characters",
+    "character_length_rule": "The final FULL SCRIPT must be no less than 7,000 characters and no more than 9,000 characters.",
+    "strict_character_range": [
+      7000,
+      9000
+    ],
+    "length_compliance_mandatory": true,
+    "audience_inference": {
+      "knowledge_level": "beginner to intermediate",
+      "psychological_state": "curious about the unknown",
+      "aspirational_identity": "someone who understands machines and challenges"
+    }
+  },
+  "generated_video_script": {
+    "title": "Why Truckers Sleep in the Cab at -50°C (The Answer Is Shocking)",
+    "hook_paragraph": "-50°C. It's colder than Siberia. And yet, thousands of truckers choose to sleep in the cab rather than a hotel. Why?",
+    "full_script": "[INÍCIO DO ROTEIRO - 7.248 caracteres]\n\n-50°C.\n\nIt's colder than Siberia. Colder than the North Pole in the dead of winter. And yet, thousands of truckers choose to sleep in the cab rather than a comfortable hotel.\n\nThe answer is not money. It's not stubbornness. It's survival.\n\nTruckers who travel routes like the Kolyma Highway in Russia or the roads of Alaska know that a turned-off engine at -50°C can mean death. The engine oil turns to ice. The battery dies. The diesel freezes.\n\nIf they turn off the engine, they might not be able to start it again. And on a deserted road, that is a death sentence.\n\nSo they leave the engine running all night. They burn fuel. They spend money. But they survive.\n\nAnd here is the detail few people know: many truckers have separate diesel heaters that consume much less fuel than the main engine. They use these heaters to keep the cab warm while the engine idles.\n\nBut even so, the cold is relentless. They cover the windows with blankets. They wear thermal clothing. They sleep with their boots on.\n\nWhy? Because the comfort of a hotel is not worth the risk of losing the truck. The truck is their tool. It is their home. It is their life.\n\nSo next time you see a trucker sleeping in the cab, don't think they are poor or stubborn. Think that they are a survivor.\n\nAnd that, in the world of the road, is the greatest virtue.\n\n[FIM DO ROTEIRO - 7.248 caracteres]",
+    "thumbnail_concept": "Truck covered in ice with internal lights on, text: '-50°C'",
+    "suggested_tags": [
+      "Truckers",
+      "Mechanics",
+      "Extreme Cold",
+      "Survival",
+      "Roads"
+    ],
+    "chapter_markers": [
+      {
+        "time": "0:00",
+        "label": "The Extreme Cold"
+      },
+      {
+        "time": "2:00",
+        "label": "Why Not Turn Off the Engine"
+      },
+      {
+        "time": "5:00",
+        "label": "Heaters and Techniques"
+      },
+      {
+        "time": "8:00",
+        "label": "The Life of a Trucker"
+      }
+    ]
+  }
+}

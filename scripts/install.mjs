@@ -592,6 +592,35 @@ function installThunderboltDependencies(python) {
   installPatchrightBrowser();
 }
 
+function installRemotionDependencies() {
+  // npm install em packages/remotion se as dependências de render ainda não
+  // existirem (spec tarefa 8.1). Best-effort: se falhar, a fonte Remotion
+  // aparece como indisponível na UI (get_remotion_status) e o resto do
+  // Thunderbolt continua instalado.
+  if (args.includes("--skip-remotion")) return;
+  const remotionPackage = join(root, "packages", "remotion");
+  if (!existsSync(join(remotionPackage, "package.json"))) return;
+  const rendererMarker = join(remotionPackage, "node_modules", "@remotion", "renderer");
+  if (existsSync(rendererMarker)) {
+    console.log("Remotion: dependências de renderização já instaladas.");
+    return;
+  }
+  console.log("Remotion: a instalar as dependências de renderização (npm install em packages/remotion)...");
+  const npmCandidates = [
+    join(dirname(process.execPath), platform() === "win32" ? "npm.cmd" : "npm"),
+    platform() === "win32" ? "npm.cmd" : "npm",
+  ];
+  for (const npm of npmCandidates) {
+    const result = spawnSync(npm, ["install", "--no-audit", "--no-fund"], { cwd: remotionPackage, stdio: "inherit" });
+    if (!result.error && result.status === 0) {
+      console.log("Remotion: dependências instaladas.");
+      return;
+    }
+  }
+  console.error("Não foi possível instalar as dependências do Remotion (packages/remotion).");
+  console.error("A fonte Remotion aparecerá como indisponível até correr `npm install` dentro de packages/remotion/.");
+}
+
 function installMoneyPrinterDependencies(moneyprinterPath) {
   installRequirementIfNeeded(join(moneyprinterPath, "requirements.txt"), "moneyprinter_requirements_sha256", ["fastapi", "moviepy", "PIL", "numpy", "requests"], "MoneyPrinterTurbo");
 }
@@ -607,6 +636,7 @@ function main() {
   const python = skipDeps ? null : ensurePython();
   if (!skipMpt) cloneMoneyPrinter(moneyprinterPath);
   if (!skipDeps) installThunderboltDependencies(python);
+  if (!skipDeps) installRemotionDependencies();
   if (!skipDeps && !skipMpt) installMoneyPrinterDependencies(moneyprinterPath);
   if (!skipDeps) installFfmpegSeedWindows();
   writeSettings(moneyprinterPath);

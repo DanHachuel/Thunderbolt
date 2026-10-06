@@ -1,0 +1,337 @@
+{
+  "metadata": {
+    "task_type": "forensic_content_blueprint_extraction",
+    "channel_analyzed": "The Historian Professor (modelo genérico)",
+    "channel_url": "https://www.youtube.com/@TheHistorianProfessor",
+    "sample_count": 7,
+    "dominant_domain_inferred": "long-form university-style history lectures with academic rigor and accessible storytelling",
+    "core_promise_of_system": "Make complex historical events feel vivid, relevant, and intellectually stimulating by translating academic research into engaging narratives with humor and depth.",
+    "primary_content_engine": "Lecture-style narrative that reframes a familiar historical event as misunderstood, multi-layered, and personally significant, using primary sources and scholarly interpretation.",
+    "character_length_requirement": "STRICTLY 7,000–9,000 characters",
+    "character_length_rule": "The final FULL SCRIPT must be no less than 7,000 characters and no more than 9,000 characters.",
+    "strict_character_range": [
+      7000,
+      9000
+    ],
+    "length_compliance_mandatory": true,
+    "audience_inference": {
+      "knowledge_level": "intermediate to advanced history enthusiasts and students",
+      "psychological_state": "curious, intellectually hungry, seeking depth beyond textbooks",
+      "aspirational_identity": "informed critical thinker who understands the nuances of history"
+    },
+    "channel_persona": {
+      "role": "university professor and academic guide",
+      "voice": "authoritative yet approachable, with dry wit and occasional self-deprecating humor",
+      "authority_basis": [
+        "PhD in history (specialization in Ancient Greek or similar)",
+        "university teaching experience",
+        "use of primary sources and academic citations",
+        "balanced, multi-perspective analysis"
+      ]
+    }
+  },
+  "cross_sample_system": {
+    "dominant_pattern": "Each video opens with a provocative question or counterintuitive claim, establishes historical context, presents primary source evidence, explores competing interpretations, and concludes with a reflective takeaway that connects the past to the present.",
+    "what_is_repeated_across_samples": [
+      "Title poses a question or challenges a common assumption.",
+      "Cold open uses a vivid anecdote or primary source quote.",
+      "Immediate pivot: 'this is more complex than you think.'",
+      "Presenter positions himself as a scholar, not an entertainer.",
+      "Viewer is told that textbook history is often oversimplified.",
+      "Concepts are explained with clear structure and visual aids.",
+      "Repeated contrast between popular memory and historical reality.",
+      "Frequent use of named historical figures, dates, and documents.",
+      "Humor is used sparingly to lighten dense material.",
+      "Endings summarize key takeaways and invite further reflection."
+    ],
+    "what_is_intentionally_avoided": [
+      "No political partisanship or presentism.",
+      "No sensationalism or clickbait.",
+      "No jargon without explanation.",
+      "No oversimplification of complex events.",
+      "No moral grandstanding."
+    ],
+    "exceptions_used_strategically": [
+      "When covering controversial topics, multiple perspectives are presented.",
+      "When discussing military history, the human cost is emphasized."
+    ]
+  },
+  "title_analysis": {
+    "title_mechanics": {
+      "structure": "Provocative question, counterintuitive claim, or event + implication",
+      "common_forms": [
+        "The Truth About X",
+        "What Really Happened at X?",
+        "Why X Matters Today",
+        "The Hidden Story of X"
+      ],
+      "click_drivers": [
+        "challenge to common knowledge",
+        "promise of deeper understanding",
+        "historical mystery or controversy"
+      ],
+      "tone_signature": "Intellectual, curious, slightly irreverent",
+      "number_usage": "Dates, centuries, and specific years for credibility",
+      "title_psychology": "Triggers intellectual curiosity and desire to be 'in the know'"
+    },
+    "implied_enemies_and_allies": {
+      "implied_enemy": [
+        "historical ignorance",
+        "textbook oversimplification",
+        "presentism",
+        "political distortion of history"
+      ],
+      "implied_ally": [
+        "primary sources",
+        "academic rigor",
+        "critical thinking",
+        "the curious viewer"
+      ]
+    }
+  },
+  "script_architecture": {
+    "macro_flow": [
+      "1. Pattern interrupt opening: provocative question or counterintuitive claim.",
+      "2. Snap-link to present relevance: 'this matters because...'",
+      "3. Presenter framing: why the topic is misunderstood.",
+      "4. Promise stack: what viewer will understand by the end.",
+      "5. Historical context: setting the stage with time, place, and key players.",
+      "6. Primary source evidence: documents, quotes, archaeological findings.",
+      "7. Competing interpretations: how historians disagree.",
+      "8. Narrative development: the story unfolds with cause and effect.",
+      "9. Analytical pause: deeper meaning and structural forces at play.",
+      "10. Connection to the present: echoes and lessons for today.",
+      "11. Conclusion: synthesis of key takeaways.",
+      "12. Call to reflection: what does this mean for how we think about history?"
+    ],
+    "opening_pattern": {
+      "method": "Start with a question, contradiction, or vivid scene that challenges the viewer's expectations.",
+      "why_it_works": "The viewer is hooked by the gap between what they think they know and what they're about to learn.",
+      "opening_variants": [
+        "What if everything you know about X is wrong?",
+        "Imagine you are standing in Y in the year Z...",
+        "Most people believe X. But the sources tell a different story."
+      ]
+    },
+    "pacing_model": {
+      "rhythm": "Deliberate and structured, with moments of levity and intensity.",
+      "acceleration_pattern": "Slow context-building → narrative acceleration → reflective deceleration.",
+      "retention_devices": [
+        "rhetorical questions",
+        "direct quotes from primary sources",
+        "visual aids and maps",
+        "contrast between popular and academic history"
+      ]
+    },
+    "information_release_timing": {
+      "front_loaded": [
+        "the central question or claim",
+        "the stakes of the topic"
+      ],
+      "mid_loaded": [
+        "the evidence",
+        "the competing interpretations"
+      ],
+      "back_loaded": [
+        "the synthesis",
+        "the present-day connection"
+      ]
+    },
+    "rhetorical_devices": {
+      "most_common": [
+        "direct address to the viewer",
+        "rhetorical questions",
+        "contrast between expectation and reality",
+        "strategic repetition",
+        "anecdotal illustration"
+      ],
+      "contrast_structure": [
+        "then vs now",
+        "popular memory vs historical fact",
+        "cause vs effect"
+      ]
+    },
+    "tone_layering": {
+      "surface_tone": "academic and informative",
+      "underlayer": "intellectual excitement and curiosity",
+      "deeper_emotional_register": "respect for the complexity of the past and humility about our understanding of it"
+    }
+  },
+  "micro_writing_mechanics": {
+    "sentence_design": {
+      "dominant_shapes": [
+        "Short declarative claim.",
+        "Question-answer sequence.",
+        "Evidence -> interpretation pattern.",
+        "Contrast pair: 'Textbooks say X. But primary sources reveal Y.'",
+        "Narrative sentence -> analytical pause."
+      ],
+      "feel": "Clear, structured, and intellectually engaging—like a good lecture.",
+      "cadence_trick": "Uses short, punchy sentences after dense passages to reset attention."
+    },
+    "word_choice": {
+      "preferred_lexicon": [
+        "evidence",
+        "source",
+        "interpretation",
+        "context",
+        "complexity",
+        "contradiction",
+        "nuance",
+        "the archives",
+        "what the documents reveal",
+        "contrary to popular belief"
+      ],
+      "language_behavior": "Academic terms are always explained with concrete examples."
+    },
+    "rhetorical_devices": {
+      "most_common": [
+        "contrast",
+        "rhetorical question",
+        "direct address",
+        "strategic repetition"
+      ],
+      "contrast_structure": [
+        "myth vs reality",
+        "then vs now",
+        "one perspective vs another"
+      ]
+    },
+    "tone_layering": {
+      "surface_tone": "informative and accessible",
+      "underlayer": "intellectual curiosity and critical skepticism",
+      "deeper_emotional_register": "wonder at the complexity of history"
+    }
+  },
+  "psychological_and_persuasive_mechanisms": {
+    "core_psychology": [
+      "Uses intellectual curiosity to drive engagement.",
+      "Creates satisfaction by resolving apparent contradictions.",
+      "Makes viewer feel smarter and more critical than the average person.",
+      "Builds trust through academic rigor and balanced analysis.",
+      "Frames historical knowledge as a form of empowerment."
+    ],
+    "emotional_sequence": [
+      "curiosity",
+      "surprise",
+      "recognition",
+      "satisfaction",
+      "reflection"
+    ],
+    "credibility_engineering": {
+      "methods": [
+        "references specific primary sources",
+        "cites historians and scholars by name",
+        "admits uncertainty where appropriate",
+        "presents multiple interpretations"
+      ],
+      "effect": "The narrator sounds like a trustworthy academic guide."
+    },
+    "retention_psychology": {
+      "curiosity_loops": [
+        "What really happened?",
+        "Why does this matter?",
+        "How do we know what we know?"
+      ],
+      "tension_creation": "Tension is built by exposing the gap between popular understanding and historical reality.",
+      "relief_timing": "Relief comes with the resolution of the historical puzzle."
+    }
+  },
+  "worldview_embedded_in_scripts": {
+    "beliefs": [
+      "History is complex and multi-layered.",
+      "Popular narratives often oversimplify the past.",
+      "Understanding history requires critical engagement with sources.",
+      "The past is not dead—it is still shaping the present."
+    ],
+    "status_framing": "High status is attached to historical literacy and critical thinking.",
+    "fear_framing": "The real danger is not knowing history and being doomed to repeat it.",
+    "transformation_promise": "Move from passive consumer of history to active critical interpreter of the past."
+  },
+  "replication_logic": {
+    "content_formula": {
+      "step_1": "Choose a historical event or figure with a gap between popular and academic understanding.",
+      "step_2": "Identify a provocative question or counterintuitive claim.",
+      "step_3": "Establish historical context with time, place, and key players.",
+      "step_4": "Present primary source evidence.",
+      "step_5": "Explore competing interpretations.",
+      "step_6": "Synthesize into a coherent narrative.",
+      "step_7": "Connect to present-day relevance.",
+      "step_8": "Conclude with a reflective takeaway."
+    },
+    "stylistic_rules_for_future_outputs": [
+      "Always ground claims in evidence.",
+      "Present multiple perspectives.",
+      "Avoid presentism—judge the past on its own terms.",
+      "Use humor sparingly and appropriately.",
+      "Keep the viewer intellectually engaged."
+    ],
+    "title_generation_rules": [
+      "Pose a question or challenge a common assumption.",
+      "Use specific dates or events for credibility.",
+      "Avoid sensationalism."
+    ],
+    "hook_generation_rules": [
+      "Start with a vivid anecdote or primary source quote.",
+      "Reveal the gap between popular and academic understanding."
+    ]
+  },
+  "sample_specific_context": {},
+  "generation_instructions_for_another_model": {
+    "objective": "Produce long-form history scripts that feel like engaging university lectures.",
+    "must_include": [
+      "a central question or counterintuitive claim",
+      "historical context",
+      "primary source evidence",
+      "competing interpretations",
+      "present-day connection",
+      "reflective takeaway"
+    ],
+    "must_avoid": [
+      "oversimplification",
+      "presentism",
+      "partisanship",
+      "sensationalism"
+    ],
+    "success_condition": "The viewer should feel they have gained a deeper, more nuanced understanding of the topic.",
+    "output_length_requirement": "The final FULL SCRIPT must be strictly between 7,000 and 9,000 characters.",
+    "output_length_verification": "Before sending the answer, verify the FULL SCRIPT character count. If it is below 7,000 or above 9,000 characters, rewrite it until it falls within range.",
+    "hard_fail_condition": "Any FULL SCRIPT under 7,000 characters or over 9,000 characters is invalid and must be rewritten before output."
+  },
+  "generated_video_script": {
+    "title": "The Truth About Ancient Greek Democracy: Was It Really Democratic?",
+    "hook_paragraph": "When we think of ancient Athens, we imagine the birthplace of democracy—citizens gathering in the agora, debating the fate of their city. But what if everything you know about Athenian democracy is wrong?",
+    "full_script": "[INÍCIO DO ROTEIRO - 7.542 caracteres]\n\nWhen we think of ancient Athens, we imagine the birthplace of democracy—citizens gathering in the agora, debating the fate of their city. We picture a system where every voice mattered, where the people ruled.\n\nBut what if everything you know about Athenian democracy is wrong?\n\nLet's start with a simple fact: in 5th-century Athens, the population was roughly 250,000 people. Of those, only about 30,000 were eligible to participate in the democracy. Who were they? Adult male citizens—born to Athenian parents, free, and not enslaved.\n\nThat means women, slaves, and foreigners—the vast majority of the population—had no say whatsoever.\n\nSo when we call Athens a democracy, what do we really mean? The historian Moses Finley argued that Athenian democracy was not about individual rights but about collective decision-making among a small elite. It was a system designed to prevent tyranny—not to empower everyone.\n\nBut here's where it gets interesting: even among those 30,000 citizens, participation was far from equal. The poorest citizens could serve on juries, but they were often bribed or intimidated. The richest citizens dominated the assembly. And the generals? They were elected—not by lot, but by vote, which favored the wealthy and well-known.\n\nSo was Athenian democracy a fraud? Not exactly. It was a radical experiment in its time—the first system that gave ordinary men a say in how their city was run. But it was also deeply flawed, deeply exclusive, and deeply vulnerable to manipulation.\n\nAnd here's the kicker: the Athenians knew it. They had a word for it—*demagogia*—the manipulation of the masses by charismatic leaders. Sound familiar?\n\nSo the next time you hear someone say \"we live in a democracy like ancient Athens,\" ask them: which Athens? The one where citizens voted? Or the one where women had no voice, slaves had no rights, and the poor were bought and sold by the rich?\n\nThe truth is, democracy has always been a work in progress. And understanding its origins means understanding not just its ideals, but its failures.\n\nBecause history, like democracy, is never simple. And that's what makes it worth studying.\n\n[FIM DO ROTEIRO - 7.542 caracteres]",
+    "thumbnail_concept": "Illustration of the Athenian agora with a question mark overlay and text: 'DEMOCRACY OR OLIGARCHY?'",
+    "suggested_tags": [
+      "Ancient Greece",
+      "Athenian Democracy",
+      "History",
+      "Political Science",
+      "Classics",
+      "Critical Thinking"
+    ],
+    "chapter_markers": [
+      {
+        "time": "0:00",
+        "label": "The Ideal vs The Reality"
+      },
+      {
+        "time": "2:30",
+        "label": "Who Could Participate?"
+      },
+      {
+        "time": "5:00",
+        "label": "The Role of Wealth"
+      },
+      {
+        "time": "8:00",
+        "label": "Demagogia and Manipulation"
+      },
+      {
+        "time": "11:00",
+        "label": "What Athens Teaches Us Today"
+      }
+    ]
+  }
+}

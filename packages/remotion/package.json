@@ -1,0 +1,26 @@
+{
+  "name": "thunderbolt-remotion",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Composições Remotion do Thunderbolt — renderização local de vídeos por roteiro",
+  "scripts": {
+    "test": "node tests/render.test.mjs && node tests/scriptToInputProps.test.mjs"
+  },
+  "dependencies": {
+    "remotion": "^4.0.0",
+    "@remotion/renderer": "^4.0.0",
+    "@remotion/bundler": "^4.0.0",
+    "@remotion/media": "^4.0.0",
+    "@remotion/cli": "^4.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
