@@ -1,4 +1,7 @@
 # Changelog
+## 0.9.54 — 2026-10-06
+- Corrigidos os erros "Task was destroyed but it is pending!" + `TargetClosedError` no terminal: a verificação de estado do Remotion arrancava o driver do Playwright (`sync_playwright()`) dentro do thread do Streamlit só para ler `executable_path`, e um rerun interrompido destruía a conexão a meio do init. O caminho do Chromium passa a ser lido **directamente da pasta de browsers** (`ms-playwright`), sem driver, sem processos e sem tarefas assíncronas — com suporte a `PLAYWRIGHT_BROWSERS_PATH`, escolha da revisão mais alta e prioridade do Chrome completo sobre o headless shell.
+
 ## 0.9.53 — 2026-10-06
 - Tornado o **Remotion dependência obrigatória** do pacote: o instalador passa a instalar automaticamente as dependências Node (`npm install` em `packages/remotion/`) da mesma forma que instala o Python, os dois FFmpeg e o Chromium do Playwright — uma falha do npm install **aborta agora a instalação** com mensagem clara (removidos o modo "best-effort" e a flag `--skip-remotion`).
 - O npm é invocado via `npm-cli.js` ao lado do node (o Node ≥ 18 recusa-se a criar processos `.cmd` directamente, CVE-2024-27980), com fallback para `cmd /c npm` no Windows e `npm` nos restantes sistemas, seguido da verificação do marcador `node_modules/@remotion/renderer`.

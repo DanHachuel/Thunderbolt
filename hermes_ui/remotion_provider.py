@@ -90,16 +90,74 @@ def _ffmpeg_executable() -> str | None:
     return None
 
 
-def _chromium_executable() -> str | None:
-    try:
-        from playwright.sync_api import sync_playwright
+def _playwright_browser_roots() -> list[Path]:
+    """Pastas onde o Playwright/patchright guardam os browsers instalados."""
+    roots: list[Path] = []
+    env_root = str(os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or "")
+    if env_root and env_root != "0" and Path(env_root).is_dir():
+        roots.append(Path(env_root))
+    if os.name == "nt":
+        local_appdata = str(os.environ.get("LOCALAPPDATA") or "")
+        if local_appdata:
+            roots.append(Path(local_appdata) / "ms-playwright")
+    else:
+        roots.append(Path.home() / ".cache" / "ms-playwright")
+    return roots
 
-        with sync_playwright() as playwright:
-            candidate = str(playwright.chromium.executable_path or "")
-    except Exception:
-        return None
-    if candidate and Path(candidate).is_file():
-        return candidate
+
+def _chromium_executable() -> str | None:
+    """Caminho do Chromium do Playwright, lido directamente do disco.
+
+    0.9.54: a versão anterior arrancava o driver do Playwright só para ler
+    `executable_path`. Dentro do thread do Streamlit, um rerun interrompido
+    podia destruir a conexão a meio do init e deixava no terminal
+    "Task was destroyed but it is pending!" + TargetClosedError. O glob é
+    instantâneo, não cria tarefas assíncronas e não lança nenhum processo.
+    Cobre o Chromium do Playwright e do patchright (ambos instalam em
+    ms-playwright).
+    """
+    def revision(directory: Path) -> int:
+        match = re.search(r"(\d+)$", directory.name)
+        return int(match.group(1)) if match else 0
+
+    executable_layouts = (
+        "chrome-win64/chrome.exe",
+        "chrome-win/chrome.exe",
+        "chrome-linux/chrome",
+        "chrome-mac/Chromium.app/Contents/MacOS/Chromium",
+    )
+    shell_layouts = (
+        "chrome-win64/headless_shell.exe",
+        "chrome-win/headless_shell.exe",
+        "chrome-linux/headless_shell",
+    )
+    for root in _playwright_browser_roots():
+        try:
+            chromium_dirs = sorted(
+                [item for item in root.glob("chromium-*") if item.is_dir()],
+                key=revision,
+                reverse=True,
+            )
+        except OSError:
+            continue
+        for layout in executable_layouts:
+            for browser_dir in chromium_dirs:
+                candidate = browser_dir / layout
+                if candidate.is_file():
+                    return str(candidate)
+        try:
+            shell_dirs = sorted(
+                [item for item in root.glob("chromium_headless_shell-*") if item.is_dir()],
+                key=revision,
+                reverse=True,
+            )
+        except OSError:
+            continue
+        for layout in shell_layouts:
+            for browser_dir in shell_dirs:
+                candidate = browser_dir / layout
+                if candidate.is_file():
+                    return str(candidate)
     return None
 
 

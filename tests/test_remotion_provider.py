@@ -116,6 +116,40 @@ def test_status_available_when_environment_is_complete(monkeypatch, tmp_path):
     assert status["details"]["chromium"] == "C:/chromium/chrome.exe"
 
 
+def test_chromium_resolved_from_disk_without_the_playwright_driver(monkeypatch, tmp_path):
+    # 0.9.54: arrancar o driver do Playwright no thread do Streamlit deixava
+    # no terminal "Task was destroyed but it is pending!" + TargetClosedError
+    # quando um rerun interrompia a leitura de executable_path; o caminho
+    # passa a ser lido directamente da pasta de browsers, sem driver.
+    import inspect
+
+    source = inspect.getsource(remotion_provider._chromium_executable)
+    assert "from playwright" not in source, "o provider não pode importar a API do Playwright aqui"
+    assert ".start()" not in source and "sync_api" not in source
+    browsers = tmp_path / "ms-playwright"
+    new_chromium = browsers / "chromium-1234" / "chrome-win64" / "chrome.exe"
+    new_chromium.parent.mkdir(parents=True)
+    new_chromium.write_bytes(b"chrome")
+    old_chromium = browsers / "chromium-1208" / "chrome-win64" / "chrome.exe"
+    old_chromium.parent.mkdir(parents=True)
+    old_chromium.write_bytes(b"chrome")
+    linux_layout = browsers / "chromium-1208" / "chrome-linux" / "chrome"
+    linux_layout.parent.mkdir(parents=True)
+    linux_layout.write_bytes(b"chrome")
+    shell = browsers / "chromium_headless_shell-1234" / "chrome-win64" / "headless_shell.exe"
+    shell.parent.mkdir(parents=True)
+    shell.write_bytes(b"shell")
+    monkeypatch.setattr(remotion_provider, "_playwright_browser_roots", lambda: [browsers])
+    resolved = remotion_provider._chromium_executable()
+    # A revisão mais alta ganha e o Chrome completo tem prioridade sobre o headless shell.
+    assert resolved == str(new_chromium)
+
+
+def test_chromium_returns_none_when_no_browsers_are_installed(monkeypatch, tmp_path):
+    monkeypatch.setattr(remotion_provider, "_playwright_browser_roots", lambda: [])
+    assert remotion_provider._chromium_executable() is None
+
+
 # ─────────────────────────── prepare_input_props ─────────────────────────────
 
 
