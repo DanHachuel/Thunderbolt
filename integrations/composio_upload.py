@@ -19,6 +19,55 @@ YOUTUBE_UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"
 LOGGER = logging.getLogger(__name__)
 
 
+def classify_composio_youtube_error(error_text: str) -> dict[str, Any]:
+    """Classifica falhas conhecidas do YouTube atrás do Composio.
+
+    O Composio embute a resposta bruta da API do YouTube na própria mensagem,
+    por vezes truncada ("for consumer 'project_number:10683...'") e sem valor
+    para o utilizador. Extraímos o estado HTTP e o tipo de falha e devolvemos
+    uma mensagem accionável; o texto integral continua nos diagnostics.
+    """
+    import re
+
+    text = str(error_text or "")
+    status_match = re.search(r"[Ss]tatus:?\s*(\d{3})", text)
+    status_code = int(status_match.group(1)) if status_match else 0
+    lowered = text.casefold()
+    quota_markers = (
+        status_code == 429,
+        "quota exceeded" in lowered,
+        "quotaexceeded" in lowered,
+        "video uploads per day" in lowered,
+        "ratelimitexceeded" in lowered,
+    )
+    if any(quota_markers):
+        return {
+            "kind": "youtube_upload_quota",
+            "status": status_code or 429,
+            "message": (
+                "A quota diária de uploads do YouTube do projecto Google Cloud usado pela app Composio foi "
+                "excedida (limite 'Video Uploads per day', cerca de 6 uploads por dia). A quota repõe à "
+                "meia-noite, hora do Pacífico (~04:00 de Brasília). Importante: (1) cada teste/upload conta "
+                "para o limite do dia, mesmo quando falha depois de criar a sessão de upload; (2) verifique o "
+                "YouTube Studio do canal — podem existir vídeos não listados criados por tentativas que "
+                "reportaram falha; (3) para testes fora desta quota, use o modo 'API Youtube' com as "
+                "credenciais Google próprias do canal."
+            ),
+        }
+    if "did not provide upload url" in lowered or "upload url" in lowered:
+        return {
+            "kind": "youtube_upload_uncertain",
+            "status": status_code,
+            "message": (
+                f"O YouTube/Composio não devolveu o URL de finalização do upload (status HTTP {status_code or 'desconhecido'}). "
+                "IMPORTANTE: verifique o YouTube Studio do canal — o vídeo pode ter sido criado mesmo assim "
+                "(não listado) e a tentativa pode ter consumido a quota diária de uploads. Antes de repetir, "
+                "confirme os vídeos existentes para não criar duplicados."
+            ),
+        }
+    return {"kind": "", "status": status_code, "message": ""}
+
+
 COMPOSIO_OPERATION_SEARCH = {
     "upload_video": {"query": "Multipart Upload Video", "toolkit": "YOUTUBE"},
     "update_video": {"query": "Update Video", "toolkit": "YOUTUBE"},
@@ -456,6 +505,14 @@ def execute_upload(api_key: str, user_id: str, slug: str, video_path: str, file_
         LOGGER.info("Composio response normalised: %s", response)
         if not response["successful"] and not response["error"]:
             response["error"] = f"A ferramenta `{slug}` devolveu uma resposta sem sucesso."
+        # 0.9.56: quota 429 / "upload URL" deixam de chegar ao utilizador como
+        # JSON truncado — classificam-se em mensagens accionáveis. O texto
+        # integral permanece em diagnostics e no LOGGER para depuração.
+        classification = classify_composio_youtube_error(response["error"])
+        if classification["kind"]:
+            response["error_kind"] = classification["kind"]
+            response["error_hint"] = classification["message"]
+            response["http_status"] = classification["status"]
         response["tool_slug"] = slug
         response["connected_account_id"] = selected_account
         response["connected_account_alias"] = connected_account_id

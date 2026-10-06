@@ -27,6 +27,9 @@ from hermes_ui.languages import language_locale
 OFFICIAL_DAILY_LIMIT = 5
 QUOTA_FILENAME = "official_upload_quota.json"
 COMPOSIO_VIDEO_FILE_FIELD = "videoFilePath"
+# 0.9.56: cache por processo do alias→slug resolvido (evita uma descoberta
+# de ferramentas extra por upload; o padrão já existia para connected accounts).
+_RESOLVED_COMPOSIO_SLUG_CACHE: dict[tuple[str, str, str], str] = {}
 COMPOSIO_OPERATION_OPTIONS = {
     "upload_video": "Upload Video",
     "update_video": "Update video",
@@ -370,15 +373,35 @@ def _composio_upload(settings: dict[str, Any], *, channel: dict[str, Any], **kwa
         except ComposioUploadError as exc:
             return IntegrationResult(False, str(exc), {"status": "account_discovery_failed"})
     try:
-        if configured_slug.casefold() == "upload_video" and (channel.get("platform", "youtube") or "youtube").casefold() == "youtube":
-            slug = "YOUTUBE_UPLOAD_VIDEO"
+        # 0.9.56: a priorização do multipart (0.8.62, "repair Composio YouTube
+        # video uploads") volta a ser respeitada — o alias `upload_video`
+        # resolve pela descoberta de ferramentas, que prefere
+        # YOUTUBE_MULTIPART_UPLOAD_VIDEO (upload único) em vez da ferramenta
+        # resumável básica, que falhava DEPOIS de criar a sessão e consumia
+        # quota sem devolver vídeo. A robustez do d4d18ad mantém-se: se a
+        # descoberta falhar, cai-se para YOUTUBE_UPLOAD_VIDEO.
+        slug_cache_key = (
+            resolved_user_id.casefold(),
+            configured_slug.casefold(),
+            str(channel.get("composio_toolkit") or "").casefold(),
+        )
+        cached_slug = _RESOLVED_COMPOSIO_SLUG_CACHE.get(slug_cache_key)
+        if cached_slug:
+            slug = cached_slug
         else:
-            slug = resolve_tool_slug(
-                str(settings.get("composio_api_key") or ""),
-                resolved_user_id,
-                configured_slug,
-                str(channel.get("composio_toolkit") or ""),
-            )
+            try:
+                slug = resolve_tool_slug(
+                    str(settings.get("composio_api_key") or ""),
+                    resolved_user_id,
+                    configured_slug,
+                    str(channel.get("composio_toolkit") or ""),
+                )
+            except ComposioUploadError:
+                if configured_slug.casefold() == "upload_video" and (channel.get("platform", "youtube") or "youtube").casefold() == "youtube":
+                    slug = "YOUTUBE_UPLOAD_VIDEO"
+                else:
+                    raise
+            _RESOLVED_COMPOSIO_SLUG_CACHE[slug_cache_key] = slug
     except ComposioUploadError as exc:
         return IntegrationResult(False, str(exc), {"status": "tool_resolution_failed", "configured_slug": configured_slug})
     normalized_slug = slug.upper().replace("-", "_")
@@ -448,8 +471,16 @@ def _composio_upload(settings: dict[str, Any], *, channel: dict[str, Any], **kwa
             )
     except ComposioUploadError as exc:
         return IntegrationResult(False, str(exc), {})
+    # 0.9.56: quota/upload-URL classificadas chegam ao utilizador como mensagem
+    # accionável em vez de JSON truncado; o texto integral fica nos diagnostics.
+    error_kind = str(result.get("error_kind") or "")
+    message = str(result.get("error") or "Upload via Composio concluído.")
+    if not bool(result.get("successful")) and error_kind:
+        error_hint = str(result.get("error_hint") or "")
+        if error_hint:
+            message = error_hint
     return IntegrationResult(
         bool(result.get("successful")),
-        str(result.get("error") or "Upload via Composio concluído."),
-        {"composio_data": result.get("data") or {}, "diagnostics": result.get("diagnostics") or {}, "log_id": result.get("log_id") or "", "tool_slug": result.get("tool_slug") or slug, "configured_tool_slug": configured_slug, "connected_account_id": result.get("connected_account_id") or "", "connected_account_alias": result.get("connected_account_alias") or ""},
+        message,
+        {"composio_data": result.get("data") or {}, "diagnostics": result.get("diagnostics") or {}, "log_id": result.get("log_id") or "", "tool_slug": result.get("tool_slug") or slug, "configured_tool_slug": configured_slug, "connected_account_id": result.get("connected_account_id") or "", "connected_account_alias": result.get("connected_account_alias") or "", "error_kind": error_kind, "http_status": result.get("http_status") or ""},
     )

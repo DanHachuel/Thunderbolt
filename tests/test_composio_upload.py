@@ -303,3 +303,79 @@ def test_source_contains_composio_ui_contract():
     assert "upload_composio_api_key" in source
     assert "test_configuration" in source
     assert "Secção reservada para uma futura integração Composio" not in source
+
+
+# ── 0.9.56: classificação de erros YouTube/Composio ─────────────────────────
+
+
+def test_classify_quota_error_is_actionable():
+    # Carga real do incidente 2026-10-06: 429 com a mensagem do YouTube embutida
+    # e truncada pelo Composio ("project_number:10683...").
+    payload = (
+        "YouTube API did not provide upload URL. Status: 429. Response: {\n"
+        "  \"error\": {\n    \"code\": 429,\n"
+        "    \"message\": \"Quota exceeded for quota metric 'Video Uploads' and limit 'Video Uploads per day' "
+        "of service 'youtube.googleapis.com' for consumer 'project_number:10683..."
+    )
+    result = composio_upload.classify_composio_youtube_error(payload)
+    assert result["kind"] == "youtube_upload_quota"
+    assert result["status"] == 429
+    assert "meia-noite" in result["message"]
+    assert "YouTube Studio" in result["message"]
+    assert "API Youtube" in result["message"]
+
+
+def test_classify_upload_url_failure_without_quota():
+    result = composio_upload.classify_composio_youtube_error(
+        "YouTube API did not provide upload URL. Status: 500. Response: internal"
+    )
+    assert result["kind"] == "youtube_upload_uncertain"
+    assert result["status"] == 500
+    assert "YouTube Studio" in result["message"]
+
+
+def test_classify_ignores_unrelated_errors():
+    result = composio_upload.classify_composio_youtube_error(
+        "A connected account `demo` não foi encontrada para o toolkit youtube."
+    )
+    assert result["kind"] == ""
+    assert result["message"] == ""
+
+
+def test_execute_upload_attaches_quota_classification(monkeypatch, tmp_path):
+    video = tmp_path / "quota.mp4"
+    video.write_bytes(b"video")
+    quota_error = (
+        "YouTube API did not provide upload URL. Status: 429. Response: {\"error\": {\"code\": 429, "
+        "\"message\": \"Quota exceeded for quota metric 'Video Uploads' and limit 'Video Uploads per day'\"}}"
+    )
+
+    class FakeTools:
+        def execute(self, slug, **kwargs):
+            return {"successful": False, "data": {"message": quota_error, "status_code": 429}, "error": quota_error}
+
+    class FakeAccounts:
+        def list(self, **kwargs):
+            return {"items": [{"id": "youtube-test", "alias": "Demo", "toolkit": "youtube"}]}
+
+        def get(self, account_id):
+            return {"data": {"scopes": [composio_upload.YOUTUBE_UPLOAD_SCOPE]}}
+
+    class FakeComposioModule:
+        class FileUploadable:
+            @classmethod
+            def from_path(cls, **kwargs):
+                return SimpleNamespace(model_dump=lambda: {
+                    "name": "quota.mp4", "mimetype": "video/mp4", "s3key": "composio/youtube/quota.mp4"
+                })
+
+    monkeypatch.setitem(sys.modules, "composio", FakeComposioModule)
+    monkeypatch.setattr(composio_upload, "_client", lambda *args, **kwargs: SimpleNamespace(tools=FakeTools(), connected_accounts=FakeAccounts(), client=object()))
+    result = composio_upload.execute_upload("ak_123456789", "user-1", "YOUTUBE_MULTIPART_UPLOAD_VIDEO", str(video), "videoFilePath", "{}")
+    assert result["successful"] is False
+    assert result["error_kind"] == "youtube_upload_quota"
+    assert result["http_status"] == 429
+    assert "quota diária" in result["error_hint"]
+    # O texto integral permanece para a lógica de retries (account markers).
+    assert "did not provide upload URL" in result["error"]
+    assert result["diagnostics"]["composio_response"]

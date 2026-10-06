@@ -9940,6 +9940,11 @@ def _test_upload_log_markdown(
 def _render_test_upload_videos(settings: dict[str, Any]) -> None:
     st.subheader("Test Upload Videos")
     st.caption("Use esta área para testar as ferramentas de upload com ficheiros locais controlados, sem iniciar qualquer envio até clicar no botão.")
+    st.warning(
+        "Cada teste de upload publica um vídeo real (não listado) e consome a quota diária de uploads do "
+        "YouTube do projecto usado pela ferramenta — cerca de 6 uploads por dia. Se um teste falhar depois de "
+        "criar a sessão, o vídeo pode ainda assim existir no canal: confirme no YouTube Studio antes de repetir."
+    )
     upload_mode = st.selectbox("Modo de Upload", ["Composio", "API Youtube", "YouTube Frontend API", "Postiz", "Upload-Post"], key="test_upload_mode")
     operation = st.selectbox("Canais/Contas", ["Canais YouTube", "Canais Tiktok", "Contas Instagram", "Contas Bilibili", "Facebook Pages"], key="test_upload_operation")
     destinations = _test_upload_destinations(settings, operation)
