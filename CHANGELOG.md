@@ -1,4 +1,8 @@
 # Changelog
+## 0.9.53 — 2026-10-06
+- Tornado o **Remotion dependência obrigatória** do pacote: o instalador passa a instalar automaticamente as dependências Node (`npm install` em `packages/remotion/`) da mesma forma que instala o Python, os dois FFmpeg e o Chromium do Playwright — uma falha do npm install **aborta agora a instalação** com mensagem clara (removidos o modo "best-effort" e a flag `--skip-remotion`).
+- O npm é invocado via `npm-cli.js` ao lado do node (o Node ≥ 18 recusa-se a criar processos `.cmd` directamente, CVE-2024-27980), com fallback para `cmd /c npm` no Windows e `npm` nos restantes sistemas, seguido da verificação do marcador `node_modules/@remotion/renderer`.
+
 ## 0.9.52 — 2026-10-06
 - Implementado o **Remotion** como provedor de vídeo local, substituindo o placeholder "Em breve": novo pacote `packages/remotion/` com as composições React `LongFormVideo` (1920×1080) e `ShortVideo` (1080×1920) e os componentes NarrationAudio, TextOverlay, AnimatedBackground, SceneTransition, DataVisualization e HandDrawnCanvas.
 - Adicionado o adaptador `scriptToInputProps` (roteiro Markdown → inputProps JSON): secções GANCHO/CENA/ENCERRAMENTO em PT e EN, durações estimadas por palavras e recalculadas proporcionalmente quando o áudio TTS real existe.

@@ -593,32 +593,39 @@ function installThunderboltDependencies(python) {
 }
 
 function installRemotionDependencies() {
-  // npm install em packages/remotion se as dependências de render ainda não
-  // existirem (spec tarefa 8.1). Best-effort: se falhar, a fonte Remotion
-  // aparece como indisponível na UI (get_remotion_status) e o resto do
-  // Thunderbolt continua instalado.
-  if (args.includes("--skip-remotion")) return;
+  // O Remotion é dependência obrigatória do pacote: as dependências Node são
+  // instaladas automaticamente da mesma forma que o Python, os dois FFmpeg e o
+  // Chromium do Playwright — uma falha aqui aborta a instalação (nunca
+  // "best-effort"), com a mesma garantia de run() (process.exit em falha).
   const remotionPackage = join(root, "packages", "remotion");
-  if (!existsSync(join(remotionPackage, "package.json"))) return;
+  if (!existsSync(join(remotionPackage, "package.json"))) {
+    console.error("O pacote packages/remotion não foi encontrado nesta cópia do Thunderbolt.");
+    process.exit(1);
+  }
   const rendererMarker = join(remotionPackage, "node_modules", "@remotion", "renderer");
   if (existsSync(rendererMarker)) {
     console.log("Remotion: dependências de renderização já instaladas.");
     return;
   }
   console.log("Remotion: a instalar as dependências de renderização (npm install em packages/remotion)...");
-  const npmCandidates = [
-    join(dirname(process.execPath), platform() === "win32" ? "npm.cmd" : "npm"),
-    platform() === "win32" ? "npm.cmd" : "npm",
-  ];
-  for (const npm of npmCandidates) {
-    const result = spawnSync(npm, ["install", "--no-audit", "--no-fund"], { cwd: remotionPackage, stdio: "inherit" });
-    if (!result.error && result.status === 0) {
-      console.log("Remotion: dependências instaladas.");
-      return;
-    }
+  // Node >= 18 recusa-se a criar processos .cmd directamente (CVE-2024-27980),
+  // por isso o npm é invocado em primeiro lugar via npm-cli.js ao lado do node.
+  const npmCli = join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
+  if (existsSync(npmCli)) {
+    run(process.execPath, [npmCli, "install", "--no-audit", "--no-fund"], { cwd: remotionPackage });
+  } else if (platform() === "win32") {
+    run("cmd", ["/d", "/s", "/c", "npm install --no-audit --no-fund"], { cwd: remotionPackage });
+  } else {
+    run("npm", ["install", "--no-audit", "--no-fund"], { cwd: remotionPackage });
   }
-  console.error("Não foi possível instalar as dependências do Remotion (packages/remotion).");
-  console.error("A fonte Remotion aparecerá como indisponível até correr `npm install` dentro de packages/remotion/.");
+  // O npm pode terminar com sucesso sem instalar nada (ex.: package.json
+  // corrompido) — o marcador é a prova de que o render ficou utilizável.
+  if (!existsSync(rendererMarker)) {
+    console.error("O npm terminou sem instalar @remotion/renderer em packages/remotion.");
+    console.error("Confirme o acesso à Internet e o Node.js/npm no PATH, e execute o instalador novamente.");
+    process.exit(1);
+  }
+  console.log("Remotion: dependências instaladas.");
 }
 
 function installMoneyPrinterDependencies(moneyprinterPath) {

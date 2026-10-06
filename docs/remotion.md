@@ -23,8 +23,11 @@ e a lista de razões mostra exactamente o que falta e como resolver.
 
 ## Instalação
 
-O instalador do Thunderbolt corre `npm install` em `packages/remotion/`
-automaticamente (salta com `--skip-remotion` ou `--skip-python-deps`):
+O instalador do Thunderbolt instala as dependências Node do Remotion
+**automaticamente e de forma obrigatória**, como faz com o Python, os dois
+FFmpeg e o Chromium do Playwright — uma falha do `npm install` aborta a
+instalação com mensagem clara. (Apenas o smoke test do CI, que já salta todas
+as dependências com `--skip-python-deps`, não as instala.)
 
 ```
 npx.cmd --yes --prefer-online @danhachuel/thunderbolt@<versão> install

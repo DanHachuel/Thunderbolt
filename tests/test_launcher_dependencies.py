@@ -24,6 +24,21 @@ def test_installer_checks_psutil_before_reusing_dependency_state():
     assert 'run(pythonBin, ["-m", "pip", "install", "-r", requirementsPath])' in source
 
 
+def test_installer_installs_remotion_as_a_mandatory_dependency():
+    # 0.9.53: o Remotion é obrigatório — as dependências Node instalam-se
+    # automaticamente como o Python, os FFmpeg e o Chromium do Playwright;
+    # falha do npm install aborta a instalação (não existe --skip-remotion).
+    source = (ROOT / "scripts" / "install.mjs").read_text(encoding="utf-8")
+    assert "function installRemotionDependencies()" in source
+    assert "if (!skipDeps) installRemotionDependencies();" in source
+    assert "--skip-remotion" not in source
+    block = source.split("function installRemotionDependencies()", 1)[1].split("\nfunction ", 1)[0]
+    # npm invocado via npm-cli.js ao lado do node (Node >= 18 recusa .cmd directo)
+    assert 'run(process.execPath, [npmCli, "install", "--no-audit", "--no-fund"]' in block
+    assert "process.exit(1)" in block
+    assert 'join(remotionPackage, "node_modules", "@remotion", "renderer")' in block
+
+
 def test_launcher_blocks_workers_without_import_retries():
     source = (ROOT / "scripts" / "cli.mjs").read_text(encoding="utf-8")
     assert 'const requiredWorkerModules = ["psutil", "serpapi", "playwright", "patchright"]' in source
