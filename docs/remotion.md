@@ -29,6 +29,20 @@ FFmpeg e o Chromium do Playwright — uma falha do `npm install` aborta a
 instalação com mensagem clara. (Apenas o smoke test do CI, que já salta todas
 as dependências com `--skip-python-deps`, não as instala.)
 
+**As dependências são persistentes entre versões** (0.9.55): vivem em
+`THUNDERBOLT_HOME\remotion\` (não na pasta da versão no cache do npx, que é
+recriada a cada actualização). A detecção usa o hash do
+`packages/remotion/package.json` (marcador `.remotion-dependencies.sha256`,
+o mesmo padrão dos `.sha256` do requirements.txt) — só reinstala quando as
+dependências mudam de propósito. A cópia da versão usa as dependências
+persistentes através de um junction em `packages/remotion/node_modules`.
+
+O instalador valida ainda o binário do **esbuild** após a instalação (o npm
+novo bloqueia scripts de instalação — `npm warn install-scripts` — e o
+postinstall do esbuild pode ficar bloqueado; o binário Windows chega como
+pacote normal `@esbuild/win32-x64`, mas a validação garante que o bundler
+funciona antes de qualquer render).
+
 ```
 npx.cmd --yes --prefer-online @danhachuel/thunderbolt@<versão> install
 ```

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, readFileSync, rmSync, renameSync, cpSync, copyFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, renameSync, cpSync, copyFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -593,39 +593,78 @@ function installThunderboltDependencies(python) {
 }
 
 function installRemotionDependencies() {
-  // O Remotion é dependência obrigatória do pacote: as dependências Node são
-  // instaladas automaticamente da mesma forma que o Python, os dois FFmpeg e o
-  // Chromium do Playwright — uma falha aqui aborta a instalação (nunca
-  // "best-effort"), com a mesma garantia de run() (process.exit em falha).
+  // O Remotion é obrigatório e PERSISTENTE: as dependências Node vivem em
+  // THUNDERBOLT_HOME/remotion — como o .venv, os FFmpeg e os browsers do
+  // Playwright — e não na pasta da versão do npx (que é recriada a cada
+  // actualização, reinstalando 257 pacotes do zero). A detecção usa o hash
+  // do package.json (o mesmo padrão dos .sha256 do requirements.txt); um
+  // junction liga packages/remotion/node_modules às dependências persistentes.
+  // Uma falha aqui aborta a instalação (nunca "best-effort").
   const remotionPackage = join(root, "packages", "remotion");
-  if (!existsSync(join(remotionPackage, "package.json"))) {
+  const packageJson = join(remotionPackage, "package.json");
+  if (!existsSync(packageJson)) {
     console.error("O pacote packages/remotion não foi encontrado nesta cópia do Thunderbolt.");
     process.exit(1);
   }
-  const rendererMarker = join(remotionPackage, "node_modules", "@remotion", "renderer");
-  if (existsSync(rendererMarker)) {
-    console.log("Remotion: dependências de renderização já instaladas.");
-    return;
-  }
-  console.log("Remotion: a instalar as dependências de renderização (npm install em packages/remotion)...");
-  // Node >= 18 recusa-se a criar processos .cmd directamente (CVE-2024-27980),
-  // por isso o npm é invocado em primeiro lugar via npm-cli.js ao lado do node.
-  const npmCli = join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
-  if (existsSync(npmCli)) {
-    run(process.execPath, [npmCli, "install", "--no-audit", "--no-fund"], { cwd: remotionPackage });
-  } else if (platform() === "win32") {
-    run("cmd", ["/d", "/s", "/c", "npm install --no-audit --no-fund"], { cwd: remotionPackage });
+  const persistentDir = join(thunderboltHome, "remotion");
+  const persistentModules = join(persistentDir, "node_modules");
+  const rendererMarker = join(persistentModules, "@remotion", "renderer");
+  const hashMarkerPath = join(persistentDir, ".remotion-dependencies.sha256");
+  const currentHash = fileHash(packageJson);
+  const storedHash = existsSync(hashMarkerPath) ? readFileSync(hashMarkerPath, "utf8").trim() : "";
+  if (existsSync(rendererMarker) && storedHash === currentHash) {
+    console.log(`Remotion: dependências de renderização já instaladas (detectadas em ${persistentDir}).`);
   } else {
-    run("npm", ["install", "--no-audit", "--no-fund"], { cwd: remotionPackage });
+    mkdirSync(persistentDir, { recursive: true });
+    copyFileSync(packageJson, join(persistentDir, "package.json"));
+    console.log(`Remotion: a instalar as dependências de renderização (npm install em ${persistentDir})...`);
+    // Node >= 18 recusa-se a criar processos .cmd directamente (CVE-2024-27980),
+    // por isso o npm é invocado via npm-cli.js ao lado do node.
+    const npmCli = join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
+    if (existsSync(npmCli)) {
+      run(process.execPath, [npmCli, "install", "--no-audit", "--no-fund"], { cwd: persistentDir });
+    } else if (platform() === "win32") {
+      run("cmd", ["/d", "/s", "/c", "npm install --no-audit --no-fund"], { cwd: persistentDir });
+    } else {
+      run("npm", ["install", "--no-audit", "--no-fund"], { cwd: persistentDir });
+    }
+    if (!existsSync(rendererMarker)) {
+      console.error(`O npm terminou sem instalar @remotion/renderer em ${persistentDir}.`);
+      console.error("Confirme o acesso à Internet e o Node.js/npm no PATH, e execute o instalador novamente.");
+      process.exit(1);
+    }
+    writeFileSync(hashMarkerPath, `${currentHash}\n`, "utf8");
   }
-  // O npm pode terminar com sucesso sem instalar nada (ex.: package.json
-  // corrompido) — o marcador é a prova de que o render ficou utilizável.
-  if (!existsSync(rendererMarker)) {
-    console.error("O npm terminou sem instalar @remotion/renderer em packages/remotion.");
-    console.error("Confirme o acesso à Internet e o Node.js/npm no PATH, e execute o instalador novamente.");
+  // O npm novo bloqueia scripts de instalação ("npm warn install-scripts") e
+  // o postinstall do esbuild pode ficar bloqueado. O binário Windows chega
+  // como pacote normal (@esbuild/win32-x64), mas validamo-lo mesmo assim: o
+  // bundler do Remotion depende dele e a falha tem de ser aqui, não no
+  // primeiro render.
+  const esbuildProbe = spawnSync(
+    process.execPath,
+    ["-e", "require('esbuild').transform('let x=1', {loader:'js'}).then(() => process.exit(0)).catch(() => process.exit(1))"],
+    { cwd: persistentDir, stdio: "ignore" },
+  );
+  if (esbuildProbe.status !== 0) {
+    console.error("O binário do esbuild (usado pelo bundler do Remotion) não respondeu após a instalação.");
+    console.error("Corra `npm install-scripts approve esbuild` e repita a instalação do Thunderbolt.");
     process.exit(1);
   }
-  console.log("Remotion: dependências instaladas.");
+  // Junction: o node_modules da versão do pacote aponta para as dependências
+  // persistentes. Windows cria junctions sem privilégios de administrador e o
+  // Node resolve módulos através deles normalmente.
+  const packageModules = join(remotionPackage, "node_modules");
+  const packageRenderer = join(packageModules, "@remotion", "renderer");
+  if (!existsSync(packageRenderer)) {
+    rmSync(packageModules, { recursive: true, force: true });
+    try {
+      symlinkSync(persistentModules, packageModules, platform() === "win32" ? "junction" : "dir");
+    } catch (error) {
+      console.error(`Não foi possível ligar packages/remotion/node_modules a ${persistentModules}: ${error.message}`);
+      process.exit(1);
+    }
+  }
+  console.log(`Remotion: dependências prontas (persistentes em ${persistentDir}).`);
 }
 
 function installMoneyPrinterDependencies(moneyprinterPath) {

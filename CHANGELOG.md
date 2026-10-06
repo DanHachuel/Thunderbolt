@@ -1,4 +1,8 @@
 # Changelog
+## 0.9.55 — 2026-10-06
+- Tornadas as dependências do Remotion **persistentes entre versões**: passam a viver em `THUNDERBOLT_HOME\remotion\` — como o `.venv`, os FFmpeg e os browsers do Playwright — em vez da pasta da versão no cache do npx, que é recriada a cada actualização e reinstalava os 257 pacotes do zero. A detecção usa o hash do `packages/remotion/package.json` (marcador `.remotion-dependencies.sha256`, o mesmo padrão dos `.sha256` do requirements.txt) e a cópia da versão usa as dependências persistentes via junction em `packages/remotion/node_modules`.
+- Adicionada ao instalador a validação do binário do **esbuild** após a instalação: o npm novo bloqueia scripts de instalação (`npm warn install-scripts`) e o postinstall do esbuild pode ser bloqueado; o binário chega como pacote normal (`@esbuild/win32-x64`) e a validação confirma que o bundler do Remotion funciona antes de qualquer render — se falhar, a instalação aborta com a instrução `npm install-scripts approve esbuild`.
+
 ## 0.9.54 — 2026-10-06
 - Corrigidos os erros "Task was destroyed but it is pending!" + `TargetClosedError` no terminal: a verificação de estado do Remotion arrancava o driver do Playwright (`sync_playwright()`) dentro do thread do Streamlit só para ler `executable_path`, e um rerun interrompido destruía a conexão a meio do init. O caminho do Chromium passa a ser lido **directamente da pasta de browsers** (`ms-playwright`), sem driver, sem processos e sem tarefas assíncronas — com suporte a `PLAYWRIGHT_BROWSERS_PATH`, escolha da revisão mais alta e prioridade do Chrome completo sobre o headless shell.
 

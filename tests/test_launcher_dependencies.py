@@ -24,19 +24,29 @@ def test_installer_checks_psutil_before_reusing_dependency_state():
     assert 'run(pythonBin, ["-m", "pip", "install", "-r", requirementsPath])' in source
 
 
-def test_installer_installs_remotion_as_a_mandatory_dependency():
-    # 0.9.53: o Remotion é obrigatório — as dependências Node instalam-se
-    # automaticamente como o Python, os FFmpeg e o Chromium do Playwright;
-    # falha do npm install aborta a instalação (não existe --skip-remotion).
+def test_installer_installs_remotion_as_a_mandatory_persistent_dependency():
+    # 0.9.55: as dependências do Remotion vivem em THUNDERBOLT_HOME/remotion —
+    # persistentes entre versões, como o .venv, os FFmpeg e o Chromium do
+    # Playwright. A pasta da versão no npx é recriada a cada actualização e
+    # não pode ser o local de instalação (reinstalaria 257 pacotes do zero).
     source = (ROOT / "scripts" / "install.mjs").read_text(encoding="utf-8")
     assert "function installRemotionDependencies()" in source
     assert "if (!skipDeps) installRemotionDependencies();" in source
     assert "--skip-remotion" not in source
     block = source.split("function installRemotionDependencies()", 1)[1].split("\nfunction ", 1)[0]
-    # npm invocado via npm-cli.js ao lado do node (Node >= 18 recusa .cmd directo)
+    assert 'join(thunderboltHome, "remotion")' in block
+    # detecção por hash (padrão .sha256 do requirements.txt) — sem reinstalação por versão
+    assert ".remotion-dependencies.sha256" in block
+    assert "fileHash(packageJson)" in block
+    # junction liga a cópia da versão às dependências persistentes
+    assert "symlinkSync" in block
+    assert '"junction"' in block
+    # npm via npm-cli.js (Node >= 18 recusa .cmd directo, CVE-2024-27980)
     assert 'run(process.execPath, [npmCli, "install", "--no-audit", "--no-fund"]' in block
+    # validação do binário do esbuild mesmo com postinstall bloqueado pelo npm
+    assert "require('esbuild').transform" in block
+    # obrigatória e fatal: falha aborta a instalação
     assert "process.exit(1)" in block
-    assert 'join(remotionPackage, "node_modules", "@remotion", "renderer")' in block
 
 
 def test_launcher_blocks_workers_without_import_retries():
