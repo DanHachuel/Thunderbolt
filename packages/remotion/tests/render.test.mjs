@@ -33,6 +33,7 @@ function runRender(args, extraEnv = {}) {
       ...process.env,
       REMOTION_BUNDLER_MODULE: mockBundler,
       REMOTION_RENDERER_MODULE: mockRenderer,
+      MOCK_BUNDLE_DIR: path.join(workDir, "mock-bundle"),
       ...extraEnv,
     },
   });

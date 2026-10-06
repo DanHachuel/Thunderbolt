@@ -25,3 +25,11 @@ storage/voice_previews/
 storage/data/
 node_modules/
 .DS_Store
+
+# 0.9.52: copias de runtime do instalador (fonte canonica: seed/) e artefactos de teste
+.mock-bundle/
+storage/blueprints/music/
+storage/blueprints/thumbnails/
+storage/blueprints/*.md
+storage/blueprints/importados/*
+storage/tiktok/prompts_master/*
