@@ -1,4 +1,7 @@
 # Changelog
+## 0.9.60 — 2026-10-07
+- Corrigida a causa do vídeo "refazer" ficar horas em "doing" sem avançar: quando o provider LLM devolvia 429 com cabeçalho `Retry-After` longo (ex.: 3600s), o router dormia **até uma hora inline por tentativa** dentro da etapa — o heartbeat mantinha a tarefa viva e o bloqueio ficava invisível (incidente: tarefa 2 horas em "doing" na etapa script). Esperas acima do tecto de 90s (`DEFAULT_RETRY_AFTER_CAP_SECONDS`) passam a **falhar a chamada com mensagem accionável**: o cartão entra em cooldown pelo tempo pedido, a tarefa regista a falha com atribuição e a fila avança; esperas dentro do tecto continuam a ser honradas inline. Aplica-se aos pools LLM, imagem e vídeo.
+
 ## 0.9.59 — 2026-10-07
 - Gravadas no `AGENTS.md` duas regras permanentes do projecto: (1) **CHANGELOG obrigatório** — qualquer alteração com push (código, docs, configuração, publicação) é registada no `CHANGELOG.md` antes de publicar, incluindo documentação retroactiva de trabalho de outras sessões sem entrada; (2) **rebase obrigatório** — antes de qualquer commit/push as sessões verificam o master remoto e fazem rebase quando avançou, e em colisão de versão a versão já publicada vence, renumerando a sessão para o patch seguinte confirmado no registry.
 

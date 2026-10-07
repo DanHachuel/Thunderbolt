@@ -41,6 +41,11 @@ DEFAULT_RPM_LIMIT = 40
 DEFAULT_RPM_WINDOW_SECONDS = 60
 DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_COOLDOWN_SECONDS = 120
+# 0.9.60: tecto da espera inline pelo Retry-After devolvido pelo provider.
+# Antes disto, um 429 com "Retry-After: 3600" dormia UMA HORA dentro da etapa
+# (incidente: tarefa 2h em "doing" com heartbeat vivo). Esperas acima do tecto
+# falham a chamada com atribuição accionável em vez de pendurar a fila.
+DEFAULT_RETRY_AFTER_CAP_SECONDS = 90
 _LOCK_WAIT_SECONDS = 5.0
 _STALE_LOCK_SECONDS = 45.0
 
@@ -462,7 +467,19 @@ def route_json_request(
             if not exc.retryable and pool != POOL_LLM:
                 raise ProviderRoutingError(str(exc), attempts=attempts) from exc
             if exc.retry_after:
-                time.sleep(min(3600.0, exc.retry_after))
+                if exc.retry_after > DEFAULT_RETRY_AFTER_CAP_SECONDS:
+                    # 0.9.60: nunca bloquear a fila durante a espera pedida —
+                    # o card já está em cooldown (set_provider_cooldown acima
+                    # com retry_after); a tarefa falha com atribuição.
+                    raise ProviderRoutingError(
+                        f"O provider pediu uma espera de {int(exc.retry_after)} segundos antes de repetir "
+                        f"(HTTP {exc.status_code or 429}). A tarefa falhou em vez de bloquear a fila durante "
+                        "essa espera; o cartão fica em cooldown pelo tempo pedido e as próximas tarefas "
+                        "voltam a usá-lo quando o limite repor. Active outro cartão LLM ou reduza o ritmo "
+                        "de criação de tarefas.",
+                        attempts=attempts,
+                    ) from exc
+                time.sleep(exc.retry_after)
             elif exc.retryable and cooldown > 0 and len(attempts) < maximum:
                 time.sleep(min(cooldown, 5.0))
         except requests.RequestException as exc:

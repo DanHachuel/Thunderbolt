@@ -256,3 +256,76 @@ class ProviderRoutingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RetryAfterCapTests(unittest.TestCase):
+    """0.9.60: Retry-After longo não pode pendurar a etapa inline.
+
+    Incidente real: tarefa de "refazer vídeo" 2 horas em "doing" (etapa
+    script, heartbeat vivo) porque o provider devolveu 429 com Retry-After
+    longo e o router dormia até 3600s por tentativa.
+    """
+
+    def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.storage_root = Path(self.tempdir.name)
+        self.state = self.storage_root / "state"
+        self.state.mkdir(parents=True)
+        self.storage_patch = patch.object(provider_routing, "STORAGE", self.storage_root)
+        self.storage_patch.start()
+        self.ensure_patch = patch.object(provider_routing, "ensure_storage", lambda: None)
+        self.ensure_patch.start()
+        self.sleep_patch = patch.object(provider_routing.time, "sleep", lambda value: None)
+        self.sleep_patch.start()
+
+    def tearDown(self):
+        self.sleep_patch.stop()
+        self.ensure_patch.stop()
+        self.storage_patch.stop()
+        self.tempdir.cleanup()
+
+    def _rate_limited_response(self, retry_after: str) -> FakeResponse:
+        response = FakeResponse(429, {"error": {"message": "Rate limit exceeded"}})
+        response.headers["Retry-After"] = retry_after
+        return response
+
+    def test_retry_after_within_cap_sleeps_and_fails_over_to_next_card(self):
+        settings = {"provider_cooldown_seconds": 0}
+        cards = [
+            {"id": "limited", "provider": "groq", "priority": 1, "enabled": True},
+            {"id": "healthy", "provider": "openai", "priority": 2, "enabled": True},
+        ]
+        calls: list[str] = []
+
+        def request(card):
+            calls.append(card["id"])
+            if card["id"] == "limited":
+                return self._rate_limited_response("30")
+            return FakeResponse(200, {"ok": True})
+
+        routed = provider_routing.route_json_request(settings, pool=provider_routing.POOL_LLM, cards=cards, request=request, cooldown_seconds=0)
+        self.assertEqual(routed.card["id"], "healthy")
+        self.assertEqual(calls, ["limited", "healthy"])
+
+    def test_huge_retry_after_fails_fast_instead_of_sleeping_an_hour(self):
+        settings = {"provider_cooldown_seconds": 0}
+        cards = [{"id": "limited", "provider": "groq", "priority": 1, "enabled": True}]
+
+        def request(card):
+            return self._rate_limited_response("3600")
+
+        with self.assertRaises(provider_routing.ProviderRoutingError) as raised:
+            provider_routing.route_json_request(settings, pool=provider_routing.POOL_LLM, cards=cards, request=request, cooldown_seconds=0)
+        message = str(raised.exception)
+        self.assertIn("espera de 3600 segundos", message)
+        self.assertIn("A tarefa falhou em vez de bloquear a fila", message)
+        self.assertIn("cooldown", message)
+        # o card entra em cooldown pelo tempo pedido — a próxima chamada salta-o
+        remaining = provider_routing.provider_cooldown_remaining(cards[0])
+        self.assertGreater(remaining, 0)
+
+    def test_retry_after_cap_is_bounded_for_all_pools(self):
+        # o tecto protege os pools de imagem e vídeo exactamente como o de LLM
+        source = Path(provider_routing.__file__).read_text(encoding="utf-8")
+        self.assertIn("DEFAULT_RETRY_AFTER_CAP_SECONDS = 90", source)
+        self.assertNotIn("time.sleep(min(3600.0, exc.retry_after))", source)
