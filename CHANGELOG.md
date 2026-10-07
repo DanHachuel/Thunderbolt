@@ -1,4 +1,7 @@
 # Changelog
+## 0.9.59 — 2026-10-07
+- Gravadas no `AGENTS.md` duas regras permanentes do projecto: (1) **CHANGELOG obrigatório** — qualquer alteração com push (código, docs, configuração, publicação) é registada no `CHANGELOG.md` antes de publicar, incluindo documentação retroactiva de trabalho de outras sessões sem entrada; (2) **rebase obrigatório** — antes de qualquer commit/push as sessões verificam o master remoto e fazem rebase quando avançou, e em colisão de versão a versão já publicada vence, renumerando a sessão para o patch seguinte confirmado no registry.
+
 ## 0.9.58 — 2026-10-07
 - O browser **Camoufox** (binário Firefox anti-detect da sessão de upload directo) passa a instalar-se automaticamente com o pacote — obrigatório e fatal em falha, como o Python, os FFmpeg, o Chromium do Playwright/Patchright e o Remotion: o instalador corre `python -m camoufox fetch` quando a detecção (via `python -m camoufox version`, espelhando o `hermes_ui/browser_manager.py`) revela que o binário não existe; já descarregado, o passo é saltado, evitando repetir ~150MB a cada actualização.
 
