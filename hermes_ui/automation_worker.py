@@ -274,12 +274,36 @@ def _pending_payload(channel: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return "", payload
 
 
+def _ensure_pipeline_running() -> None:
+    """Auto-resume the pipeline worker if it was left paused by a previous crash.
+
+    A pausa automática é uma protecção de crash; quando a automação cria uma
+    tarefa nova, a fila tem de estar activa para o vídeo ser produzido — o
+    utilizador nunca deve ter de clicar Start manualmente após um crash antigo.
+    """
+    try:
+        from .pipeline_worker import load_pipeline_worker_status, resume_pipeline_worker
+
+        status = load_pipeline_worker_status()
+        if isinstance(status, dict) and status.get("auto_paused"):
+            resume_pipeline_worker()
+    except Exception:
+        # Nunca bloquear a criação da tarefa por causa deste check.
+        pass
+
+
 def _create_channel_batch(channel: dict[str, Any], when: datetime, quantity: int | None = None, manual_create: bool = False) -> dict[str, Any]:
     channel_id = str(channel["id"])
     date_key = when.date().isoformat()
     style_wide = str(channel.get("style_wide") or "pexels")
     music_mode = style_wide == "music"
-    topic, payload = _pending_payload(channel)
+    try:
+        # 0.9.57: a automação GERA o tópico/título/keywords via LLM no momento
+        # da criação — não cria uma casca vazia que depende do pipeline worker.
+        # Se o LLM falhar, cai no payload pendente (o pipeline gera depois).
+        topic, payload = _creative_payload(channel)
+    except Exception:
+        topic, payload = _pending_payload(channel)
     options = {
         "language": payload.get("language") or channel.get("language") or "pt",
         "format": "portrait" if channel.get("platform") == "tiktok" else "wide",
@@ -301,6 +325,7 @@ def _create_channel_batch(channel: dict[str, Any], when: datetime, quantity: int
     }
     batch = create_batch("single", [channel_id], topic, max(1, int(quantity if quantity is not None else _daily_quantity(channel))), options)
     tasks = create_tasks_for_batch(batch)
+    _ensure_pipeline_running()
     return {"batch": batch, "tasks": tasks, "channel_id": channel_id}
 
 
