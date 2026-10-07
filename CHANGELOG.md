@@ -1,4 +1,11 @@
 # Changelog
+## 0.9.58 — 2026-10-07
+- O browser **Camoufox** (binário Firefox anti-detect da sessão de upload directo) passa a instalar-se automaticamente com o pacote — obrigatório e fatal em falha, como o Python, os FFmpeg, o Chromium do Playwright/Patchright e o Remotion: o instalador corre `python -m camoufox fetch` quando a detecção (via `python -m camoufox version`, espelhando o `hermes_ui/browser_manager.py`) revela que o binário não existe; já descarregado, o passo é saltado, evitando repetir ~150MB a cada actualização.
+
+## 0.9.57 — 2026-10-07
+- A Automação passa a **gerar o tópico/título/keywords via LLM no momento da criação da tarefa** — não cria uma casca vazia que dependia do pipeline worker; em falha do LLM, cai no payload pendente (o pipeline gera depois).
+- Adicionado o **auto-resume do pipeline**: a pausa automática pós-crash deixa de exigir Start manual — ao criar uma tarefa nova, a fila activa-se sozinha (`_ensure_pipeline_running`).
+
 ## 0.9.56 — 2026-10-06
 - Restaurada a prioridade da ferramenta **YOUTUBE_MULTIPART_UPLOAD_VIDEO** nos uploads Composio (a decisão do 0.8.62 que o hardcode de 17/09 tinha sobreposto): o alias `upload_video` volta a resolver pela descoberta de ferramentas — a multipart completa o upload num único pedido, em vez da ferramenta resumável básica, que podia falhar **depois** de criar a sessão de upload e consumir a quota diária sem devolver vídeo. O `YOUTUBE_UPLOAD_VIDEO` mantém-se como fallback quando a descoberta falha e o slug resolvido é cacheado por processo.
 - Classificados os erros do YouTube atrás do Composio em mensagens accionáveis: a quota 429 ('Video Uploads per day') passa a explicar a reposição (meia-noite, hora do Pacífico), o custo de cada teste e a verificação do YouTube Studio; as falhas 'upload URL' avisam que o vídeo pode ter sido criado mesmo com erro reportado. O texto integral permanece nos diagnostics.

@@ -553,6 +553,36 @@ function installPatchrightBrowser() {
   }
 }
 
+function camoufoxBrowserDownloaded() {
+  // Espelha hermes_ui/browser_manager.py: `python -m camoufox version` só
+  // reporta "Installed: yes" quando o binário Firefox já foi descarregado.
+  const probe = spawnSync(pythonBin, ["-m", "camoufox", "version"], { encoding: "utf8", env: pythonEnvironment });
+  if (!probe || probe.status !== 0) return false;
+  return /^\s*Installed\s*[:=]?\s*(?:yes|true)\s*$/im.test(String(probe.stdout || ""));
+}
+
+function installCamoufoxBrowser() {
+  // 0.9.57: o pacote Python camoufox instala com os requirements, mas o
+  // BINÁRIO Firefox (browser anti-detect da sessão de upload directo) exige
+  // `python -m camoufox fetch` — o mesmo género de passo do
+  // `playwright install chromium` e do `patchright install chromium`.
+  // Obrigatório e fatal como os restantes componentes; a detecção evita
+  // repetir o download de ~150MB a cada actualização.
+  if (!existsSync(pythonBin)) return;
+  if (camoufoxBrowserDownloaded()) {
+    console.log("Camoufox: binário Firefox já descarregado.");
+    return;
+  }
+  console.log("Camoufox: a descarregar o browser (python -m camoufox fetch)...");
+  const result = spawnSync(pythonBin, ["-m", "camoufox", "fetch"], { stdio: "inherit", env: pythonEnvironment });
+  if (result.status !== 0 || !camoufoxBrowserDownloaded()) {
+    console.error("Não foi possível descarregar o browser Camoufox.");
+    console.error("Confirme o acesso à Internet e execute o instalador novamente.");
+    process.exit(result.status || 1);
+  }
+  console.log("Camoufox: browser instalado.");
+}
+
 function writeSettings(moneyprinterPath) {
   const stateDir = join(thunderboltHome, "storage", "state");
   mkdirSync(stateDir, { recursive: true });
@@ -683,6 +713,7 @@ function main() {
   if (!skipMpt) cloneMoneyPrinter(moneyprinterPath);
   if (!skipDeps) installThunderboltDependencies(python);
   if (!skipDeps) installRemotionDependencies();
+  if (!skipDeps) installCamoufoxBrowser();
   if (!skipDeps && !skipMpt) installMoneyPrinterDependencies(moneyprinterPath);
   if (!skipDeps) installFfmpegSeedWindows();
   writeSettings(moneyprinterPath);

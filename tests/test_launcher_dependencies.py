@@ -79,3 +79,30 @@ def test_clean_venv_installs_psutil_from_production_requirement(tmp_path):
     verify = subprocess.run([str(python), "-c", "import psutil; print(psutil.__version__)"], capture_output=True, text=True)
     assert verify.returncode == 0, verify.stderr
     assert verify.stdout.strip()
+
+
+def test_installer_installs_the_camoufox_browser_as_a_mandatory_dependency():
+    # 0.9.57: o pacote Python camoufox vinha com os requirements, mas o binário
+    # Firefox (sessão de upload directo) exigia fetch manual — agora instala
+    # automaticamente como o Chromium do Playwright e do Patchright.
+    source = (ROOT / "scripts" / "install.mjs").read_text(encoding="utf-8")
+    assert "function installCamoufoxBrowser()" in source
+    assert "function camoufoxBrowserDownloaded()" in source
+    assert "if (!skipDeps) installCamoufoxBrowser();" in source
+    block = source.split("function installCamoufoxBrowser()", 1)[1].split("\nfunction ", 1)[0]
+    assert '"-m", "camoufox", "fetch"' in block
+    assert "camoufoxBrowserDownloaded()" in block
+    # obrigatória e fatal: falha aborta a instalação
+    assert "process.exit(result.status || 1)" in block
+    # detecção espelha hermes_ui/browser_manager.py ("Installed: yes")
+    detection_block = source.split("function camoufoxBrowserDownloaded()", 1)[1].split("\nfunction ", 1)[0]
+    assert '"-m", "camoufox", "version"' in detection_block
+    assert "Installed" in detection_block
+
+
+def test_browser_manager_camoufox_status_still_reports_fetch_hint():
+    # O hint manual mantém-se na UI para diagnósticos, mas o instalador já
+    # resolve o passo automaticamente.
+    source = (ROOT / "hermes_ui" / "browser_manager.py").read_text(encoding="utf-8")
+    assert 'CAMOUFOX_FETCH_HINT = "Execute python -m camoufox fetch para descarregar o browser Camoufox."' in source
+    assert "binário Firefox do Camoufox não está descarregado" in source
