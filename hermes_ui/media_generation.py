@@ -845,12 +845,20 @@ def generate_image_for_card(
         attempts = list(getattr(exc, "attempts", []) or [])
         provider_errors = []
         for attempt in attempts:
-            provider = str(attempt.get("provider") or "provider")
+            attempt_provider = str(attempt.get("provider") or card.get("provider") or "provider")
             status_code = attempt.get("status_code")
             error = str(attempt.get("error") or "falha sem detalhe")
             prefix = f"HTTP {int(status_code)}: " if status_code else ""
-            provider_errors.append(f"{provider}: {prefix}{error[:180]}")
-        raise MediaGenerationError(str(exc), provider_errors=provider_errors) from exc
+            provider_errors.append(f"{attempt_provider}: {prefix}{error[:180]}")
+        # 0.9.61: a rota é de cartão único — o texto genérico "Todos os
+        # providers do pool image falharam" não dizia NADA ao utilizador e,
+        # sem marcador de retry, envenenava o pool inteiro (um cartão em
+        # cooldown abortava todos os seguintes com mensagem inútil).
+        detail = "; ".join(provider_errors) or str(exc)
+        raise MediaGenerationError(
+            f"O provider de imagem {str(card.get('provider') or 'seleccionado')} falhou: {detail}",
+            provider_errors=provider_errors or [str(exc)],
+        ) from exc
     image_bytes, url = _image_value(routed.payload)
     if not image_bytes and not url:
         request_id = _image_request_id(routed.payload)
@@ -865,6 +873,11 @@ def generate_image_for_card(
 
 def _is_retryable_media_error(exc: BaseException) -> bool:
     text = str(exc).lower()
+    # 0.9.61: o texto genérico de falha de rota de cartão único não pode ser
+    # tratado como não-retryable — um cartão em cooldown não pode abortar o
+    # pool inteiro antes de os restantes cartões serem tentados.
+    if "todos os providers do pool" in text:
+        return True
     if any(marker in text for marker in ("http 400", "http 401", "http 403", "http 404", "invalid request", "missing", "não tem endpoint")):
         return False
     return any(marker in text for marker in ("http 402", "http 408", "http 425", "http 429", "http 500", "http 502", "http 503", "http 504", "timeout", "timed out", "connection", "temporarily", "cooldown"))
@@ -1126,7 +1139,20 @@ def generate_video_for_card(
     try:
         routed = route_json_request(settings, pool=POOL_VIDEO, cards=[card], request=request)
     except ProviderRoutingError as exc:
-        raise MediaGenerationError(str(exc)) from exc
+        # 0.9.61: mesmo tratamento do pool de imagem — a rota é de cartão
+        # único e a mensagem genérica escondia a causa (cooldown, HTTP, etc.).
+        attempts = list(getattr(exc, "attempts", []) or [])
+        details = []
+        for attempt in attempts:
+            attempt_provider = str(attempt.get("provider") or card.get("provider") or "provider")
+            status_code = attempt.get("status_code")
+            error = str(attempt.get("error") or "falha sem detalhe")
+            prefix = f"HTTP {int(status_code)}: " if status_code else ""
+            details.append(f"{attempt_provider}: {prefix}{error[:180]}")
+        raise MediaGenerationError(
+            f"O provider de vídeo {str(card.get('provider') or 'seleccionado')} falhou: " + ("; ".join(details) or str(exc)),
+            provider_errors=details or [str(exc)],
+        ) from exc
     url, request_id = _video_result(routed.payload)
     if not url and request_id:
         try:

@@ -1,4 +1,8 @@
 # Changelog
+## 0.9.61 — 2026-10-07
+- Corrigido o erro inútil "Todos os providers do pool image falharam — API não identificada (falha anterior)" nos vídeos com fonte **text_to_images**: a rota de imagem/vídeo é por **cartão único**, e quando o primeiro cartão falhava (tipicamente em cooldown — incluindo os cooldowns até 3600s gravados pelo Retry-After do 0.9.60), o texto genérico não tinha marcador de retry e o `generate_image_from_pool` **abortava todo o pool sem tentar os cartões seguintes**, com a causa real perdida.
+- As falhas de rota de cartão único passam a produzir mensagens accionáveis com os detalhes das tentativas ("O provider de imagem X falhou: X: provider em cooldown por mais de Ns", "X: HTTP 429: ..."), o texto genérico passa a ser retryable (um cartão em cooldown deixa de envenenar o pool) e o mesmo tratamento foi aplicado ao pool de vídeo (`generate_video_for_card`).
+
 ## 0.9.60 — 2026-10-07
 - Corrigida a causa do vídeo "refazer" ficar horas em "doing" sem avançar: quando o provider LLM devolvia 429 com cabeçalho `Retry-After` longo (ex.: 3600s), o router dormia **até uma hora inline por tentativa** dentro da etapa — o heartbeat mantinha a tarefa viva e o bloqueio ficava invisível (incidente: tarefa 2 horas em "doing" na etapa script). Esperas acima do tecto de 90s (`DEFAULT_RETRY_AFTER_CAP_SECONDS`) passam a **falhar a chamada com mensagem accionável**: o cartão entra em cooldown pelo tempo pedido, a tarefa regista a falha com atribuição e a fila avança; esperas dentro do tecto continuam a ser honradas inline. Aplica-se aos pools LLM, imagem e vídeo.
 
