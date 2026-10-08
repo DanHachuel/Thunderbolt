@@ -1,4 +1,9 @@
 # Changelog
+## 0.9.67 — 2026-10-08
+- Diagnóstico do **"Processamento interrompido"** no YouTube Studio: o upload Composio restaurado (0.9.65) funciona na API — o log de 08/10 04:23 mostra o vídeo criado com `uploadStatus: uploaded` — e o ficheiro local de teste decodifica sem um único erro (H.264/AAC verificados com ffmpeg); o processamento falha **depois**, na cadeia resumable do Composio, que entrega bytes danificados ao YouTube.
+- Adicionada a opção **`multipart_upload_video`** para os canais: resolve pela descoberta à ferramenta `YOUTUBE_MULTIPART_UPLOAD_VIDEO` (upload num único pedido, sem sessões resumable) e injecta o ficheiro no campo correcto **`videoFile`** (a resumável usa `videoFilePath`) — o erro 400 da 0.9.56 estava exactamente no nome do campo, agora tratado por ferramenta. O alias `upload_video` mantém-se no `YOUTUBE_UPLOAD_VIDEO`, como estava antes de todas as alterações.
+- Para usar: no cartão do canal, definir a Ferramenta Composio como `multipart_upload_video` e repetir o Test Upload Videos — se o vídeo processar normalmente no YouTube Studio, a cadeia multipart passa a ser a recomendada para o canal.
+
 ## 0.9.66 — 2026-10-08
 - Corrigido o painel **"Resultado do teste de upload"** que ficava vazio: o `st.rerun()` que activa o botão Download Log após cada teste recriava o painel (`st.empty`) sem conteúdo — o resultado piscava durante milissegundos e desaparecia, deixando o utilizador sem saber o que deu no upload. O resultado (sucesso/erro/aviso) e os **Logs de diagnóstico Composio** passam a persistir no `session_state` e são renderizados fora do bloco do botão — ficam visíveis após o rerun e até à próxima alteração, em todos os modos de upload.
 

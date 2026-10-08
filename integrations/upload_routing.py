@@ -408,7 +408,9 @@ def _composio_upload(settings: dict[str, Any], *, channel: dict[str, Any], **kwa
     if not connected_account_tool and not youtube_upload_tool and not channel_field:
         return IntegrationResult(False, "Composio não foi executado: configure o campo de canal da ferramenta.", {"missing": ["composio_channel_field"]})
     # O path técnico nunca vem da configuração editável: é injectado pelo backend.
-    file_field = COMPOSIO_VIDEO_FILE_FIELD
+    # 0.9.67: a ferramenta multipart exige o campo `videoFile` (a resumável usa
+    # `videoFilePath`) — sem isto, o multipart devolvia 400 "missing videoFile".
+    file_field = "videoFile" if normalized_slug == "YOUTUBE_MULTIPART_UPLOAD_VIDEO" else COMPOSIO_VIDEO_FILE_FIELD
     try:
         arguments = str(settings.get("composio_arguments_json") or "{}").strip() or "{}"
         import json

@@ -214,3 +214,65 @@ def test_test_upload_panel_survives_the_log_rerun():
     assert 'st.session_state[result_state_key] = {"ok": False, "message": failure_message}' in source
     # os diagnósticos também sobrevivem
     assert "last_diagnostics = st.session_state.get(diagnostics_state_key)" in source
+
+
+# ── 0.9.67: multipart opcional com o campo correcto (videoFile) ──────────────
+
+
+def test_multipart_tool_uses_video_file_field(monkeypatch, tmp_path: Path):
+    """A ferramenta YOUTUBE_MULTIPART_UPLOAD_VIDEO recebe o ficheiro em
+    `videoFile` (não `videoFilePath`) — sem isto devolvia 400."""
+    import integrations.upload_routing as routing
+
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"video")
+    captured = {}
+
+    def fake_execute(*args):
+        captured["args"] = args
+        return {"successful": True, "data": {"id": "yt-multipart"}}
+
+    monkeypatch.setattr(routing, "execute_upload", fake_execute)
+    result = _composio_upload(
+        {**_settings()},
+        channel={"platform": "youtube", "composio_tool_slug": "YOUTUBE_MULTIPART_UPLOAD_VIDEO"},
+        video_path=str(video),
+        privacy_status="unlisted",
+        category_id="22",
+        language="pt-BR",
+    )
+    assert result.ok
+    assert captured["args"][2] == "YOUTUBE_MULTIPART_UPLOAD_VIDEO"
+    assert captured["args"][4] == "videoFile"
+
+
+def test_multipart_alias_resolves_via_discovery(monkeypatch, tmp_path: Path):
+    """O alias `multipart_upload_video` resolve pela descoberta à ferramenta
+    multipart do Composio (para quem a quiser usar no canal)."""
+    import integrations.upload_routing as routing
+
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"video")
+    captured = {}
+
+    def fake_execute(*args):
+        captured["args"] = args
+        return {"successful": True, "data": {"id": "yt-2"}}
+
+    def fake_discover(api_key, user_id, query, toolkit=""):
+        assert query == "Multipart Upload Video"
+        return [{"slug": "YOUTUBE_MULTIPART_UPLOAD_VIDEO"}, {"slug": "YOUTUBE_UPLOAD_VIDEO"}]
+
+    monkeypatch.setattr(routing, "execute_upload", fake_execute)
+    monkeypatch.setattr("integrations.composio_upload.discover_tools", fake_discover)
+    result = _composio_upload(
+        {**_settings()},
+        channel={"platform": "youtube", "composio_tool_slug": "multipart_upload_video"},
+        video_path=str(video),
+        privacy_status="unlisted",
+        category_id="22",
+        language="pt-BR",
+    )
+    assert result.ok
+    assert captured["args"][2] == "YOUTUBE_MULTIPART_UPLOAD_VIDEO"
+    assert captured["args"][4] == "videoFile"
