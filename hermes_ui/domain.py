@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from . import storage as storage_module
+from .material_sources import selected_material_source
 from .notifications import record_notification
 from .storage import StorageIntegrityError, append_json, now, read_json, update_json, write_json
 from .thumbnail_blueprints import thumbnail_blueprint_for_channel
@@ -578,7 +579,16 @@ def retry_task_with_current_settings(task_id: str, *, confirm_upload_uncertain: 
 
 
 def _refresh_task_channel_video_settings(task: dict[str, Any]) -> None:
-    """Apply the channel's current video defaults while preserving the saved script."""
+    """Revalidate every channel-controlled generation input while keeping the script.
+
+    "Refazer Vídeo" tem de revalidar o contexto completo que o canal controla:
+    legendas (on/off, fonte, posição, cores, contorno, fundo), música de fundo,
+    voz, duração máxima do clip, proporção, concatenação/transição,
+    correspondência visual-roteiro e a fonte de materiais (Pexels/Pixabay/…)
+    — para a remontagem usar as definições actuais e fazer novas chamadas à
+    fonte de vídeo configurada, em vez de repetir os valores congelados na
+    criação da tarefa.
+    """
     channel_id = str(task.get("channel_id") or "").strip()
     channels = read_json("channels.json", [])
     channel = next(
@@ -604,9 +614,24 @@ def _refresh_task_channel_video_settings(task: dict[str, Any]) -> None:
     }
     for setting_name, (channel_key, default) in channel_defaults.items():
         generation_settings[setting_name] = channel.get(channel_key, default)
-    if str(channel.get("platform") or "").strip().casefold() == "youtube":
-        generation_settings["maximum_clip_duration"] = channel.get("default_maximum_clip_duration", 5)
-        generation_settings["video_aspect_ratio"] = channel.get("default_video_aspect_ratio", "Landscape 16:9")
+    # Duração máxima do clip, proporção, concatenação, transição e
+    # correspondência visual-roteiro: revalidadas para TODAS as plataformas
+    # (o gate anterior só aplicava duração/proporção a canais YouTube e
+    # deixava TikTok/Bilibili e canais legados sem platform a repetir os
+    # valores antigos). Aplica-se apenas quando o canal define o default,
+    # para não sobrescrever escolhas explícitas da tarefa com 5 s/16:9.
+    if channel.get("default_maximum_clip_duration") is not None:
+        generation_settings["maximum_clip_duration"] = channel.get("default_maximum_clip_duration")
+    aspect_ratio = channel.get("default_video_aspect_ratio") or channel.get("video_aspect_ratio")
+    if aspect_ratio:
+        generation_settings["video_aspect_ratio"] = aspect_ratio
+    for setting_name, channel_key in (
+        ("video_concatenation_mode", "default_video_concatenation_mode"),
+        ("video_transition_mode", "default_video_transition_mode"),
+        ("match_visuals_to_script_order", "default_match_visuals_to_script_order"),
+    ):
+        if channel.get(channel_key) is not None:
+            generation_settings[setting_name] = channel.get(channel_key)
     task["generation_settings"] = generation_settings
     task["voice"] = channel.get("default_voice") or channel.get("voice") or task.get("voice", "")
     task["thumbnail_blueprint_id"] = (
@@ -618,15 +643,30 @@ def _refresh_task_channel_video_settings(task: dict[str, Any]) -> None:
     task["blueprint_id"] = channel.get("default_blueprint_id") or channel.get("blueprint_id") or task.get("blueprint_id", "")
     if channel.get("style_wide"):
         task["style_wide"] = channel["style_wide"]
+    # Fonte de materiais (Pexels/Pixabay/…): derivada de novo a partir do
+    # estilo actual do canal e do selector global de Fontes de materiais —
+    # a mesma regra da criação da tarefa. O valor antigo congelado na tarefa
+    # tinha prioridade na resolução da rota e fazia a remontagem repetir as
+    # chamadas à fonte anterior, ignorando a alteração do utilizador.
+    settings = read_json("settings.json", {})
+    style_wide = str(channel.get("style_wide") or "pexels").strip().casefold()
+    material_source = selected_material_source(settings) if style_wide in {"pexels", "pexels/pixabay", "stock"} else ""
+    task["material_source"] = material_source
+    task["generation_settings"]["material_source"] = material_source
+    task["generation_settings"].pop("video_material_source", None)
 
 
 def remake_video_task(task_id: str) -> dict[str, Any] | None:
     """Queue a fresh video render while retaining the task's creative inputs.
 
-    The persisted script, blueprint, keywords/tags, voice, thumbnail prompt/image,
-    generation settings and any non-video creative artefacts are intentionally kept.
-    The rendered video, generated narration/audio and publication result are
-    invalidated so the worker rebuilds both audio and video from the script.
+    The persisted script, blueprint, keywords/tags, voice, thumbnail prompt/image
+    and any non-video creative artefacts are intentionally kept. The rendered
+    video, generated narration/audio and publication result are invalidated so
+    the worker rebuilds both audio and video from the script. All
+    channel-controlled generation inputs (subtitles, max clip duration, aspect
+    ratio, concatenation/transition, material source) are revalidated from the
+    channel's current defaults so the remake honours settings changed after
+    the original render instead of repeating the frozen values.
     """
     normalized_id = str(task_id or "").strip()
 

@@ -838,6 +838,60 @@ def test_moneyprinter_cli_args_forwards_channel_subtitle_defaults():
     assert args[args.index("--font-name") + 1] == "Arial.ttf"
 
 
+def test_moneyprinter_cli_args_forwards_full_subtitle_styling():
+    """0.9.70: cores, tamanho, contorno e fundo das legendas chegam ao MPT."""
+    args = pipeline_worker._moneyprinter_cli_args(
+        {"generation_settings": {
+            "enable_subtitles": True,
+            "subtitle_position": "Bottom (Recommended)",
+            "subtitle_font": "Arial.ttf",
+            "subtitle_color": "#FFDD00",
+            "subtitle_font_size": 72,
+            "subtitle_outline": "#112233",
+            "subtitle_outline_width": 2.5,
+            "subtitle_background": True,
+            "subtitle_background_color": "#000021",
+            "subtitle_rounded_background": True,
+        }},
+        "pexels",
+    )
+
+    # "Bottom (Recommended)" antes era omitido por comparação literal e o MPT
+    # usava sempre o default próprio.
+    assert args[args.index("--subtitle-position") + 1] == "bottom"
+    assert args[args.index("--text-fore-color") + 1] == "#FFDD00"
+    assert args[args.index("--font-size") + 1] == "72"
+    assert args[args.index("--stroke-color") + 1] == "#112233"
+    assert args[args.index("--stroke-width") + 1] == "2.5"
+    assert "--subtitle-background-enabled" in args
+    assert "--no-subtitle-background-enabled" not in args
+    assert args[args.index("--subtitle-background-color") + 1] == "#000021"
+    assert "--rounded-subtitle-background" in args
+    assert "--no-rounded-subtitle-background" not in args
+
+
+def test_moneyprinter_cli_args_background_off_omits_color_and_rounded():
+    """O MPT rejeita fundo desligado combinado com cor/arredondamento."""
+    args = pipeline_worker._moneyprinter_cli_args(
+        {"generation_settings": {
+            "enable_subtitles": True,
+            "subtitle_background": False,
+            "subtitle_background_color": "#000000",
+            "subtitle_rounded_background": True,
+            "subtitle_color": "red",
+        }},
+        "pexels",
+    )
+
+    assert "--no-subtitle-background-enabled" in args
+    assert "--subtitle-background-enabled" not in args
+    assert "--subtitle-background-color" not in args
+    assert "--rounded-subtitle-background" not in args
+    assert "--no-rounded-subtitle-background" not in args
+    # cores que não estão em #RRGGBB nunca são encaminhadas
+    assert "--text-fore-color" not in args
+
+
 def test_normalise_video_route_keeps_stock_ai_and_music_separate():
     assert pipeline_worker._normalise_video_route({"style_wide": "Pexels/Pixabay"}, {}) == "pexels"
     assert pipeline_worker._normalise_video_route({"style_wide": "pixabay"}, {}) == "pixabay"

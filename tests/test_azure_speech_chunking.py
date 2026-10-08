@@ -187,6 +187,19 @@ def test_generate_video_injects_chunked_audio_into_moneyprinter_command(tmp_path
     monkeypatch.setattr(MPT_AGENT, "_prepare_azure_v2_chunked_audio", lambda *args, **kwargs: prepared_audio)
 
     def fake_run(command, **kwargs):
+        if "--help" in command:
+            # 0.9.69: o helper detecta as opções suportadas antes de encaminhar.
+            return SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    "options:\n"
+                    "  --video-source VIDEO_SOURCE\n"
+                    "  --video-script VIDEO_SCRIPT\n"
+                    "  --voice-name VOICE_NAME\n"
+                    "  --custom-audio-file PATH\n"
+                ),
+                stderr="",
+            )
         captured["command"] = command
         task_id = command[command.index("--task-id") + 1]
         output = root / "storage" / "tasks" / task_id / "final-video.mp4"
@@ -271,11 +284,18 @@ def test_generate_video_stops_before_upstream_when_chunked_audio_is_unavailable(
     monkeypatch.setattr(MPT_AGENT.shutil, "which", lambda _: "/usr/bin/uv")
     monkeypatch.setattr(MPT_AGENT, "run_checked", lambda *args, **kwargs: None)
     monkeypatch.setattr(MPT_AGENT, "_prepare_azure_v2_chunked_audio", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        MPT_AGENT.subprocess,
-        "run",
-        lambda *args, **kwargs: pytest.fail("não deve iniciar a CLI upstream"),
-    )
+
+    def fail_upstream_run(command, **kwargs):
+        if "--help" in command:
+            # 0.9.69: a detecção de opções suportadas não é a CLI upstream.
+            return SimpleNamespace(
+                returncode=0,
+                stdout="options:\n  --video-script VIDEO_SCRIPT\n  --voice-name VOICE_NAME\n",
+                stderr="",
+            )
+        pytest.fail("não deve iniciar a CLI upstream")
+
+    monkeypatch.setattr(MPT_AGENT.subprocess, "run", fail_upstream_run)
     with pytest.raises(MPT_AGENT.SkillError, match="não produziu áudio segmentado"):
         MPT_AGENT.generate_video(
             root,

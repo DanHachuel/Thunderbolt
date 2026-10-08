@@ -360,6 +360,84 @@ def has_cli_option(cli_args: list[str], option: str) -> bool:
     return any(item == option or item.startswith(f"{option}=") for item in cli_args)
 
 
+def supported_cli_options(root: Path, uv: str) -> dict[str, bool] | None:
+    """Map each option of the installed cli.py to whether it consumes a value.
+
+    MoneyPrinterTurbo evolves independently of Thunderbolt: forwarding an
+    option that the installed cli.py does not know yet aborts argparse with
+    "unrecognized arguments" before any pipeline stage runs. Detection is
+    best-effort — on any failure we return None and forward everything,
+    preserving the legacy behaviour.
+    """
+    try:
+        result = subprocess.run(
+            [uv, "run", "python", "cli.py", "--help"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    text = "\n".join(part for part in (result.stdout, result.stderr) if part)
+    if result.returncode != 0 or not text.strip():
+        return None
+    options: dict[str, bool] = {}
+    # Only lines that start with an option string belong to the argparse
+    # options section; epilog examples and continuation lines are ignored.
+    # Genuine definitions are parsed before the epilog, so the OR-merge
+    # below can never downgrade a value-taking option to a flag.
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("--"):
+            continue
+        matches = list(re.finditer(r"--[a-z0-9][a-z0-9-]*", stripped))
+        if not matches:
+            continue
+        tail = stripped[matches[-1].end():].split()
+        takes_value = bool(tail) and (
+            tail[0].startswith("{") or re.fullmatch(r"[A-Z][A-Z0-9_]*", tail[0].rstrip(",")) is not None
+        )
+        for match in matches:
+            option = match.group(0)
+            previous = options.get(option)
+            options[option] = takes_value if previous is None else (previous or takes_value)
+    return options or None
+
+
+def filter_forwarded_args(cli_args: list[str], supported: dict[str, bool] | None) -> list[str]:
+    """Drop forwarded options the installed cli.py does not support yet.
+
+    Unknown options are skipped together with their value, so an older
+    MoneyPrinterTurbo install keeps generating with its own default for that
+    option instead of failing the whole video generation.
+    """
+    if supported is None:
+        return list(cli_args)
+    filtered: list[str] = []
+    index = 0
+    while index < len(cli_args):
+        token = str(cli_args[index])
+        if not token.startswith("--"):
+            filtered.append(token)
+            index += 1
+            continue
+        takes_value = supported.get(token)
+        if takes_value is None:
+            log(f"ignoring option unsupported by this cli.py: {token}")
+            index += 1
+            if index < len(cli_args) and not str(cli_args[index]).startswith("--"):
+                index += 1
+            continue
+        filtered.append(token)
+        index += 1
+        if takes_value and index < len(cli_args) and not str(cli_args[index]).startswith("--"):
+            filtered.append(str(cli_args[index]))
+            index += 1
+    return filtered
+
+
 def _toml_section_value(config_path: Path, section: str, key: str) -> str:
     """Read one nested TOML value without logging the value or its contents."""
     try:
@@ -716,6 +794,10 @@ def generate_video(
     run_checked([uv, "sync", "--frozen"], cwd=root)
     ensure_moviepy(root, uv)
     config_path = ensure_config(root)
+    # As opções encaminhadas dependem da versão instalada do cli.py: opções
+    # recentes (estilo completo de legendas, transições, …) são ignoradas em
+    # instalações mais antigas em vez de abortarem o argparse.
+    cli_args = filter_forwarded_args(cli_args, supported_cli_options(root, uv))
 
     task_id = str(uuid.uuid4())
     task_dir = root / "storage" / "tasks" / task_id

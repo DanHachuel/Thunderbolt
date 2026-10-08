@@ -86,23 +86,38 @@ def test_remake_refreshes_current_channel_video_defaults(tmp_path, monkeypatch):
     storage.STATE = storage.STORAGE / "state"
     storage.BLUEPRINTS = storage.STORAGE / "blueprints"
     storage.ensure_storage()
+    storage.write_json("settings.json", {"video_source": "pixabay"})
     storage.write_json("channels.json", [{
         "id": "channel-current",
+        "platform": "tiktok",
         "default_enable_subtitles": False,
         "default_subtitle_position": "Top",
         "default_background_music_source": "Sem música",
         "default_background_music_volume": "0%",
         "default_thumbnail_blueprint_id": "thumb-modern",
         "default_voice": "voice-current",
+        "default_maximum_clip_duration": 15,
+        "default_video_aspect_ratio": "Portrait 9:16",
+        "default_video_concatenation_mode": "Sequential",
+        "default_video_transition_mode": "Fade",
+        "default_match_visuals_to_script_order": True,
         "style_wide": "pexels",
     }])
     storage.write_json("tasks.json", [{
         "id": "video-remake-current-settings",
         "channel_id": "channel-current",
         "state": "done",
+        "material_source": "pexels",
         "generation_settings": {
             "enable_subtitles": True,
             "background_music_source": "Random Background Music",
+            "maximum_clip_duration": 5,
+            "video_aspect_ratio": "Landscape 16:9",
+            "video_concatenation_mode": "Random",
+            "video_transition_mode": "None",
+            "match_visuals_to_script_order": False,
+            "material_source": "pexels",
+            "video_material_source": "pexels",
         },
         "thumbnail_blueprint_id": "thumb-old",
         "voice": "voice-old",
@@ -127,6 +142,45 @@ def test_remake_refreshes_current_channel_video_defaults(tmp_path, monkeypatch):
     assert remade["artifacts"] == {"script": "/tmp/script.md"}
     assert remade["audio_regeneration_requested"] is True
     assert "audio_regeneration_requested_at" in remade
+    # 0.9.69: a remontagem revalida também a duração máxima do clip (em
+    # qualquer plataforma, não só YouTube), a proporção, a concatenação, a
+    # transição e a correspondência visual-roteiro com os defaults do canal.
+    assert remade["generation_settings"]["maximum_clip_duration"] == 15
+    assert remade["generation_settings"]["video_aspect_ratio"] == "Portrait 9:16"
+    assert remade["generation_settings"]["video_concatenation_mode"] == "Sequential"
+    assert remade["generation_settings"]["video_transition_mode"] == "Fade"
+    assert remade["generation_settings"]["match_visuals_to_script_order"] is True
+    # A fonte de materiais é derivada de novo (estilo stock do canal +
+    # selector global actual): a remontagem faz novas chamadas à fonte
+    # configurada em vez de repetir a fonte congelada na criação.
+    assert remade["material_source"] == "pixabay"
+    assert remade["generation_settings"]["material_source"] == "pixabay"
+    assert "video_material_source" not in remade["generation_settings"]
+
+
+def test_remake_keeps_task_settings_when_channel_has_no_defaults(tmp_path, monkeypatch):
+    """Canais legados sem defaults de vídeo não podem sobrescrever a tarefa."""
+    monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))
+    from hermes_ui import storage
+    from hermes_ui.domain import remake_video_task
+
+    storage.STORAGE = tmp_path / "storage"
+    storage.STATE = storage.STORAGE / "state"
+    storage.BLUEPRINTS = storage.STORAGE / "blueprints"
+    storage.ensure_storage()
+    storage.write_json("channels.json", [{"id": "channel-legacy", "platform": "tiktok"}])
+    storage.write_json("settings.json", {"video_source": "pexels"})
+    storage.write_json("tasks.json", [{
+        "id": "video-remake-legacy",
+        "channel_id": "channel-legacy",
+        "state": "done",
+        "generation_settings": {"maximum_clip_duration": 15},
+        "artifacts": {"video": "/tmp/old.mp4"},
+    }])
+
+    remade = remake_video_task("video-remake-legacy")
+
+    assert remade["generation_settings"]["maximum_clip_duration"] == 15
 
 
 def test_remaking_multiple_videos_requeues_existing_tasks_without_duplicates(tmp_path, monkeypatch):

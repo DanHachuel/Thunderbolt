@@ -1044,6 +1044,47 @@ def _mpt_transition_mode(value: Any) -> str:
     return {"fade": "fade-in", "dissolve": "fade-out", "fade-in": "fade-in", "fade-out": "fade-out"}.get(raw, "none")
 
 
+def _mpt_subtitle_position(value: Any) -> str:
+    """Normalise the stored subtitle label to one of the MPT CLI choices.
+
+    "Bottom (Recommended)" — o default guardado pelas Configurações de
+    legendas — não constava do conjunto literal anterior, por isso a posição
+    era silenciosamente omitida e o MPT usava sempre o seu próprio default.
+    """
+    raw = str(value or "").strip().casefold()
+    if "two_third" in raw or "two third" in raw:
+        return "two_thirds_bottom"
+    if "top" in raw:
+        return "top"
+    if "center" in raw or "middle" in raw:
+        return "center"
+    if "custom" in raw:
+        return "custom"
+    return "bottom"
+
+
+def _mpt_hex_color(value: Any) -> str:
+    """Return the colour in the #RRGGBB form required by the MPT CLI, or ''."""
+    raw = str(value or "").strip()
+    return raw if re.fullmatch(r"#[0-9a-fA-F]{6}", raw) else ""
+
+
+def _mpt_positive_int(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _mpt_non_negative_float(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
 def _mpt_percent(value: Any, fallback: float = 1.0) -> str:
     raw = str(value or "").strip().replace("%", "")
     try:
@@ -1207,12 +1248,42 @@ def _moneyprinter_cli_args(task: dict[str, Any], route: str, settings: dict[str,
         args.append("--no-subtitle-enabled")
     elif subtitles is not None:
         args.append("--subtitle-enabled" if bool(subtitles) else "--no-subtitle-enabled")
-    subtitle_position = str(generation_settings.get("subtitle_position") or "").strip().casefold()
-    if subtitle_position in {"top", "center", "bottom", "custom"}:
-        args.extend(["--subtitle-position", subtitle_position])
+    # 0.9.70: a posição é sempre normalizada e enviada — o valor guardado
+    # "Bottom (Recommended)" era omitido por comparação literal e o MPT
+    # caía no default próprio em todas as remontagens.
+    args.extend(["--subtitle-position", _mpt_subtitle_position(generation_settings.get("subtitle_position"))])
     font_name = str(generation_settings.get("subtitle_font") or "").strip()
     if font_name:
         args.extend(["--font-name", font_name])
+    # 0.9.70: o contrato CLI passava apenas on/off, posição e fonte; cor,
+    # tamanho, contorno e fundo das Configurações de legendas nunca chegavam
+    # ao MPT — alterações no canal repetiam o estilo antigo no vídeo. As
+    # opções são filtradas no helper quando a versão instalada do
+    # MoneyPrinterTurbo ainda não as suportar.
+    fore_color = _mpt_hex_color(generation_settings.get("subtitle_color"))
+    if fore_color:
+        args.extend(["--text-fore-color", fore_color])
+    font_size = _mpt_positive_int(generation_settings.get("subtitle_font_size"))
+    if font_size is not None:
+        args.extend(["--font-size", str(font_size)])
+    stroke_color = _mpt_hex_color(generation_settings.get("subtitle_outline"))
+    if stroke_color:
+        args.extend(["--stroke-color", stroke_color])
+    stroke_width = _mpt_non_negative_float(generation_settings.get("subtitle_outline_width"))
+    if stroke_width is not None:
+        args.extend(["--stroke-width", str(stroke_width)])
+    subtitle_background = generation_settings.get("subtitle_background")
+    if subtitle_background is not None:
+        # O MPT rejeita --no-subtitle-background-enabled combinado com cor ou
+        # fundo arredondado: só se enviam quando o fundo está activo.
+        args.append("--subtitle-background-enabled" if bool(subtitle_background) else "--no-subtitle-background-enabled")
+        if bool(subtitle_background):
+            background_color = _mpt_hex_color(generation_settings.get("subtitle_background_color"))
+            if background_color:
+                args.extend(["--subtitle-background-color", background_color])
+            rounded = generation_settings.get("subtitle_rounded_background")
+            if rounded is not None:
+                args.append("--rounded-subtitle-background" if bool(rounded) else "--no-rounded-subtitle-background")
     bgm_source = str(generation_settings.get("background_music_source") or "").strip().casefold()
     bgm_type = {"sem música": "none", "sem musica": "none", "random background music": "random", "ficheiro existente": "custom"}.get(bgm_source)
     if bgm_type:

@@ -2919,7 +2919,7 @@ def _render_bilibili_automation_task_card(task: dict[str, Any]) -> None:
                 st.download_button("Baixar Roteiro", data=_file_bytes(script_path), file_name=_automation_download_name("Script", task, script_path, ".md"), mime="text/markdown", key=f"bilibili_automation_download_script_{task_id}", width="stretch", disabled=script_path is None)
             with video_download_col:
                 st.download_button("Baixar Vídeo", data=_file_bytes(video_path), file_name=_automation_download_name("Vídeo", task, video_path, ".mp4"), mime="video/mp4", key=f"bilibili_automation_download_video_{task_id}", width="stretch", disabled=video_path is None)
-            if st.button("Refazer Vídeo", key=f"bilibili_automation_remake_video_{task_id}", icon=":material/refresh:", type="primary", width="stretch", disabled=state == "doing"):
+            if st.button("Refazer Vídeo", key=f"bilibili_automation_remake_video_{task_id}", icon=":material/refresh:", type="primary", width="stretch", disabled=state == "doing", help="Remonta apenas o vídeo, mantendo o mesmo roteiro, Blueprint/Prompt Master, tags, thumbnail, voz e artefactos já baixados. Revalida legendas, duração máxima do clip, fonte de vídeo e restantes definições actuais do canal (novas chamadas à fonte configurada)."):
                 if _remake_video_from_card(task):
                     st.rerun(scope="fragment")
             with delete_col:
@@ -6223,7 +6223,7 @@ def _remake_video_from_card(task: dict[str, Any]) -> bool:
     if not updated:
         st.error("Não foi possível refazer este vídeo: a tarefa já não existe na fila.")
         return False
-    st.success("Vídeo colocado na fila para remontagem. Roteiro, tags, voz, thumbnail e artefactos existentes foram preservados.")
+    st.success("Vídeo colocado na fila para remontagem. Roteiro, tags, voz, thumbnail e artefactos existentes foram preservados; legendas, duração máxima do clip, fonte de vídeo e restantes definições do canal foram revalidadas para a nova renderização.")
     return True
 
 
@@ -6836,7 +6836,7 @@ def _render_tiktok_automation_task_list(*, posted_only: bool = False):
                         type="primary",
                         width="stretch",
                         disabled=state == "doing",
-                        help="Remonta apenas o vídeo, mantendo o mesmo roteiro, Blueprint/Prompt Master, tags, thumbnail, voz e artefactos já baixados.",
+                        help="Remonta apenas o vídeo, mantendo o mesmo roteiro, Blueprint/Prompt Master, tags, thumbnail, voz e artefactos já baixados. Revalida legendas, duração máxima do clip, fonte de vídeo e restantes definições actuais do canal (novas chamadas à fonte configurada).",
                     ):
                         if _remake_video_from_card(task):
                             st.rerun()
@@ -7155,7 +7155,7 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False):
                         type="primary",
                         width="stretch",
                         disabled=state == "doing",
-                        help="Remonta apenas o vídeo, mantendo o mesmo roteiro, Blueprint/Prompt Master, tags, thumbnail, voz e artefactos já baixados.",
+                        help="Remonta apenas o vídeo, mantendo o mesmo roteiro, Blueprint/Prompt Master, tags, thumbnail, voz e artefactos já baixados. Revalida legendas, duração máxima do clip, fonte de vídeo e restantes definições actuais do canal (novas chamadas à fonte configurada).",
                     ):
                         if _remake_video_from_card(task):
                             st.rerun(scope="fragment")
