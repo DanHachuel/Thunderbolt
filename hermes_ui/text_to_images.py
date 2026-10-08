@@ -112,6 +112,55 @@ def generate_image_prompts_for_scenes(
     return output
 
 
+def _subtitle_clips_for_scenes(scenes: list[dict], video_width: int, video_height: int, config: dict) -> list:
+    """TextClips de legenda por cena, queimados na timeline da montagem.
+
+    0.9.63: as Configurações de legendas existiam na UI e nos defaults por
+    canal, mas a montagem por cenas nunca as aplicava — nenhum vídeo
+    text_to_images/web_images saía com legendas.
+    """
+    from moviepy import TextClip
+
+    font_path = str(config.get("font_path") or "")
+    if not font_path:
+        return []
+    # O tamanho é definido para 1080p e escala com a altura real do vídeo.
+    font_size = max(12, int(config.get("font_size") or 60) * max(1, int(video_height)) // 1080)
+    position = str(config.get("position") or "bottom").strip().casefold()
+    color = str(config.get("color") or "#FFFFFF")
+    outline = str(config.get("outline") or "#000000")
+    outline_width = int(round(float(config.get("outline_width") or 0)))
+    background = bool(config.get("background"))
+    background_color = str(config.get("background_color") or "#000000")
+    wrap_width = max(120, int(video_width * 0.86))
+    position_pair = {"top": ("center", "top"), "center": ("center", "center")}.get(position, ("center", "bottom"))
+    offset = 0.0
+    clips = []
+    for scene in scenes:
+        text = " ".join(str(scene.get("text") or "").split()).strip()
+        duration = max(0.1, float(scene.get("duration") or 5.0))
+        if text:
+            kwargs: dict = {
+                "text": text,
+                "font": font_path,
+                "font_size": font_size,
+                "color": color,
+                "method": "caption",
+                "size": (wrap_width, None),
+                "text_align": "center",
+            }
+            if outline_width > 0:
+                kwargs["stroke_color"] = outline
+                kwargs["stroke_width"] = outline_width
+            if background:
+                kwargs["bg_color"] = background_color
+            clip = TextClip(**kwargs).with_duration(duration)
+            clip = clip.with_start(offset).with_position(position_pair)
+            clips.append(clip)
+        offset += duration
+    return clips
+
+
 def assemble_text_to_images_video(
     scenes_with_images: list[dict],
     audio_path: Path,
@@ -119,11 +168,16 @@ def assemble_text_to_images_video(
     format: str,
     fps: int = 30,
     ken_burns: bool = False,
+    subtitle_config: dict | None = None,
 ) -> Path:
     """Assemble still images and audio using only project-provided MoviePy/FFmpeg.
 
     Ken Burns is accepted for API compatibility; the current dependency-safe
     implementation keeps still frames static when no compatible transform is available.
+
+    Com `subtitle_config` (Configurações de legendas), cada cena queima o seu
+    texto como legenda — fonte, tamanho, cor, contorno, fundo e posição —
+    sincronizado com a duração da cena.
     """
     del format, ken_burns
     if not scenes_with_images:
@@ -140,6 +194,24 @@ def assemble_text_to_images_video(
             duration = max(0.1, float(scene.get("duration") or 5.0))
             clips.append(ImageClip(str(image)).with_duration(duration))
         video = concatenate_videoclips(clips, method="compose")
+        if subtitle_config:
+            try:
+                subtitle_clips = _subtitle_clips_for_scenes(
+                    scenes_with_images,
+                    int(video.size[0]),
+                    int(video.size[1]),
+                    subtitle_config,
+                )
+                if subtitle_clips:
+                    from moviepy import CompositeVideoClip
+
+                    video = CompositeVideoClip([video, *subtitle_clips]).with_duration(video.duration)
+            except Exception as exc:
+                # A legenda nunca pode destruir o vídeo: falha de fonte/PIL cai
+                # para a montagem simples e o motivo fica no stderr do worker.
+                import sys as _sys
+
+                print(f"[text_to_images] legendas ignoradas por falha: {exc}", file=_sys.stderr)
         audio = AudioFileClip(str(audio_path))
         video = video.with_audio(audio)
         output_path.parent.mkdir(parents=True, exist_ok=True)

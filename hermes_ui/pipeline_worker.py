@@ -1671,6 +1671,76 @@ def _scene_video_progress(index: int, total: int) -> int:
     return int(52 + fraction * 27)
 
 
+def _resolve_subtitle_font_path(font_name: str, settings: dict[str, Any]) -> str | None:
+    """Resolve o ficheiro da fonte das legendas: resource/fonts do MPT → Fonts
+    do sistema → genéricos (Arial/DejaVu). Devolve None se nada existir —
+    nesse caso a montagem segue sem legendas em vez de falhar o vídeo."""
+    name = str(font_name or "").strip() or "MicrosoftYaHeiBold.ttc"
+    if not name.lower().endswith((".ttf", ".ttc", ".otf")):
+        variants = [name, f"{name}.ttf", f"{name}.ttc", f"{name}.otf"]
+    else:
+        variants = [name]
+    roots: list[Path] = []
+    mpt_root = _configured_moneyprinter_root(settings)
+    if mpt_root:
+        roots.append(Path(mpt_root) / "resource" / "fonts")
+    if os.name == "nt":
+        roots.append(Path(str(os.environ.get("WINDIR") or r"C:\Windows")) / "Fonts")
+    else:
+        roots.append(Path("/usr/share/fonts/truetype/dejavu"))
+        roots.append(Path("/usr/share/fonts"))
+    for root in roots:
+        for variant in variants:
+            candidate = root / variant
+            if candidate.is_file():
+                return str(candidate)
+    for fallback in ("arial.ttf", "Arial.ttf", "arialbd.ttf", "DejaVuSans.ttf", "verdana.ttf", "tahoma.ttf"):
+        for root in roots:
+            candidate = root / fallback
+            if candidate.is_file():
+                return str(candidate)
+    return None
+
+
+def _subtitle_config_for_task(task: dict[str, Any], settings: dict[str, Any]) -> dict[str, Any] | None:
+    """Configuração de legendas para as montagens locais (text_to_images/web_images).
+
+    0.9.63: as Configurações de legendas existiam na UI e nos defaults por
+    canal (domain.py mapeava enable_subtitles/subtitle_*), mas a montagem por
+    cenas nunca as aplicava — nenhum vídeo gerado nas automações queimava
+    legendas. O MPT (pexels/pixabay) já recebia --subtitle-enabled.
+    """
+    generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else {}
+    if not bool(generation_settings.get("enable_subtitles", True)):
+        return None
+    font_name = str(generation_settings.get("subtitle_font") or "MicrosoftYaHeiBold.ttc").strip()
+    font_path = _resolve_subtitle_font_path(font_name, settings)
+    if not font_path:
+        return None
+    position_raw = str(generation_settings.get("subtitle_position") or "").strip().casefold()
+    if "top" in position_raw:
+        position = "top"
+    elif "center" in position_raw or "middle" in position_raw:
+        position = "center"
+    else:
+        position = "bottom"
+
+    def _hex_color(value: Any, default: str) -> str:
+        raw = str(value or "").strip()
+        return raw if raw.startswith("#") and len(raw) >= 4 else default
+
+    return {
+        "font_path": font_path,
+        "font_size": int(generation_settings.get("subtitle_font_size") or 60),
+        "position": position,
+        "color": _hex_color(generation_settings.get("subtitle_color"), "#FFFFFF"),
+        "background": bool(generation_settings.get("subtitle_background", True)),
+        "background_color": _hex_color(generation_settings.get("subtitle_background_color"), "#000000"),
+        "outline": _hex_color(generation_settings.get("subtitle_outline"), "#000000"),
+        "outline_width": float(generation_settings.get("subtitle_outline_width") or 1.5),
+    }
+
+
 def _run_remotion_video(
     task: dict[str, Any],
     *,
@@ -1924,7 +1994,7 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                     audio_path = synthesize_text_to_images_audio(narration_text_from_script(str(script.get("content") or "")), {**settings, **generation_settings}, str(task.get("voice") or generation_settings.get("voice") or channel.get("default_voice") or channel.get("voice") or "pt-BR-FranciscaNeural-Female"), STORAGE / "audio" / f"{task_id}-web-images.mp3")
                     artifacts["audio"] = str(audio_path)
                 output_path = STORAGE / "videos" / f"{task_id}-web-images.mp4"
-                video_path = assemble_text_to_images_video(image_scenes, audio_path, output_path, str(task.get("format") or "wide"), fps=int(generation_settings.get("text_to_images_fps") or 30))
+                video_path = assemble_text_to_images_video(image_scenes, audio_path, output_path, str(task.get("format") or "wide"), fps=int(generation_settings.get("text_to_images_fps") or 30), subtitle_config=_subtitle_config_for_task(task, settings))
             elif route == "text_to_images":
                 target_seconds = float(generation_settings.get("text_to_images_scene_duration") or 5)
                 scenes = split_script_into_scenes(
@@ -1966,6 +2036,7 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                     str(task.get("format") or "wide"),
                     fps=int(generation_settings.get("text_to_images_fps") or 30),
                     ken_burns=bool(generation_settings.get("text_to_images_ken_burns", False)),
+                    subtitle_config=_subtitle_config_for_task(task, settings),
                 )
             elif route == "remotion":
                 # Remotion (renderização local React): a narração é garantida

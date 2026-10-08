@@ -1,4 +1,11 @@
 # Changelog
+## 0.9.63 — 2026-10-08
+- Corrigido o defeito de **nenhum vídeo das automações sair com legendas**: as Configurações de legendas existiam na UI e nos defaults por canal (e a rota pexels/pixabay já as enviava ao MPT via `--subtitle-enabled`/`--subtitle-position`/`--font-name`), mas a montagem por cenas usada por **text_to_images e web_images** nunca as aplicava. As montagens queimam agora as legendas por cena — texto sincronizado com a duração de cada cena, honrando fonte, tamanho (escalado pela altura do vídeo), cor, contorno/outline, fundo (cor + flag) e posição (top/center/bottom) das Configurações de legendas.
+- Adicionada a resolução de fonte por cascata: `resource/fonts` do MoneyPrinterTurbo instalado → Fonts do Windows/sistema → genéricos (Arial/DejaVu); sem fonte, o vídeo sai sem legendas com aviso no stderr em vez de falhar.
+- As legendas são tolerantes a falhas: qualquer erro de fonte/PIL/texto cai para a montagem simples — a legenda nunca destrói o vídeo.
+- Nota: a fonte Remotion mantém o seu próprio TextOverlay por cena; o full_ia depende do provider de vídeo e não queima legendas localmente.
+- Verificado o **modo manual** end-to-end: o formulário Criação de Vídeos (`render_video_generation_settings`) → `create_tasks_for_batch` (o form vence os defaults do canal; na automação o canal é a fonte de verdade) → config resolvido → render com legendas queimadas. O fluxo "refazer vídeo" reaplica os defaults de legendas do canal (`_refresh_task_channel_video_settings`).
+
 ## 0.9.62 — 2026-10-08
 - Adicionado **progresso por cena** às fontes text_to_images e web_images: a geração de imagens de um roteiro longo (uma cena a cada ~11s, dezenas de cenas) corria com o progresso congelado em 52 e a tarefa "doing" sem sinal de vida — o progresso avança agora dentro da banda 52–79 a cada cena concluída, com `video_helper_status` a mostrar "imagem da cena X/N pronta".
 - Torna-se **observável a saída do loop de heartbeat** das tarefas: quando o loop termina porque a tarefa deixou de estar "doing" (ou desapareceu), o motivo fica registado no heartbeat do worker (`task_heartbeat_stopped`, estado e stage no momento) — no incidente de 07/10 o heartbeat morreu às 00:05:51 sem deixar qualquer rasto.
