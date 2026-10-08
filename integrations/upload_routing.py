@@ -370,22 +370,26 @@ def _composio_upload(settings: dict[str, Any], *, channel: dict[str, Any], **kwa
         except ComposioUploadError as exc:
             return IntegrationResult(False, str(exc), {"status": "account_discovery_failed"})
     try:
-        # 0.9.65: restaurado o comportamento pré-0.9.56. A priorização do
-        # multipart (0.9.56) partiu o upload: YOUTUBE_MULTIPART_UPLOAD_VIDEO
-        # exige o campo `videoFile`, mas o Thunderbolt injecta o ficheiro em
-        # `videoFilePath` (o campo de YOUTUBE_UPLOAD_VIDEO) — o Composio
-        # devolvia 400 "Following fields are missing: {'videoFile'}". A
-        # ferramenta oficial básica é a validada com o staging manual
-        # (FileUploadable + s3key) e volta a ser a usada pelo alias upload_video.
-        if configured_slug.casefold() == "upload_video" and (channel.get("platform", "youtube") or "youtube").casefold() == "youtube":
-            slug = "YOUTUBE_UPLOAD_VIDEO"
-        else:
+        # 0.9.68: o alias upload_video resolve pela descoberta à ferramenta
+        # multipart (YOUTUBE_MULTIPART_UPLOAD_VIDEO, upload num único pedido
+        # com o campo `videoFile`) — a resumável YOUTUBE_UPLOAD_VIDEO cria o
+        # vídeo na API mas a cadeia do Composio entrega bytes que o YouTube
+        # abandona no processamento ("Processamento interrompido", verificado
+        # em 08/10 com 404 no oEmbed/thumbnail). A descoberta prioriza o
+        # multipart (0.8.62) e o campo por ferramenta (0.9.67) faz o pedido
+        # bem formado; em falha de descoberta, cai-se para a resumável.
+        try:
             slug = resolve_tool_slug(
                 str(settings.get("composio_api_key") or ""),
                 resolved_user_id,
                 configured_slug,
                 str(channel.get("composio_toolkit") or ""),
             )
+        except ComposioUploadError:
+            if configured_slug.casefold() == "upload_video" and (channel.get("platform", "youtube") or "youtube").casefold() == "youtube":
+                slug = "YOUTUBE_UPLOAD_VIDEO"
+            else:
+                raise
     except ComposioUploadError as exc:
         return IntegrationResult(False, str(exc), {"status": "tool_resolution_failed", "configured_slug": configured_slug})
     normalized_slug = slug.upper().replace("-", "_")

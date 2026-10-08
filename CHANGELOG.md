@@ -1,4 +1,10 @@
 # Changelog
+## 0.9.68 — 2026-10-08
+- **upload_video resolve automaticamente à ferramenta multipart** (`YOUTUBE_MULTIPART_UPLOAD_VIDEO`, um único pedido com o campo `videoFile`) — decisão de backend, sem qualquer opção nova no frontend. Evidência: a resumável `YOUTUBE_UPLOAD_VIDEO` cria o vídeo na API (`uploadStatus: uploaded`) mas a cadeia do Composio entrega bytes que o YouTube abandona no processamento — confirmado com o vídeo `wfeYjNh9R9w` do teste de 08/10 04:23, que o Studio reporta como "Processamento interrompido" e cujo oEmbed/thumbnail devolvem 404; o ficheiro local decodifica sem um único erro (verificado com ffmpeg).
+- O pedido multipart está validado até ao endpoint do YouTube (`uploadType=multipart`, rejeitado apenas pela quota diária esgotada do projecto Composio, 429) — a verificação final do processamento fica pendente da reposição da quota (~04:00 de Brasília) e será confirmada no primeiro teste do dia seguinte.
+- Em falha de descoberta de ferramentas, cai-se para a resumável validada — o upload nunca deixa de funcionar.
+- Removido o alias `multipart_upload_video` (0.9.67) — a decisão é do backend; sem opções no frontend.
+
 ## 0.9.67 — 2026-10-08
 - Diagnóstico do **"Processamento interrompido"** no YouTube Studio: o upload Composio restaurado (0.9.65) funciona na API — o log de 08/10 04:23 mostra o vídeo criado com `uploadStatus: uploaded` — e o ficheiro local de teste decodifica sem um único erro (H.264/AAC verificados com ffmpeg); o processamento falha **depois**, na cadeia resumable do Composio, que entrega bytes danificados ao YouTube.
 - Adicionada a opção **`multipart_upload_video`** para os canais: resolve pela descoberta à ferramenta `YOUTUBE_MULTIPART_UPLOAD_VIDEO` (upload num único pedido, sem sessões resumable) e injecta o ficheiro no campo correcto **`videoFile`** (a resumável usa `videoFilePath`) — o erro 400 da 0.9.56 estava exactamente no nome do campo, agora tratado por ferramenta. O alias `upload_video` mantém-se no `YOUTUBE_UPLOAD_VIDEO`, como estava antes de todas as alterações.

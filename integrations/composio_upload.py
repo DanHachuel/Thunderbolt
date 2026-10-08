@@ -70,7 +70,6 @@ def classify_composio_youtube_error(error_text: str) -> dict[str, Any]:
 
 COMPOSIO_OPERATION_SEARCH = {
     "upload_video": {"query": "Multipart Upload Video", "toolkit": "YOUTUBE"},
-    "multipart_upload_video": {"query": "Multipart Upload Video", "toolkit": "YOUTUBE"},
     "update_video": {"query": "Update Video", "toolkit": "YOUTUBE"},
     "upload_tiktok_video": {"query": "Upload Video", "toolkit": "TIKTOK"},
     "upload_instagram_media": {"query": "Upload Video Reel Photo", "toolkit": "INSTAGRAM"},
@@ -374,11 +373,6 @@ def resolve_tool_slug(api_key: str, user_id: str, configured_slug: str, toolkit:
                 "YOUTUBE_MULTIPART_UPLOAD_VIDEO": 0,
                 "YOUTUBE_UPLOAD_VIDEO": 1,
                 "YOUTUBE_UPLOAD": 2,
-            }.get(normalized, 3)
-        elif slug == "multipart_upload_video":
-            priority = {
-                "YOUTUBE_MULTIPART_UPLOAD_VIDEO": 0,
-                "YOUTUBE_UPLOAD_VIDEO": 1,
             }.get(normalized, 3)
         elif slug == "update_video":
             priority = 0 if normalized == "YOUTUBE_UPDATE_VIDEO" else 1
