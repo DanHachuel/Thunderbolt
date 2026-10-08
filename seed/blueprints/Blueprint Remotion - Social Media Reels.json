@@ -1,0 +1,155 @@
+{
+  "blueprint_id": "social_media_reels",
+  "version": "1.0.0",
+  "domain": "short_form_narrative_reel",
+  "composition_id": "SocialReel",
+  "fps": 30,
+  "width": 1080,
+  "height": 1920,
+
+  "system_instructions": {
+    "role": "Short-form social media scriptwriter and visual-storyboard artist",
+    "task_description": "Create a script for a social media reel about the given topic, organized into scenes, formatted as structured JSON that will be rendered by Remotion.",
+    "constraints": [
+      "The video is organized in scenes. Each scene has a voiceover and an image.",
+      "The voiceover text must be at least 20 words per scene.",
+      "There must be no more than 4 scenes.",
+      "The image prompt must be written in ENGLISH, detailed and photorealistic.",
+      "In the image prompt, you MUST AVOID describing any situation that can be considered inappropriate (violence, disgusting, gore, sex, nudity, NSFW, etc.) as it may be rejected by the AI image service.",
+      "The voiceover text must be in {{language}}.",
+      "Do NOT include markdown, explanations, or text outside the JSON."
+    ],
+    "critical_instruction": "Return ONLY valid JSON matching output_schema. The voiceover text must be in {{language}}. The image prompt must ALWAYS be in English, photorealistic, and safe for AI image generation."
+  },
+
+  "output_schema": {
+    "title": "string (short, catchy, in {{language}})",
+    "scenes": [
+      {
+        "id": "string (scene_1 | scene_2 | scene_3 | scene_4)",
+        "scene_type": "hook | body | cta",
+        "voiceOverText": "string (at least 20 words, in {{language}})",
+        "imagePrompt": "string (photorealistic prompt in English, safe for AI generation)",
+        "durationInSeconds": "number (estimated from voiceOverText length / 2.5 words per second)"
+      }
+    ]
+  },
+
+  "style_guide": {
+    "tone": "punchy, scroll-stopping, direct, visually descriptive",
+    "pacing": "fast, each scene must carry a distinct beat of the narrative",
+    "hook_style": "first scene must grab attention within the first 2 seconds with a bold statement, question, or surprising fact",
+    "sentence_style": "short, punchy sentences; one idea per sentence; strong verbs",
+    "emotional_tone": "curiosity, surprise, mild urgency, resolution",
+    "point_of_view": "second-person narrator addressing the viewer directly",
+    "audience_addressing_style": "direct ('Here is what nobody tells you...', 'Watch this before...')",
+    "vocabulary": "accessible, energetic, platform-native",
+    "visual_cue_prompts": [
+      "close-up reaction shots",
+      "dynamic city or nature scenes",
+      "unexpected visual metaphors",
+      "warm cinematic lighting",
+      "shallow depth of field"
+    ],
+    "avoid": [
+      "long-winded or academic sentences",
+      "generic stock-photo vibes",
+      "NSFW, violent, gory, or politically polarizing imagery",
+      "voiceover shorter than 20 words",
+      "more than 4 scenes",
+      "any text outside the JSON"
+    ]
+  },
+
+  "reference_examples": [
+    {
+      "id": "REEL_1",
+      "topic": "Why most people stay broke",
+      "language": "English",
+      "output": {
+        "title": "The Broke Mindset Nobody Talks About",
+        "scenes": [
+          {
+            "id": "scene_1",
+            "scene_type": "hook",
+            "voiceOverText": "Most people are not broke because they earn too little. They are broke because they spend their money on things that quietly disappear the moment they buy them.",
+            "imagePrompt": "Photorealistic close-up of a young professional sitting at a cafe table, staring at a smartphone screen with a worried expression, empty coffee cup beside them, soft warm lighting, shallow depth of field",
+            "durationInSeconds": 11.6
+          },
+          {
+            "id": "scene_2",
+            "scene_type": "body",
+            "voiceOverText": "Every small subscription, every impulse purchase, every upgrade you did not need is a tiny hole in the bucket of your future wealth. And nobody ever sends you a bill for it.",
+            "imagePrompt": "Photorealistic image of a wooden bucket with several small holes leaking water, placed on a rustic table in warm afternoon sunlight, cinematic still life composition",
+            "durationInSeconds": 12.4
+          },
+          {
+            "id": "scene_3",
+            "scene_type": "body",
+            "voiceOverText": "The rich are not smarter than you. They just decide earlier what they are willing to give up today so that tomorrow they can own the thing that pays them while they sleep.",
+            "imagePrompt": "Photorealistic image of a calm person writing in a notebook at a wooden desk in a sunlit room, warm tones, cinematic shallow depth of field, sense of quiet focus",
+            "durationInSeconds": 13.2
+          },
+          {
+            "id": "scene_4",
+            "scene_type": "cta",
+            "voiceOverText": "So before you buy the next thing you do not need, ask yourself one simple question: is this a step toward freedom, or another quiet hole in the bucket?",
+            "imagePrompt": "Photorealistic image of a single coin balanced on the edge of an open wooden box filled with coins, warm golden light, cinematic composition, sense of decision",
+            "durationInSeconds": 12.0
+          }
+        ]
+      }
+    }
+  ],
+
+  "generation_instructions": {
+    "must_include": [
+      "between 2 and 4 scenes",
+      "scene_1 tagged as hook",
+      "at least one scene tagged as body",
+      "final scene tagged as cta",
+      "voiceOverText of at least 20 words per scene, in {{language}}",
+      "imagePrompt in English, photorealistic",
+      "durationInSeconds estimated for every scene",
+      "a short catchy title in {{language}}"
+    ],
+    "must_avoid": [
+      "markdown code fences",
+      "explanations or introductions outside the JSON",
+      "NSFW, violent, gory, or nudity-related content in imagePrompt",
+      "voiceOverText in English when {{language}} is not English",
+      "imagePrompt in {{language}} instead of English",
+      "more than 4 scenes",
+      "voiceover shorter than 20 words"
+    ],
+    "success_condition": "The JSON parses cleanly against output_schema, contains 2–4 scenes with a hook/body/cta structure, all voiceOverText is in {{language}} and at least 20 words long, and all imagePrompts share a consistent photorealistic visual identity suitable for a single Remotion render.",
+    "length_requirement": "Total voiceOverText across all scenes must sum to approximately 60–120 words, suitable for a 30–60 second reel."
+  },
+
+  "remotion_mapping": {
+    "composition_id": "SocialReel",
+    "input_props": "The entire output_schema JSON is passed as inputProps to the composition.",
+    "calculate_metadata": "durationInFrames = sum(scene.durationInSeconds * fps). The composition uses calculateMetadata to derive the total duration from the scenes array.",
+    "assets_pipeline": [
+      "imagePrompt is sent to the image generation provider (FLUX, DALL-E, etc.) to produce a still per scene.",
+      "voiceOverText is sent to the TTS provider (ElevenLabs, OpenAI TTS, etc.) to produce one audio file per scene.",
+      "Both assets are passed to Remotion via props (imageUrl, audioUrl) alongside the scene metadata.",
+      "Optional: background music and subtitle burn-in are added at the composition level."
+    ],
+    "required_components": [
+      "HookScene",
+      "BodyScene",
+      "CTAScene",
+      "NarrationAudio",
+      "AnimatedImage",
+      "Subtitles",
+      "ProgressBar",
+      "BrandWatermark"
+    ],
+    "scene_timing": {
+      "hook": "voiceOverText duration + 0.3s emphasis pause",
+      "body": "voiceOverText duration",
+      "cta": "voiceOverText duration + 0.5s hold on final frame"
+    }
+  }
+}

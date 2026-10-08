@@ -1,4 +1,16 @@
 # Changelog
+
+## 0.9.70
+- **Blueprints Remotion — Tarefas 4–8**: sistema completo LLM → JSON → assets → Remotion → MP4.
+- **`hermes_ui/blueprint_assets.py`**: extração de prompts/segmentos, geração paralela de imagens (ThreadPoolExecutor max 4), TTS em série, injecção de imageUrl/audioUrl por blueprint.
+- **5 composições Remotion**: InspirationalVideo (1920×1080), Quiz (1080×1920), SocialReel (1080×1920), Top10 (1920×1080), WouldYouRather (1080×1920) + componentes partilhados (NarrationAudio, AnimatedImage, SceneTransition, SubscribeCTA, ProgressBar).
+- **docs/blueprints.md**: guia completo (formato, como adicionar, placeholders, validação, assets, calculateMetadata, limitações).
+
+## 0.9.69 — 2026-10-08
+- **Blueprints Remotion**: adicionados os 5 blueprints de formato de vídeo em `seed/blueprints/` (Inspirational Long-Form, Quiz Videos, Social Media Reels, Top 10 Ranking, Would You Rather).
+- **`hermes_ui/blueprint_loader.py`**: leitura, validação e listagem de blueprints; resolução de placeholders (`{{topic}}`, `{{language}}`, `{{difficulty}}`); construção do system prompt final para o LLM.
+- **`hermes_ui/schemas/`**: 5 modelos Pydantic (um por blueprint) que validam o JSON gerado pelo LLM contra o output_schema do blueprint — InspirationalLongFormOutput, QuizVideosOutput, SocialMediaReelsOutput, Top10VideosOutput, WouldYouRatherOutput.
+- **Testes**: `tests/test_blueprint_loader.py` (10 testes) — validação dos 5 blueprints, schemas, placeholders e exemplos de referência.
 ## 0.9.68 — 2026-10-08
 - **upload_video resolve automaticamente à ferramenta multipart** (`YOUTUBE_MULTIPART_UPLOAD_VIDEO`, um único pedido com o campo `videoFile`) — decisão de backend, sem qualquer opção nova no frontend. Evidência: a resumável `YOUTUBE_UPLOAD_VIDEO` cria o vídeo na API (`uploadStatus: uploaded`) mas a cadeia do Composio entrega bytes que o YouTube abandona no processamento — confirmado com o vídeo `wfeYjNh9R9w` do teste de 08/10 04:23, que o Studio reporta como "Processamento interrompido" e cujo oEmbed/thumbnail devolvem 404; o ficheiro local decodifica sem um único erro (verificado com ffmpeg).
 - O pedido multipart está validado até ao endpoint do YouTube (`uploadType=multipart`, rejeitado apenas pela quota diária esgotada do projecto Composio, 429) — a verificação final do processamento fica pendente da reposição da quota (~04:00 de Brasília) e será confirmada no primeiro teste do dia seguinte.
