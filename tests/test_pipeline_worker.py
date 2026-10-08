@@ -1195,3 +1195,40 @@ def test_terminal_helper_detail_prioritises_mpt_error_over_startup_output():
     assert "Pexels key validation" not in detail
     assert "installing or verifying project dependencies" not in detail
     assert "TASK_DIR=" not in detail
+
+
+# ── 0.9.62: progresso por cena + heartbeat observavel ────────────────────────
+
+
+def test_scene_video_progress_band_covers_52_to_79():
+    from hermes_ui.pipeline_worker import _scene_video_progress
+
+    assert _scene_video_progress(0, 10) == 52
+    assert _scene_video_progress(5, 10) == 65
+    assert _scene_video_progress(10, 10) == 79
+    assert _scene_video_progress(3, 0) == 52
+
+
+def test_scene_loops_report_progress_and_status_per_scene():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "hermes_ui" / "pipeline_worker.py").read_text(encoding="utf-8")
+    text_to_images_block = source.split('elif route == "text_to_images":', 1)[1].split('elif route ==', 1)[0]
+    assert "total_scenes = len(scene_prompts)" in text_to_images_block
+    assert "_scene_video_progress(scene_index, total_scenes)" in text_to_images_block
+    assert 'video_helper_status=f"imagem da cena {scene_index}/{total_scenes} pronta"' in text_to_images_block
+    web_images_block = source.split('elif route == "web_images":', 1)[1].split('elif route ==', 1)[0]
+    assert "_scene_video_progress(scene_index, len(scenes))" in web_images_block
+
+
+def test_task_heartbeat_loop_exit_is_observable():
+    # 0.9.62: a saída silenciosa do loop deixava tarefas "doing" sem sinal de
+    # vida sem rasto do motivo (incidente 07/10, heartbeat morto às 00:05:51).
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "hermes_ui" / "pipeline_worker.py").read_text(encoding="utf-8")
+    heartbeat_block = source.split("def _task_heartbeat_loop", 1)[1].split("\ndef ", 1)[0]
+    assert "task_heartbeat_stopped=True" in heartbeat_block
+    assert "task_heartbeat_stop_state" in heartbeat_block

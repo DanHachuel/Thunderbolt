@@ -184,3 +184,33 @@ def test_install_merges_legacy_tasks_when_new_storage_already_exists(tmp_path):
     assert [task["id"] for task in tasks] == ["legacy-video"]
     assert queues["script"] == ["legacy-video"]
     assert "não elimina tarefas" in completed.stdout
+
+
+# ── 0.9.62: recuperação de estado protegido deixa rasto ─────────────────────
+
+
+def test_protected_recovery_logs_events_to_storage_recovery_log(tmp_path, monkeypatch):
+    import json as json_module
+
+    from hermes_ui import storage as storage_module
+
+    monkeypatch.setattr(storage_module, "STATE", tmp_path)
+    state_dir = tmp_path
+    state_dir.mkdir(parents=True, exist_ok=True)
+    tasks_path = state_dir / "tasks.json"
+    # backup valido de ontem
+    good = [{"id": "task-old", "state": "done", "updated_at": "2026-10-06T00:00:00+00:00"}]
+    backup = state_dir / "tasks.json.corrupt-20261006000000000000"
+    backup.write_text(json_module.dumps(good), encoding="utf-8")
+    # ficheiro actual invalido
+    tasks_path.write_text("{invalido", encoding="utf-8")
+
+    recovered = storage_module.read_json("tasks.json", [])
+    assert isinstance(recovered, list)
+    assert recovered and recovered[0]["id"] == "task-old"
+
+    log_path = state_dir / "storage-recovery.log"
+    assert log_path.is_file()
+    events = [json_module.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert any("ficheiro invalido" in event["message"] for event in events)
+    assert any("restaurado a partir de" in event["message"] for event in events)

@@ -212,6 +212,20 @@ def _task_heartbeat_loop(task_id: str, stop_event: threading.Event) -> None:
         try:
             task = _task_by_id(task_id)
             if not task or str(task.get("state") or "") != "doing":
+                # 0.9.62: esta saída era silenciosa — a tarefa ficava "doing"
+                # sem sinal de vida e sem rasto do motivo (incidente 07/10:
+                # heartbeat morto às 00:05:51 sem explicação no estado). O
+                # motivo fica agora registado no heartbeat do worker.
+                try:
+                    _worker_heartbeat(
+                        task_id=task_id,
+                        status="running",
+                        task_heartbeat_stopped=True,
+                        task_heartbeat_stop_state=str((task or {}).get("state") or "missing"),
+                        task_heartbeat_stop_stage=str((task or {}).get("stage") or ""),
+                    )
+                except Exception:
+                    pass
                 return
             from hermes_ui.domain import update_task
             heartbeat_at = _now()
@@ -1643,6 +1657,20 @@ def _read_json_artifact(value: Any) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+def _scene_video_progress(index: int, total: int) -> int:
+    """Progresso da etapa de vídeo dentro da banda 52–79, uma cena de cada vez.
+
+    0.9.62: a geração por cenas (text_to_images/web_images) podia levar
+    dezenas de minutos — a cena N a ~11s cada — com o progresso congelado em
+    52 e a tarefa "doing" sem sinal de vida. O progresso avança agora por
+    cena concluída.
+    """
+    if total <= 0:
+        return 52
+    fraction = min(1.0, max(0.0, index / total))
+    return int(52 + fraction * 27)
+
+
 def _run_remotion_video(
     task: dict[str, Any],
     *,
@@ -1875,7 +1903,7 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                 image_scenes = []
                 web_dir = STORAGE / "web-images" / task_id
                 web_dir.mkdir(parents=True, exist_ok=True)
-                for scene in scenes:
+                for scene_index, scene in enumerate(scenes, start=1):
                     query = str(scene.get("text") or topic).strip()[:300]
                     results = web_images_search(settings, query, num_results=1, rights="sur:cl")
                     image_url = str(results[0].get("url") or "")
@@ -1886,6 +1914,11 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                     response.raise_for_status()
                     image_path.write_bytes(response.content)
                     image_scenes.append({**scene, "image_path": str(image_path), "duration": float(scene.get("duration") or target_seconds)})
+                    _update(
+                        task_id,
+                        progress=_scene_video_progress(scene_index, len(scenes)),
+                        video_helper_status=f"imagem web da cena {scene_index}/{len(scenes)} descarregada",
+                    )
                 audio_path = _valid_audio_artifact(generation_settings.get("voiceover_file") or artifacts.get("audio") or artifacts.get("narration"))
                 if audio_path is None:
                     audio_path = synthesize_text_to_images_audio(narration_text_from_script(str(script.get("content") or "")), {**settings, **generation_settings}, str(task.get("voice") or generation_settings.get("voice") or channel.get("default_voice") or channel.get("voice") or "pt-BR-FranciscaNeural-Female"), STORAGE / "audio" / f"{task_id}-web-images.mp3")
@@ -1917,8 +1950,14 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                         STORAGE / "audio" / f"{task_id}-text-to-images.mp3",
                     )
                     artifacts["audio"] = str(audio_path)
-                for scene in scene_prompts:
+                total_scenes = len(scene_prompts)
+                for scene_index, scene in enumerate(scene_prompts, start=1):
                     scene["image_path"] = str(generate_image_from_pool(settings, scene["prompt"], topic=topic, variant_index=int(scene.get("index") or 0), aspect_ratio=str(task.get("format") or "wide")))
+                    _update(
+                        task_id,
+                        progress=_scene_video_progress(scene_index, total_scenes),
+                        video_helper_status=f"imagem da cena {scene_index}/{total_scenes} pronta",
+                    )
                 output_path = STORAGE / "videos" / f"{task_id}-text-to-images.mp4"
                 video_path = assemble_text_to_images_video(
                     scene_prompts,

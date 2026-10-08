@@ -848,8 +848,26 @@ def _invalidate_read_cache(path: Path) -> None:
         _READ_CACHE.pop(str(path), None)
 
 
+def _append_recovery_event(name: str, message: str) -> None:
+    """Regista no disco cada evento de recuperação de estado protegido.
+
+    0.9.62: restaurar um backup de corrupção era silencioso — no incidente
+    07/10, um tasks.json inválido foi substituído por um backup de Agosto
+    sem qualquer rasto. Cada backup criado, restauro e falha fica agora
+    registado em storage/state/storage-recovery.log.
+    """
+    try:
+        event_path = STATE / "storage-recovery.log"
+        event_path.parent.mkdir(parents=True, exist_ok=True)
+        with event_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"at": datetime.now(timezone.utc).isoformat(), "file": name, "message": message}, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
 def _recover_json_unlocked(name: str, path: Path, default: Any | None) -> Any:
     backup = _corrupt_backup(path)
+    _append_recovery_event(name, f"ficheiro invalido; copia preservada em {backup or path}")
     if name in _PROTECTED_STATE_FILES:
         candidates = sorted(path.parent.glob(f"{path.name}.corrupt-*"), key=lambda item: item.stat().st_mtime, reverse=True)
         for candidate in candidates:
@@ -860,8 +878,10 @@ def _recover_json_unlocked(name: str, path: Path, default: Any | None) -> Any:
             except (json.JSONDecodeError, OSError):
                 continue
             _atomic_write_unlocked(path, recovered)
+            _append_recovery_event(name, f"restaurado a partir de {candidate.name} — verifique os dados recentes")
             return recovered
         location = str(backup or path)
+        _append_recovery_event(name, f"nenhum backup valido; operacao interrompida ({location})")
         raise StorageIntegrityError(f"O ficheiro protegido {name} está corrompido. A cópia foi preservada em {location}.")
     fallback = deepcopy(DEFAULTS.get(name, [] if default is None else default))
     _atomic_write_unlocked(path, fallback)
