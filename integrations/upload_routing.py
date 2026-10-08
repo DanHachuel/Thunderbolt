@@ -27,9 +27,6 @@ from hermes_ui.languages import language_locale
 OFFICIAL_DAILY_LIMIT = 5
 QUOTA_FILENAME = "official_upload_quota.json"
 COMPOSIO_VIDEO_FILE_FIELD = "videoFilePath"
-# 0.9.56: cache por processo do alias→slug resolvido (evita uma descoberta
-# de ferramentas extra por upload; o padrão já existia para connected accounts).
-_RESOLVED_COMPOSIO_SLUG_CACHE: dict[tuple[str, str, str], str] = {}
 COMPOSIO_OPERATION_OPTIONS = {
     "upload_video": "Upload Video",
     "update_video": "Update video",
@@ -373,35 +370,22 @@ def _composio_upload(settings: dict[str, Any], *, channel: dict[str, Any], **kwa
         except ComposioUploadError as exc:
             return IntegrationResult(False, str(exc), {"status": "account_discovery_failed"})
     try:
-        # 0.9.56: a priorização do multipart (0.8.62, "repair Composio YouTube
-        # video uploads") volta a ser respeitada — o alias `upload_video`
-        # resolve pela descoberta de ferramentas, que prefere
-        # YOUTUBE_MULTIPART_UPLOAD_VIDEO (upload único) em vez da ferramenta
-        # resumável básica, que falhava DEPOIS de criar a sessão e consumia
-        # quota sem devolver vídeo. A robustez do d4d18ad mantém-se: se a
-        # descoberta falhar, cai-se para YOUTUBE_UPLOAD_VIDEO.
-        slug_cache_key = (
-            resolved_user_id.casefold(),
-            configured_slug.casefold(),
-            str(channel.get("composio_toolkit") or "").casefold(),
-        )
-        cached_slug = _RESOLVED_COMPOSIO_SLUG_CACHE.get(slug_cache_key)
-        if cached_slug:
-            slug = cached_slug
+        # 0.9.65: restaurado o comportamento pré-0.9.56. A priorização do
+        # multipart (0.9.56) partiu o upload: YOUTUBE_MULTIPART_UPLOAD_VIDEO
+        # exige o campo `videoFile`, mas o Thunderbolt injecta o ficheiro em
+        # `videoFilePath` (o campo de YOUTUBE_UPLOAD_VIDEO) — o Composio
+        # devolvia 400 "Following fields are missing: {'videoFile'}". A
+        # ferramenta oficial básica é a validada com o staging manual
+        # (FileUploadable + s3key) e volta a ser a usada pelo alias upload_video.
+        if configured_slug.casefold() == "upload_video" and (channel.get("platform", "youtube") or "youtube").casefold() == "youtube":
+            slug = "YOUTUBE_UPLOAD_VIDEO"
         else:
-            try:
-                slug = resolve_tool_slug(
-                    str(settings.get("composio_api_key") or ""),
-                    resolved_user_id,
-                    configured_slug,
-                    str(channel.get("composio_toolkit") or ""),
-                )
-            except ComposioUploadError:
-                if configured_slug.casefold() == "upload_video" and (channel.get("platform", "youtube") or "youtube").casefold() == "youtube":
-                    slug = "YOUTUBE_UPLOAD_VIDEO"
-                else:
-                    raise
-            _RESOLVED_COMPOSIO_SLUG_CACHE[slug_cache_key] = slug
+            slug = resolve_tool_slug(
+                str(settings.get("composio_api_key") or ""),
+                resolved_user_id,
+                configured_slug,
+                str(channel.get("composio_toolkit") or ""),
+            )
     except ComposioUploadError as exc:
         return IntegrationResult(False, str(exc), {"status": "tool_resolution_failed", "configured_slug": configured_slug})
     normalized_slug = slug.upper().replace("-", "_")

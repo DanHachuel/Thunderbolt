@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 
 from integrations.platforms import IntegrationResult
 from integrations.upload_routing import _composio_upload, upload_with_default_route
@@ -122,13 +122,14 @@ def test_youtube_upload_slug_does_not_require_legacy_channel_id(monkeypatch, tmp
     assert captured["args"][4] == "videoFilePath"
 
 
-# ── 0.9.56: multipart priorizada + mensagens de quota accionáveis ─────────────
+# ── 0.9.65: upload_video volta à ferramenta validada; quota accionável ──────
 
 
-def test_upload_video_alias_prefers_multipart_tool(monkeypatch, tmp_path: Path):
-    # 0.8.62 priorizava YOUTUBE_MULTIPART_UPLOAD_VIDEO; o hardcode de 17/09
-    # (d4d18ad) sobrepôs-lhe a ferramenta resumável básica, que falhava DEPOIS
-    # de criar a sessão de upload e consumia a quota sem devolver vídeo.
+def test_upload_video_alias_uses_the_validated_upload_video_tool(monkeypatch, tmp_path: Path):
+    # 0.9.65: restaurado o comportamento pré-0.9.56. O multipart exige o
+    # campo `videoFile`, mas o Thunderbolt injecta o ficheiro em
+    # `videoFilePath` (o campo de YOUTUBE_UPLOAD_VIDEO) — o upload falhava
+    # com 400 "Following fields are missing: {'videoFile'}".
     import integrations.upload_routing as routing
 
     video = tmp_path / "video.mp4"
@@ -137,43 +138,13 @@ def test_upload_video_alias_prefers_multipart_tool(monkeypatch, tmp_path: Path):
 
     def fake_execute(*args):
         captured["args"] = args
-        return {"successful": True, "data": {"id": "yt-multipart"}}
+        return {"successful": True, "data": {"id": "yt-1"}}
+
+    def fail_resolve(*args, **kwargs):
+        raise AssertionError("o alias upload_video não corre a descoberta de ferramentas")
 
     monkeypatch.setattr(routing, "execute_upload", fake_execute)
-    monkeypatch.setattr(routing, "resolve_tool_slug", lambda *args, **kwargs: "YOUTUBE_MULTIPART_UPLOAD_VIDEO")
-    routing._RESOLVED_COMPOSIO_SLUG_CACHE.clear()
-    result = _composio_upload(
-        {**_settings(), "composio_tool_slug": "upload_video"},
-        channel={"platform": "youtube"},
-        video_path=str(video),
-        privacy_status="unlisted",
-        category_id="22",
-        language="pt-BR",
-    )
-    assert result.ok
-    assert captured["args"][2] == "YOUTUBE_MULTIPART_UPLOAD_VIDEO"
-
-
-def test_upload_video_alias_falls_back_to_basic_tool_on_discovery_failure(monkeypatch, tmp_path: Path):
-    # A robustez do d4d18ad mantém-se: sem descoberta, usa-se a ferramenta
-    # oficial básica em vez de falhar o upload.
-    import integrations.upload_routing as routing
-    from integrations.composio_upload import ComposioUploadError
-
-    video = tmp_path / "video.mp4"
-    video.write_bytes(b"video")
-    captured = {}
-
-    def fake_execute(*args):
-        captured["args"] = args
-        return {"successful": True, "data": {"id": "yt-fallback"}}
-
-    def fake_resolve(*args, **kwargs):
-        raise ComposioUploadError("Não foi encontrada uma ferramenta Composio.")
-
-    monkeypatch.setattr(routing, "execute_upload", fake_execute)
-    monkeypatch.setattr(routing, "resolve_tool_slug", fake_resolve)
-    routing._RESOLVED_COMPOSIO_SLUG_CACHE.clear()
+    monkeypatch.setattr(routing, "resolve_tool_slug", fail_resolve)
     result = _composio_upload(
         {**_settings(), "composio_tool_slug": "upload_video"},
         channel={"platform": "youtube"},
@@ -184,36 +155,7 @@ def test_upload_video_alias_falls_back_to_basic_tool_on_discovery_failure(monkey
     )
     assert result.ok
     assert captured["args"][2] == "YOUTUBE_UPLOAD_VIDEO"
-
-
-def test_resolved_slug_is_cached_per_process(monkeypatch, tmp_path: Path):
-    import integrations.upload_routing as routing
-
-    video = tmp_path / "video.mp4"
-    video.write_bytes(b"video")
-    resolve_calls = []
-
-    def fake_resolve(*args, **kwargs):
-        resolve_calls.append(1)
-        return "YOUTUBE_MULTIPART_UPLOAD_VIDEO"
-
-    monkeypatch.setattr(
-        routing, "execute_upload",
-        lambda *args: {"successful": True, "data": {"id": "yt-cached"}},
-    )
-    monkeypatch.setattr(routing, "resolve_tool_slug", fake_resolve)
-    routing._RESOLVED_COMPOSIO_SLUG_CACHE.clear()
-    for _ in range(2):
-        result = _composio_upload(
-            {**_settings(), "composio_tool_slug": "upload_video"},
-            channel={"platform": "youtube"},
-            video_path=str(video),
-            privacy_status="unlisted",
-            category_id="22",
-            language="pt-BR",
-        )
-        assert result.ok
-    assert len(resolve_calls) == 1, "a descoberta corre uma vez por processo"
+    assert captured["args"][4] == "videoFilePath"
 
 
 def test_quota_failure_message_is_actionable(monkeypatch, tmp_path: Path):
@@ -223,19 +165,17 @@ def test_quota_failure_message_is_actionable(monkeypatch, tmp_path: Path):
     video.write_bytes(b"video")
     quota_response = {
         "successful": False,
-        "error": "YouTube API did not provide upload URL. Status: 429. Response: {\"error\": {\"code\": 429, \"message\": \"Quota exceeded for quota metric 'Video Uploads' and limit 'Video Uploads per day' of service 'youtube.googleapis.com' for consumer 'project_number:10683...\"}}",
+        "error": "YouTube API did not provide upload URL. Status: 429. Response: {\"error\": {\"code\": 429, \"message\": \"Quota exceeded for quota metric 'Video Uploads' and limit 'Video Uploads per day'\"}}",
         "error_kind": "youtube_upload_quota",
         "error_hint": "A quota diária de uploads do YouTube do projecto Google Cloud usado pela app Composio foi excedida (limite 'Video Uploads per day', cerca de 6 uploads por dia). A quota repõe à meia-noite, hora do Pacífico (~04:00 de Brasília).",
         "http_status": 429,
         "data": {},
         "diagnostics": {},
         "log_id": "",
-        "tool_slug": "YOUTUBE_MULTIPART_UPLOAD_VIDEO",
+        "tool_slug": "YOUTUBE_UPLOAD_VIDEO",
     }
 
     monkeypatch.setattr(routing, "execute_upload", lambda *args: dict(quota_response))
-    monkeypatch.setattr(routing, "resolve_tool_slug", lambda *args, **kwargs: "YOUTUBE_MULTIPART_UPLOAD_VIDEO")
-    routing._RESOLVED_COMPOSIO_SLUG_CACHE.clear()
     result = _composio_upload(
         {**_settings(), "composio_tool_slug": "upload_video"},
         channel={"platform": "youtube"},
