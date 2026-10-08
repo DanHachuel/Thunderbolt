@@ -251,3 +251,155 @@ def test_automation_batch_keeps_channel_subtitles_as_source_of_truth(monkeypatch
     tasks = domain.create_tasks_for_batch(batch)
     gs = tasks[0].get("generation_settings") or {}
     assert gs.get("enable_subtitles") is True, "a automação tem de manter as legendas do canal"
+
+
+# ── 0.9.64: rota Pexels (MPT) — legendas queimadas quando o MPT as salta ─────
+
+
+def _mpt_task(voiceover_mode="tts", voiceover_service="Azure TTS V1", **extra):
+    generation_settings = {
+        "video_source": "pexels",
+        "enable_subtitles": True,
+        "voiceover_mode": voiceover_mode,
+        "voiceover_service": voiceover_service,
+        **extra,
+    }
+    return {"generation_settings": generation_settings}
+
+
+def test_mpt_custom_audio_detection():
+    from hermes_ui.pipeline_worker import _mpt_uses_custom_audio
+
+    assert _mpt_uses_custom_audio(_mpt_task(voiceover_mode="upload")) is True
+    assert _mpt_uses_custom_audio(_mpt_task(voiceover_mode="none")) is True
+    assert _mpt_uses_custom_audio(_mpt_task(voiceover_service="elevenlabs")) is True
+    assert _mpt_uses_custom_audio(_mpt_task(voiceover_service="Azure Speech SDK V2")) is True
+    # TTS nativo do MPT: o sub_maker existe e as legendas ficam a cargo do MPT
+    assert _mpt_uses_custom_audio(_mpt_task()) is False
+
+
+def test_mpt_cli_disables_subtitles_for_custom_audio():
+    from hermes_ui.pipeline_worker import _moneyprinter_cli_args
+
+    args = _moneyprinter_cli_args(_mpt_task(voiceover_service="elevenlabs"), "pexels")
+    assert "--no-subtitle-enabled" in args
+    assert "--subtitle-enabled" not in args
+    native_args = _moneyprinter_cli_args(_mpt_task(), "pexels")
+    assert "--subtitle-enabled" in native_args
+    assert "--no-subtitle-enabled" not in native_args
+
+
+def test_apply_mpt_captions_skips_native_and_disabled_and_none(monkeypatch, tmp_path):
+    from hermes_ui import pipeline_worker
+
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"mp4")
+    script = {"content": "Narração do vídeo de teste."}
+    # TTS nativo: o MPT já queimou as legendas — não mexer
+    assert pipeline_worker._apply_mpt_captions(_mpt_task(), video, script, {}) == video
+    # modo sem voz: sem áudio não há legendas para queimar
+    assert pipeline_worker._apply_mpt_captions(_mpt_task(voiceover_mode="none"), video, script, {}) == video
+    # legendas desactivadas nas configurações
+    assert pipeline_worker._apply_mpt_captions(_mpt_task(voiceover_service="elevenlabs", enable_subtitles=False), video, script, {}) == video
+
+
+def test_apply_mpt_captions_burns_when_custom_audio(monkeypatch, tmp_path):
+    from hermes_ui import pipeline_worker
+
+    fonts_dir = tmp_path / "resource" / "fonts"
+    fonts_dir.mkdir(parents=True)
+    (fonts_dir / "arial.ttf").write_bytes(b"font")
+    monkeypatch.setattr(
+        "hermes_ui.pipeline_worker._configured_moneyprinter_root",
+        lambda settings: str(tmp_path),
+    )
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"mp4")
+    script = {"content": "Narração do vídeo com ElevenLabs."}
+    captured = {}
+
+    def fake_burn(video_path, narration, config):
+        captured["narration"] = narration
+        captured["config"] = config
+        return video
+
+    monkeypatch.setattr("hermes_ui.text_to_images.burn_captions_on_video", fake_burn)
+    result = pipeline_worker._apply_mpt_captions(
+        _mpt_task(voiceover_service="elevenlabs"), video, script, {}
+    )
+    assert result == video
+    assert captured["narration"].startswith("Narração")
+    assert captured["config"].get("font_path")
+
+
+def test_burn_captions_failure_leaves_original_video(monkeypatch, tmp_path):
+    from hermes_ui import pipeline_worker
+
+    fonts_dir = tmp_path / "resource" / "fonts"
+    fonts_dir.mkdir(parents=True)
+    (fonts_dir / "arial.ttf").write_bytes(b"font")
+    monkeypatch.setattr(
+        "hermes_ui.pipeline_worker._configured_moneyprinter_root",
+        lambda settings: str(tmp_path),
+    )
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"mp4-original")
+    script = {"content": "Narração."}
+
+    def fake_burn(video_path, narration, config):
+        raise RuntimeError("fonte em falta")
+
+    monkeypatch.setattr("hermes_ui.text_to_images.burn_captions_on_video", fake_burn)
+    result = pipeline_worker._apply_mpt_captions(
+        _mpt_task(voiceover_service="elevenlabs"), video, script, {}
+    )
+    assert result == video
+    assert video.read_bytes() == b"mp4-original"
+
+
+def test_pipeline_wires_mpt_captions_after_helper():
+    source = PIPELINE_SOURCE
+    mpt_block = source.split("video_path = _run_video_helper({", 1)[1].split("})", 1)[0]
+    assert "_apply_mpt_captions" in source
+    wiring = source.split('video_path = _run_video_helper({', 1)[1]
+    assert "video_path = _apply_mpt_captions(task, video_path, script, settings)" in wiring.split("except MediaGenerationError", 1)[0]
+
+
+@pytest.mark.skipif(
+    not Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf").is_file()
+    and not Path("C:/Windows/Fonts/arial.ttf").is_file(),
+    reason="sem fonte do sistema disponivel para o render real",
+)
+def test_burn_captions_on_real_video_replaces_in_place(tmp_path):
+    import numpy as np
+    from moviepy import AudioArrayClip, ColorClip
+
+    from hermes_ui.text_to_images import burn_captions_on_video
+
+    font = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    if not Path(font).is_file():
+        font = "C:/Windows/Fonts/arial.ttf"
+    base = ColorClip(size=(320, 180), color=(40, 40, 40), duration=2.4)
+    silence = AudioArrayClip(np.zeros((int(2.4 * 24000), 1), dtype=np.int16), fps=24000)
+    base = base.with_audio(silence)
+    video_path = tmp_path / "pexels.mp4"
+    base.write_videofile(str(video_path), fps=10, codec="libx264", audio_codec="aac", logger=None)
+    size_before = video_path.stat().st_size
+    subtitle_config = {
+        "font_path": font,
+        "font_size": 40,
+        "position": "bottom",
+        "color": "#FFFFFF",
+        "background": True,
+        "background_color": "#000000",
+        "outline": "#000000",
+        "outline_width": 1.5,
+    }
+    result = burn_captions_on_video(
+        video_path,
+        "Primeira frase da narração. Segunda frase para dividir em segmentos.",
+        subtitle_config,
+    )
+    assert result == video_path
+    assert video_path.stat().st_size > size_before, "a queima tem de acrescentar conteudo"
+    assert not list(tmp_path.glob("*.legendas-tmp.mp4")), "o temporario foi substituido, nao deixado para tras"

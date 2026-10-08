@@ -1123,6 +1123,24 @@ def _azure_speech_v2_voice_name(value: str) -> str:
     return f"{voice}-V2"
 
 
+def _mpt_uses_custom_audio(task: dict[str, Any], settings: dict[str, Any] | None = None) -> bool:
+    """Detecta quando o áudio chega ao MPT como ficheiro customizado.
+
+    0.9.64: nessas condições o MPT não tem sub_maker ("subtitle maker is
+    missing", task.py:546 do MPT) e saltava as legendas em silêncio — a
+    causa de nenhum vídeo Pexels sair com legendas. O Thunderbolt passa
+    --no-subtitle-enabled e queima as legendas no vídeo final.
+    """
+    generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else {}
+    voiceover_mode = str(generation_settings.get("voiceover_mode") or "").strip().casefold()
+    if voiceover_mode in {"none", "upload"}:
+        return True
+    voiceover_service = str(generation_settings.get("voiceover_service") or "").strip().casefold()
+    if voiceover_service == "elevenlabs":
+        return True
+    return _uses_azure_speech_sdk_v2(generation_settings, settings)
+
+
 def _moneyprinter_cli_args(task: dict[str, Any], route: str, settings: dict[str, Any] | None = None) -> list[str]:
     """Build the explicit MPT CLI contract for the stock Pexels/Pixabay route."""
     generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else {}
@@ -1181,7 +1199,13 @@ def _moneyprinter_cli_args(task: dict[str, Any], route: str, settings: dict[str,
         args.extend(["--voice-rate", _mpt_rate(speed)])
 
     subtitles = generation_settings.get("enable_subtitles")
-    if subtitles is not None:
+    if _mpt_uses_custom_audio(task, settings):
+        # 0.9.64: com áudio customizado o MPT não tem sub_maker e saltava as
+        # legendas com "subtitle maker is missing" (visto nos logs de 08/10).
+        # Desliga-se a etapa no MPT — o Thunderbolt queima as legendas no
+        # vídeo final (pipeline_worker._apply_mpt_captions).
+        args.append("--no-subtitle-enabled")
+    elif subtitles is not None:
         args.append("--subtitle-enabled" if bool(subtitles) else "--no-subtitle-enabled")
     subtitle_position = str(generation_settings.get("subtitle_position") or "").strip().casefold()
     if subtitle_position in {"top", "center", "bottom", "custom"}:
@@ -1741,6 +1765,43 @@ def _subtitle_config_for_task(task: dict[str, Any], settings: dict[str, Any]) ->
     }
 
 
+def _apply_mpt_captions(
+    task: dict[str, Any],
+    video_path: Path,
+    script: dict[str, Any],
+    settings: dict[str, Any],
+) -> Path:
+    """Queima as legendas no vídeo Pexels/Pixabay quando o MPT as saltou.
+
+    O MPT só gera legendas com word-boundaries quando faz o próprio TTS; com
+    áudio customizado (ElevenLabs/Azure V2/upload) regista "subtitle maker is
+    missing" e o vídeo sai sem legendas. Nestes casos o Thunderbolt queima
+    as legendas com o mesmo motor e estilo das fontes text_to_images.
+    Falhas deixam o vídeo original intacto — a legenda nunca destrói o vídeo.
+    """
+    generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else {}
+    if str(generation_settings.get("voiceover_mode") or "").strip().casefold() == "none":
+        return video_path
+    if not _mpt_uses_custom_audio(task, settings):
+        # MPT nativo: gerou as legendas word-accurate na própria renderização.
+        return video_path
+    config = _subtitle_config_for_task(task, settings)
+    if not config:
+        return video_path
+    narration = narration_text_from_script(str(script.get("content") or ""))
+    if not narration.strip():
+        return video_path
+    try:
+        from hermes_ui.text_to_images import burn_captions_on_video
+
+        return burn_captions_on_video(video_path, narration, config)
+    except Exception as exc:
+        import sys as _sys
+
+        print(f"[pexels] legendas ignoradas por falha na queima: {exc}", file=_sys.stderr)
+        return video_path
+
+
 def _run_remotion_video(
     task: dict[str, Any],
     *,
@@ -2074,6 +2135,7 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                     "video_keywords": keywords,
                     "style_wide": route,
                 })
+                video_path = _apply_mpt_captions(task, video_path, script, settings)
         except MediaGenerationError as exc:
             if route == "full_ia":
                 message = f"Pool Full IA (FAL AI/KIE AI/Agnes AI/Nano Banana/Replicate AI/Pollinations.ai/Hugging Face Inference API/InferencePort Proxy/HeyGen): {exc}"

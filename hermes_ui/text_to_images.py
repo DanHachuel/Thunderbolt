@@ -228,6 +228,65 @@ def assemble_text_to_images_video(
     return output_path
 
 
+def burn_captions_on_video(
+    video_path: Path | str,
+    text: str,
+    subtitle_config: dict,
+    *,
+    target_seconds: float = 5.0,
+    wpm: int = 150,
+) -> Path:
+    """Queima legendas aproximadas num vídeo final (rota Pexels/Pixabay do MPT).
+
+    0.9.64: o MPT salta as legendas quando o áudio chega como ficheiro
+    customizado ("subtitle maker is missing") — o Thunderbolt divide o texto
+    em segmentos com duração estimada, reescala para a duração real do vídeo
+    e queima as legendas com o mesmo motor/estilo das outras fontes. O
+    ficheiro original é substituído in-place (o artefacto da tarefa mantém-se
+    válido). Qualquer falha deixa o vídeo original intacto.
+    """
+    import os
+
+    from moviepy import CompositeVideoClip, VideoFileClip
+
+    output = Path(video_path)
+    segments = split_script_into_scenes(str(text or ""), target_seconds=target_seconds, wpm=wpm)
+    if not segments:
+        segments = [{"index": 1, "text": str(text or "").strip()[:200], "duration": target_seconds}]
+    video = None
+    burned = None
+    try:
+        video = VideoFileClip(str(output))
+        total = max(1.0, float(video.duration or 0))
+        estimated = sum(max(0.4, float(item.get("duration") or target_seconds)) for item in segments) or target_seconds
+        for item in segments:
+            item["duration"] = max(0.4, float(item.get("duration") or target_seconds) * total / estimated)
+        subtitle_clips = _subtitle_clips_for_scenes(
+            segments,
+            int(video.size[0]),
+            int(video.size[1]),
+            subtitle_config,
+        )
+        if not subtitle_clips:
+            return output
+        burned = CompositeVideoClip([video, *subtitle_clips]).with_duration(total)
+        temporary = output.with_name(f"{output.stem}.legendas-tmp.mp4")
+        burned.write_videofile(str(temporary), fps=max(1, int(video.fps or 30)), codec="libx264", audio_codec="aac", logger=None)
+        burned.close()
+        burned = None
+        os.replace(temporary, output)
+        return output
+    finally:
+        for clip in (burned, video):
+            if clip is not None:
+                close = getattr(clip, "close", None)
+                if close:
+                    try:
+                        close()
+                    except Exception:
+                        pass
+
+
 def synthesize_text_to_images_audio(text: str, settings: dict[str, Any], voice: str, output_path: Path) -> Path:
     """Synthesize narration in bounded chunks through the configured TTS provider."""
     service = str(settings.get("voiceover_service") or "Azure TTS V1")
