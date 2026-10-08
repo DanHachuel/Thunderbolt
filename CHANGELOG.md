@@ -1,4 +1,7 @@
 # Changelog
+## 0.9.66 — 2026-10-08
+- Corrigido o painel **"Resultado do teste de upload"** que ficava vazio: o `st.rerun()` que activa o botão Download Log após cada teste recriava o painel (`st.empty`) sem conteúdo — o resultado piscava durante milissegundos e desaparecia, deixando o utilizador sem saber o que deu no upload. O resultado (sucesso/erro/aviso) e os **Logs de diagnóstico Composio** passam a persistir no `session_state` e são renderizados fora do bloco do botão — ficam visíveis após o rerun e até à próxima alteração, em todos os modos de upload.
+
 ## 0.9.65 — 2026-10-08
 - **Revertido o upload Compsio ao comportamento pré-0.9.56** (pedido do utilizador; incidente confirmado no log de 08/10 01:24): a priorização do multipart introduzida na 0.9.56 trocou a ferramenta para `YOUTUBE_MULTIPART_UPLOAD_VIDEO`, que exige o campo **`videoFile`** — mas o Thunderbolt injecta o ficheiro em **`videoFilePath`** (o campo de `YOUTUBE_UPLOAD_VIDEO`, validado com o staging manual FileUploadable/s3key) — e o Composio passou a devolver 400 `"Following fields are missing: {'videoFile'}"`. O alias `upload_video` volta a usar directamente `YOUTUBE_UPLOAD_VIDEO`, sem descoberta de ferramentas nem cache de slug; mantém-se a classificação de erros de quota em mensagens accionáveis (0.9.56) e o texto integral nos diagnostics.
 - Removido do Test Upload Videos o aviso sobre quota diária de uploads (introduzido na 0.9.56 sem pedido do utilizador).

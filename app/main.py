@@ -9957,6 +9957,23 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
             status_panel = st.empty()
     selected_video = next(item for item in TEST_UPLOAD_VIDEOS if item["id"] == selected_video_id)
     log_state_key = "test_upload_composio_log"
+    # 0.9.66: o resultado tem de sobreviver ao st.rerun() que activa o botão
+    # Download Log — antes, o painel era recriado vazio e o utilizador ficava
+    # no escuro sobre o que deu no upload.
+    result_state_key = "test_upload_last_result"
+    diagnostics_state_key = "test_upload_last_diagnostics"
+    last_result = st.session_state.get(result_state_key)
+    if isinstance(last_result, dict) and str(last_result.get("message") or "").strip():
+        if last_result.get("ok") is True:
+            status_panel.success(last_result["message"])
+        elif last_result.get("ok") is False:
+            status_panel.error(last_result["message"])
+        else:
+            status_panel.warning(last_result["message"])
+    last_diagnostics = st.session_state.get(diagnostics_state_key)
+    if last_diagnostics:
+        with st.expander("Logs de diagnóstico Composio", expanded=True):
+            st.json(last_diagnostics)
     action_column, log_column = st.columns([3, 1], gap="small")
     with action_column:
         execute_upload = st.button("Testar Upload", type="primary", width="stretch", key="test_upload_execute")
@@ -9975,11 +9992,15 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
         video_path = Path(selected_video["path"]).resolve()
         if not destination:
             status_panel.warning("Não existe um canal/conta configurado para a operação seleccionada. Configure um destino ou escolha outra operação.")
+            st.session_state[result_state_key] = {"ok": None, "message": "Não existe um canal/conta configurado para a operação seleccionada. Configure um destino ou escolha outra operação."}
+            st.session_state[diagnostics_state_key] = None
             if upload_mode == "Composio":
                 filename, markdown = _test_upload_log_markdown(upload_mode=upload_mode, operation=operation, selected_video=selected_video, destination=destination, error=ValueError("Nenhum destino configurado"))
                 st.session_state[log_state_key] = {"filename": filename, "data": markdown}
         elif not video_path.is_file():
             status_panel.error(f"Vídeo de teste não encontrado: {video_path}")
+            st.session_state[result_state_key] = {"ok": False, "message": f"Vídeo de teste não encontrado: {video_path}"}
+            st.session_state[diagnostics_state_key] = None
             if upload_mode == "Composio":
                 filename, markdown = _test_upload_log_markdown(upload_mode=upload_mode, operation=operation, selected_video=selected_video, destination=destination, error=FileNotFoundError(str(video_path)))
                 st.session_state[log_state_key] = {"filename": filename, "data": markdown}
@@ -10017,6 +10038,9 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
                 else:
                     status_panel.error(result.message)
                 diagnostics = result.data.get("diagnostics") if isinstance(result.data, dict) else None
+                # 0.9.66: persiste para o painel sobreviver ao st.rerun()
+                st.session_state[result_state_key] = {"ok": bool(result.ok), "message": result.message}
+                st.session_state[diagnostics_state_key] = diagnostics
                 if diagnostics:
                     with st.expander("Logs de diagnóstico Composio", expanded=True):
                         st.json(diagnostics)
@@ -10024,7 +10048,10 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
                     filename, markdown = _test_upload_log_markdown(upload_mode=upload_mode, operation=operation, selected_video=selected_video, destination=destination, result=result, diagnostics=diagnostics)
                     st.session_state[log_state_key] = {"filename": filename, "data": markdown}
             except Exception as exc:
-                status_panel.error(f"O teste de upload falhou: {type(exc).__name__}: {exc}")
+                failure_message = f"O teste de upload falhou: {type(exc).__name__}: {exc}"
+                status_panel.error(failure_message)
+                st.session_state[result_state_key] = {"ok": False, "message": failure_message}
+                st.session_state[diagnostics_state_key] = None
                 if upload_mode == "Composio":
                     filename, markdown = _test_upload_log_markdown(upload_mode=upload_mode, operation=operation, selected_video=selected_video, destination=destination, error=exc)
                     st.session_state[log_state_key] = {"filename": filename, "data": markdown}

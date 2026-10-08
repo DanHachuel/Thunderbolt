@@ -188,3 +188,29 @@ def test_quota_failure_message_is_actionable(monkeypatch, tmp_path: Path):
     assert "quota diária" in result.message
     assert result.data.get("error_kind") == "youtube_upload_quota"
     assert result.data.get("http_status") == 429
+
+
+def test_test_upload_panel_survives_the_log_rerun():
+    """0.9.66: o painel "Resultado do teste de upload" não pode ficar vazio.
+
+    O st.rerun() que activa o botão Download Log recriava o st.empty() vazio
+    e o resultado do teste desaparecia — o utilizador ficava sem saber o que
+    deu no upload. O resultado (e os diagnósticos) persistem agora no
+    session_state e são renderizados fora do bloco do botão.
+    """
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parents[1].joinpath("app", "main.py").read_text(encoding="utf-8")
+    assert 'result_state_key = "test_upload_last_result"' in source
+    assert 'diagnostics_state_key = "test_upload_last_diagnostics"' in source
+    # render persistente fora do bloco execute_upload
+    assert "last_result = st.session_state.get(result_state_key)" in source
+    assert "status_panel.success(last_result[\"message\"])" in source
+    assert "status_panel.error(last_result[\"message\"])" in source
+    assert "status_panel.warning(last_result[\"message\"])" in source
+    # o caminho de resultado persiste antes do rerun
+    assert 'st.session_state[result_state_key] = {"ok": bool(result.ok), "message": result.message}' in source
+    # o caminho de excepção persiste a mensagem de falha
+    assert 'st.session_state[result_state_key] = {"ok": False, "message": failure_message}' in source
+    # os diagnósticos também sobrevivem
+    assert "last_diagnostics = st.session_state.get(diagnostics_state_key)" in source
