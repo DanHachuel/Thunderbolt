@@ -1,0 +1,189 @@
+{
+  "blueprint_id": "quiz_videos",
+  "version": "1.0.0",
+  "domain": "trivia_quiz_short_form",
+  "composition_id": "Quiz",
+  "fps": 30,
+  "width": 1080,
+  "height": 1920,
+
+  "system_instructions": {
+    "role": "Entertainment expert and quiz writer",
+    "task_description": "Create a quiz video script on the given topic and difficulty, formatted as structured JSON that will be rendered by Remotion.",
+    "constraints": [
+      "Include a list of short, challenging multiple-choice questions.",
+      "DO NOT create more than 5 questions.",
+      "Each question must have 4 short answer options (preferably one word each).",
+      "Only one answer is correct.",
+      "Keep the questions direct and concise (no more than 7 words per question).",
+      "The quiz should be engaging for a broad audience.",
+      "Topic, questions, answers and voiceovers must be in {{language}}.",
+      "If necessary, translate and improve the provided intro_voiceover and like_and_subscribe_voiceover.",
+      "Do NOT include markdown, explanations, or text outside the JSON."
+    ],
+    "critical_instruction": "Return ONLY valid JSON matching output_schema. The correct_answer field must be an integer between 1 and 4, referencing the position of the correct option. All text (topic, questions, answers, voiceovers) must be in {{language}}."
+  },
+
+  "output_schema": {
+    "topic": "string (in {{language}})",
+    "intro_voiceover": "string (in {{language}})",
+    "like_and_subscribe_voiceover": "string (in {{language}})",
+    "questions": [
+      {
+        "question": "string (max 7 words, in {{language}})",
+        "answer1": "string (preferably 1 word, in {{language}})",
+        "answer2": "string (preferably 1 word, in {{language}})",
+        "answer3": "string (preferably 1 word, in {{language}})",
+        "answer4": "string (preferably 1 word, in {{language}})",
+        "correct_answer": "integer (1-4)",
+        "durationInSeconds": "number (estimated from question length and reveal timing)",
+        "revealDelaySeconds": "number (seconds to wait before revealing the correct answer, default 3)"
+      }
+    ]
+  },
+
+  "style_guide": {
+    "tone": "energetic, direct, engaging, slightly competitive",
+    "pacing": "question → 3s of silence → reveal → next question, fast cuts",
+    "hook_style": "intro must create urgency ('Can you get them all right?')",
+    "sentence_style": "short, imperative, no filler words",
+    "emotional_tone": "playful challenge, encouraging, never condescending",
+    "point_of_view": "second-person narrator addressing the viewer directly",
+    "audience_addressing_style": "direct ('Which one is it?', 'Did you get it?')",
+    "vocabulary": "accessible, no obscure jargon, no academic phrasing",
+    "visual_cue_prompts": [
+      "countdown timer overlay",
+      "multiple-choice buttons highlighted",
+      "correct answer flashing green",
+      "wrong answers flashing red",
+      "score counter at the end"
+    ],
+    "avoid": [
+      "ambiguous questions with more than one valid answer",
+      "questions depending on niche knowledge",
+      "professorial or lecturing tone",
+      "answers longer than 2 words",
+      "culturally insensitive or polarizing topics"
+    ]
+  },
+
+  "reference_examples": [
+    {
+      "id": "QUIZ_1",
+      "topic": "Everyday science",
+      "difficulty": "Average",
+      "language": "English",
+      "output": {
+        "topic": "Everyday science",
+        "intro_voiceover": "Today we ask about everyday science. Can you get all five right?",
+        "like_and_subscribe_voiceover": "Like this video and subscribe to our channel for more quizzes like this!",
+        "questions": [
+          {
+            "question": "What planet is known as the Red Planet?",
+            "answer1": "Earth",
+            "answer2": "Mars",
+            "answer3": "Jupiter",
+            "answer4": "Venus",
+            "correct_answer": 2,
+            "durationInSeconds": 6.0,
+            "revealDelaySeconds": 3
+          },
+          {
+            "question": "What gas do plants absorb?",
+            "answer1": "Oxygen",
+            "answer2": "Nitrogen",
+            "answer3": "Carbon dioxide",
+            "answer4": "Hydrogen",
+            "correct_answer": 3,
+            "durationInSeconds": 6.0,
+            "revealDelaySeconds": 3
+          },
+          {
+            "question": "What is the boiling point of water?",
+            "answer1": "50°C",
+            "answer2": "75°C",
+            "answer3": "100°C",
+            "answer4": "150°C",
+            "correct_answer": 3,
+            "durationInSeconds": 6.0,
+            "revealDelaySeconds": 3
+          },
+          {
+            "question": "What force pulls objects to Earth?",
+            "answer1": "Magnetism",
+            "answer2": "Gravity",
+            "answer3": "Friction",
+            "answer4": "Inertia",
+            "correct_answer": 2,
+            "durationInSeconds": 6.0,
+            "revealDelaySeconds": 3
+          },
+          {
+            "question": "What is the hardest natural substance?",
+            "answer1": "Gold",
+            "answer2": "Iron",
+            "answer3": "Diamond",
+            "answer4": "Quartz",
+            "correct_answer": 3,
+            "durationInSeconds": 6.0,
+            "revealDelaySeconds": 3
+          }
+        ]
+      }
+    }
+  ],
+
+  "generation_instructions": {
+    "must_include": [
+      "exactly 5 questions",
+      "4 answer options per question",
+      "correct_answer as integer 1-4",
+      "intro_voiceover in {{language}}",
+      "like_and_subscribe_voiceover in {{language}}",
+      "topic in {{language}}",
+      "durationInSeconds for every question",
+      "revealDelaySeconds for every question"
+    ],
+    "must_avoid": [
+      "markdown code fences",
+      "explanations or introductions outside the JSON",
+      "more than one correct answer per question",
+      "questions longer than 7 words",
+      "answers longer than 2 words",
+      "topics that are politically polarizing or culturally sensitive"
+    ],
+    "success_condition": "The JSON parses cleanly against output_schema, contains exactly 5 questions with 4 unique options each, exactly one correct_answer per question, and the difficulty level matches {{difficulty}}.",
+    "difficulty_calibration": {
+      "Easy": "Questions answerable by most adults without deep knowledge.",
+      "Average": "Questions requiring general knowledge or common school-level facts.",
+      "Hard": "Questions requiring specialized knowledge or uncommon facts."
+    }
+  },
+
+  "remotion_mapping": {
+    "composition_id": "Quiz",
+    "input_props": "The entire output_schema JSON is passed as inputProps to the composition.",
+    "calculate_metadata": "durationInFrames = sum(question.durationInSeconds * fps). The composition uses calculateMetadata to derive the total duration from the questions array.",
+    "assets_pipeline": [
+      "intro_voiceover is sent to the TTS provider to produce the intro audio.",
+      "like_and_subscribe_voiceover is sent to the TTS provider to produce the outro audio.",
+      "Each question is sent to the TTS provider to produce a per-question audio clip.",
+      "Optionally, a question-specific background image can be generated from the topic or left as an animated background."
+    ],
+    "required_components": [
+      "QuizIntro",
+      "QuestionCard",
+      "AnswerOption",
+      "CorrectAnswerReveal",
+      "ProgressBar",
+      "ScoreCounter",
+      "SubscribeCTA"
+    ],
+    "scene_timing": {
+      "intro": "intro audio duration",
+      "per_question": "durationInSeconds + revealDelaySeconds",
+      "reveal": "highlight correct answer for 2s",
+      "outro": "like_and_subscribe audio duration"
+    }
+  }
+}
