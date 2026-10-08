@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.70
+- **Blueprints Remotion — Tarefas 4–8**: sistema completo LLM → JSON → assets → Remotion → MP4.
+- **`hermes_ui/blueprint_assets.py`**: extração de prompts/segmentos, geração paralela de imagens (ThreadPoolExecutor max 4), TTS em série, injecção de imageUrl/audioUrl por blueprint.
+- **5 composições Remotion**: InspirationalVideo (1920×1080), Quiz (1080×1920), SocialReel (1080×1920), Top10 (1920×1080), WouldYouRather (1080×1920) + componentes partilhados (NarrationAudio, AnimatedImage, SceneTransition, SubscribeCTA, ProgressBar).
+- **docs/blueprints.md**: guia completo (formato, como adicionar, placeholders, validação, assets, calculateMetadata, limitações).
+
 ## 0.9.69 — 2026-10-08
 - **Blueprints Remotion**: adicionados os 5 blueprints de formato de vídeo em `seed/blueprints/` (Inspirational Long-Form, Quiz Videos, Social Media Reels, Top 10 Ranking, Would You Rather).
 - **`hermes_ui/blueprint_loader.py`**: leitura, validação e listagem de blueprints; resolução de placeholders (`{{topic}}`, `{{language}}`, `{{difficulty}}`); construção do system prompt final para o LLM.
