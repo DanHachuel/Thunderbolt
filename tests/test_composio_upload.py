@@ -1,4 +1,4 @@
-import json
+﻿import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -379,3 +379,19 @@ def test_execute_upload_attaches_quota_classification(monkeypatch, tmp_path):
     # O texto integral permanece para a lógica de retries (account markers).
     assert "did not provide upload URL" in result["error"]
     assert result["diagnostics"]["composio_response"]
+
+
+def test_classify_shared_project_quota_403_is_actionable():
+    # 09/10: o projecto PARTILHADO do Composio esgota tambem a quota geral
+    # (403 quotaExceeded / RESOURCE_EXHAUSTED), bloqueando uploads e descoberta
+    # a nivel global da plataforma Composio.
+    payload = (
+        "Status: 403. The request cannot be completed because you have exceeded your quota. "
+        "reason: quotaExceeded domain: youtube.quota RESOURCE_EXHAUSTED"
+    )
+    result = composio_upload.classify_composio_youtube_error(payload)
+    assert result["kind"] == "youtube_upload_quota"
+    assert result["status"] == 403
+    assert "PARTILHADO" in result["message"]
+    assert "API Youtube" in result["message"]
+

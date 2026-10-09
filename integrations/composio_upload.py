@@ -35,8 +35,11 @@ def classify_composio_youtube_error(error_text: str) -> dict[str, Any]:
     lowered = text.casefold()
     quota_markers = (
         status_code == 429,
+        status_code == 403 and "quota" in lowered,
         "quota exceeded" in lowered,
         "quotaexceeded" in lowered,
+        "resource_exhausted" in lowered,
+        "exceeded your quota" in lowered,
         "video uploads per day" in lowered,
         "ratelimitexceeded" in lowered,
     )
@@ -45,13 +48,15 @@ def classify_composio_youtube_error(error_text: str) -> dict[str, Any]:
             "kind": "youtube_upload_quota",
             "status": status_code or 429,
             "message": (
-                "A quota diária de uploads do YouTube do projecto Google Cloud usado pela app Composio foi "
-                "excedida (limite 'Video Uploads per day', cerca de 6 uploads por dia). A quota repõe à "
-                "meia-noite, hora do Pacífico (~04:00 de Brasília). Importante: (1) cada teste/upload conta "
-                "para o limite do dia, mesmo quando falha depois de criar a sessão de upload; (2) verifique o "
-                "YouTube Studio do canal — podem existir vídeos não listados criados por tentativas que "
-                "reportaram falha; (3) para testes fora desta quota, use o modo 'API Youtube' com as "
-                "credenciais Google próprias do canal."
+                "A quota do YouTube do projecto Google Cloud PARTILHADO do Composio foi excedida. Este projecto é "
+                "usado por todos os utilizadores da plataforma Composio e a quota diária (uploads e consultas gerais) "
+                "é consumida a nível global — repõe à meia-noite, hora do Pacífico, e esgota-se cedo todos os dias. "
+                "Não é a quota do seu canal nem do Thunderbolt. Importante: (1) cada teste/upload conta para o "
+                "limite do dia, mesmo quando falha depois de criar a sessão; (2) verifique o YouTube Studio do "
+                "canal — podem existir vídeos não listados criados por tentativas que reportaram falha; (3) para "
+                "uploads fiáveis use o modo 'API Youtube' (as credenciais Google próprias do canal, com quota "
+                "individual); quando o Composio falha por quota, o pipeline usa automaticamente a rota oficial "
+                "como fallback."
             ),
         }
     if "did not provide upload url" in lowered or "upload url" in lowered:
