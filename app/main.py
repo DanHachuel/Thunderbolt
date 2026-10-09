@@ -2349,14 +2349,13 @@ def render_blueprints():
         st.divider()
         st.subheader("Importar blueprint JSON")
         uploaded = st.file_uploader("Subir novo blueprint JSON", type=["json"], key="blueprint_upload")
-        target_folder = st.selectbox("Pasta", ["importados", "canais", "nichos"], key="blueprint_target_folder")
         if uploaded and st.button("Guardar blueprint JSON", type="secondary"):
             try:
                 data = json.loads(uploaded.getvalue().decode("utf-8"))
                 if not isinstance(data, dict):
                     raise ValueError("O JSON raiz deve ser um objecto.")
                 safe_name = Path(uploaded.name).stem.replace(" ", "-") + ".json"
-                destination = BLUEPRINTS / target_folder / safe_name
+                destination = BLUEPRINTS / safe_name
                 if destination.exists() and not st.checkbox("Confirmar substituição", key="confirm_blueprint_replace"):
                     st.warning("O ficheiro já existe. Confirme a substituição.")
                 else:
@@ -2366,10 +2365,16 @@ def render_blueprints():
                     st.rerun()
             except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
                 st.error(f"JSON inválido: {exc}")
+        # Uma única lista: Blueprints JSON e de conteúdo (.md) juntos, sem
+        # separadores nem pastas de separação — os ficheiros de controlo
+        # (pares de thumbnails, demo) e as pastas de outras abas ficam de fora
+        # (storage._is_selectable_blueprint).
         files = list_blueprint_files()
-        st.subheader(f"Blueprints existentes ({len(files)})")
+        content_files = list_content_blueprint_files()
+        total = len(files) + len(content_files)
+        st.subheader(f"Blueprints ({total})")
         search = st.text_input("Pesquisar blueprints", key="blueprint_search")
-        if not files:
+        if not total:
             st.info("Ainda não existem blueprints na pasta local.")
         for path in files:
             try:
@@ -2389,13 +2394,8 @@ def render_blueprints():
             except Exception as exc:
                 with st.expander(f"Inválido — {path.stem}"):
                     st.error(str(exc))
-        content_files = list_content_blueprint_files()
-        st.divider()
-        st.subheader(f"Blueprints de conteúdo ({len(content_files)})")
-        st.caption("Blueprints de roteiro e estratégia de conteúdo; não são templates de thumbnail.")
-        content_search = st.text_input("Pesquisar Blueprints de conteúdo", key="content_blueprint_search")
         for path in content_files:
-            if content_search and content_search.casefold() not in path.name.casefold():
+            if search and search.casefold() not in path.name.casefold():
                 continue
             try:
                 with st.expander(path.stem):

@@ -1002,15 +1002,34 @@ def set_display_name(kind: str, path: Path, name: str) -> str:
     return clean_name
 
 
+# Ficheiros de controlo e artefactos de outras abas que nunca podem entrar
+# no catálogo de Blueprints seleccionável (reproduzido em 09/10: o rglob
+# mostrava o registo de pares, o blueprint demo "Canal Hermes Demo" e
+# ficheiros das pastas de thumbnails/brandings como se fossem Blueprints).
+BLUEPRINT_EXCLUDED_FOLDERS = {"thumbnails", "brandings", "music", "conteudo"}
+BLUEPRINT_CONTROL_FILES = {"thumbnail_blueprint_pairs.json", "demo-content-hermes.json"}
+LEGACY_LIST_CONTROL_NAMES = {"lista.txt", "lista.txt.json"}
+
+
+def _is_selectable_blueprint(path: Path) -> bool:
+    name = path.name.casefold()
+    if name in BLUEPRINT_CONTROL_FILES or name in LEGACY_LIST_CONTROL_NAMES:
+        return False
+    if path.stem.casefold() == "lista.txt":
+        return False
+    try:
+        relative = path.relative_to(BLUEPRINTS)
+    except ValueError:
+        return False
+    if any(part.casefold() in BLUEPRINT_EXCLUDED_FOLDERS for part in relative.parts[:-1]):
+        return False
+    return True
+
+
 def list_blueprint_files() -> list[Path]:
     ensure_storage()
     return sorted(
-        (
-            path
-            for path in BLUEPRINTS.rglob("*.json")
-            if path.name.casefold() not in {"lista.txt", "lista.txt.json"}
-            and path.stem.casefold() != "lista.txt"
-        ),
+        (path for path in BLUEPRINTS.rglob("*.json") if _is_selectable_blueprint(path)),
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
@@ -1018,7 +1037,16 @@ def list_blueprint_files() -> list[Path]:
 
 def list_content_blueprint_files() -> list[Path]:
     ensure_storage()
-    return sorted(CONTENT_BLUEPRINTS.glob("*.md"), key=lambda path: path.stat().st_mtime, reverse=True)
+    return sorted(
+        (
+            path
+            for path in CONTENT_BLUEPRINTS.glob("*.md")
+            # Thumbnail Blueprints pertencem apenas à aba Thumbnails Blueprints.
+            if not path.stem.casefold().endswith("_thumbnail_blueprint")
+        ),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
 
 
 def load_content_blueprint_file(path: Path) -> str:

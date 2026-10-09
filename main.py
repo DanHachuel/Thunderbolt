@@ -1068,14 +1068,13 @@ def render_blueprints():
         st.divider()
         st.subheader("Importar blueprint JSON")
         uploaded = st.file_uploader("Subir novo blueprint JSON", type=["json"], key="blueprint_upload")
-        target_folder = st.selectbox("Pasta", ["importados", "canais", "nichos"], key="blueprint_target_folder")
         if uploaded and st.button("Guardar blueprint JSON", type="secondary"):
             try:
                 data = json.loads(uploaded.getvalue().decode("utf-8"))
                 if not isinstance(data, dict):
                     raise ValueError("O JSON raiz deve ser um objecto.")
                 safe_name = Path(uploaded.name).stem.replace(" ", "-") + ".json"
-                destination = BLUEPRINTS / target_folder / safe_name
+                destination = BLUEPRINTS / safe_name
                 if destination.exists() and not st.checkbox("Confirmar substituição", key="confirm_blueprint_replace"):
                     st.warning("O ficheiro já existe. Confirme a substituição.")
                 else:
