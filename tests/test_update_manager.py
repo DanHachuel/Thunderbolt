@@ -191,10 +191,17 @@ def test_sigint_handlers_shutdown_launcher_and_release_port():
     launcher = (Path(__file__).resolve().parents[1] / "scripts" / "cli.mjs").read_text(encoding="utf-8")
     bootstrap = (Path(__file__).resolve().parents[1] / "scripts" / "streamlit_bootstrap.py").read_text(encoding="utf-8")
     # Desde 0.9.48 os handlers passam o motivo de saída à telemetria
-    # (launcher_exiting); o comportamento de encerrar o launcher e libertar a
-    # porta mantém-se idêntico.
-    assert 'process.on("SIGINT", () => stopWorker("ctrl+c"));' in launcher
+    # (launcher_exiting). Desde 0.9.71/0.9.72 um Ctrl+C isolado (incluindo o
+    # eco da rajada de ~27 ms) é registado e ignorado — encerrar exige dois
+    # Ctrl+C com 0,3-3 s de intervalo; o launcher continua a libertar a porta.
+    assert 'process.on("SIGINT", () => {' in launcher
+    assert 'stopWorker("ctrl+c");' in launcher
+    assert "CTRL_C_BURST_WINDOW_MS = 300" in launcher
+    assert "CTRL_C_CONFIRM_WINDOW_MS = 3000" in launcher
+    assert 'diagnostic("ctrl_c_burst_ignored"' in launcher
     assert 'process.on("SIGTERM", () => stopWorker("external_kill"));' in launcher
+    assert 'process.on("SIGHUP", () => stopWorker("console_closed"));' in launcher
+    assert 'process.on("SIGBREAK", () => stopWorker("ctrl+break"));' in launcher
     assert "if (child && !child.killed) child.kill();" in launcher
     assert 'stdio: ["ignore", "pipe", "pipe"]' in launcher
     assert 'if (!shuttingDown) process.stderr.write(chunk);' in launcher

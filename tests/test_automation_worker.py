@@ -162,17 +162,26 @@ def test_automation_lock_recovers_after_dead_process(tmp_path, monkeypatch):
 
 def test_automation_lock_rejects_live_process(tmp_path, monkeypatch):
     from hermes_ui import automation_worker
-    import os
+    import subprocess
+    import sys
+
     import pytest
 
     root = _isolate_lock_storage(tmp_path, monkeypatch)
     lock_path = root / automation_worker.LOCK_FILENAME
-    lock_path.write_text(f"pid={os.getpid()}\n", encoding="utf-8")
-
-    with pytest.raises(RuntimeError, match="worker de automação activo"):
-        automation_worker._acquire_lock()
-
-    assert lock_path.exists()
+    # 0.9.73: o lock só é recusado quando o PID pertence realmente a um worker
+    # do Thunderbolt — um processo qualquer com o mesmo número de PID não conta.
+    dummy = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)  # hermes_ui.automation_worker"],
+    )
+    try:
+        lock_path.write_text(f"pid={dummy.pid}\n", encoding="utf-8")
+        with pytest.raises(RuntimeError, match="worker de automação activo"):
+            automation_worker._acquire_lock()
+        assert lock_path.exists()
+    finally:
+        dummy.kill()
+        dummy.wait()
 
 
 def test_automation_lock_invalid_format_is_treated_as_stale(tmp_path, monkeypatch):

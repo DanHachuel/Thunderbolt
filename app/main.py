@@ -1546,6 +1546,72 @@ def render_video_generation_settings(
                     settings["style_ia"] = st.selectbox("Estilo IA", AI_STYLE_OPTIONS, key=f"{prefix}_style_ia")
                 else:
                     settings["style_ia"] = ""
+                # 0.9.75 — Blueprints Remotion: seletor + placeholders dinâmicos.
+                settings["blueprint_id"] = ""
+                settings["blueprint_values"] = {}
+                if settings["video_source"] == "Remotion":
+                    from hermes_ui.blueprint_loader import find_placeholders, list_blueprints, load_blueprint
+                    from hermes_ui.remotion_provider import get_remotion_status as _remotion_status
+
+                    remotion_status = _remotion_status()
+                    if not remotion_status.get("available"):
+                        st.warning("Remotion indisponível. Motivos:\n- " + "\n- ".join(remotion_status.get("reasons") or ["ambiente incompleto"]))
+                    else:
+                        available_blueprints = list_blueprints()
+                        if not available_blueprints:
+                            st.error("Nenhum blueprint Remotion encontrado em `storage/blueprints/`.")
+                        else:
+                            selected_blueprint_id = st.selectbox(
+                                "Blueprint",
+                                [bp["blueprint_id"] for bp in available_blueprints],
+                                format_func=lambda bp_id: f"{bp_id} — {next(bp['domain'] for bp in available_blueprints if bp['blueprint_id'] == bp_id)}",
+                                key=f"{prefix}_remotion_blueprint",
+                            )
+                            blueprint_document = load_blueprint(selected_blueprint_id)
+                            st.caption(
+                                f"v{blueprint_document.get('version', '?')} · {blueprint_document.get('domain', '')} · "
+                                f"{blueprint_document.get('composition_id', '')} · "
+                                f"{blueprint_document.get('width', '?')}×{blueprint_document.get('height', '?')} @ {blueprint_document.get('fps', 30)}fps"
+                            )
+                            blueprint_values: dict[str, str] = {}
+                            for placeholder in find_placeholders(blueprint_document):
+                                if placeholder == "topic":
+                                    # O tema do formulário é o {{topic}} do blueprint.
+                                    blueprint_values[placeholder] = str(settings.get("video_subject") or "").strip()
+                                elif placeholder == "language":
+                                    # O idioma do formulário é o {{language}} do blueprint.
+                                    blueprint_values[placeholder] = str(settings.get("script_language") or "").strip()
+                                elif placeholder == "difficulty":
+                                    blueprint_values[placeholder] = st.selectbox(
+                                        "Difficulty",
+                                        ["Easy", "Average", "Hard"],
+                                        index=1,
+                                        key=f"{prefix}_remotion_blueprint_difficulty",
+                                    )
+                                else:
+                                    blueprint_values[placeholder] = st.text_input(
+                                        placeholder.replace("_", " ").title(),
+                                        key=f"{prefix}_remotion_blueprint_{placeholder}",
+                                    )
+                            generation_instructions = blueprint_document.get("generation_instructions") or {}
+                            with st.expander("Blueprint preview", expanded=False):
+                                preview_cols = st.columns(2)
+                                with preview_cols[0]:
+                                    st.markdown("**Must include**")
+                                    for item in generation_instructions.get("must_include", []):
+                                        st.markdown(f"- {item}")
+                                with preview_cols[1]:
+                                    st.markdown("**Must avoid**")
+                                    for item in generation_instructions.get("must_avoid", []):
+                                        st.markdown(f"- {item}")
+                                reference_examples = blueprint_document.get("reference_examples") or []
+                                if reference_examples:
+                                    st.markdown("**Reference example**")
+                                    st.code(json.dumps(reference_examples[0], indent=2, ensure_ascii=False), language="json")
+                            if not all(str(value or "").strip() for value in blueprint_values.values()):
+                                st.info("Preencha todos os campos do blueprint (incluindo o Video Subject) para criar tarefas.")
+                            settings["blueprint_id"] = selected_blueprint_id
+                            settings["blueprint_values"] = blueprint_values
                 if settings["video_source"] == "Montage: Text-to-Images":
                     defaults = read_json("settings.json", {})
                     settings["text_to_images_scene_duration"] = st.number_input("Duração alvo das cenas (segundos)", min_value=1, max_value=30, value=int(defaults.get("text_to_images_scene_duration", 5)), key=f"{prefix}_text_to_images_scene_duration")

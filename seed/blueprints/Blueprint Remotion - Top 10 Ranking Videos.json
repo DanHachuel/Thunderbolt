@@ -1,0 +1,240 @@
+{
+  "blueprint_id": "top_10_videos",
+  "version": "1.0.0",
+  "domain": "countdown_ranking_long_form",
+  "composition_id": "Top10",
+  "fps": 30,
+  "width": 1920,
+  "height": 1080,
+
+  "system_instructions": {
+    "role": "Creative assistant for a Top 10 Rankings video channel and idea generator",
+    "task_description": "Generate everything needed for a complete Top 10 countdown video: subject ideas, intro/outro, and the 10 ranked items, all as structured JSON that will be rendered by Remotion.",
+    "sub_tasks": [
+      "SUB_TASK_1 — IDEA_GENERATION: Produce an array of 10 distinct evergreen subject ideas for Top 10 videos. Each idea must be 4 words or fewer, timeless, and not require real-time knowledge.",
+      "SUB_TASK_2 — INTRO_OUTRO: For a chosen subject, write an energetic intro and a warm outro, each with a voiceover script and a matching image prompt.",
+      "SUB_TASK_3 — RANKING: For the same subject, generate exactly 10 ranked items from number 10 down to number 1, each with voiceoverText, imagePrompt, and lowerThirdText."
+    ],
+    "constraints": [
+      "The ranking must always start at number 10 and count down to number 1.",
+      "Each voiceoverText in the ranking must be 2–3 sentences and explicitly state the rank and item name.",
+      "Each imagePrompt in the ranking must clearly match the visuals described in its voiceoverText.",
+      "The intro must welcome viewers, mention the subject, and create curiosity or excitement.",
+      "The outro must recap the list, invite engagement (e.g., asking for favorites), and thank the audience.",
+      "All voiceover texts, lowerThirdText, and the title must be in {{language}}.",
+      "All image prompts must be in English, detailed, and photorealistic.",
+      "Keep the tone consistent with the subject (fun, informative, dramatic, etc.) and use variety so entries feel fresh.",
+      "Do NOT include markdown, explanations, or text outside the JSON."
+    ],
+    "critical_instruction": "Return ONLY valid JSON matching output_schema. The ranking array must contain exactly 10 items, ordered from rank 10 to rank 1. All voiceover texts must be in {{language}}. All image prompts must be in English and photorealistic."
+  },
+
+  "output_schema": {
+    "subjectIdeas": [
+      "string (max 4 words, evergreen, in {{language}})"
+    ],
+    "title": "string (the chosen subject, in {{language}})",
+    "intro": {
+      "voiceoverText": "string (in {{language}})",
+      "imagePrompt": "string (photorealistic, in English)",
+      "durationInSeconds": "number (estimated from voiceoverText length / 2.5 words per second)"
+    },
+    "ranking": [
+      {
+        "rank": "integer (10 down to 1)",
+        "voiceoverText": "string (2–3 sentences, in {{language}})",
+        "imagePrompt": "string (photorealistic, in English)",
+        "lowerThirdText": "string (short item name, in {{language}})",
+        "durationInSeconds": "number (estimated from voiceoverText length / 2.5 words per second)"
+      }
+    ],
+    "outro": {
+      "voiceoverText": "string (in {{language}})",
+      "imagePrompt": "string (photorealistic, in English)",
+      "durationInSeconds": "number (estimated from voiceoverText length / 2.5 words per second)"
+    }
+  },
+
+  "style_guide": {
+    "tone": "fun, informative, energetic, visually descriptive",
+    "pacing": "fast intro → measured ranking entries → warm outro; each rank entry is self-contained and punchy",
+    "hook_style": "intro must create curiosity and promise a satisfying countdown",
+    "sentence_style": "short, declarative sentences; always open each rank with the rank number and the item name",
+    "emotional_tone": "anticipation building toward number 1, ending with a warm and satisfied conclusion",
+    "point_of_view": "second-person narrator addressing the viewer directly",
+    "audience_addressing_style": "direct engagement ('Which one is your favorite?', 'Do you agree with our number 1?')",
+    "vocabulary": "accessible, lively, varied across entries to avoid repetition",
+    "visual_cue_prompts": [
+      "bold lower-third with rank number and item name",
+      "high-resolution hero image per item",
+      "countdown progress indicator",
+      "smooth transitions between ranks",
+      "final montage in the outro"
+    ],
+    "avoid": [
+      "repeating the same sentence structure across rank entries",
+      "generic stock-photo vibes",
+      "culturally insensitive or politically polarizing subjects",
+      "voiceover entries longer than 3 sentences",
+      "any text outside the JSON"
+    ]
+  },
+
+  "reference_examples": [
+    {
+      "id": "TOP10_1",
+      "subject": "Breakfast meals",
+      "language": "English",
+      "output": {
+        "subjectIdeas": [
+          "Cities in the US",
+          "Breakfast meals",
+          "Clothing brands",
+          "Fictional villains",
+          "Luxury cars",
+          "Fast food chains",
+          "Theme parks",
+          "Mobile apps",
+          "Board games",
+          "Movie soundtracks"
+        ],
+        "title": "Top 10 Breakfast Meals",
+        "intro": {
+          "voiceoverText": "Welcome to our Top 10 countdown of the most popular breakfast meals around the world. Whether you are looking for something hearty or sweet, you will not want to miss this delicious lineup. Let us dive right in!",
+          "imagePrompt": "A colorful, high-resolution spread of global breakfast foods on a rustic wooden table, with steam rising and morning sunlight pouring in through a window, photorealistic, cinematic lighting",
+          "durationInSeconds": 14.0
+        },
+        "ranking": [
+          {
+            "rank": 10,
+            "voiceoverText": "Starting off our list at number 10, it is the classic British breakfast. This hearty meal includes fried eggs, bacon, sausages, baked beans, and toast, perfect for a filling start to the day.",
+            "imagePrompt": "A traditional full English breakfast on a plate with fried eggs, crispy bacon, sausages, baked beans, tomatoes, and buttered toast, beautifully arranged, photorealistic, warm morning light",
+            "lowerThirdText": "English Breakfast",
+            "durationInSeconds": 13.6
+          },
+          {
+            "rank": 9,
+            "voiceoverText": "At number 9, we have the French croissant. Flaky, buttery, and best enjoyed with coffee, it is the reason mornings in Paris feel like a small holiday.",
+            "imagePrompt": "A freshly baked golden croissant on a white ceramic plate beside a cup of espresso, soft morning light from a Parisian cafe window, photorealistic, shallow depth of field",
+            "lowerThirdText": "French Croissant",
+            "durationInSeconds": 12.4
+          },
+          {
+            "rank": 8,
+            "voiceoverText": "Coming in at number 8 is the Japanese breakfast. Miso soup, grilled fish, rice, and pickled vegetables create a balanced, savory start that many travelers never forget.",
+            "imagePrompt": "A traditional Japanese breakfast tray with miso soup, grilled salmon, steamed rice, pickled vegetables, and green tea, on a wooden table, photorealistic, soft natural light",
+            "lowerThirdText": "Japanese Breakfast",
+            "durationInSeconds": 13.2
+          },
+          {
+            "rank": 7,
+            "voiceoverText": "Number 7 goes to the Mexican chilaquiles. Crispy tortillas soaked in salsa, topped with eggs and cheese, this dish wakes you up with flavor and color.",
+            "imagePrompt": "A colorful plate of chilaquiles with red salsa, scrambled eggs, crumbled cheese, avocado slices, and cilantro, on a rustic ceramic plate, photorealistic, bright natural lighting",
+            "lowerThirdText": "Mexican Chilaquiles",
+            "durationInSeconds": 12.8
+          },
+          {
+            "rank": 6,
+            "voiceoverText": "At number 6, it is the American pancake stack. Fluffy, golden, and drenched in maple syrup, it is the ultimate comfort breakfast for lazy weekend mornings.",
+            "imagePrompt": "A tall stack of fluffy golden pancakes with maple syrup pouring down, topped with a pat of butter and fresh berries, on a white plate, photorealistic, warm cozy morning light",
+            "lowerThirdText": "American Pancakes",
+            "durationInSeconds": 12.0
+          },
+          {
+            "rank": 5,
+            "voiceoverText": "Halfway through at number 5, we have the Turkish breakfast. A spread of cheeses, olives, jams, bread, and eggs turns breakfast into a shared ritual you want to linger over.",
+            "imagePrompt": "An overhead shot of a traditional Turkish breakfast spread with small plates of cheese, olives, honey, jams, fresh bread, boiled eggs, and tea in tulip glasses, on a wooden table, photorealistic",
+            "lowerThirdText": "Turkish Breakfast",
+            "durationInSeconds": 14.4
+          },
+          {
+            "rank": 4,
+            "voiceoverText": "Coming in at number 4 is the Indian breakfast. From dosa to paratha with chutney, the combinations are endless and every region has its own morning favorite.",
+            "imagePrompt": "A crispy golden dosa on a banana leaf with small bowls of coconut chutney and sambar, alongside a cup of masala chai, photorealistic, warm natural lighting",
+            "lowerThirdText": "Indian Breakfast",
+            "durationInSeconds": 12.8
+          },
+          {
+            "rank": 3,
+            "voiceoverText": "Taking the number 3 spot is the Israeli shakshuka. Eggs poached in a spiced tomato sauce, scooped up with fresh bread, this dish is as comforting as it is colorful.",
+            "imagePrompt": "A cast iron skillet of shakshuka with poached eggs in rich tomato sauce, garnished with fresh parsley and feta, next to a piece of crusty bread, photorealistic, warm lighting",
+            "lowerThirdText": "Israeli Shakshuka",
+            "durationInSeconds": 13.6
+          },
+          {
+            "rank": 2,
+            "voiceoverText": "Just shy of the top spot at number 2, it is the Mediterranean mezze breakfast. Olives, hummus, fresh vegetables, and flatbread make mornings feel light and vibrant.",
+            "imagePrompt": "A Mediterranean mezze breakfast spread with hummus, olives, sliced tomatoes, cucumbers, feta, olive oil, and warm flatbread, on a rustic table, photorealistic, bright natural light",
+            "lowerThirdText": "Mediterranean Mezze",
+            "durationInSeconds": 13.2
+          },
+          {
+            "rank": 1,
+            "voiceoverText": "And finally, at number 1, it is the classic American diner breakfast. Eggs, bacon, hash browns, and endless coffee, this is the breakfast that built a nation of early risers.",
+            "imagePrompt": "A classic American diner breakfast with sunny-side-up eggs, crispy bacon, golden hash browns, buttered toast, and a steaming cup of coffee, on a retro diner counter, photorealistic, nostalgic warm lighting",
+            "lowerThirdText": "American Diner Breakfast",
+            "durationInSeconds": 14.8
+          }
+        ],
+        "outro": {
+          "voiceoverText": "There you have it, the Top 10 breakfast meals that bring joy to mornings worldwide. Which one is your favorite? Let us know in the comments below, and thank you for joining us on this delicious journey.",
+          "imagePrompt": "A cozy breakfast table with empty plates, coffee cups, and a handwritten note saying Thanks for watching, soft morning light through a window, photorealistic, warm and inviting",
+          "durationInSeconds": 14.4
+        }
+      }
+    }
+  ],
+
+  "generation_instructions": {
+    "must_include": [
+      "an array of exactly 10 subject ideas, each 4 words or fewer",
+      "one chosen title that matches one of the subject ideas",
+      "an intro with voiceoverText and imagePrompt",
+      "exactly 10 ranking entries ordered from rank 10 down to rank 1",
+      "each ranking entry with voiceoverText, imagePrompt, lowerThirdText and durationInSeconds",
+      "an outro with voiceoverText and imagePrompt",
+      "all voiceovers and lowerThirdText in {{language}}",
+      "all image prompts in English, photorealistic"
+    ],
+    "must_avoid": [
+      "markdown code fences",
+      "explanations or introductions outside the JSON",
+      "ranking arrays with more or fewer than 10 items",
+      "ranking entries that do not begin with the rank number",
+      "repeating the same sentence opener across multiple ranking entries",
+      "image prompts in {{language}} instead of English"
+    ],
+    "success_condition": "The JSON parses cleanly against output_schema, subjectIdeas contains 10 evergreen topics, ranking contains exactly 10 items ordered 10 → 1, and the visual identity is consistent across all image prompts.",
+    "length_requirement": "Each ranking voiceoverText must be 2–3 sentences (roughly 25–45 words). Intro and outro must be roughly 30–50 words each."
+  },
+
+  "remotion_mapping": {
+    "composition_id": "Top10",
+    "input_props": "The entire output_schema JSON is passed as inputProps to the composition.",
+    "calculate_metadata": "durationInFrames = intro.durationInSeconds*fps + sum(ranking[i].durationInSeconds*fps) + outro.durationInSeconds*fps. The composition uses calculateMetadata to derive the total duration.",
+    "assets_pipeline": [
+      "Each imagePrompt (intro, 10 ranking entries, outro) is sent to the image generation provider to produce a still per scene.",
+      "Each voiceoverText (intro, 10 ranking entries, outro) is sent to the TTS provider to produce one audio file per scene.",
+      "Both assets are passed to Remotion via props (imageUrl, audioUrl) alongside the scene metadata.",
+      "Optional: background music, lower-third animation, and countdown progress bar are added at the composition level."
+    ],
+    "required_components": [
+      "IntroScene",
+      "RankingItem",
+      "LowerThird",
+      "CountdownProgress",
+      "OutroScene",
+      "NarrationAudio",
+      "AnimatedImage",
+      "SceneTransition",
+      "SubscribeCTA"
+    ],
+    "scene_timing": {
+      "intro": "intro.durationInSeconds",
+      "ranking_item": "ranking[i].durationInSeconds",
+      "outro": "outro.durationInSeconds",
+      "transition_between_items": "0.4s fade"
+    },
+    "lower_third_behavior": "Appears 0.5s after scene start and fades out 1s before scene end. Displays rank number and lowerThirdText in {{language}}."
+  }
+}

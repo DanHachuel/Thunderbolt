@@ -45,6 +45,7 @@ from hermes_ui.remotion_provider import (
     COMPOSITION_SIZES,
     RemotionProviderError,
     audio_duration_seconds,
+    get_remotion_status,
     prepare_input_props,
     run_remotion_render,
 )
@@ -1960,6 +1961,141 @@ def _run_remotion_video(
     return video_path
 
 
+def _run_remotion_blueprint(
+    task: dict[str, Any],
+    *,
+    settings: dict[str, Any],
+    channel: dict[str, Any],
+    topic: str,
+    blueprint_id: str,
+    blueprint_values: dict[str, Any],
+) -> tuple[Path, dict[str, Any]]:
+    """Executa o pipeline de um Blueprint Remotion (docs/blueprints.md).
+
+    Fluxo: load → placeholders → LLM gera o JSON estruturado → validação
+    Pydantic (1 retry com o erro anexado) → assets (imagens do pool em
+    paralelo + TTS da cadeia local em série) → render Remotion na composição
+    do blueprint. A duração é derivada exclusivamente pelo calculateMetadata
+    da composição — nunca calculada aqui.
+    """
+    from .blueprint_assets import generate_assets
+    from .blueprint_loader import build_system_prompt, find_placeholders, load_blueprint, render_blueprint_prompt
+    from .creative_generation import _chat_json
+    from .schemas import SCHEMAS
+
+    task_id = str(task.get("id") or "")
+    generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else {}
+
+    status = get_remotion_status()
+    if not status.get("available"):
+        raise PipelineError("Remotion indisponível: " + "; ".join(status.get("reasons") or ["ambiente incompleto"]))
+
+    try:
+        blueprint = load_blueprint(blueprint_id)
+    except FileNotFoundError as exc:
+        raise PipelineError(f"Blueprint Remotion não encontrado: {blueprint_id}") from exc
+
+    # Placeholders: valores do formulário; topic/language/difficulty têm
+    # defaults da tarefa/canal para automações sem formulário. O tópico é
+    # sempre incluído no prompt do utilizador, mesmo quando o blueprint o
+    # expressa apenas como campo do output (ex.: quiz) e não como
+    # {{placeholder}}.
+    values: dict[str, str] = {}
+    for placeholder in find_placeholders(blueprint):
+        raw = str(blueprint_values.get(placeholder) or "").strip()
+        if not raw and placeholder == "topic":
+            raw = str(topic or "").strip()
+        if not raw and placeholder == "language":
+            raw = str(task.get("language") or channel.get("language") or "Português").strip()
+        if not raw and placeholder == "difficulty":
+            raw = "Average"
+        values[placeholder] = raw
+    topic_value = str(blueprint_values.get("topic") or values.get("topic") or topic or "").strip()
+    if not topic_value:
+        raise PipelineError(f"O blueprint {blueprint_id} exige um tópico e a tarefa não tem um.")
+    values["topic"] = topic_value
+    values = {key: value for key, value in values.items() if str(value or "").strip()}
+
+    resolved = render_blueprint_prompt(blueprint, values)
+    system_prompt = build_system_prompt(resolved)
+    user_prompt = ". ".join(f'{key}: "{value}"' for key, value in values.items() if value) + "."
+
+    # --- LLM → JSON estruturado (com retry único de validação) ---
+    _update(task_id, stage="video", state="doing", progress=max(18, int(task.get("progress") or 0)), error=None, video_helper_status=f"blueprint {blueprint_id}: a gerar o JSON estruturado com o LLM")
+    schema = SCHEMAS.get(blueprint_id)
+    if schema is None:
+        raise PipelineError(f"Schema Pydantic em falta para o blueprint {blueprint_id}.")
+    try:
+        llm_payload = _chat_json(settings, system_prompt, user_prompt)
+    except CreativeGenerationError as exc:
+        metadata = _failure_attribution(task, settings, "script", error=str(exc))
+        raise PipelineError(_failure_message(f"Blueprint Remotion ({blueprint_id}): {exc}", metadata), failure_metadata=metadata) from exc
+    _update(task_id, progress=max(22, int(task.get("progress") or 0)))
+    try:
+        validated = schema.model_validate(llm_payload)
+    except Exception as exc:
+        retry_prompt = user_prompt + f"\n\nYour previous output failed validation with: {exc}. Fix the issues and return ONLY valid JSON matching the schema."
+        try:
+            llm_payload = _chat_json(settings, system_prompt, retry_prompt)
+            validated = schema.model_validate(llm_payload)
+        except CreativeGenerationError as generation_exc:
+            metadata = _failure_attribution(task, settings, "script", error=str(generation_exc))
+            raise PipelineError(_failure_message(f"Blueprint Remotion ({blueprint_id}): {generation_exc}", metadata), failure_metadata=metadata) from generation_exc
+        except Exception as retry_exc:
+            raise PipelineError(f"O JSON do blueprint {blueprint_id} falhou a validação após o retry: {retry_exc}") from retry_exc
+    llm_json = validated.model_dump()
+    _update(task_id, progress=max(25, int(task.get("progress") or 0)), video_helper_status=f"blueprint {blueprint_id}: JSON validado")
+
+    # --- Assets: imagens do pool (paralelo) + TTS da cadeia local (série) ---
+    _update(task_id, progress=max(30, int(task.get("progress") or 0)), video_helper_status=f"blueprint {blueprint_id}: a gerar imagens e narração")
+    voice = str(task.get("voice") or generation_settings.get("voice") or channel.get("default_voice") or channel.get("voice") or "pt-BR-FranciscaNeural-Female").strip()
+    effective_settings = {**settings, **generation_settings}
+    image_aspect = "portrait" if int(blueprint.get("height") or 0) > int(blueprint.get("width") or 0) else "wide"
+    (STORAGE / "audio").mkdir(parents=True, exist_ok=True)
+
+    def image_provider(prompt: str) -> Path:
+        return generate_image_from_pool(settings, prompt, topic=str(values.get("topic") or topic or ""), variant_index=0, aspect_ratio=image_aspect)
+
+    tts_counter = iter(range(100000))
+
+    def tts_provider(text: str) -> Path:
+        output = STORAGE / "audio" / f"{task_id}-bp-{next(tts_counter)}.mp3"
+        return synthesize_text_to_images_audio(text, effective_settings, voice, output)
+
+    def task_cancelled() -> bool:
+        return str((_task_by_id(task_id) or {}).get("state") or "") == "blocked"
+
+    try:
+        llm_json = generate_assets(
+            task=task,
+            llm_json=llm_json,
+            blueprint_id=blueprint_id,
+            image_provider=image_provider,
+            tts_provider=tts_provider,
+            max_workers=4,
+            cancel_check=task_cancelled,
+        )
+    except RuntimeError as exc:
+        if "cancelada" in str(exc):
+            raise PipelineStopped(f"O blueprint {blueprint_id} foi interrompido pelo utilizador.") from exc
+        raise PipelineError(f"A geração de assets do blueprint {blueprint_id} falhou: {exc}") from exc
+    _update(task_id, progress=max(70, int(task.get("progress") or 0)), video_helper_status=f"blueprint {blueprint_id}: assets prontos")
+
+    # --- Render Remotion na composição do blueprint ---
+    composition_id = str(blueprint.get("composition_id") or "").strip()
+    if not composition_id:
+        raise PipelineError(f"O blueprint {blueprint_id} não define composition_id.")
+    _update(task_id, progress=max(72, int(task.get("progress") or 0)), video_helper_status=f"blueprint {blueprint_id}: render Remotion ({composition_id})")
+    video_path = STORAGE / "videos" / f"{task_id}-remotion-blueprint.mp4"
+    input_props = {**llm_json, "videoId": task_id}
+    try:
+        run_remotion_render(task, video_path, composition_id, input_props)
+    except RemotionProviderError as exc:
+        metadata = _failure_attribution(task, settings, "video", error=str(exc))
+        raise PipelineError(_failure_message(f"Pipeline Remotion (blueprint {blueprint_id}): {exc}", metadata), failure_metadata=metadata) from exc
+    return video_path, llm_json
+
+
 def _run_task(task: dict[str, Any]) -> dict[str, Any]:
     """Run one resumable local-cascade task, reusing valid persisted artefacts."""
     task_id = str(task.get("id") or "")
@@ -2021,6 +2157,56 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
         except (ValueError, MediaGenerationError, CreativeGenerationError) as exc:
             raise PipelineError(f"Only Music falhou: {exc}") from exc
         return _update(task_id, **updates) or task
+
+    # 0.9.75 — Blueprints Remotion: o LLM gera o JSON estruturado do blueprint
+    # (não um roteiro Markdown), os assets são gerados e o vídeo é renderizado
+    # pela composição do blueprint. O documento sintético fica persistido como
+    # script da tarefa e o vídeo já entra nos artefactos — as etapas padrão
+    # seguintes (título/keywords, thumbnail, upload) correm sem alterações.
+    blueprint_values = generation_settings.get("blueprint_values") if isinstance(generation_settings.get("blueprint_values"), dict) else {}
+    blueprint_id = str(generation_settings.get("blueprint_id") or task.get("blueprint_id") or "").strip()
+    if route == "remotion" and blueprint_id:
+        blueprint_video_path, blueprint_json = _run_remotion_blueprint(
+            task,
+            settings=settings,
+            channel=channel,
+            topic=topic,
+            blueprint_id=blueprint_id,
+            blueprint_values=blueprint_values,
+        )
+        blueprint_title = str(blueprint_json.get("topic") or topic).strip()
+        blueprint_keywords = sorted({word for word in re.findall(r"[\wÀ-ÿ]{4,}", blueprint_title)})[:8]
+        blueprint_script = {
+            "document_type": "video_script",
+            "title": blueprint_title,
+            "summary": blueprint_title,
+            "content": json.dumps(blueprint_json, ensure_ascii=False, indent=2),
+            "language": str(task.get("language") or channel.get("language") or "Português"),
+            "blueprint_id": blueprint_id,
+            "blueprint_name": str(blueprint_json.get("topic") or blueprint_id),
+            "channel_id": str(channel.get("id") or ""),
+            "channel_name": str(channel.get("name") or "Canal sem nome"),
+            "generated_by": "remotion_blueprint",
+        }
+        blueprint_record = save_script_document(blueprint_script)
+        blueprint_artifacts = dict(task.get("artifacts") or {})
+        blueprint_artifacts["script"] = blueprint_record.get("path", "")
+        blueprint_artifacts["blueprint_json"] = _save_json_artifact(task_id, "blueprint-output", blueprint_json)
+        blueprint_artifacts["video"] = str(blueprint_video_path)
+        _update(
+            task_id,
+            title=blueprint_title,
+            tags=blueprint_keywords,
+            artifacts=blueprint_artifacts,
+            video_ready=True,
+            progress=max(80, int(task.get("progress") or 0)),
+            error=None,
+        )
+        # Refresca a tarefa: as etapas seguintes leem o título/tags/artefactos
+        # persistidos e o estágio de vídeo é ignorado (o MP4 já existe).
+        task = _task_by_id(task_id) or task
+        generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else generation_settings
+        artifacts = dict(task.get("artifacts") or blueprint_artifacts)
 
     script = _read_persisted_script(task, channel, blueprint, topic)
     if script is None:
