@@ -747,9 +747,29 @@ const stopWorker = (reason = "unknown") => {
   shutdownForceTimer = setTimeout(finishShutdown, 5000);
   shutdownForceTimer.unref();
 };
-// O Ctrl+C tem de encerrar o launcher, o Streamlit e os workers. Ignorar SIGINT
-// deixava a porta pública 3030 ocupada e impedia iniciar uma nova versão.
-process.on("SIGINT", () => stopWorker("ctrl+c"));
+// Ctrl+C: no Windows um CTRL_C_EVENT atinge TODOS os processos da consola
+// (cadeia npx → launcher → workers → MPT/ffmpeg) e cada evento isolado
+// fechava a aplicação inteira "sozinha" (evidência 08-09/10: launcher_exiting
+// ctrl+c sem ninguém tocar no teclado, worker em auto-pausa e MPT em
+// KeyboardInterrupt a meio da renderização — reproduzido em várias sessões).
+// Um Ctrl+C isolado passa a ser registado e ignorado; encerrar exige Ctrl+C
+// duplo em 3 s — e o encerramento real continua a libertar a porta 3030.
+let lastCtrlCAt = 0;
+process.on("SIGINT", () => {
+  const now = Date.now();
+  if (now - lastCtrlCAt <= 3000) {
+    stopWorker("ctrl+c");
+    return;
+  }
+  lastCtrlCAt = now;
+  diagnostic("ctrl_c_ignored", { pid: process.pid, uptime_seconds: Math.round(process.uptime()) });
+  console.log("Thunderbolt: Ctrl+C ignorado para não interromper execuções (interrupções espúrias fechavam a app sozinha). Prima Ctrl+C de novo em 3 s para encerrar.");
+});
+// Ctrl+Break e o fecho da janela da consola continuam a ser encerramentos
+// deliberados — a janela a fechar não pode deixar workers órfãos vivos a
+// disputar os locks do storage (o ciclo "app encerra sozinho" deixava-os).
+process.on("SIGBREAK", () => stopWorker("ctrl+break"));
+process.on("SIGHUP", () => stopWorker("console_closed"));
 process.on("SIGTERM", () => stopWorker("external_kill"));
 process.on("uncaughtException", (error) => {
   diagnostic("launcher_uncaught_exception", { error: String((error && (error.stack || error.message)) || error).slice(-500) });

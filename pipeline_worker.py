@@ -146,7 +146,7 @@ def _run_video_helper(task: dict[str, Any]) -> Path:
             env[key] = value
     command = ["uv", "run", "--no-project", "--python", "3.11", "python", "mpt_agent.py", "--subject", subject]
     try:
-        result = subprocess.run(command, cwd=helper_dir, env=env, capture_output=True, text=True, timeout=VIDEO_TIMEOUT_SECONDS, check=False)
+        result = subprocess.run(command, cwd=helper_dir, env=env, capture_output=True, text=True, timeout=VIDEO_TIMEOUT_SECONDS, check=False, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0)
     except FileNotFoundError as exc:
         raise PipelineError("O comando uv não está instalado; não foi possível iniciar a geração de vídeo.") from exc
     except subprocess.TimeoutExpired as exc:

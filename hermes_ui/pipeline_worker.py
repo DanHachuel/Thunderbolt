@@ -92,6 +92,27 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _ignore_console_ctrl_c() -> None:
+    """Windows: imuniza o worker ao CTRL_C_EVENT da consola partilhada.
+
+    Um Ctrl+C espúrio atinge toda a árvore da consola (npx → launcher →
+    workers → MPT/uv/ffmpeg) e interrompia este worker a meio de uma
+    renderização, deixando a fila em auto-pausa e a tarefa em failed
+    "sozinhos" (evidência 08-09/10: video_7c85d5e04d interrompido duas
+    vezes com KeyboardInterrupt no MPT e nenhum Ctrl+C no teclado). O
+    encerramento legítimo continua a cargo do launcher (worker.kill() →
+    TerminateProcess) e do guard de instância única (psutil terminate).
+    """
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.kernel32.SetConsoleCtrlHandler(None, True)
+    except (OSError, AttributeError, ImportError):
+        pass
+
+
 def _settings() -> dict[str, Any]:
     value = read_json("settings.json", {})
     return value if isinstance(value, dict) else {}
@@ -1488,6 +1509,12 @@ def _run_video_helper_once(
             cwd=helper_dir,
             env=env,
             start_new_session=os.name != "nt",
+            # Grupo de processos próprio no Windows: um CTRL_C_EVENT espúrio
+            # da consola (que atinge o grupo 0 inteiro — npx, launcher,
+            # workers) não interrompe mais a árvore uv/MPT/ffmpeg a meio
+            # da renderização. O encerramento legítimo continua a chegar
+            # via kill_tree (TerminateProcess), que ignora grupos.
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -2478,6 +2505,7 @@ def run_worker(interval_seconds: int = ACTIVE_INTERVAL_SECONDS) -> None:
 
 
 def main() -> None:
+    _ignore_console_ctrl_c()
     import argparse
 
     parser = argparse.ArgumentParser(description="Executor do pipeline de criação de vídeos Thunderbolt")

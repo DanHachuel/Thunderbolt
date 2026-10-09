@@ -115,8 +115,16 @@ def test_ci_logs_launcher_exiting_on_every_exit_path_with_reason():
     # O shutdown pelos sinais grava o motivo e o launcher_exiting corre no
     # finishShutdown do stopWorker; crash cobre uncaughtException e o bind
     # falhado; update cobre a reposição.
-    assert 'process.on("SIGINT", () => stopWorker("ctrl+c"));' in CLI_SOURCE
+    # 0.9.71: Ctrl+C isolado é registado (ctrl_c_ignored) e ignorado —
+    # interrupções espúrias da consola fechavam a app "sozinha"; encerrar
+    # exige Ctrl+C duplo em 3 s.
+    sigint_block = CLI_SOURCE.split('process.on("SIGINT"', 1)[1].split('process.on("SIGBREAK"', 1)[0]
+    assert "now - lastCtrlCAt <= 3000" in sigint_block
+    assert 'stopWorker("ctrl+c");' in sigint_block
+    assert 'diagnostic("ctrl_c_ignored"' in sigint_block
     assert 'process.on("SIGTERM", () => stopWorker("external_kill"));' in CLI_SOURCE
+    assert 'process.on("SIGHUP", () => stopWorker("console_closed"));' in CLI_SOURCE
+    assert 'process.on("SIGBREAK", () => stopWorker("ctrl+break"));' in CLI_SOURCE
     assert 'launcherExiting(shutdownReason);' in CLI_SOURCE
     assert 'launcherExiting("update");' in CLI_SOURCE
     assert CLI_SOURCE.count('launcherExiting("crash")') >= 2

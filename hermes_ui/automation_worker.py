@@ -44,6 +44,25 @@ def _local_now() -> datetime:
     return datetime.now().astimezone()
 
 
+def _ignore_console_ctrl_c() -> None:
+    """Windows: imuniza o worker ao CTRL_C_EVENT da consola partilhada.
+
+    Um Ctrl+C espúrio atinge toda a árvore da consola (npx → launcher →
+    workers → MPT) e interrompia o worker a meio da execução, pausando a
+    fila "sozinha" (evidência 08-09/10). O encerramento legítimo continua a
+    cargo do launcher (worker.kill() → TerminateProcess) e do guard de
+    instância única (psutil terminate), que não usam eventos de consola.
+    """
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.kernel32.SetConsoleCtrlHandler(None, True)
+    except (OSError, AttributeError, ImportError):
+        pass
+
+
 def _local_iso(value: datetime) -> str:
     return value.astimezone().isoformat(timespec="seconds")
 
@@ -455,6 +474,7 @@ def run_worker(interval_seconds: int = DEFAULT_INTERVAL_SECONDS) -> None:
 
 
 def main() -> None:
+    _ignore_console_ctrl_c()
     parser = argparse.ArgumentParser(description="Worker local de automação diária do Thunderbolt")
     parser.add_argument("--once", action="store_true", help="Executa apenas um tick usando o relógio local")
     parser.add_argument("--interval", type=int, default=DEFAULT_INTERVAL_SECONDS, help="Intervalo de verificação em segundos")

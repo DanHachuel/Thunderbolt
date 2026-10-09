@@ -1,0 +1,64 @@
+"""Blindagem da stack contra Ctrl+C espúdios da consola do Windows (0.9.71).
+
+Evidência do incidente (08-09/10/2026): um CTRL_C_EVENT atingia toda a
+consola partilhada (npx → launcher node → workers → uv/MPT/ffmpeg) sem
+ninguém tocar no teclado — o launcher saía com reason "ctrl+c", o worker
+de vídeo entrava em auto-pausa com a fila intacta e o MPT morria com
+KeyboardInterrupt a meio da escrita dos frames (tarefa video_7c85d5e04d
+interrompida duas vezes no mesmo padrão). A stack passa a ser imune:
+
+- launcher: Ctrl+C isolado é registado e ignorado; encerrar exige duplo;
+- workers: SetConsoleCtrlHandler(None, TRUE) ignora o CTRL_C_EVENT;
+- árvore MPT: CREATE_NEW_PROCESS_GROUP isenta-a do grupo 0 da consola;
+- streamlit: já ignorava SIGINT (streamlit_bootstrap.py, sem alterações).
+
+Os encerramentos legítimos continuam a funcionar: kill_tree e o
+worker.kill() do launcher usam TerminateProcess (não usam eventos de
+consola), logo não são afectados por esta blindagem.
+"""
+
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+CLI_SOURCE = (ROOT / "scripts" / "cli.mjs").read_text(encoding="utf-8")
+AUTOMATION_SOURCE = (ROOT / "hermes_ui" / "automation_worker.py").read_text(encoding="utf-8")
+PIPELINE_SOURCE = (ROOT / "hermes_ui" / "pipeline_worker.py").read_text(encoding="utf-8")
+MPT_AGENT_SOURCE = (ROOT / "seed" / "skills" / "mpt_agent.py").read_text(encoding="utf-8")
+STREAMLIT_BOOTSTRAP_SOURCE = (ROOT / "scripts" / "streamlit_bootstrap.py").read_text(encoding="utf-8")
+
+
+def test_workers_ignore_console_ctrl_c_on_windows():
+    for source in (AUTOMATION_SOURCE, PIPELINE_SOURCE, MPT_AGENT_SOURCE):
+        assert "def _ignore_console_ctrl_c" in source
+        assert "SetConsoleCtrlHandler(None, True)" in source
+
+
+def test_workers_armour_runs_on_entry():
+    for source, marker in (
+        (AUTOMATION_SOURCE, "def main() -> None:"),
+        (PIPELINE_SOURCE, "def main() -> None:"),
+    ):
+        main_block = source.split(marker, 1)[1].split("def ", 1)[0]
+        assert "_ignore_console_ctrl_c()" in main_block
+    mpt_main_block = MPT_AGENT_SOURCE.split("def main(argv: list[str] | None = None) -> int:", 1)[1].split("def ", 1)[0]
+    assert "_ignore_console_ctrl_c()" in mpt_main_block
+
+
+def test_video_helper_tree_gets_its_own_windows_process_group():
+    popen_block = PIPELINE_SOURCE.split("subprocess.Popen(", 1)[1][:2500]
+    assert "creationflags" in popen_block
+    assert "CREATE_NEW_PROCESS_GROUP" in popen_block
+    assert "creationflags=_windows_process_group_flags()" in MPT_AGENT_SOURCE.split("def run_checked", 1)[1][:1500]
+    assert MPT_AGENT_SOURCE.count("creationflags=_windows_process_group_flags()") >= 3
+
+
+def test_launcher_ignores_single_ctrl_c_and_requires_double_press():
+    assert 'diagnostic("ctrl_c_ignored"' in CLI_SOURCE
+    assert "now - lastCtrlCAt <= 3000" in CLI_SOURCE
+    assert 'stopWorker("ctrl+c")' in CLI_SOURCE
+
+
+def test_streamlit_bootstrap_keeps_ignoring_sigint():
+    # Pré-existente (sem alterações nesta versão): o streamlit já era imune.
+    assert "_custom_sigint_handler" in STREAMLIT_BOOTSTRAP_SOURCE
+    assert "signal.SIGINT" in STREAMLIT_BOOTSTRAP_SOURCE

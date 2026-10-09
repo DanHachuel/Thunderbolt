@@ -377,6 +377,7 @@ def supported_cli_options(root: Path, uv: str) -> dict[str, bool] | None:
             text=True,
             timeout=300,
             check=False,
+            creationflags=_windows_process_group_flags(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -733,6 +734,28 @@ def write_result_manifest(root: Path, payload: dict[str, object]) -> Path:
     temp_path.replace(result_path)
     return result_path.resolve()
 
+def _windows_process_group_flags() -> int:
+    """Windows: novo grupo de processos para a árvore uv/MPT/ffmpeg.
+
+    Um CTRL_C_EVENT espúrio da consola atinge o grupo 0 inteiro e
+    interrompia a renderização com KeyboardInterrupt a meio da escrita dos
+    frames (evidência 08-09/10). Um grupo próprio isenta esta árvore.
+    """
+    return subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+
+
+def _ignore_console_ctrl_c() -> None:
+    """Windows: ignora CTRL_C_EVENT (o pipeline termina via TerminateProcess)."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.kernel32.SetConsoleCtrlHandler(None, True)
+    except (OSError, AttributeError, ImportError):
+        pass
+
+
 def run_checked(command: list[str], *, cwd: Path) -> None:
     """Run dependency sync with a bounded wait and safe failure output."""
     log("installing or verifying project dependencies with uv")
@@ -746,6 +769,7 @@ def run_checked(command: list[str], *, cwd: Path) -> None:
             errors="replace",
             check=False,
             timeout=DEPENDENCY_SYNC_TIMEOUT_SECONDS,
+            creationflags=_windows_process_group_flags(),
         )
     except subprocess.TimeoutExpired as exc:
         raise SkillError(
@@ -877,6 +901,7 @@ def generate_video(
             stderr=subprocess.STDOUT,
             text=True,
             check=False,
+            creationflags=_windows_process_group_flags(),
         )
     if result.returncode != 0:
         tail = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-30:]
@@ -935,6 +960,7 @@ def generate_video(
 
 
 def main(argv: list[str] | None = None) -> int:
+    _ignore_console_ctrl_c()
     args = parse_args(argv)
     root = args.root.expanduser().resolve()
     try:

@@ -61,7 +61,7 @@ def test_supported_cli_options_parses_help(monkeypatch):
         )
         stderr = ""
 
-    def fake_run(command, cwd=None, capture_output=None, text=None, timeout=None, check=None):
+    def fake_run(command, **kwargs):
         return Result()
 
     monkeypatch.setattr(mpt_agent.subprocess, "run", fake_run)
@@ -91,7 +91,7 @@ def test_supported_cli_options_ignores_epilog_example_lines(monkeypatch):
         )
         stderr = ""
 
-    def fake_run(command, cwd=None, capture_output=None, text=None, timeout=None, check=None):
+    def fake_run(command, **kwargs):
         return Result()
 
     monkeypatch.setattr(mpt_agent.subprocess, "run", fake_run)
