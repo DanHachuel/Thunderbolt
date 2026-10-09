@@ -54,8 +54,21 @@ def test_video_helper_tree_gets_its_own_windows_process_group():
 
 def test_launcher_ignores_single_ctrl_c_and_requires_double_press():
     assert 'diagnostic("ctrl_c_ignored"' in CLI_SOURCE
-    assert "now - lastCtrlCAt <= 3000" in CLI_SOURCE
+    assert 'diagnostic("ctrl_c_burst_ignored"' in CLI_SOURCE
+    assert "CTRL_C_BURST_WINDOW_MS = 300" in CLI_SOURCE
+    assert "gap <= CTRL_C_BURST_WINDOW_MS" in CLI_SOURCE
     assert 'stopWorker("ctrl+c")' in CLI_SOURCE
+
+
+def test_launcher_warns_when_parents_die_and_it_becomes_orphan():
+    # 0.9.72: a rajada externa mata a cadeia npx/cmd (que não ignora ^C);
+    # o launcher sobrevive e tem de avisar que a app continua em segundo
+    # plano com a interface activa.
+    assert "function checkLauncherOrphan()" in CLI_SOURCE
+    assert 'diagnostic("launcher_orphaned"' in CLI_SOURCE
+    assert "http://localhost:3030/" in CLI_SOURCE
+    monitor_block = CLI_SOURCE.split("function monitorWorkers()", 1)[1].split("}", 1)[0]
+    assert "checkLauncherOrphan();" in monitor_block
 
 
 def test_streamlit_bootstrap_keeps_ignoring_sigint():

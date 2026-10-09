@@ -119,9 +119,16 @@ def test_ci_logs_launcher_exiting_on_every_exit_path_with_reason():
     # interrupções espúrias da consola fechavam a app "sozinha"; encerrar
     # exige Ctrl+C duplo em 3 s.
     sigint_block = CLI_SOURCE.split('process.on("SIGINT"', 1)[1].split('process.on("SIGBREAK"', 1)[0]
-    assert "now - lastCtrlCAt <= 3000" in sigint_block
+    # 0.9.72: rajadas de Ctrl+C (dois SIGINT com 27 ms de intervalo,
+    # evidência 09/10) não podem contar como confirmação — eco < 300 ms é
+    # ignorado; encerrar exige dois Ctrl+C com 0,3-3 s de intervalo.
+    assert "CTRL_C_BURST_WINDOW_MS = 300" in CLI_SOURCE
+    assert "CTRL_C_CONFIRM_WINDOW_MS = 3000" in CLI_SOURCE
+    assert "gap <= CTRL_C_BURST_WINDOW_MS" in sigint_block
+    assert "gap <= CTRL_C_CONFIRM_WINDOW_MS" in sigint_block
     assert 'stopWorker("ctrl+c");' in sigint_block
     assert 'diagnostic("ctrl_c_ignored"' in sigint_block
+    assert 'diagnostic("ctrl_c_burst_ignored"' in sigint_block
     assert 'process.on("SIGTERM", () => stopWorker("external_kill"));' in CLI_SOURCE
     assert 'process.on("SIGHUP", () => stopWorker("console_closed"));' in CLI_SOURCE
     assert 'process.on("SIGBREAK", () => stopWorker("ctrl+break"));' in CLI_SOURCE

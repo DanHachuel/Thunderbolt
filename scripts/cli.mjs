@@ -632,8 +632,26 @@ function startPipelineWorker() {
 
 function monitorWorkers() {
   if (shuttingDown) return;
+  checkLauncherOrphan();
   startPipelineWorker();
   startAutomationWorker();
+}
+
+let orphanNoticeShown = false;
+function checkLauncherOrphan() {
+  // 0.9.72: quando a fonte externa de Ctrl+C mata a cadeia npx/cmd (que não
+  // ignora o evento), o launcher sobrevive órfão e a app continua a correr
+  // — mas o prompt do terminal regressa e o utilizador pensa que fechou.
+  // O aviso deixa claro que a interface continua activa e como encerrar.
+  if (shuttingDown || orphanNoticeShown) return;
+  if (!process.ppid) return;
+  try {
+    process.kill(process.ppid, 0);
+  } catch {
+    orphanNoticeShown = true;
+    diagnostic("launcher_orphaned", { pid: process.pid, ppid: process.ppid });
+    console.log("Thunderbolt: o processo de arranque (npx/terminal) terminou, mas a app continua a correr em segundo plano — interface em http://localhost:3030/. Prima Ctrl+C duas vezes (0,3-3 s de intervalo) nesta janela para encerrar.");
+  }
 }
 
 function startStreamlit() {
@@ -752,18 +770,30 @@ const stopWorker = (reason = "unknown") => {
 // fechava a aplicação inteira "sozinha" (evidência 08-09/10: launcher_exiting
 // ctrl+c sem ninguém tocar no teclado, worker em auto-pausa e MPT em
 // KeyboardInterrupt a meio da renderização — reproduzido em várias sessões).
-// Um Ctrl+C isolado passa a ser registado e ignorado; encerrar exige Ctrl+C
-// duplo em 3 s — e o encerramento real continua a libertar a porta 3030.
+// 0.9.71: Ctrl+C isolado passou a ser ignorado. 0.9.72: a fonte externa
+// envia RAJADAS (evidência 09/10 01:29: dois SIGINT com 27 ms de intervalo
+// que a janela de confirmação de 3 s interpretava como Ctrl+C duplo) — um
+// segundo Ctrl+C a menos de 300 ms do anterior é eco da mesma interrupção e
+// NUNCA conta como confirmação; encerrar exige dois Ctrl+C com 0,3-3 s de
+// intervalo.
 let lastCtrlCAt = 0;
+const CTRL_C_BURST_WINDOW_MS = 300;
+const CTRL_C_CONFIRM_WINDOW_MS = 3000;
 process.on("SIGINT", () => {
   const now = Date.now();
-  if (now - lastCtrlCAt <= 3000) {
+  const gap = now - lastCtrlCAt;
+  if (lastCtrlCAt > 0 && gap <= CTRL_C_BURST_WINDOW_MS) {
+    diagnostic("ctrl_c_burst_ignored", { pid: process.pid, gap_ms: gap });
+    lastCtrlCAt = now;
+    return;
+  }
+  if (lastCtrlCAt > 0 && gap <= CTRL_C_CONFIRM_WINDOW_MS) {
     stopWorker("ctrl+c");
     return;
   }
   lastCtrlCAt = now;
   diagnostic("ctrl_c_ignored", { pid: process.pid, uptime_seconds: Math.round(process.uptime()) });
-  console.log("Thunderbolt: Ctrl+C ignorado para não interromper execuções (interrupções espúrias fechavam a app sozinha). Prima Ctrl+C de novo em 3 s para encerrar.");
+  console.log("Thunderbolt: Ctrl+C ignorado para não interromper execuções (interrupções espúrias fechavam a app sozinha). Prima Ctrl+C de novo (0,3-3 s depois) para encerrar.");
 });
 // Ctrl+Break e o fecho da janela da consola continuam a ser encerramentos
 // deliberados — a janela a fechar não pode deixar workers órfãos vivos a
