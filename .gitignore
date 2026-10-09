@@ -9,6 +9,7 @@ storage/state/*.json
 storage/state/*.corrupt-*
 storage/state/social_auto_upload/
 storage/state/backups/
+storage/tasks/
 storage/artifacts/*
 storage/videos/*
 storage/scripts/*
