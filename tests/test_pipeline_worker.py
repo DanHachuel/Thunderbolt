@@ -50,7 +50,7 @@ def test_interrupted_pipeline_worker_fails_active_task_and_pauses_pending_queue(
         "worker_pid": 987654321,
         "last_task_id": "video-interrupted",
     })
-    monkeypatch.setattr(pipeline_worker, "_pid_alive", lambda _pid: False)
+    monkeypatch.setattr(pipeline_worker, "_pid_alive", lambda _pid, **_kwargs: False)
 
     assert pipeline_worker._recover_interrupted_pipeline_worker() is True
 

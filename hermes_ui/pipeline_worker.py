@@ -1,7 +1,6 @@
 import os
 import sys
 import io
-import ctypes
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
 os.environ["PYTHONUTF8"] = "1"
@@ -158,28 +157,29 @@ def _lock_path() -> Path:
     return STORAGE / "state" / PIPELINE_LOCK_FILENAME
 
 
-def _pid_alive(pid: int) -> bool:
+def _pid_alive(pid: int, *, expect_marker: str = "") -> bool:
+    """True quando o PID existe E (quando pedido) é um worker do Thunderbolt.
+
+    0.9.73: o cheque anterior usava ctypes.windll + GetLastError() — o
+    windll não preserva o last-error da chamada, o valor vinha obsoleto e
+    devolvia "vivo" para PIDs já mortos, bloqueando o arranque com "já
+    existe um worker activo" depois de qualquer encerramento (reproduzido
+    em 09/10: PID 7292 inexistente recusado dezenas de vezes). A
+    verificação de identidade por cmdline protege também contra o reuso do
+    número de PID por processos alheios ao Thunderbolt.
+    """
     if pid <= 0:
         return False
-    if sys.platform == "win32":
-        try:
-            process_query_limited_information = 0x1000
-            handle = ctypes.windll.kernel32.OpenProcess(process_query_limited_information, False, pid)
-            if handle:
-                ctypes.windll.kernel32.CloseHandle(handle)
-                return True
-            return ctypes.windll.kernel32.GetLastError() == 5
-        except Exception:
-            return False
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
+        process = psutil.Process(int(pid))
+        if process.status() == psutil.STATUS_ZOMBIE:
+            return False
+        if not expect_marker:
+            return True
+        cmdline = " ".join(process.cmdline()).casefold()
+    except (psutil.Error, OSError, ValueError):
         return False
-    except PermissionError:
-        return True
-    except (OSError, SystemError, ValueError):
-        return False
-    return True
+    return expect_marker.casefold() in cmdline
 
 
 def _acquire_lock() -> Path | None:
@@ -193,7 +193,7 @@ def _acquire_lock() -> Path | None:
             old_pid = int(lock_contents.removeprefix("pid=").strip())
         except (OSError, ValueError):
             old_pid = 0
-        if _pid_alive(old_pid):
+        if _pid_alive(old_pid, expect_marker="hermes_ui.pipeline_worker"):
             raise RuntimeError(f"Já existe um pipeline worker activo (PID {old_pid}).")
         try:
             path.unlink()
@@ -350,7 +350,7 @@ def _recover_interrupted_pipeline_worker() -> bool:
         previous_pid = int(previous.get("worker_pid") or 0)
     except (TypeError, ValueError):
         previous_pid = 0
-    if previous_pid <= 0 or previous_pid == os.getpid() or _pid_alive(previous_pid):
+    if previous_pid <= 0 or previous_pid == os.getpid() or _pid_alive(previous_pid, expect_marker="hermes_ui.pipeline_worker"):
         return False
 
     task_id = str(previous.get("last_task_id") or "").strip()

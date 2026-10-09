@@ -47,6 +47,28 @@ function diagnostic(event, payload = {}) {
   } catch { /* logging never changes launcher behaviour */ }
 }
 
+let lastCtrlCForensicsAt = 0;
+function captureCtrlCForensics() {
+  // 0.9.73: fotografia da consola no momento do Ctrl+C ignorado. Os
+  // registos de input provam se houve entrega por teclado (KEY_EVENT
+  // Ctrl+C) ou geração por software (GenerateConsoleCtrlEvent); a janela
+  // em primeiro plano mostra se o utilizador estava no terminal. Corre no
+  // máximo uma vez por rajada (janela de 10 s) e nunca afecta o
+  // comportamento do launcher.
+  if (platform() !== "win32" || Date.now() - lastCtrlCForensicsAt < 10000) return;
+  lastCtrlCForensicsAt = Date.now();
+  if (!existsSync(venvPython)) return;
+  try {
+    const result = spawnSync(venvPython, [resolve(root, "scripts", "ctrl_c_forensics.py")], {
+      encoding: "utf8",
+      timeout: 8000,
+      windowsHide: true,
+    });
+    const payload = String(result.stdout || "").trim();
+    if (payload.startsWith("{")) diagnostic("ctrl_c_forensics", { snapshot: JSON.parse(payload) });
+  } catch { /* forensics nunca muda o comportamento */ }
+}
+
 function runKillTreeHelper(modeArgs) {
   // O venv do Thunderbolt tem sempre psutil (os workers dependem dele); o
   // Python de sistema pode não ter, por isso é tentado primeiro o venv.
@@ -498,6 +520,11 @@ let automationFailureCount = 0;
 let automationFailureWindowStartedAt = 0;
 let automationStableTimer = null;
 let lastAutomationWorkerError = "";
+// 0.9.73: o monitor de 2 s re-tentava o worker de automação para sempre
+// mesmo depois das 5 falhas — com o lock obsoleto (PID morto recusado pelo
+// falso positivo), o terminal enchia de "falhou 5 vezes seguidas" num loop
+// infinito. Passa a existir o mesmo travão do worker do pipeline.
+let automationAutoRestartDisabled = false;
 let pipelineFailureCount = 0;
 let pipelineStableTimer = null;
 let pipelineAutoRestartDisabled = false;
@@ -515,6 +542,7 @@ function scheduleAutomationWorkerRestart() {
   }
   automationFailureCount += 1;
   if (automationFailureCount >= 5) {
+    automationAutoRestartDisabled = true;
     console.error(`O worker de automação falhou 5 vezes seguidas. Última mensagem: ${lastAutomationWorkerError || "sem mensagem de erro capturada"}. Verifique o storage ou reinicie o Thunderbolt manualmente.`);
     return;
   }
@@ -527,7 +555,7 @@ function scheduleAutomationWorkerRestart() {
 }
 
 function startAutomationWorker() {
-  if (shuttingDown || worker || !hasScheduledAutomation() || workerDependencyFailureReported) return;
+  if (shuttingDown || worker || automationAutoRestartDisabled || !hasScheduledAutomation() || workerDependencyFailureReported) return;
   if (!checkWorkerDependencies("o worker de automação")) {
     workerDependencyFailureReported = true;
     return;
@@ -567,6 +595,7 @@ function startAutomationWorker() {
   automationStableTimer = setTimeout(() => {
     automationFailureCount = 0;
     automationFailureWindowStartedAt = 0;
+    automationAutoRestartDisabled = false;
     automationStableTimer = null;
   }, 60000);
 }
@@ -793,6 +822,7 @@ process.on("SIGINT", () => {
   }
   lastCtrlCAt = now;
   diagnostic("ctrl_c_ignored", { pid: process.pid, uptime_seconds: Math.round(process.uptime()) });
+  captureCtrlCForensics();
   console.log("Thunderbolt: Ctrl+C ignorado para não interromper execuções (interrupções espúrias fechavam a app sozinha). Prima Ctrl+C de novo (0,3-3 s depois) para encerrar.");
 });
 // Ctrl+Break e o fecho da janela da consola continuam a ser encerramentos

@@ -71,6 +71,30 @@ def test_launcher_warns_when_parents_die_and_it_becomes_orphan():
     assert "checkLauncherOrphan();" in monitor_block
 
 
+def test_launcher_captures_console_forensics_on_ignored_ctrl_c():
+    # 0.9.73: quando um Ctrl+C é ignorado, o launcher fotografa a consola
+    # (registos de input, janela em primeiro plano, processos anexados) para
+    # identificar a origem das rajadas — teclado/terminal vs. software.
+    assert "function captureCtrlCForensics()" in CLI_SOURCE
+    assert 'diagnostic("ctrl_c_forensics"' in CLI_SOURCE
+    assert (ROOT / "scripts" / "ctrl_c_forensics.py").is_file()
+    sigint_block = CLI_SOURCE.split('process.on("SIGINT"', 1)[1].split('process.on("SIGBREAK"', 1)[0]
+    assert "captureCtrlCForensics();" in sigint_block
+
+
+def test_launcher_stops_respawning_automation_worker_after_five_failures():
+    # 0.9.73: o monitor de 2 s re-tentava o worker de automação para sempre
+    # mesmo depois das 5 falhas — o lock obsoleto enchia o terminal de
+    # "falhou 5 vezes seguidas" num loop infinito (reproduzido em 09/10).
+    assert "let automationAutoRestartDisabled = false;" in CLI_SOURCE
+    start_block = CLI_SOURCE.split("function startAutomationWorker()", 1)[1].split("}", 1)[0]
+    assert "automationAutoRestartDisabled" in start_block
+    schedule_block = CLI_SOURCE.split("function scheduleAutomationWorkerRestart()", 1)[1].split("function startAutomationWorker()", 1)[0]
+    assert "automationAutoRestartDisabled = true;" in schedule_block
+    stable_block = CLI_SOURCE.split("automationStableTimer = setTimeout(", 1)[1].split("}, 60000);", 1)[0]
+    assert "automationAutoRestartDisabled = false;" in stable_block
+
+
 def test_streamlit_bootstrap_keeps_ignoring_sigint():
     # Pré-existente (sem alterações nesta versão): o streamlit já era imune.
     assert "_custom_sigint_handler" in STREAMLIT_BOOTSTRAP_SOURCE
