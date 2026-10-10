@@ -735,13 +735,18 @@ def write_result_manifest(root: Path, payload: dict[str, object]) -> Path:
     return result_path.resolve()
 
 def _windows_process_group_flags() -> int:
-    """Windows: novo grupo de processos para a árvore uv/MPT/ffmpeg.
+    """Windows: consola SEPARADA para a árvore uv/MPT/ffmpeg (0.9.81).
 
-    Um CTRL_C_EVENT espúrio da consola atinge o grupo 0 inteiro e
-    interrompia a renderização com KeyboardInterrupt a meio da escrita dos
-    frames (evidência 08-09/10). Um grupo próprio isenta esta árvore.
+    Evidência forense: 3 timestamps ao segundo entre o fecho de logs MPT e
+    launcher_exiting ctrl+c — subprocessos desta árvore emitem CTRL_C_EVENT
+    à consola quando terminam. DETACHED_PROCESS cria uma consola separada:
+    qualquer sinal gerado internamente (uv, ffmpeg, Python) fica isolado e
+    nunca chega ao launcher. CREATE_NEW_PROCESS_GROUP assegura que Ctrl+C
+    do grupo 0 também não interrompa a renderização.
     """
-    return subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+    if os.name != "nt":
+        return 0
+    return subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
 
 
 def _ignore_console_ctrl_c() -> None:

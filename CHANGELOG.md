@@ -1,4 +1,10 @@
 # Changelog
+## 0.9.82 — 2026-10-10
+- **Corrigida a CAUSA RAIZ dos Ctrl+C espúrios**: a árvore MPT (`uv` → Python `cli.py` → ffmpeg) partilhava a MESMA consola que o launcher Node.js. Quando um subprocesso dessa árvore terminava, emitia um `CTRL_C_EVENT` à consola partilhada — atingindo o launcher e encerrando a aplicação "sozinha". Evidência forense: **3 timestamps ao segundo exacto** entre o fecho de logs MPT e `launcher_exiting ctrl+c` (06/10 23:25:28↔29, 08/10 04:48:47, 08/10 18:42:25↔25).
+- **A árvore MPT corre agora numa consola SEPARADA** (`DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` no Popen do pipeline_worker e em todos os subprocessos do mpt_agent). Qualquer sinal gerado internamente (uv, ffmpeg, Python) fica **isolado na sua própria consola** e nunca chega ao launcher. O output continua a chegar via PIPE — nunca dependeu da consola.
+- **Ctrl+C único encerra (padrão CLI)**, mantido da 0.9.81. O eco de <300 ms é absorvido.
+- 1280 testes verdes.
+
 ## 0.9.81 — 2026-10-10
 - **REVERTIDA a gambiarra do "Ctrl+C duplo para encerrar"** — contra padrão de software e contra o utilizador. Um **Ctrl+C único encerra a aplicação**, como qualquer CLI. O eco de <300 ms da mesma tecla (o MobaXterm/PowerShell gera 2 SIGINTs por um Ctrl+C, com ~27 ms de intervalo) é absorvido silenciosamente — o primeiro evento encerra, o segundo não faz nada.
 - A forense de Ctrl+C (`scripts/ctrl_c_forensics.py`, 0.9.73) **continua activa**: no próximo Ctrl+C (encerramento ou espúrio), o launcher captura os registos de input da consola (teclado vs. software), a janela em primeiro plano e os processos anexados — os dados ficam em `launcher_diagnostics.jsonl` com o evento `ctrl_c_forensics` para identificar a causa raiz dos Ctrl+C espúrios que por vezes surgem sem teclado envolvido.
