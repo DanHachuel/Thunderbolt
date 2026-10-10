@@ -1619,10 +1619,15 @@ def render_video_generation_settings(
                                     # O idioma do formulário é o {{language}} do formato.
                                     blueprint_values[placeholder] = str(settings.get("script_language") or "").strip()
                                 elif placeholder == "difficulty":
+                                    # 0.9.78: opções e default vêm do formato
+                                    # (difficulty_calibration / default_values) —
+                                    # só o quiz declara {{difficulty}}.
+                                    difficulty_options = list((format_document.get("difficulty_calibration") or {}).keys()) or ["Easy", "Average", "Hard"]
+                                    difficulty_default = str((format_document.get("default_values") or {}).get("difficulty") or "Average")
                                     blueprint_values[placeholder] = st.selectbox(
                                         "Difficulty",
-                                        ["Easy", "Average", "Hard"],
-                                        index=1,
+                                        difficulty_options,
+                                        index=difficulty_options.index(difficulty_default) if difficulty_default in difficulty_options else 1,
                                         key=f"{prefix}_remotion_format_difficulty",
                                     )
                                 else:

@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+# Nota (0.9.78): o {{difficulty}} do formato quiz é um placeholder do PROMPT,
+# resolvido em hermes_ui/pipeline_worker.py antes da chamada ao LLM (default
+# "Average" de default_values). Não faz parte do output — o JSON que o LLM
+# devolve não contém difficulty e este modelo não o valida.
+
 
 class QuizQuestion(BaseModel):
     question: str = Field(..., min_length=3, max_length=200)

@@ -13,8 +13,19 @@
     "question max 7 words",
     "answers max 2 words",
     "topic, questions, answers and voiceovers in {{language}}",
+    "topic and questions must match the difficulty level specified in {{difficulty}}",
     "Return ONLY valid JSON. No markdown, no explanations."
   ],
+
+  "default_values": {
+    "difficulty": "Average"
+  },
+
+  "difficulty_calibration": {
+    "Easy": "Questions answerable by most adults without deep knowledge.",
+    "Average": "Questions requiring general knowledge or common school-level facts.",
+    "Hard": "Questions requiring specialized knowledge or uncommon facts."
+  },
 
   "output_schema": {
     "topic": "string (in {{language}})",

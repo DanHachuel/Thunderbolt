@@ -2034,7 +2034,9 @@ def _run_remotion_blueprint(
         if not raw and placeholder == "language":
             raw = str(task.get("language") or channel.get("language") or "Português").strip()
         if not raw and placeholder == "difficulty":
-            raw = "Average"
+            # 0.9.78: default vem do formato (default_values.difficulty,
+            # ex.: quiz.schema.json) — só o quiz declara {{difficulty}}.
+            raw = str((format_def.get("default_values") or {}).get("difficulty") or "Average")
         values[placeholder] = raw
     topic_value = str(blueprint_values.get("topic") or values.get("topic") or topic or "").strip()
     if not topic_value:

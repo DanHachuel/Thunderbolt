@@ -91,13 +91,15 @@ class TestRemotionFormats:
                 pytest.fail(f"{format_id} reference_example (expandido) falha validação: {exc}")
 
     def test_find_placeholders(self):
-        """0.9.76: os formatos corrigidos usam {{language}}; o {{difficulty}}
-        foi removido das novas versões dos schemas."""
+        """0.9.77 removeu {{difficulty}} de todos os formatos; 0.9.78
+        reintroduz-o apenas no quiz (com default Average no default_values)."""
         for format_id in FORMAT_IDS:
             placeholders = find_placeholders(_load_format(format_id))
             assert "language" in placeholders, format_id
         quiz_placeholders = find_placeholders(_load_format("quiz"))
-        assert "difficulty" not in quiz_placeholders
+        assert "difficulty" in quiz_placeholders
+        for format_id in ("inspirational", "social_reel", "top_10", "would_you_rather"):
+            assert "difficulty" not in find_placeholders(_load_format(format_id)), format_id
 
     def test_render_blueprint_prompt_substitutes_values(self):
         resolved = render_blueprint_prompt(_load_format("quiz"), {"topic": "Space", "language": "English", "difficulty": "Easy"})
