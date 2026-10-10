@@ -1,54 +1,76 @@
-# Blueprints Remotion — Guia Completo
+# Blueprints de Personalidade + Formatos Remotion — Guia
 
-## O que é um Blueprint
+## Dois conceitos separados (0.9.76)
 
-Um blueprint é um ficheiro JSON auto-contido que descreve um formato de vídeo para o pipeline Remotion. Cada blueprint define: as instruções do LLM, o schema do output, o estilo, exemplos de referência e o mapeamento para a composição Remotion.
+| Conceito | O que define | Onde vive |
+|---|---|---|
+| **Blueprint de personalidade** | *Quem o canal é* — tom, estilo, vocabulário, referências (MILITAR, FINANCE USA, Cocomelon…) | `storage/blueprints/` (semeado de `seed/blueprints/`) |
+| **Formato Remotion** | *O formato do JSON que o LLM deve produzir* para cada composição Remotion | `packages/remotion/schemas/*.schema.json` |
 
-### Campos obrigatórios
-| Campo | Descrição |
-|---|---|
-| `blueprint_id` | Identificador único (ex: `quiz_videos`) |
-| `composition_id` | Composição Remotion (ex: `Quiz`) |
-| `fps` | Frames por segundo (30) |
-| `width` × `height` | Dimensões (1920×1080 ou 1080×1920) |
-| `system_instructions` | Role + task_description + constraints + critical_instruction |
-| `output_schema` | Estrutura do JSON que o LLM deve produzir |
-| `style_guide` | Tom, ritmo, hook, vocabulário, avoid |
-| `reference_examples` | Few-shot completos (pelo menos 1) |
-| `generation_instructions` | must_include, must_avoid, success_condition |
-| `remotion_mapping` | composition_id, calculate_metadata, assets_pipeline, required_components |
+O modo Remotion combina os dois: a personalidade vem do canal (ou do dropdown
+da UI) e o formato é escolhido na UI. Os restantes modos (`pexels`,
+`text_to_images`, `web_images`, `full_ia`) continuam a usar apenas os
+blueprints de personalidade.
 
-## Como adicionar um novo Blueprint
+## Loader (`hermes_ui/blueprint_loader.py`)
 
-1. Criar o JSON em `seed/blueprints/` com todos os campos obrigatórios.
+- `list_personality_blueprints()` / `load_personality_blueprint(id)` —
+  personalidades; ignora e remove (migração) qualquer ficheiro de formato
+  que esteja na biblioteca.
+- `list_remotion_formats()` / `load_remotion_format(format_id)` — formatos, lidos
+  apenas de `packages/remotion/schemas/`.
+- `find_placeholders()` / `render_blueprint_prompt()` — substituição de
+  `{{placeholders}}` (ex.: `{{language}}`) em runtime.
+- `build_remotion_system_prompt(personality, format_def)` — concatena o
+  conteúdo do blueprint de personalidade com os `constraints` e o
+  `output_schema` do formato; nada mais.
+
+## Formato de um `*.schema.json`
+
+Campos obrigatórios: `format_id`, `composition_id`, `fps`, `width`, `height`,
+`constraints` (regras estruturais), `output_schema`, `reference_example`
+(exemplo estrutural, não few-shot de personalidade), `remotion_mapping`.
+
+Não pertencem ao formato: `system_instructions`, `style_guide`,
+`generation_instructions`, `domain`, `version` — esses campos pertencem à
+personalidade do canal.
+
+## Como adicionar um novo formato
+
+1. Criar `packages/remotion/schemas/<format_id>.schema.json`.
 2. Criar a composição em `packages/remotion/src/compositions/<Nome>.tsx`.
-3. Registar em `packages/remotion/src/Root.tsx` com `calculateMetadata`.
-4. Criar o schema Pydantic em `hermes_ui/schemas/<blueprint_id>.py`.
-5. Registar no `SCHEMAS` dict em `hermes_ui/schemas/__init__.py`.
-6. Adicionar o mapeamento de assets em `hermes_ui/blueprint_assets.py`.
-7. Adicionar testes em `tests/test_blueprint_loader.py`.
-
-## Resolução de Placeholders
-
-O Thunderbolt substitui tokens `{{topic}}`, `{{language}}`, `{{difficulty}}` em todos os campos de texto do blueprint via `render_blueprint_prompt()`. Os valores vêm do formulário da UI.
+3. Registar em `packages/remotion/src/Root.tsx` com `calculateMetadata` que
+   espelha exactamente o layout de Sequences do componente.
+4. Criar o modelo Pydantic em `hermes_ui/schemas/<formato>.py` e registar no
+   `SCHEMAS` de `hermes_ui/schemas/__init__.py` (chave = `format_id`).
+5. Adicionar os ramos de extração/injecção em `hermes_ui/blueprint_assets.py`
+   (chave = `format_id`).
+6. Adicionar testes em `tests/test_blueprint_loader.py` e
+   `tests/test_blueprint_assets.py`.
 
 ## Validação
 
-Cada blueprint tem um modelo Pydantic correspondente em `hermes_ui/schemas/`. Após o LLM devolver o JSON, o Thunderbolt valida com `SCHEMAS[blueprint_id].model_validate_json()`. Se falhar, tenta 1x com o erro anexado. Se falhar de novo, marca a tarefa como erro.
+Cada formato tem um modelo Pydantic correspondente. Após o LLM devolver o
+JSON, o Thunderbolt valida com `SCHEMAS[format_id].model_validate(...)`. Se
+falhar, tenta 1x com o erro anexado ao prompt. Se falhar de novo, a tarefa é
+marcada como erro.
 
 ## Geração de Assets
 
-- **Imagens**: `extract_image_prompts()` encontra todos os prompts; o provider ativo gera cada imagem em paralelo (ThreadPoolExecutor, max 4 workers); guardadas em `storage/tasks/<task_id>/images/`.
-- **TTS**: `extract_tts_segments()` encontra todos os textos; gerados em série; guardados em `storage/tasks/<task_id>/audio/`.
-- **Injecção**: `inject_assets()` adiciona `imageUrl` e `audioUrl` em cada cena sem alterar a estrutura original.
+- **Imagens**: `extract_image_prompts()` encontra todos os prompts; o pool de
+  imagem do sistema gera cada uma em paralelo (4 workers); guardadas em
+  `storage/tasks/<task_id>/images/`.
+- **TTS**: `extract_tts_segments()` encontra todos os textos; gerados em
+  série pela cadeia TTS do sistema; guardados em `storage/tasks/<task_id>/audio/`.
+- **Injecção**: `inject_assets()` adiciona `imageUrl`/`audioUrl` nas posições
+  correctas de cada formato, sem alterar a estrutura original.
 
-## inputProps
+## inputProps e duração
 
-Os inputProps para o Remotion são o JSON validado do LLM + os paths dos assets injetados. O `composition_id` do blueprint determina qual composição Remotion renderizar.
-
-## calculateMetadata
-
-O Remotion deriva `durationInFrames` a partir dos props via `calculateMetadata`. O Thunderbolt **nunca** pré-calcula durações — usa os campos `durationInSeconds`, `revealDelaySeconds`, `thinkingDelaySeconds` do JSON.
+Os inputProps para o Remotion são o JSON validado + os paths dos assets
+injectados. O `composition_id` do formato determina qual composição renderiza.
+O `calculateMetadata` do Remotion é a única fonte de verdade para
+`durationInFrames` — o Thunderbolt nunca calcula durações próprias.
 
 ## Limitações
 
@@ -59,4 +81,6 @@ O Remotion deriva `durationInFrames` a partir dos props via `calculateMetadata`.
 
 ## Preparação para @remotion/lambda
 
-A arquitectura é portável: os blueprints, schemas e wrapper não mudam. Apenas `run_remotion_render()` precisa ser adaptado para chamar a API Lambda em vez do subprocesso local.
+A arquitectura é portável: os formatos, schemas e wrapper não mudam. Apenas
+`run_remotion_render()` precisa ser adaptado para chamar a API Lambda em vez
+do subprocesso local.

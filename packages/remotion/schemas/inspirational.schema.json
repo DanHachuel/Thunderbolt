@@ -1,0 +1,76 @@
+{
+  "format_id": "inspirational",
+  "composition_id": "InspirationalVideo",
+  "fps": 30,
+  "width": 1920,
+  "height": 1080,
+
+  "constraints": [
+    "between 9 and 10 scenes",
+    "scene 1 tagged as hook",
+    "final scene tagged as uplift",
+    "voiceover_text in {{language}}",
+    "image_prompt in English, photorealistic",
+    "total voiceover_text across scenes ~220-260 words",
+    "Return ONLY valid JSON. No markdown, no explanations."
+  ],
+
+  "output_schema": {
+    "title": "string (in {{language}})",
+    "scenes": [
+      {
+        "id": "string (hook | development_1 | ... | uplift)",
+        "scene_type": "hook | development | uplift",
+        "voiceover_text": "string (in {{language}})",
+        "image_prompt": "string (photorealistic, in English)",
+        "durationInSeconds": "number"
+      }
+    ]
+  },
+
+  "reference_example": {
+    "title": "The Voice You Keep Ignoring",
+    "scenes": [
+      {
+        "id": "hook",
+        "scene_type": "hook",
+        "voiceover_text": "There is a voice inside you that has been waiting...",
+        "image_prompt": "Photorealistic close-up of a young person sitting alone on a rooftop at dawn, soft golden light, cinematic",
+        "durationInSeconds": 12.0
+      },
+      {
+        "id": "development_1",
+        "scene_type": "development",
+        "voiceover_text": "For years, you have told yourself you are not ready...",
+        "image_prompt": "Photorealistic image of a person looking into a mirror in a dimly lit room, warm morning light, cinematic",
+        "durationInSeconds": 11.2
+      },
+      {
+        "id": "uplift",
+        "scene_type": "uplift",
+        "voiceover_text": "So listen. Today. Not tomorrow. Not when you feel ready. Today...",
+        "image_prompt": "Photorealistic image of a lone figure walking confidently toward a bright horizon at sunrise, cinematic",
+        "durationInSeconds": 15.2
+      }
+    ]
+  },
+
+  "remotion_mapping": {
+    "composition_id": "InspirationalVideo",
+    "input_props": "The entire output_schema JSON is passed as inputProps.",
+    "calculate_metadata": "durationInFrames = sum(scene.durationInSeconds * fps).",
+    "assets_pipeline": [
+      "image_prompt → image provider → one still per scene",
+      "voiceover_text → TTS → one audio file per scene"
+    ],
+    "required_components": [
+      "IntroTitle",
+      "SceneRenderer",
+      "NarrationAudio",
+      "AnimatedBackground",
+      "SceneTransition",
+      "Subtitles",
+      "OutroCTA"
+    ]
+  }
+}

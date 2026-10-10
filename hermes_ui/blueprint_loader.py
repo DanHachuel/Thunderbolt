@@ -1,9 +1,17 @@
-"""Loader and validator for Remotion video blueprints.
+"""Loader de Blueprints de personalidade e Formatos Remotion (0.9.76).
 
-Reads self-contained blueprint JSON files from storage/blueprints/ (seeded
-from seed/blueprints/ on install). Each blueprint describes an LLM prompt,
-output schema, style guide and Remotion composition mapping for a specific
-video format (quiz, top-10, would-you-rather, etc.).
+Separa dois conceitos que a 0.9.75 confundia:
+
+- **Blueprint de personalidade** — define *quem o canal é* (tom, estilo,
+  vocabulário, referências). Vive em `storage/blueprints/` (semeado de
+  `seed/blueprints/`): MILITAR, FINANCE USA, Cocomelon, etc.
+- **Formato Remotion** — schema técnico que define *o formato do JSON que o
+  LLM deve produzir* para cada composição Remotion. Vive em
+  `packages/remotion/schemas/*.schema.json`: quiz, social_reel, top_10,
+  would_you_rather, inspirational.
+
+O modo Remotion combina os dois; os restantes modos continuam a usar apenas
+os blueprints de personalidade, exactamente como antes.
 """
 from __future__ import annotations
 
@@ -12,155 +20,193 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from .storage import STORAGE
+from .storage import STORAGE, list_blueprint_files
 
 logger = logging.getLogger(__name__)
 
 BLUEPRINTS_DIR = STORAGE / "blueprints"
 SEED_BLUEPRINTS_DIR = Path(__file__).resolve().parents[1] / "seed" / "blueprints"
+REMOTION_SCHEMAS_DIR = Path(__file__).resolve().parents[1] / "packages" / "remotion" / "schemas"
 
-REQUIRED_FIELDS = (
-    "blueprint_id",
+REMOTION_FORMAT_REQUIRED_FIELDS = (
+    "format_id",
     "composition_id",
     "fps",
     "width",
     "height",
-    "system_instructions",
+    "constraints",
     "output_schema",
-    "style_guide",
-    "reference_examples",
-    "generation_instructions",
+    "reference_example",
     "remotion_mapping",
 )
 
 
-def _is_blueprint_format(data: Any) -> bool:
-    """True quando o JSON tem a estrutura de um blueprint Remotion.
+def _is_remotion_format_document(data: Any) -> bool:
+    """True para documentos de formato Remotion.
 
-    Os blueprints de canal clássicos (Cocomelon, FINANCE USA, …) não têm
-    blueprint_id/composition_id e ficam de fora — só o formato blueprint
-    entra no seletor da UI e no pipeline Remotion.
+    Reconhece o formato novo (`format_id`) e o formato antigo da 0.9.75
+    (`blueprint_id` + `composition_id`) — ambos têm de sair da biblioteca de
+    blueprints de personalidade.
     """
-    return isinstance(data, dict) and "blueprint_id" in data and "composition_id" in data
+    if not isinstance(data, dict):
+        return False
+    return "format_id" in data or ("blueprint_id" in data and "composition_id" in data)
 
 
-def _blueprint_files() -> list[Path]:
-    """Blueprint JSONs em storage/blueprints/ (raiz e importados/), sem duplicados.
+def migrate_remotion_formats_out_of_storage() -> list[str]:
+    """0.9.76: remove formatos Remotion que tenham ficado em storage/blueprints.
 
-    O install (scripts/cli.mjs) copia os seeds *.json para importados/; a
-    raiz também é aceite para instalações antigas. Só ficheiros no formato
-    blueprint (com blueprint_id + composition_id) são considerados — os
-    blueprints de canal clássicos partilham a pasta sem poluir o seletor.
+    Os formatos pertencem a `packages/remotion/schemas/`; cópias antigas na
+    biblioteca de personalidades (raiz ou importados/) são apagadas com log.
     """
-    paths: list[Path] = []
-    seen_names: set[str] = set()
-    for folder in (BLUEPRINTS_DIR, BLUEPRINTS_DIR / "importados"):
-        if not folder.is_dir():
+    removed: list[str] = []
+    if not BLUEPRINTS_DIR.is_dir():
+        return removed
+    for path in sorted(BLUEPRINTS_DIR.rglob("*.json")):
+        if path.name == "thumbnail_blueprint_pairs.json":
             continue
-        for path in sorted(folder.glob("*.json")):
-            if path.name == "thumbnail_blueprint_pairs.json" or path.name in seen_names:
-                continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if _is_remotion_format_document(data):
             try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            if _is_blueprint_format(data):
-                seen_names.add(path.name)
-                paths.append(path)
-    return paths
+                path.unlink()
+                removed.append(str(path))
+                logger.info("Formato Remotion removido de %s (vive em packages/remotion/schemas).", path)
+            except OSError as exc:
+                logger.warning("Não foi possível remover o formato de %s: %s", path, exc)
+    return removed
 
 
-def validate_blueprint(blueprint: dict[str, Any]) -> list[str]:
-    """Return a list of validation errors; empty means valid."""
-    if not isinstance(blueprint, dict):
-        return ["Blueprint is not a JSON object"]
+# ---------------------------------------------------------------------------
+# Blueprints de personalidade
+# ---------------------------------------------------------------------------
+
+
+def list_personality_blueprints() -> list[dict[str, Any]]:
+    """Blueprints de personalidade (MILITAR, FINANCE USA, …) para os selectores.
+
+    Ignora silenciosamente qualquer ficheiro de formato Remotion e apaga as
+    cópias antigas que por ventura existam (migração 0.9.76).
+    """
+    migrate_remotion_formats_out_of_storage()
+    result: list[dict[str, Any]] = []
+    for path in list_blueprint_files():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if _is_remotion_format_document(data):
+            continue
+        result.append({
+            "id": str(data.get("id") or path.stem),
+            "name": str(data.get("name") or data.get("title") or path.stem),
+            "file": path.name,
+        })
+    return result
+
+
+def load_personality_blueprint(blueprint_id: str) -> dict[str, Any]:
+    """Carrega um blueprint de personalidade por id. Raises FileNotFoundError."""
+    wanted = str(blueprint_id or "").strip()
+    for path in list_blueprint_files():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if _is_remotion_format_document(data):
+            continue
+        if str(data.get("id") or path.stem) == wanted:
+            return data
+    raise FileNotFoundError(f"Blueprint de personalidade não encontrado: {blueprint_id}")
+
+
+# ---------------------------------------------------------------------------
+# Formatos Remotion
+# ---------------------------------------------------------------------------
+
+
+def validate_remotion_format(format_def: dict[str, Any]) -> list[str]:
+    """Devolve os erros de validação do formato (vazio = válido)."""
+    if not isinstance(format_def, dict):
+        return ["Formato não é um objecto JSON"]
     errors: list[str] = []
-    for field in REQUIRED_FIELDS:
-        if field not in blueprint or blueprint[field] in (None, "", [], {}):
-            errors.append(f"Missing required field: {field}")
-    instructions = blueprint.get("system_instructions")
-    if isinstance(instructions, dict):
-        for key in ("role", "task_description"):
-            if not str(instructions.get(key) or "").strip():
-                errors.append(f"system_instructions.{key} is empty")
-    remotion = blueprint.get("remotion_mapping")
-    if isinstance(remotion, dict):
-        if not str(remotion.get("composition_id") or "").strip():
-            errors.append("remotion_mapping.composition_id is empty")
+    for field in REMOTION_FORMAT_REQUIRED_FIELDS:
+        if field not in format_def or format_def[field] in (None, "", [], {}):
+            errors.append(f"Campo obrigatório em falta: {field}")
     for numeric in ("fps", "width", "height"):
-        value = blueprint.get(numeric)
+        value = format_def.get(numeric)
         if value is not None:
             try:
                 int(value)
             except (TypeError, ValueError):
-                errors.append(f"{numeric} must be an integer, got {value!r}")
+                errors.append(f"{numeric} deve ser inteiro, obtido {value!r}")
+    remotion = format_def.get("remotion_mapping")
+    if isinstance(remotion, dict) and not str(remotion.get("composition_id") or "").strip():
+        errors.append("remotion_mapping.composition_id vazio")
     return errors
 
 
-def list_blueprints() -> list[dict[str, Any]]:
-    """Read all blueprint JSONs and return lightweight metadata for the UI."""
-    metadata: list[dict[str, Any]] = []
-    for path in _blueprint_files():
+def list_remotion_formats() -> list[dict[str, Any]]:
+    """Metadados dos formatos em packages/remotion/schemas/*.schema.json."""
+    if not REMOTION_SCHEMAS_DIR.is_dir():
+        return []
+    result: list[dict[str, Any]] = []
+    for path in sorted(REMOTION_SCHEMAS_DIR.glob("*.schema.json")):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            logger.warning("Blueprint %s is unreadable: %s", path.name, exc)
+            logger.warning("Formato Remotion %s ilegível: %s", path.name, exc)
             continue
-        errors = validate_blueprint(data)
+        errors = validate_remotion_format(data)
         if errors:
-            logger.warning("Blueprint %s failed validation: %s", path.name, "; ".join(errors))
+            logger.warning("Formato Remotion %s inválido: %s", path.name, "; ".join(errors))
             continue
-        metadata.append({
-            "blueprint_id": data["blueprint_id"],
-            "version": data.get("version", ""),
-            "domain": data.get("domain", ""),
+        result.append({
+            "format_id": data["format_id"],
             "composition_id": data["composition_id"],
             "fps": data["fps"],
             "width": data["width"],
             "height": data["height"],
             "file": path.name,
         })
-    return metadata
+    return result
 
 
-def load_blueprint(blueprint_id: str) -> dict[str, Any]:
-    """Load the full blueprint by blueprint_id. Raises FileNotFoundError.
-
-    0.9.75: fallback ao seed do pacote — garante que o pipeline resolve o
-    blueprint mesmo antes do install copiar os seeds para o storage.
-    """
-    for path in _blueprint_files():
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if data.get("blueprint_id") == blueprint_id:
-            return data
-    if SEED_BLUEPRINTS_DIR.is_dir():
-        for path in sorted(SEED_BLUEPRINTS_DIR.glob("*.json")):
+def load_remotion_format(format_id: str) -> dict[str, Any]:
+    """Carrega o formato Remotion completo por format_id. Raises FileNotFoundError."""
+    wanted = str(format_id or "").strip()
+    if wanted and REMOTION_SCHEMAS_DIR.is_dir():
+        for path in sorted(REMOTION_SCHEMAS_DIR.glob("*.schema.json")):
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
-            if _is_blueprint_format(data) and data.get("blueprint_id") == blueprint_id:
+            if isinstance(data, dict) and str(data.get("format_id") or "") == wanted:
                 return data
-    raise FileNotFoundError(f"Blueprint not found: {blueprint_id}")
+    raise FileNotFoundError(f"Formato Remotion não encontrado: {format_id}")
 
 
-def find_placeholders(blueprint: dict[str, Any]) -> list[str]:
-    """Extract {{placeholder}} tokens from all string fields of the blueprint."""
+# ---------------------------------------------------------------------------
+# Placeholders e prompts (modo Remotion)
+# ---------------------------------------------------------------------------
+
+
+def find_placeholders(document: dict[str, Any]) -> list[str]:
+    """Extrai os tokens {{placeholder}} de todos os campos de texto."""
     import re
 
-    text = json.dumps(blueprint, ensure_ascii=False)
+    text = json.dumps(document, ensure_ascii=False)
     return sorted(set(re.findall(r"\{\{(\w+)\}\}", text)))
 
 
-def render_blueprint_prompt(blueprint: dict[str, Any], values: dict[str, str]) -> dict[str, Any]:
-    """Deep-copy the blueprint and substitute {{placeholders}} with values."""
+def render_blueprint_prompt(document: dict[str, Any], values: dict[str, str]) -> dict[str, Any]:
+    """Deep-copy do documento com {{placeholders}} substituídos por values."""
     import copy
     import re
 
-    resolved = copy.deepcopy(blueprint)
+    resolved = copy.deepcopy(document)
 
     def substitute(obj: Any) -> Any:
         if isinstance(obj, str):
@@ -177,32 +223,37 @@ def render_blueprint_prompt(blueprint: dict[str, Any], values: dict[str, str]) -
     return substitute(resolved)
 
 
-def build_system_prompt(blueprint: dict[str, Any]) -> str:
-    """Concatenate the blueprint's instruction blocks into the final system prompt."""
-    instructions = blueprint.get("system_instructions") or {}
+def build_remotion_system_prompt(personality: dict[str, Any], format_def: dict[str, Any]) -> str:
+    """System prompt do modo Remotion: personalidade do canal + formato técnico.
+
+    Concatena o conteúdo do blueprint de personalidade (tom, estilo,
+    vocabulário, regras) com os constraints e o output_schema do formato —
+    nada mais. O LLM devolve apenas o JSON do formato.
+    """
     parts: list[str] = []
-    role = str(instructions.get("role") or "").strip()
-    if role:
-        parts.append(f"Role: {role}")
-    task = str(instructions.get("task_description") or "").strip()
-    if task:
-        parts.append(f"Task: {task}")
-    constraints = instructions.get("constraints") or []
+    if personality:
+        parts.append(
+            "Channel personality blueprint — the channel's tone, style, vocabulary and rules below "
+            "must be respected in every text you write (topic, voiceovers, questions, answers, labels):"
+        )
+        parts.append(json.dumps(personality, ensure_ascii=False, indent=2))
+    else:
+        parts.append(
+            "No channel personality blueprint configured; write with a clear, engaging narrator tone "
+            "appropriate to the topic."
+        )
+    parts.append(
+        f"Output format: Remotion composition {format_def.get('composition_id', '?')} "
+        f"({format_def.get('width', '?')}×{format_def.get('height', '?')} @ {format_def.get('fps', 30)}fps)."
+    )
+    constraints = format_def.get("constraints") or []
     if constraints:
-        parts.append("Constraints:\n" + "\n".join(f"- {c}" for c in constraints))
-    critical = str(instructions.get("critical_instruction") or "").strip()
-    if critical:
-        parts.append(f"CRITICAL: {critical}")
-    style = blueprint.get("style_guide") or {}
-    if style:
-        parts.append("Style guide:\n" + json.dumps(style, indent=2, ensure_ascii=False))
-    examples = blueprint.get("reference_examples") or []
-    if examples:
-        parts.append("Reference examples:\n" + json.dumps(examples[:1], indent=2, ensure_ascii=False))
-    gen = blueprint.get("generation_instructions") or {}
-    if gen:
-        parts.append("Generation instructions:\n" + json.dumps(gen, indent=2, ensure_ascii=False))
-    schema = blueprint.get("output_schema") or {}
+        parts.append("Structural constraints:\n" + "\n".join(f"- {constraint}" for constraint in constraints))
+    schema = format_def.get("output_schema") or {}
     if schema:
         parts.append("Output JSON schema (produce ONLY this JSON structure, no markdown fences):\n" + json.dumps(schema, indent=2, ensure_ascii=False))
+    example = format_def.get("reference_example")
+    if example:
+        parts.append("Reference example (structure only, not content):\n" + json.dumps(example, indent=2, ensure_ascii=False))
+    parts.append("CRITICAL: Return ONLY valid JSON matching output_schema. No markdown, no explanations, no text outside the JSON.")
     return "\n\n".join(parts)

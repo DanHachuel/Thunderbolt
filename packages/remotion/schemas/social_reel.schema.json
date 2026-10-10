@@ -1,0 +1,90 @@
+{
+  "format_id": "social_reel",
+  "composition_id": "SocialReel",
+  "fps": 30,
+  "width": 1080,
+  "height": 1920,
+
+  "constraints": [
+    "between 2 and 4 scenes",
+    "scene_1 tagged as hook",
+    "at least one scene tagged as body",
+    "final scene tagged as cta",
+    "voiceOverText at least 20 words per scene",
+    "voiceOverText in {{language}}",
+    "imagePrompt in English, photorealistic, safe for AI generation",
+    "Return ONLY valid JSON. No markdown, no explanations."
+  ],
+
+  "output_schema": {
+    "title": "string (in {{language}})",
+    "scenes": [
+      {
+        "id": "string (scene_1 | scene_2 | scene_3 | scene_4)",
+        "scene_type": "hook | body | cta",
+        "voiceOverText": "string (min 20 words, in {{language}})",
+        "imagePrompt": "string (photorealistic, in English)",
+        "durationInSeconds": "number"
+      }
+    ]
+  },
+
+  "reference_example": {
+    "title": "The Broke Mindset Nobody Talks About",
+    "scenes": [
+      {
+        "id": "scene_1",
+        "scene_type": "hook",
+        "voiceOverText": "Most people are not broke because they earn too little. They are broke because they spend their money on things that quietly disappear the moment they buy them.",
+        "imagePrompt": "Photorealistic close-up of a young professional sitting at a cafe table, staring at a smartphone with a worried expression, soft warm lighting",
+        "durationInSeconds": 11.6
+      },
+      {
+        "id": "scene_2",
+        "scene_type": "body",
+        "voiceOverText": "Every small subscription, every impulse purchase, every upgrade you did not need is a tiny hole in the bucket of your future wealth.",
+        "imagePrompt": "Photorealistic image of a wooden bucket with several small holes leaking water, rustic table, warm afternoon sunlight",
+        "durationInSeconds": 12.4
+      },
+      {
+        "id": "scene_3",
+        "scene_type": "body",
+        "voiceOverText": "The rich are not smarter than you. They just decide earlier what they are willing to give up today so that tomorrow they can own the thing that pays them while they sleep.",
+        "imagePrompt": "Photorealistic image of a calm person writing in a notebook at a wooden desk in a sunlit room, cinematic",
+        "durationInSeconds": 13.2
+      },
+      {
+        "id": "scene_4",
+        "scene_type": "cta",
+        "voiceOverText": "So before you buy the next thing you do not need, ask yourself one simple question: is this a step toward freedom, or another quiet hole in the bucket?",
+        "imagePrompt": "Photorealistic image of a single coin balanced on the edge of an open wooden box filled with coins, warm golden light",
+        "durationInSeconds": 12.0
+      }
+    ]
+  },
+
+  "remotion_mapping": {
+    "composition_id": "SocialReel",
+    "input_props": "The entire output_schema JSON is passed as inputProps.",
+    "calculate_metadata": "durationInFrames = sum(scene.durationInSeconds * fps).",
+    "assets_pipeline": [
+      "imagePrompt → image provider → one still per scene",
+      "voiceOverText → TTS → one audio file per scene"
+    ],
+    "required_components": [
+      "HookScene",
+      "BodyScene",
+      "CTAScene",
+      "NarrationAudio",
+      "AnimatedImage",
+      "Subtitles",
+      "ProgressBar",
+      "BrandWatermark"
+    ],
+    "scene_timing": {
+      "hook": "voiceOverText duration + 0.3s emphasis pause",
+      "body": "voiceOverText duration",
+      "cta": "voiceOverText duration + 0.5s hold"
+    }
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "format_id": "quiz",
+  "composition_id": "Quiz",
+  "fps": 30,
+  "width": 1080,
+  "height": 1920,
+
+  "constraints": [
+    "exactly 5 questions",
+    "4 answer options per question",
+    "only one correct_answer per question",
+    "correct_answer as integer 1-4",
+    "question max 7 words",
+    "answers max 2 words",
+    "topic, questions, answers and voiceovers in {{language}}",
+    "Return ONLY valid JSON. No markdown, no explanations."
+  ],
+
+  "output_schema": {
+    "topic": "string (in {{language}})",
+    "intro_voiceover": "string (in {{language}})",
+    "like_and_subscribe_voiceover": "string (in {{language}})",
+    "questions": [
+      {
+        "question": "string (max 7 words, in {{language}})",
+        "answer1": "string (in {{language}})",
+        "answer2": "string (in {{language}})",
+        "answer3": "string (in {{language}})",
+        "answer4": "string (in {{language}})",
+        "correct_answer": "integer (1-4)",
+        "durationInSeconds": "number",
+        "revealDelaySeconds": "number"
+      }
+    ]
+  },
+
+  "reference_example": {
+    "topic": "Everyday science",
+    "intro_voiceover": "Today we ask about everyday science. Can you get all five right?",
+    "like_and_subscribe_voiceover": "Like this video and subscribe to our channel for more quizzes like this!",
+    "questions": [
+      {
+        "question": "What planet is known as the Red Planet?",
+        "answer1": "Earth",
+        "answer2": "Mars",
+        "answer3": "Jupiter",
+        "answer4": "Venus",
+        "correct_answer": 2,
+        "durationInSeconds": 6.0,
+        "revealDelaySeconds": 3
+      }
+    ]
+  },
+
+  "remotion_mapping": {
+    "composition_id": "Quiz",
+    "input_props": "The entire output_schema JSON is passed as inputProps.",
+    "calculate_metadata": "durationInFrames = sum(question.durationInSeconds * fps).",
+    "assets_pipeline": [
+      "intro_voiceover → TTS → intro audio",
+      "like_and_subscribe_voiceover → TTS → outro audio",
+      "each question → TTS → per-question audio clip"
+    ],
+    "required_components": [
+      "QuizIntro",
+      "QuestionCard",
+      "AnswerOption",
+      "CorrectAnswerReveal",
+      "ProgressBar",
+      "ScoreCounter",
+      "SubscribeCTA"
+    ],
+    "scene_timing": {
+      "intro": "intro audio duration",
+      "per_question": "durationInSeconds + revealDelaySeconds",
+      "outro": "like_and_subscribe audio duration"
+    }
+  }
+}

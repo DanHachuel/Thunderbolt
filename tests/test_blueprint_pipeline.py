@@ -1,13 +1,14 @@
-"""Pipeline dos Blueprints Remotion (0.9.75) — docs/blueprints.md.
+"""Pipeline do modo Remotion (0.9.76) — docs/blueprints.md.
 
-Cobre o fluxo especificado: LLM → validação Pydantic (1 retry) → assets →
-render Remotion na composição do blueprint, mais deteção de indisponibilidade
-e cancelamento. O happy-path corre end-to-end por _run_task com todos os
-providers mockados.
+Combina **blueprint de personalidade** (canal) com **formato Remotion**
+(schema técnico): LLM → validação Pydantic do formato (1 retry) → assets →
+render Remotion na composição do formato. O happy-path corre end-to-end por
+_run_task com todos os providers mockados.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,16 +16,22 @@ from types import SimpleNamespace
 import pytest
 
 from hermes_ui import creative_generation, pipeline_worker, storage
-from hermes_ui.blueprint_loader import load_blueprint
+from hermes_ui.blueprint_loader import load_remotion_format
+from hermes_ui.schemas import SCHEMAS
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def _quiz_output() -> dict:
-    """Output válido do quiz: o reference_example do próprio seed."""
-    blueprint = load_blueprint("quiz_videos")
-    example = (blueprint.get("reference_examples") or [{}])[0]
-    return dict(example.get("output") or {})
+    """Output válido do quiz: reference_example do formato expandido a 5 perguntas."""
+    example = copy.deepcopy((load_remotion_format("quiz").get("reference_example") or {}))
+    questions = [copy.deepcopy(item) for item in (example.get("questions") or [])]
+    while len(questions) < 5:
+        clone = copy.deepcopy(questions[len(questions) % len(questions)])
+        clone["question"] = f"Question {len(questions) + 1}?"
+        questions.append(clone)
+    example["questions"] = questions
+    return example
 
 
 def _isolate(tmp_path, monkeypatch):
@@ -37,8 +44,16 @@ def _isolate(tmp_path, monkeypatch):
     return root
 
 
-def _blueprint_task(tmp_path, **overrides):
-    channel = {"id": "channel-bp", "name": "Canal Blueprint", "language": "English"}
+def _write_personality(root: Path) -> None:
+    importados = root / "blueprints" / "importados"
+    importados.mkdir(parents=True, exist_ok=True)
+    (importados / "MILITAR.json").write_text(
+        json.dumps({"id": "militar-personality", "name": "Canal Militar", "niche": "militar"}), encoding="utf-8"
+    )
+
+
+def _remotion_task(tmp_path, **overrides):
+    channel = {"id": "channel-bp", "name": "Canal Remotion", "language": "English"}
     task = {
         "id": "video-bp",
         "state": "to_do",
@@ -52,19 +67,21 @@ def _blueprint_task(tmp_path, **overrides):
         "language": "en",
         "artifacts": {},
         "generation_settings": {
-            "blueprint_id": "quiz_videos",
-            "blueprint_values": {"topic": "Everyday science", "language": "English", "difficulty": "Average"},
+            "remotion_format_id": "quiz",
+            "remotion_personality_id": "militar-personality",
+            "blueprint_values": {"topic": "Everyday science", "language": "English"},
         },
     }
     task.update(overrides)
     return channel, task
 
 
-def test_blueprint_pipeline_happy_path(tmp_path, monkeypatch):
+def test_remotion_pipeline_happy_path_and_combines_personality_and_format(tmp_path, monkeypatch):
     _isolate(tmp_path, monkeypatch)
-    channel, task = _blueprint_task(tmp_path)
+    channel, task = _remotion_task(tmp_path)
     storage.write_json("channels.json", [channel])
     storage.write_json("tasks.json", [task])
+    _write_personality(pipeline_worker.STORAGE)
     video_path = pipeline_worker.STORAGE / "videos" / "video-bp-remotion-blueprint.mp4"
     thumbnail_path = tmp_path / "thumbnail.png"
     thumbnail_path.write_bytes(b"png")
@@ -74,8 +91,14 @@ def test_blueprint_pipeline_happy_path(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline_worker, "_channel_for_task", lambda value: channel)
     monkeypatch.setattr(pipeline_worker, "_blueprint_for_channel", lambda value: {})
     monkeypatch.setattr(pipeline_worker, "get_remotion_status", lambda: {"available": True, "reasons": []})
-    monkeypatch.setattr(creative_generation, "_chat_json", lambda settings, system, user: _quiz_output())
-    monkeypatch.setattr(pipeline_worker, "generate_script_document", lambda *args, **kwargs: pytest.fail("o blueprint não gera roteiro Markdown"))
+
+    def fake_chat_json(settings, system, user):
+        captured["system_prompt"] = system
+        captured["user_prompt"] = user
+        return _quiz_output()
+
+    monkeypatch.setattr(creative_generation, "_chat_json", fake_chat_json)
+    monkeypatch.setattr(pipeline_worker, "generate_script_document", lambda *args, **kwargs: pytest.fail("o modo Remotion não gera roteiro Markdown"))
     monkeypatch.setattr(pipeline_worker, "generate_image_from_pool", lambda *args, **kwargs: pytest.fail("quiz não gera imagens"))
 
     def fake_synthesize(text, settings, voice, output_path):
@@ -106,22 +129,32 @@ def test_blueprint_pipeline_happy_path(tmp_path, monkeypatch):
     assert len(captured["input_props"]["questions"]) == 5
     assert captured["input_props"]["questions"][0]["audioUrl"]
     assert captured["input_props"]["introAudioUrl"]
-    # o título vem do tópico do blueprint, não de creative generation
+    # system prompt combina personalidade + formato
+    assert "Canal Militar" in captured["system_prompt"]
+    assert "Channel personality blueprint" in captured["system_prompt"]
+    assert "Remotion composition Quiz" in captured["system_prompt"]
+    assert "Output JSON schema" in captured["system_prompt"]
+    # o título vem do tópico do formato, não de creative generation
     assert storage.read_json("tasks.json")[0]["title"] == "Everyday science"
 
 
-def test_blueprint_pipeline_validation_retry(tmp_path, monkeypatch):
+def test_remotion_pipeline_uses_format_schema_for_validation(tmp_path, monkeypatch):
+    """O schema aplicado é o do FORMATO (SCHEMAS['quiz']): um output inválido
+    força o retry com o erro, e o output válido é o do formato quiz."""
     _isolate(tmp_path, monkeypatch)
-    channel, task = _blueprint_task(tmp_path)
+    channel, task = _remotion_task(tmp_path)
     storage.write_json("channels.json", [channel])
     storage.write_json("tasks.json", [task])
+
+    assert SCHEMAS["quiz"].__name__ == "QuizVideosOutput"
 
     monkeypatch.setattr(pipeline_worker, "_settings", lambda: {})
     monkeypatch.setattr(pipeline_worker, "_channel_for_task", lambda value: channel)
     monkeypatch.setattr(pipeline_worker, "_blueprint_for_channel", lambda value: {})
     monkeypatch.setattr(pipeline_worker, "get_remotion_status", lambda: {"available": True, "reasons": []})
     responses = iter([{**_quiz_output(), "questions": []}, _quiz_output()])
-    monkeypatch.setattr(creative_generation, "_chat_json", lambda settings, system, user: next(responses))
+    captured_prompts = []
+    monkeypatch.setattr(creative_generation, "_chat_json", lambda settings, system, user: (captured_prompts.append(user), next(responses))[1])
     monkeypatch.setattr(pipeline_worker, "synthesize_text_to_images_audio", lambda text, settings, voice, output_path: Path(output_path).write_bytes(b"mp3") or Path(output_path))
     monkeypatch.setattr(pipeline_worker, "run_remotion_render", lambda task_arg, video, composition_id, input_props, timeout_seconds=None, **kwargs: Path(video).write_bytes(b"mp4"))
 
@@ -130,17 +163,20 @@ def test_blueprint_pipeline_validation_retry(tmp_path, monkeypatch):
         settings={},
         channel=channel,
         topic="Everyday science",
-        blueprint_id="quiz_videos",
-        blueprint_values={"topic": "Everyday science", "language": "English", "difficulty": "Average"},
+        format_id="quiz",
+        blueprint_values={"topic": "Everyday science", "language": "English"},
     )
 
     assert video_path.is_file()
     assert len(llm_json["questions"]) == 5
+    # o retry levou o erro da validação Pydantic do formato no prompt
+    assert len(captured_prompts) == 2
+    assert "failed validation" in captured_prompts[1]
 
 
-def test_blueprint_pipeline_remotion_unavailable(tmp_path, monkeypatch):
+def test_remotion_pipeline_remotion_unavailable(tmp_path, monkeypatch):
     _isolate(tmp_path, monkeypatch)
-    channel, task = _blueprint_task(tmp_path)
+    channel, task = _remotion_task(tmp_path)
 
     monkeypatch.setattr(pipeline_worker, "_settings", lambda: {})
     monkeypatch.setattr(pipeline_worker, "_channel_for_task", lambda value: channel)
@@ -153,14 +189,14 @@ def test_blueprint_pipeline_remotion_unavailable(tmp_path, monkeypatch):
             settings={},
             channel=channel,
             topic="Everyday science",
-            blueprint_id="quiz_videos",
+            format_id="quiz",
             blueprint_values={},
         )
 
 
-def test_blueprint_pipeline_cancel_during_assets(tmp_path, monkeypatch):
+def test_remotion_pipeline_cancel_during_assets(tmp_path, monkeypatch):
     _isolate(tmp_path, monkeypatch)
-    channel, task = _blueprint_task(tmp_path)
+    channel, task = _remotion_task(tmp_path)
 
     monkeypatch.setattr(pipeline_worker, "_settings", lambda: {})
     monkeypatch.setattr(pipeline_worker, "_channel_for_task", lambda value: channel)
@@ -177,14 +213,14 @@ def test_blueprint_pipeline_cancel_during_assets(tmp_path, monkeypatch):
             settings={},
             channel=channel,
             topic="Everyday science",
-            blueprint_id="quiz_videos",
-            blueprint_values={"topic": "Everyday science", "language": "English", "difficulty": "Average"},
+            format_id="quiz",
+            blueprint_values={"topic": "Everyday science", "language": "English"},
         )
 
 
-def test_blueprint_pipeline_requires_topic(tmp_path, monkeypatch):
+def test_remotion_pipeline_requires_topic(tmp_path, monkeypatch):
     _isolate(tmp_path, monkeypatch)
-    channel, task = _blueprint_task(tmp_path, topic="")
+    channel, task = _remotion_task(tmp_path, topic="")
     task["generation_settings"]["blueprint_values"] = {}
 
     monkeypatch.setattr(pipeline_worker, "_settings", lambda: {})
@@ -198,6 +234,6 @@ def test_blueprint_pipeline_requires_topic(tmp_path, monkeypatch):
             settings={},
             channel=channel,
             topic="",
-            blueprint_id="quiz_videos",
+            format_id="quiz",
             blueprint_values={},
         )

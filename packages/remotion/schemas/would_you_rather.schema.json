@@ -1,0 +1,85 @@
+{
+  "format_id": "would_you_rather",
+  "composition_id": "WouldYouRather",
+  "fps": 30,
+  "width": 1080,
+  "height": 1920,
+
+  "constraints": [
+    "exactly 5 questions",
+    "each question has 2 options, each option max 3 words",
+    "option1_result as integer 0-100",
+    "questions, answers, voiceovers and or_text in {{language}}",
+    "option1_image_prompt and option2_image_prompt ALWAYS in English",
+    "or_text is the uppercase translation of 'OR' in {{language}}",
+    "Return ONLY valid JSON. No markdown, no explanations."
+  ],
+
+  "output_schema": {
+    "like_and_subscribe_voiceover_text": "string (in {{language}})",
+    "or_text": "string (uppercase translation of 'OR' in {{language}})",
+    "questions": [
+      {
+        "id": "string (q1 | q2 | q3 | q4 | q5)",
+        "option1_text": "string (max 3 words, in {{language}})",
+        "option1_image_prompt": "string (photorealistic, in English)",
+        "option2_text": "string (max 3 words, in {{language}})",
+        "option2_image_prompt": "string (photorealistic, in English)",
+        "option1_result": "integer (0-100)",
+        "voiceover_text": "string (in {{language}})",
+        "durationInSeconds": "number",
+        "thinkingDelaySeconds": "number",
+        "revealDurationSeconds": "number"
+      }
+    ]
+  },
+
+  "reference_example": {
+    "like_and_subscribe_voiceover_text": "Like this video and subscribe for more impossible choices!",
+    "or_text": "OR",
+    "questions": [
+      {
+        "id": "q1",
+        "option1_text": "Fast food",
+        "option1_image_prompt": "A McDonalds hamburger with French fries and a soda on a red tray, photorealistic",
+        "option2_text": "Slow food",
+        "option2_image_prompt": "A fresh salad and stewed turkey on a rustic wooden table, photorealistic",
+        "option1_result": 62,
+        "voiceover_text": "Would you rather eat fast food or slow food?",
+        "durationInSeconds": 3.2,
+        "thinkingDelaySeconds": 3,
+        "revealDurationSeconds": 3
+      }
+    ]
+  },
+
+  "remotion_mapping": {
+    "composition_id": "WouldYouRather",
+    "input_props": "The entire output_schema JSON is passed as inputProps.",
+    "calculate_metadata": "durationInFrames = intro(3s) + sum(question.durationInSeconds + question.thinkingDelaySeconds + question.revealDurationSeconds) + outro.",
+    "assets_pipeline": [
+      "option1_image_prompt and option2_image_prompt → image provider → 2 stills per question",
+      "voiceover_text → TTS → per-question audio",
+      "like_and_subscribe_voiceover_text → TTS → outro audio"
+    ],
+    "required_components": [
+      "IntroScene",
+      "QuestionCard",
+      "SplitScreenOptions",
+      "OrDivider",
+      "ThinkingCountdown",
+      "ResultBar",
+      "SubscribeCTA",
+      "NarrationAudio",
+      "AnimatedImage",
+      "SceneTransition"
+    ],
+    "scene_timing": {
+      "intro": "3s fixed",
+      "question": "durationInSeconds",
+      "thinking": "thinkingDelaySeconds",
+      "reveal": "revealDurationSeconds",
+      "outro": "like_and_subscribe audio duration"
+    }
+  }
+}

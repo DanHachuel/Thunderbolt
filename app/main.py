@@ -1546,71 +1546,100 @@ def render_video_generation_settings(
                     settings["style_ia"] = st.selectbox("Estilo IA", AI_STYLE_OPTIONS, key=f"{prefix}_style_ia")
                 else:
                     settings["style_ia"] = ""
-                # 0.9.75 — Blueprints Remotion: seletor + placeholders dinâmicos.
-                settings["blueprint_id"] = ""
+                # 0.9.76 — Modo Remotion: dropdown de personalidade (blueprint
+                # do canal) + dropdown de formato (schema técnico) + placeholders.
+                settings["remotion_personality_id"] = ""
+                settings["remotion_format_id"] = ""
                 settings["blueprint_values"] = {}
                 if settings["video_source"] == "Remotion":
-                    from hermes_ui.blueprint_loader import find_placeholders, list_blueprints, load_blueprint
+                    from hermes_ui.blueprint_loader import (
+                        find_placeholders,
+                        list_personality_blueprints,
+                        list_remotion_formats,
+                        load_personality_blueprint,
+                        load_remotion_format,
+                    )
                     from hermes_ui.remotion_provider import get_remotion_status as _remotion_status
 
                     remotion_status = _remotion_status()
                     if not remotion_status.get("available"):
                         st.warning("Remotion indisponível. Motivos:\n- " + "\n- ".join(remotion_status.get("reasons") or ["ambiente incompleto"]))
                     else:
-                        available_blueprints = list_blueprints()
-                        if not available_blueprints:
-                            st.error("Nenhum blueprint Remotion encontrado em `storage/blueprints/`.")
+                        available_formats = list_remotion_formats()
+                        if not available_formats:
+                            st.error("Nenhum formato Remotion encontrado em `packages/remotion/schemas/`.")
                         else:
-                            selected_blueprint_id = st.selectbox(
-                                "Blueprint",
-                                [bp["blueprint_id"] for bp in available_blueprints],
-                                format_func=lambda bp_id: f"{bp_id} — {next(bp['domain'] for bp in available_blueprints if bp['blueprint_id'] == bp_id)}",
-                                key=f"{prefix}_remotion_blueprint",
+                            # 1. Blueprint de personalidade — quem o canal é.
+                            personalities = list_personality_blueprints()
+                            channel_default_personality = str((channel or {}).get("default_blueprint_id") or (channel or {}).get("blueprint_id") or "")
+                            personality_options = [item["id"] for item in personalities]
+                            personality_labels = {item["id"]: item["name"] for item in personalities}
+                            default_personality = next((item for item in personality_options if item == channel_default_personality), personality_options[0] if personality_options else "")
+                            selected_personality_id = st.selectbox(
+                                "Blueprint (personalidade do canal)",
+                                personality_options,
+                                index=personality_options.index(default_personality) if default_personality in personality_options else 0,
+                                format_func=lambda item: personality_labels.get(item, item or "Sem Blueprint"),
+                                key=f"{prefix}_remotion_personality",
                             )
-                            blueprint_document = load_blueprint(selected_blueprint_id)
+                            selected_personality = {}
+                            if selected_personality_id:
+                                try:
+                                    selected_personality = load_personality_blueprint(selected_personality_id)
+                                except FileNotFoundError:
+                                    selected_personality = {}
+
+                            # 2. Formato Remotion — o JSON técnico que o LLM produz.
+                            format_options = [item["format_id"] for item in available_formats]
+                            format_labels = {
+                                item["format_id"]: f"{item['format_id']} — {item['composition_id']} ({item['width']}×{item['height']} @ {item['fps']}fps)"
+                                for item in available_formats
+                            }
+                            selected_format_id = st.selectbox(
+                                "Formato Remotion",
+                                format_options,
+                                format_func=lambda item: format_labels.get(item, item),
+                                key=f"{prefix}_remotion_format",
+                            )
+                            format_document = load_remotion_format(selected_format_id)
+                            personality_name = str((selected_personality or {}).get("name") or "Sem Blueprint")
                             st.caption(
-                                f"v{blueprint_document.get('version', '?')} · {blueprint_document.get('domain', '')} · "
-                                f"{blueprint_document.get('composition_id', '')} · "
-                                f"{blueprint_document.get('width', '?')}×{blueprint_document.get('height', '?')} @ {blueprint_document.get('fps', 30)}fps"
+                                f"Personalidade: {personality_name} · Formato: {selected_format_id} · "
+                                f"{format_document.get('composition_id', '')} · "
+                                f"{format_document.get('width', '?')}×{format_document.get('height', '?')} @ {format_document.get('fps', 30)}fps"
                             )
+
+                            # 3. Placeholders dinâmicos do formato.
                             blueprint_values: dict[str, str] = {}
-                            for placeholder in find_placeholders(blueprint_document):
+                            for placeholder in find_placeholders(format_document):
                                 if placeholder == "topic":
-                                    # O tema do formulário é o {{topic}} do blueprint.
+                                    # O tema do formulário é o tópico do formato.
                                     blueprint_values[placeholder] = str(settings.get("video_subject") or "").strip()
                                 elif placeholder == "language":
-                                    # O idioma do formulário é o {{language}} do blueprint.
+                                    # O idioma do formulário é o {{language}} do formato.
                                     blueprint_values[placeholder] = str(settings.get("script_language") or "").strip()
                                 elif placeholder == "difficulty":
                                     blueprint_values[placeholder] = st.selectbox(
                                         "Difficulty",
                                         ["Easy", "Average", "Hard"],
                                         index=1,
-                                        key=f"{prefix}_remotion_blueprint_difficulty",
+                                        key=f"{prefix}_remotion_format_difficulty",
                                     )
                                 else:
                                     blueprint_values[placeholder] = st.text_input(
                                         placeholder.replace("_", " ").title(),
-                                        key=f"{prefix}_remotion_blueprint_{placeholder}",
+                                        key=f"{prefix}_remotion_format_{placeholder}",
                                     )
-                            generation_instructions = blueprint_document.get("generation_instructions") or {}
-                            with st.expander("Blueprint preview", expanded=False):
-                                preview_cols = st.columns(2)
-                                with preview_cols[0]:
-                                    st.markdown("**Must include**")
-                                    for item in generation_instructions.get("must_include", []):
-                                        st.markdown(f"- {item}")
-                                with preview_cols[1]:
-                                    st.markdown("**Must avoid**")
-                                    for item in generation_instructions.get("must_avoid", []):
-                                        st.markdown(f"- {item}")
-                                reference_examples = blueprint_document.get("reference_examples") or []
-                                if reference_examples:
-                                    st.markdown("**Reference example**")
-                                    st.code(json.dumps(reference_examples[0], indent=2, ensure_ascii=False), language="json")
+                            with st.expander("Formato preview", expanded=False):
+                                st.markdown("**Constraints estruturais**")
+                                for item in format_document.get("constraints", []):
+                                    st.markdown(f"- {item}")
+                                st.markdown("**Output schema**")
+                                st.code(json.dumps(format_document.get("output_schema") or {}, indent=2, ensure_ascii=False), language="json")
                             if not all(str(value or "").strip() for value in blueprint_values.values()):
-                                st.info("Preencha todos os campos do blueprint (incluindo o Video Subject) para criar tarefas.")
-                            settings["blueprint_id"] = selected_blueprint_id
+                                st.info("Preencha todos os campos do formato (incluindo o Video Subject) para criar tarefas.")
+                            settings["remotion_personality_id"] = selected_personality_id
+                            settings["remotion_format_id"] = selected_format_id
                             settings["blueprint_values"] = blueprint_values
                 if settings["video_source"] == "Montage: Text-to-Images":
                     defaults = read_json("settings.json", {})

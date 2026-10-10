@@ -1,0 +1,93 @@
+{
+  "format_id": "top_10",
+  "composition_id": "Top10",
+  "fps": 30,
+  "width": 1920,
+  "height": 1080,
+
+  "constraints": [
+    "exactly 10 subjectIdeas, each max 4 words",
+    "one title chosen from subjectIdeas",
+    "exactly 10 ranking entries ordered from rank 10 down to rank 1",
+    "each ranking voiceoverText is 2-3 sentences and states the rank and item name",
+    "intro and outro with voiceoverText and imagePrompt",
+    "all voiceovers and lowerThirdText in {{language}}",
+    "all image prompts in English, photorealistic",
+    "Return ONLY valid JSON. No markdown, no explanations."
+  ],
+
+  "output_schema": {
+    "subjectIdeas": ["string (max 4 words, in {{language}})"],
+    "title": "string (in {{language}})",
+    "intro": {
+      "voiceoverText": "string (in {{language}})",
+      "imagePrompt": "string (photorealistic, in English)",
+      "durationInSeconds": "number"
+    },
+    "ranking": [
+      {
+        "rank": "integer (10 down to 1)",
+        "voiceoverText": "string (in {{language}})",
+        "imagePrompt": "string (photorealistic, in English)",
+        "lowerThirdText": "string (in {{language}})",
+        "durationInSeconds": "number"
+      }
+    ],
+    "outro": {
+      "voiceoverText": "string (in {{language}})",
+      "imagePrompt": "string (photorealistic, in English)",
+      "durationInSeconds": "number"
+    }
+  },
+
+  "reference_example": {
+    "subjectIdeas": ["Cities in the US", "Breakfast meals", "Clothing brands", "Fictional villains", "Luxury cars", "Fast food chains", "Theme parks", "Mobile apps", "Board games", "Movie soundtracks"],
+    "title": "Top 10 Breakfast Meals",
+    "intro": {
+      "voiceoverText": "Welcome to our Top 10 countdown of the most popular breakfast meals around the world...",
+      "imagePrompt": "A colorful, high-resolution spread of global breakfast foods on a rustic wooden table, photorealistic",
+      "durationInSeconds": 14.0
+    },
+    "ranking": [
+      {
+        "rank": 10,
+        "voiceoverText": "Starting off our list at number 10, it is the classic British breakfast...",
+        "imagePrompt": "A traditional full English breakfast on a plate, photorealistic, warm morning light",
+        "lowerThirdText": "English Breakfast",
+        "durationInSeconds": 13.6
+      }
+    ],
+    "outro": {
+      "voiceoverText": "There you have it, the Top 10 breakfast meals that bring joy to mornings worldwide...",
+      "imagePrompt": "A cozy breakfast table with empty plates, coffee cups, soft morning light, photorealistic",
+      "durationInSeconds": 14.4
+    }
+  },
+
+  "remotion_mapping": {
+    "composition_id": "Top10",
+    "input_props": "The entire output_schema JSON is passed as inputProps.",
+    "calculate_metadata": "durationInFrames = intro.durationInSeconds*fps + sum(ranking[i].durationInSeconds*fps) + outro.durationInSeconds*fps.",
+    "assets_pipeline": [
+      "each imagePrompt (intro, 10 ranking entries, outro) → image provider",
+      "each voiceoverText → TTS → one audio file per scene"
+    ],
+    "required_components": [
+      "IntroScene",
+      "RankingItem",
+      "LowerThird",
+      "CountdownProgress",
+      "OutroScene",
+      "NarrationAudio",
+      "AnimatedImage",
+      "SceneTransition",
+      "SubscribeCTA"
+    ],
+    "scene_timing": {
+      "intro": "intro.durationInSeconds",
+      "ranking_item": "ranking[i].durationInSeconds",
+      "outro": "outro.durationInSeconds",
+      "transition_between_items": "0.4s fade"
+    }
+  }
+}

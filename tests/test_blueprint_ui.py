@@ -1,21 +1,20 @@
-"""UI e composições Remotion dos Blueprints (0.9.75).
+"""UI e composições Remotion (0.9.76): personalidade + formato.
 
-- o seletor de blueprints aparece no formulário quando a Fonte do Vídeo é
-  "Remotion", com placeholders dinâmicos (spec: Implementação dos Blueprints
-  Remotion no Thunderbolt, Tarefa D);
-- as 5 composições estão registadas em Root.tsx com calculateMetadata (Tarefa A);
-- list_blueprints/find_placeholders expõem os 5 seeds (Tarefa E.3).
+- no modo Remotion o formulário mostra DOIS dropdowns: Blueprint de
+  personalidade (MILITAR, FINANCE USA, …) e Formato Remotion (quiz,
+  social_reel, top_10, would_you_rather, inspirational);
+- as 5 composições estão registadas em Root.tsx com calculateMetadata fiel ao
+  layout real dos componentes;
+- list_remotion_formats devolve os 5 formatos de packages/remotion/schemas/.
 """
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_SOURCE = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 ROOT_TSX = (ROOT / "packages" / "remotion" / "src" / "Root.tsx").read_text(encoding="utf-8")
-SEED_BLUEPRINTS = ROOT / "seed" / "blueprints"
 
 
 def test_root_tsx_registers_all_seven_compositions():
@@ -50,52 +49,67 @@ def test_all_five_composition_components_exist():
         assert (ROOT / "packages" / "remotion" / "src" / "compositions" / f"{component}.tsx").is_file(), component
 
 
-def test_ui_has_blueprint_selector_for_remotion_source():
+def test_ui_remotion_mode_shows_personality_and_format_dropdowns():
     form_block = APP_SOURCE.split("def render_video_generation_settings(", 1)[1]
     assert 'settings["video_source"] == "Remotion"' in form_block
-    assert "list_blueprints()" in form_block
+    # dropdown 1: personalidade
+    assert "list_personality_blueprints()" in form_block
+    assert '"Blueprint (personalidade do canal)"' in form_block
+    assert 'settings["remotion_personality_id"] = selected_personality_id' in form_block
+    # dropdown 2: formato
+    assert "list_remotion_formats()" in form_block
+    assert '"Formato Remotion"' in form_block
+    assert 'settings["remotion_format_id"] = selected_format_id' in form_block
+    # placeholders dinâmicos do formato
     assert "find_placeholders" in form_block
-    assert 'settings["blueprint_id"] = selected_blueprint_id' in form_block
     assert 'settings["blueprint_values"]' in form_block
 
 
-def test_list_blueprints_returns_the_five_seeds(tmp_path, monkeypatch):
-    from hermes_ui import blueprint_loader
+def test_list_remotion_formats_returns_the_five_formats():
+    from hermes_ui.blueprint_loader import list_remotion_formats
 
-    storage_blueprints = tmp_path / "blueprints"
-    (storage_blueprints / "importados").mkdir(parents=True)
-    for path in sorted(SEED_BLUEPRINTS.glob("*.json")):
-        if path.name == "thumbnail_blueprint_pairs.json":
-            continue
-        shutil.copy2(path, storage_blueprints / "importados" / path.name)
-
-    monkeypatch.setattr(blueprint_loader, "BLUEPRINTS_DIR", storage_blueprints)
-    listed = blueprint_loader.list_blueprints()
-    assert {item["blueprint_id"] for item in listed} == {
-        "inspirational_long_form",
-        "quiz_videos",
-        "social_media_reels",
-        "top_10_videos",
+    formats = list_remotion_formats()
+    assert sorted(item["format_id"] for item in formats) == [
+        "inspirational",
+        "quiz",
+        "social_reel",
+        "top_10",
         "would_you_rather",
-    }
+    ]
+    compositions = {item["format_id"]: item["composition_id"] for item in formats}
+    assert compositions["quiz"] == "Quiz"
+    assert compositions["top_10"] == "Top10"
+    assert compositions["social_reel"] == "SocialReel"
+    assert compositions["would_you_rather"] == "WouldYouRather"
+    assert compositions["inspirational"] == "InspirationalVideo"
 
 
-def test_list_blueprints_ignores_classic_channel_blueprints(tmp_path, monkeypatch):
-    """Blueprints de canal clássicos (sem blueprint_id) não entram no seletor."""
-    from hermes_ui import blueprint_loader
+def test_list_personality_blueprints_excludes_formats(tmp_path, monkeypatch):
+    from hermes_ui import blueprint_loader, storage
 
-    storage_blueprints = tmp_path / "blueprints"
-    (storage_blueprints / "importados").mkdir(parents=True)
-    (storage_blueprints / "importados" / "FINANCE USA.json").write_text('{"id": "finance-usa", "name": "FINANCE USA"}', encoding="utf-8")
-    shutil.copy2(SEED_BLUEPRINTS / "Blueprint Remotion - Quiz Videos.json", storage_blueprints / "importados" / "Blueprint Remotion - Quiz Videos.json")
+    root = tmp_path / "storage"
+    monkeypatch.setattr(storage, "STORAGE", root)
+    monkeypatch.setattr(storage, "STATE", root / "state")
+    monkeypatch.setattr(storage, "BLUEPRINTS", root / "blueprints")
+    monkeypatch.setattr(blueprint_loader, "BLUEPRINTS_DIR", root / "blueprints")
+    importados = root / "blueprints" / "importados"
+    importados.mkdir(parents=True, exist_ok=True)
+    (root / "state").mkdir(parents=True, exist_ok=True)
+    (importados / "MILITAR.json").write_text('{"id": "militar", "name": "Canal Militar"}', encoding="utf-8")
+    (importados / "FINANCE USA.json").write_text('{"id": "finance-usa", "name": "FINANCE USA"}', encoding="utf-8")
+    (importados / "quiz-fmt.json").write_text('{"format_id": "quiz", "composition_id": "Quiz"}', encoding="utf-8")
 
-    monkeypatch.setattr(blueprint_loader, "BLUEPRINTS_DIR", storage_blueprints)
-    listed = blueprint_loader.list_blueprints()
-    assert [item["blueprint_id"] for item in listed] == ["quiz_videos"]
+    ids = {item["id"] for item in blueprint_loader.list_personality_blueprints()}
+    assert {"militar", "finance-usa"} <= ids
+    assert "quiz" not in ids
 
 
-def test_find_placeholders_returns_all():
-    from hermes_ui.blueprint_loader import find_placeholders, load_blueprint
-
-    placeholders = find_placeholders(load_blueprint("quiz_videos"))
-    assert {"language", "difficulty"} <= set(placeholders)
+def test_schemas_directory_ships_the_five_formats():
+    schemas_dir = ROOT / "packages" / "remotion" / "schemas"
+    assert sorted(path.name for path in schemas_dir.glob("*.schema.json")) == [
+        "inspirational.schema.json",
+        "quiz.schema.json",
+        "social_reel.schema.json",
+        "top_10.schema.json",
+        "would_you_rather.schema.json",
+    ]
