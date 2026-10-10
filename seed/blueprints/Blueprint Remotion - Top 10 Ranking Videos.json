@@ -1,10 +1,8 @@
 {
-  "format_id": "top_10",
   "composition_id": "Top10",
   "fps": 30,
   "width": 1920,
   "height": 1080,
-
   "constraints": [
     "exactly 10 subjectIdeas, each max 4 words",
     "one title chosen from subjectIdeas",
@@ -15,9 +13,10 @@
     "all image prompts in English, photorealistic",
     "Return ONLY valid JSON. No markdown, no explanations."
   ],
-
   "output_schema": {
-    "subjectIdeas": ["string (max 4 words, in {{language}})"],
+    "subjectIdeas": [
+      "string (max 4 words, in {{language}})"
+    ],
     "title": "string (in {{language}})",
     "intro": {
       "voiceoverText": "string (in {{language}})",
@@ -39,9 +38,19 @@
       "durationInSeconds": "number"
     }
   },
-
   "reference_example": {
-    "subjectIdeas": ["Cities in the US", "Breakfast meals", "Clothing brands", "Fictional villains", "Luxury cars", "Fast food chains", "Theme parks", "Mobile apps", "Board games", "Movie soundtracks"],
+    "subjectIdeas": [
+      "Cities in the US",
+      "Breakfast meals",
+      "Clothing brands",
+      "Fictional villains",
+      "Luxury cars",
+      "Fast food chains",
+      "Theme parks",
+      "Mobile apps",
+      "Board games",
+      "Movie soundtracks"
+    ],
     "title": "Top 10 Breakfast Meals",
     "intro": {
       "voiceoverText": "Welcome to our Top 10 countdown of the most popular breakfast meals around the world...",
@@ -63,7 +72,6 @@
       "durationInSeconds": 14.4
     }
   },
-
   "remotion_mapping": {
     "composition_id": "Top10",
     "input_props": "The entire output_schema JSON is passed as inputProps.",

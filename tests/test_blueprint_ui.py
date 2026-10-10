@@ -1,11 +1,10 @@
-"""UI e composições Remotion (0.9.76): personalidade + formato.
+"""UI e composições Remotion (0.9.79) — um dropdown, uma lista, um conceito.
 
-- no modo Remotion o formulário mostra DOIS dropdowns: Blueprint de
-  personalidade (MILITAR, FINANCE USA, …) e Formato Remotion (quiz,
-  social_reel, top_10, would_you_rather, inspirational);
-- as 5 composições estão registadas em Root.tsx com calculateMetadata fiel ao
-  layout real dos componentes;
-- list_remotion_formats devolve os 5 formatos de packages/remotion/schemas/.
+- o modo Remotion tem UM dropdown de Blueprint com a lista completa;
+- a aba Blueprints Youtube mostra todos os blueprints (sem filtros de tipo);
+- as 5 composições continuam registadas em Root.tsx com calculateMetadata
+  fiel ao layout real dos componentes;
+- list_blueprints inclui os 5 Remotion como qualquer outro blueprint.
 """
 
 from __future__ import annotations
@@ -15,6 +14,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 APP_SOURCE = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 ROOT_TSX = (ROOT / "packages" / "remotion" / "src" / "Root.tsx").read_text(encoding="utf-8")
+
+REMOTION_BLUEPRINTS = (
+    "Blueprint Remotion - Quiz Videos",
+    "Blueprint Remotion - Social Media Reels",
+    "Blueprint Remotion - Top 10 Ranking Videos",
+    "Blueprint Remotion - Would You Rather",
+    "Blueprint Remotion - Inspirational Long-Form Videos",
+)
 
 
 def test_root_tsx_registers_all_seven_compositions():
@@ -49,42 +56,40 @@ def test_all_five_composition_components_exist():
         assert (ROOT / "packages" / "remotion" / "src" / "compositions" / f"{component}.tsx").is_file(), component
 
 
-def test_ui_remotion_mode_shows_personality_and_format_dropdowns():
+def test_remotion_ui_has_single_dropdown():
+    """UM dropdown de blueprint no modo Remotion — só um, com a lista completa."""
     form_block = APP_SOURCE.split("def render_video_generation_settings(", 1)[1]
     assert 'settings["video_source"] == "Remotion"' in form_block
-    # dropdown 1: personalidade
-    assert "list_personality_blueprints()" in form_block
-    assert '"Blueprint (personalidade do canal)"' in form_block
-    assert 'settings["remotion_personality_id"] = selected_personality_id' in form_block
-    # dropdown 2: formato
-    assert "list_remotion_formats()" in form_block
-    assert '"Formato Remotion"' in form_block
-    assert 'settings["remotion_format_id"] = selected_format_id' in form_block
-    # placeholders dinâmicos do formato
-    assert "find_placeholders" in form_block
-    assert 'settings["blueprint_values"]' in form_block
+    # o dropdown único usa list_blueprints() — a lista completa
+    assert "list_blueprints()" in form_block
+    assert 'key=f"{prefix}_remotion_blueprint"' in form_block
+    assert 'settings["blueprint_id"] = selected_blueprint_id' in form_block
+    # não existe segundo dropdown, nem formato, nem personalidade
+    assert '"Formato Remotion"' not in form_block
+    assert "remotion_format_id" not in form_block
+    assert "remotion_personality_id" not in form_block
+    assert "list_personality_blueprints" not in form_block
+    assert "list_remotion_formats" not in form_block
 
 
-def test_list_remotion_formats_returns_the_five_formats():
-    from hermes_ui.blueprint_loader import list_remotion_formats
+def test_blueprints_youtube_tab_shows_all():
+    """A aba mostra todos os blueprints — usa list_blueprint_files() sem
+    filtros de tipo; os Remotion (json em importados) passam nas exclusões
+    (que só removem ficheiros de controlo e pastas de outras abas)."""
+    render_block = APP_SOURCE.split("def render_blueprints():", 1)[1].split("def render_music_blueprints():", 1)[0]
+    assert "list_blueprint_files()" in render_block
+    assert "Blueprints de conteúdo" not in render_block
+    # a lista única tem a contagem total (json + md)
+    assert 'st.subheader(f"Blueprints ({total})")' in render_block
 
-    formats = list_remotion_formats()
-    assert sorted(item["format_id"] for item in formats) == [
-        "inspirational",
-        "quiz",
-        "social_reel",
-        "top_10",
-        "would_you_rather",
-    ]
-    compositions = {item["format_id"]: item["composition_id"] for item in formats}
-    assert compositions["quiz"] == "Quiz"
-    assert compositions["top_10"] == "Top10"
-    assert compositions["social_reel"] == "SocialReel"
-    assert compositions["would_you_rather"] == "WouldYouRather"
-    assert compositions["inspirational"] == "InspirationalVideo"
+    from hermes_ui import storage
+
+    # os 5 Remotion não são filtrados pelo catálogo (só control files/pastas)
+    for name in REMOTION_BLUEPRINTS:
+        assert storage._is_selectable_blueprint(storage.BLUEPRINTS / "importados" / f"{name}.json")
 
 
-def test_list_personality_blueprints_excludes_formats(tmp_path, monkeypatch):
+def test_list_blueprints_includes_all_five_remotion(tmp_path, monkeypatch):
     from hermes_ui import blueprint_loader, storage
 
     root = tmp_path / "storage"
@@ -92,24 +97,15 @@ def test_list_personality_blueprints_excludes_formats(tmp_path, monkeypatch):
     monkeypatch.setattr(storage, "STATE", root / "state")
     monkeypatch.setattr(storage, "BLUEPRINTS", root / "blueprints")
     monkeypatch.setattr(blueprint_loader, "BLUEPRINTS_DIR", root / "blueprints")
-    importados = root / "blueprints" / "importados"
-    importados.mkdir(parents=True, exist_ok=True)
+    (root / "blueprints" / "importados").mkdir(parents=True, exist_ok=True)
     (root / "state").mkdir(parents=True, exist_ok=True)
-    (importados / "MILITAR.json").write_text('{"id": "militar", "name": "Canal Militar"}', encoding="utf-8")
-    (importados / "FINANCE USA.json").write_text('{"id": "finance-usa", "name": "FINANCE USA"}', encoding="utf-8")
-    (importados / "quiz-fmt.json").write_text('{"format_id": "quiz", "composition_id": "Quiz"}', encoding="utf-8")
 
-    ids = {item["id"] for item in blueprint_loader.list_personality_blueprints()}
-    assert {"militar", "finance-usa"} <= ids
-    assert "quiz" not in ids
+    listed = {item["id"] for item in blueprint_loader.list_blueprints()}
+    assert set(REMOTION_BLUEPRINTS) <= listed
 
 
-def test_schemas_directory_ships_the_five_formats():
-    schemas_dir = ROOT / "packages" / "remotion" / "schemas"
-    assert sorted(path.name for path in schemas_dir.glob("*.schema.json")) == [
-        "inspirational.schema.json",
-        "quiz.schema.json",
-        "social_reel.schema.json",
-        "top_10.schema.json",
-        "would_you_rather.schema.json",
-    ]
+def test_seed_blueprints_directory_has_the_five_remotion():
+    for name in REMOTION_BLUEPRINTS:
+        assert (ROOT / "seed" / "blueprints" / f"{name}.json").is_file(), name
+    # a pasta separada de schemas deixou de existir — um sítio só
+    assert not (ROOT / "packages" / "remotion" / "schemas").exists()

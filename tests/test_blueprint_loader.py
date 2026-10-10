@@ -1,7 +1,14 @@
-"""Tests for the Remotion format loader, personality blueprints and prompts (0.9.76)."""
+"""Loader de Blueprints (0.9.79) — um blueprint é um blueprint.
+
+MILITAR, FINANCE USA e os 5 Remotion (Quiz, Social Media Reels, Top 10,
+Would You Rather, Inspirational Long-Form) são todos blueprints: mesma pasta
+(seed/blueprints/), mesma lista, mesmo dropdown. A única diferença funcional:
+os Remotion têm composition_id e output_schema.
+"""
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
@@ -9,24 +16,36 @@ import pytest
 
 from hermes_ui import blueprint_loader
 from hermes_ui.blueprint_loader import (
-    build_remotion_system_prompt,
+    build_system_prompt,
     find_placeholders,
-    list_personality_blueprints,
-    list_remotion_formats,
-    load_personality_blueprint,
-    load_remotion_format,
+    list_blueprints,
+    load_blueprint,
     render_blueprint_prompt,
-    validate_remotion_format,
 )
 from hermes_ui.schemas import SCHEMAS
 
-FORMAT_IDS = ("inspirational", "quiz", "social_reel", "top_10", "would_you_rather")
 REPO = Path(__file__).resolve().parents[1]
-SCHEMAS_DIR = REPO / "packages" / "remotion" / "schemas"
+SEED_DIR = REPO / "seed" / "blueprints"
+
+REMOTION_FILES = {
+    "Blueprint Remotion - Quiz Videos": "Quiz",
+    "Blueprint Remotion - Social Media Reels": "SocialReel",
+    "Blueprint Remotion - Top 10 Ranking Videos": "Top10",
+    "Blueprint Remotion - Would You Rather": "WouldYouRather",
+    "Blueprint Remotion - Inspirational Long-Form Videos": "InspirationalVideo",
+}
+# SCHEMAS é indexada pelo composition_id de cada blueprint Remotion.
+COMPOSITION_SCHEMAS = {
+    "InspirationalVideo": "InspirationalLongFormOutput",
+    "Quiz": "QuizVideosOutput",
+    "SocialReel": "SocialMediaReelsOutput",
+    "Top10": "Top10VideosOutput",
+    "WouldYouRather": "WouldYouRatherOutput",
+}
 
 
-def _load_format(format_id: str) -> dict:
-    return load_remotion_format(format_id)
+def _load_seed_blueprint(stem: str) -> dict:
+    return json.loads((SEED_DIR / f"{stem}.json").read_text(encoding="utf-8"))
 
 
 def _isolate_storage(tmp_path, monkeypatch) -> Path:
@@ -43,44 +62,70 @@ def _isolate_storage(tmp_path, monkeypatch) -> Path:
     return root
 
 
-class TestRemotionFormats:
-    def test_list_remotion_formats_returns_5(self):
-        formats = list_remotion_formats()
-        assert sorted(item["format_id"] for item in formats) == sorted(FORMAT_IDS)
+class TestSingleBlueprintList:
+    def test_list_blueprints_includes_all_five_remotion(self, tmp_path, monkeypatch):
+        root = _isolate_storage(tmp_path, monkeypatch)
+        importados = root / "blueprints" / "importados"
+        # os 5 Remotion chegam ao storage como todos os outros (seed → importados)
+        for stem in REMOTION_FILES:
+            shutil_copy = (SEED_DIR / f"{stem}.json").read_text(encoding="utf-8")
+            (importados / f"{stem}.json").write_text(shutil_copy, encoding="utf-8")
+        (importados / "MILITAR.json").write_text(json.dumps({"id": "militar", "name": "Canal Militar"}), encoding="utf-8")
 
-    def test_all_five_formats_pass_validation(self):
-        for format_id in FORMAT_IDS:
-            errors = validate_remotion_format(_load_format(format_id))
-            assert errors == [], f"{format_id}: {errors}"
+        listed = {item["id"] for item in list_blueprints()}
+        assert set(REMOTION_FILES) <= listed
+        assert "militar" in listed
 
-    def test_all_five_formats_have_pydantic_schemas(self):
-        for format_id in FORMAT_IDS:
-            assert format_id in SCHEMAS, f"Schema em falta: {format_id}"
+    def test_list_blueprints_includes_seed_fallback_before_seeding(self, tmp_path, monkeypatch):
+        """Storage vazio: os seeds entram como fallback — lista completa."""
+        _isolate_storage(tmp_path, monkeypatch)
+        listed = {item["id"] for item in list_blueprints()}
+        assert set(REMOTION_FILES) <= listed
 
-    def test_reference_examples_validate_against_schemas(self):
+    def test_load_blueprint_by_file_stem_and_by_id(self, tmp_path, monkeypatch):
+        root = _isolate_storage(tmp_path, monkeypatch)
+        importados = root / "blueprints" / "importados"
+        (importados / "MILITAR.json").write_text(json.dumps({"id": "militar", "name": "Canal Militar"}), encoding="utf-8")
+
+        assert load_blueprint("militar")["name"] == "Canal Militar"
+        quiz = load_blueprint("Blueprint Remotion - Quiz Videos")
+        assert quiz["composition_id"] == "Quiz"
+        with pytest.raises(FileNotFoundError):
+            load_blueprint("inexistente")
+
+    def test_remotion_blueprints_have_composition_id_and_output_schema(self):
+        for stem, composition_id in REMOTION_FILES.items():
+            data = _load_seed_blueprint(stem)
+            assert data["composition_id"] == composition_id
+            assert data["output_schema"]
+            assert data["reference_example"]
+            assert "format_id" not in data
+
+
+class TestSchemas:
+    def test_schemas_are_keyed_by_composition_id(self):
+        for composition_id, model_name in COMPOSITION_SCHEMAS.items():
+            assert SCHEMAS[composition_id].__name__ == model_name
+
+    def test_reference_examples_validate_against_composition_schemas(self):
         """O reference_example é estrutural (1-3 itens); expande ao mínimo do
-        modelo para confirmar que o formato e o schema Pydantic estão alinhados."""
-        import copy
+        modelo para confirmar que blueprint e schema Pydantic estão alinhados."""
+        min_counts = {"Quiz": ("questions", 5), "WouldYouRather": ("questions", 5), "Top10": ("ranking", 10)}
 
-        min_counts = {"quiz": ("questions", 5), "would_you_rather": ("questions", 5), "top_10": ("ranking", 10)}
-
-        def _expand(example: dict, list_key: str, count: int) -> None:
-            items = [copy.deepcopy(item) for item in (example.get(list_key) or [])]
-            if not items:
-                return
-            while len(items) < count:
-                clone = copy.deepcopy(items[len(items) % len(items)])
-                if "rank" in clone:
-                    clone["rank"] = len(items) + 1
-                items.append(clone)
-            example[list_key] = items
-
-        for format_id in FORMAT_IDS:
-            schema = SCHEMAS[format_id]
-            example = copy.deepcopy(_load_format(format_id).get("reference_example") or {})
-            if format_id in min_counts:
-                _expand(example, *min_counts[format_id])
-            if format_id == "top_10":
+        for stem, composition_id in REMOTION_FILES.items():
+            schema = SCHEMAS[composition_id]
+            example = copy.deepcopy(_load_seed_blueprint(stem).get("reference_example") or {})
+            if composition_id in min_counts:
+                list_key, count = min_counts[composition_id]
+                items = [copy.deepcopy(item) for item in (example.get(list_key) or [])]
+                if items:
+                    while len(items) < count:
+                        clone = copy.deepcopy(items[len(items) % len(items)])
+                        if "rank" in clone:
+                            clone["rank"] = len(items) + 1
+                        items.append(clone)
+                    example[list_key] = items
+            if composition_id == "Top10":
                 ideas = [str(idea) for idea in (example.get("subjectIdeas") or [])]
                 while len(ideas) < 5:
                     ideas.append(f"Subject idea {len(ideas) + 1}")
@@ -88,90 +133,31 @@ class TestRemotionFormats:
             try:
                 schema.model_validate(example)
             except Exception as exc:
-                pytest.fail(f"{format_id} reference_example (expandido) falha validação: {exc}")
+                pytest.fail(f"{stem} reference_example (expandido) falha validação: {exc}")
 
+
+class TestPlaceholdersAndPrompt:
     def test_find_placeholders(self):
-        """0.9.77 removeu {{difficulty}} de todos os formatos; 0.9.78
-        reintroduz-o apenas no quiz (com default Average no default_values)."""
-        for format_id in FORMAT_IDS:
-            placeholders = find_placeholders(_load_format(format_id))
-            assert "language" in placeholders, format_id
-        quiz_placeholders = find_placeholders(_load_format("quiz"))
-        assert "difficulty" in quiz_placeholders
-        for format_id in ("inspirational", "social_reel", "top_10", "would_you_rather"):
-            assert "difficulty" not in find_placeholders(_load_format(format_id)), format_id
+        quiz = _load_seed_blueprint("Blueprint Remotion - Quiz Videos")
+        placeholders = find_placeholders(quiz)
+        assert "language" in placeholders
+        assert "difficulty" in placeholders
 
     def test_render_blueprint_prompt_substitutes_values(self):
-        resolved = render_blueprint_prompt(_load_format("quiz"), {"topic": "Space", "language": "English", "difficulty": "Easy"})
+        quiz = _load_seed_blueprint("Blueprint Remotion - Quiz Videos")
+        resolved = render_blueprint_prompt(quiz, {"topic": "Space", "language": "English", "difficulty": "Hard"})
         text = json.dumps(resolved, ensure_ascii=False)
         assert "{{language}}" not in text
         assert "{{difficulty}}" not in text
 
-    def test_validate_remotion_format_reports_missing_fields(self):
-        errors = validate_remotion_format({"format_id": "x"})
-        assert any("format_id" not in error for error in errors) or errors  # tem erros
-        assert errors  # campo em falta é reportado
-
-    def test_load_remotion_format_missing_raises(self):
-        with pytest.raises(FileNotFoundError):
-            load_remotion_format("nao_existe")
-
-
-class TestPersonalityBlueprints:
-    def test_list_personality_blueprints_excludes_formats(self, tmp_path, monkeypatch):
-        root = _isolate_storage(tmp_path, monkeypatch)
-        importados = root / "blueprints" / "importados"
-        (importados / "MILITAR.json").write_text(json.dumps({"id": "militar", "name": "Canal Militar"}), encoding="utf-8")
-        (importados / "FINANCE USA.json").write_text(json.dumps({"id": "finance-usa", "name": "FINANCE USA"}), encoding="utf-8")
-        # formatos (novo e antigo estilo) na biblioteca de personalidades
-        (importados / "quiz-fmt.json").write_text(json.dumps({"format_id": "quiz", "composition_id": "Quiz"}), encoding="utf-8")
-        (importados / "old-bp.json").write_text(json.dumps({"blueprint_id": "quiz_videos", "composition_id": "Quiz"}), encoding="utf-8")
-
-        listed = list_personality_blueprints()
-        ids = {item["id"] for item in listed}
-        assert "militar" in ids
-        assert "finance-usa" in ids
-        assert "quiz" not in ids
-        assert "quiz_videos" not in ids
-
-    def test_migration_removes_format_files_from_storage(self, tmp_path, monkeypatch):
-        root = _isolate_storage(tmp_path, monkeypatch)
-        importados = root / "blueprints" / "importados"
-        (importados / "MILITAR.json").write_text(json.dumps({"id": "militar", "name": "Canal Militar"}), encoding="utf-8")
-        (importados / "quiz-fmt.json").write_text(json.dumps({"format_id": "quiz", "composition_id": "Quiz"}), encoding="utf-8")
-        (importados / "old-bp.json").write_text(json.dumps({"blueprint_id": "quiz_videos", "composition_id": "Quiz"}), encoding="utf-8")
-
-        removed = blueprint_loader.migrate_remotion_formats_out_of_storage()
-
-        assert len(removed) == 2
-        assert (importados / "quiz-fmt.json").exists() is False
-        assert (importados / "old-bp.json").exists() is False
-        assert (importados / "MILITAR.json").exists()  # personalidade intacta
-
-    def test_load_personality_blueprint(self, tmp_path, monkeypatch):
-        root = _isolate_storage(tmp_path, monkeypatch)
-        (root / "blueprints" / "importados" / "MILITAR.json").write_text(
-            json.dumps({"id": "militar", "name": "Canal Militar", "niche": "militar"}), encoding="utf-8"
-        )
-        assert load_personality_blueprint("militar")["name"] == "Canal Militar"
-        with pytest.raises(FileNotFoundError):
-            load_personality_blueprint("inexistente")
-
-
-class TestRemotionSystemPrompt:
-    def test_combines_personality_and_format_sections(self):
-        personality = {"id": "militar", "name": "Canal Militar", "niche": "militar"}
-        format_def = _load_format("quiz")
-        prompt = build_remotion_system_prompt(personality, format_def)
-        # secção da personalidade
-        assert "Canal Militar" in prompt
-        assert "Channel personality blueprint" in prompt
-        # secção do formato
-        assert "Remotion composition Quiz" in prompt
+    def test_build_system_prompt_uses_only_the_blueprint_fields(self):
+        quiz = _load_seed_blueprint("Blueprint Remotion - Quiz Videos")
+        prompt = build_system_prompt(quiz)
+        assert "Constraints:" in prompt
         assert "Output JSON schema" in prompt
+        assert "Reference example" in prompt
+        assert "Difficulty calibration" in prompt
         assert "Return ONLY valid JSON" in prompt
-
-    def test_without_personality_uses_neutral_tone(self):
-        prompt = build_remotion_system_prompt({}, _load_format("quiz"))
-        assert "No channel personality blueprint configured" in prompt
-        assert "Remotion composition Quiz" in prompt
+        # um blueprint, um prompt: sem secções de "personalidade" ou "formato"
+        assert "Channel personality blueprint" not in prompt
+        assert "Output format: Remotion composition" not in prompt

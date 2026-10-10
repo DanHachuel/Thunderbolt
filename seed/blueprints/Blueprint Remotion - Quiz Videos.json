@@ -1,10 +1,8 @@
 {
-  "format_id": "quiz",
   "composition_id": "Quiz",
   "fps": 30,
   "width": 1080,
   "height": 1920,
-
   "constraints": [
     "exactly 5 questions",
     "4 answer options per question",
@@ -16,17 +14,14 @@
     "topic and questions must match the difficulty level specified in {{difficulty}}",
     "Return ONLY valid JSON. No markdown, no explanations."
   ],
-
   "default_values": {
     "difficulty": "Average"
   },
-
   "difficulty_calibration": {
     "Easy": "Questions answerable by most adults without deep knowledge.",
     "Average": "Questions requiring general knowledge or common school-level facts.",
     "Hard": "Questions requiring specialized knowledge or uncommon facts."
   },
-
   "output_schema": {
     "topic": "string (in {{language}})",
     "intro_voiceover": "string (in {{language}})",
@@ -44,7 +39,6 @@
       }
     ]
   },
-
   "reference_example": {
     "topic": "Everyday science",
     "intro_voiceover": "Today we ask about everyday science. Can you get all five right?",
@@ -62,7 +56,6 @@
       }
     ]
   },
-
   "remotion_mapping": {
     "composition_id": "Quiz",
     "input_props": "The entire output_schema JSON is passed as inputProps.",

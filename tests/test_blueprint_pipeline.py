@@ -1,9 +1,10 @@
-"""Pipeline do modo Remotion (0.9.76) — docs/blueprints.md.
+"""Pipeline do modo Remotion (0.9.79) — um blueprint é um blueprint.
 
-Combina **blueprint de personalidade** (canal) com **formato Remotion**
-(schema técnico): LLM → validação Pydantic do formato (1 retry) → assets →
-render Remotion na composição do formato. O happy-path corre end-to-end por
-_run_task com todos os providers mockados.
+O blueprint escolhido dita tudo: se tem composition_id, o LLM gera o JSON do
+seu output_schema (validação Pydantic por composition_id com 1 retry), os
+assets são gerados e o Remotion renderiza com a composição do próprio
+blueprint. O happy-path corre end-to-end por _run_task com os providers
+mockados.
 """
 
 from __future__ import annotations
@@ -16,15 +17,16 @@ from types import SimpleNamespace
 import pytest
 
 from hermes_ui import creative_generation, pipeline_worker, storage
-from hermes_ui.blueprint_loader import load_remotion_format
+from hermes_ui.blueprint_loader import load_blueprint
 from hermes_ui.schemas import SCHEMAS
 
 ROOT = Path(__file__).resolve().parents[1]
+QUIZ_BLUEPRINT_ID = "Blueprint Remotion - Quiz Videos"
 
 
 def _quiz_output() -> dict:
-    """Output válido do quiz: reference_example do formato expandido a 5 perguntas."""
-    example = copy.deepcopy((load_remotion_format("quiz").get("reference_example") or {}))
+    """Output válido do quiz: reference_example do blueprint expandido a 5 perguntas."""
+    example = copy.deepcopy((load_blueprint(QUIZ_BLUEPRINT_ID).get("reference_example") or {}))
     questions = [copy.deepcopy(item) for item in (example.get("questions") or [])]
     while len(questions) < 5:
         clone = copy.deepcopy(questions[len(questions) % len(questions)])
@@ -44,14 +46,6 @@ def _isolate(tmp_path, monkeypatch):
     return root
 
 
-def _write_personality(root: Path) -> None:
-    importados = root / "blueprints" / "importados"
-    importados.mkdir(parents=True, exist_ok=True)
-    (importados / "MILITAR.json").write_text(
-        json.dumps({"id": "militar-personality", "name": "Canal Militar", "niche": "militar"}), encoding="utf-8"
-    )
-
-
 def _remotion_task(tmp_path, **overrides):
     channel = {"id": "channel-bp", "name": "Canal Remotion", "language": "English"}
     task = {
@@ -67,21 +61,19 @@ def _remotion_task(tmp_path, **overrides):
         "language": "en",
         "artifacts": {},
         "generation_settings": {
-            "remotion_format_id": "quiz",
-            "remotion_personality_id": "militar-personality",
-            "blueprint_values": {"topic": "Everyday science", "language": "English"},
+            "blueprint_id": QUIZ_BLUEPRINT_ID,
+            "blueprint_values": {"topic": "Everyday science", "language": "English", "difficulty": "Average"},
         },
     }
     task.update(overrides)
     return channel, task
 
 
-def test_remotion_pipeline_happy_path_and_combines_personality_and_format(tmp_path, monkeypatch):
+def test_remotion_pipeline_happy_path(tmp_path, monkeypatch):
     _isolate(tmp_path, monkeypatch)
     channel, task = _remotion_task(tmp_path)
     storage.write_json("channels.json", [channel])
     storage.write_json("tasks.json", [task])
-    _write_personality(pipeline_worker.STORAGE)
     video_path = pipeline_worker.STORAGE / "videos" / "video-bp-remotion-blueprint.mp4"
     thumbnail_path = tmp_path / "thumbnail.png"
     thumbnail_path.write_bytes(b"png")
@@ -123,30 +115,30 @@ def test_remotion_pipeline_happy_path_and_combines_personality_and_format(tmp_pa
     assert result["state"] == "done"
     assert result["artifacts"]["video"] == str(video_path)
     assert result["artifacts"]["blueprint_json"]
+    # a composição vem do próprio blueprint (composition_id)
     assert captured["composition_id"] == "Quiz"
     # o JSON validado chega como inputProps com os áudios injectados
     assert captured["input_props"]["topic"] == "Everyday science"
     assert len(captured["input_props"]["questions"]) == 5
     assert captured["input_props"]["questions"][0]["audioUrl"]
     assert captured["input_props"]["introAudioUrl"]
-    # system prompt combina personalidade + formato
-    assert "Canal Militar" in captured["system_prompt"]
-    assert "Channel personality blueprint" in captured["system_prompt"]
-    assert "Remotion composition Quiz" in captured["system_prompt"]
+    # um blueprint, um prompt: constraints + schema do próprio ficheiro
+    assert "Constraints:" in captured["system_prompt"]
     assert "Output JSON schema" in captured["system_prompt"]
-    # o título vem do tópico do formato, não de creative generation
+    assert "Channel personality blueprint" not in captured["system_prompt"]
+    # o título vem do tópico do blueprint, não de creative generation
     assert storage.read_json("tasks.json")[0]["title"] == "Everyday science"
 
 
-def test_remotion_pipeline_uses_format_schema_for_validation(tmp_path, monkeypatch):
-    """O schema aplicado é o do FORMATO (SCHEMAS['quiz']): um output inválido
-    força o retry com o erro, e o output válido é o do formato quiz."""
+def test_pipeline_uses_blueprint_with_composition_id(tmp_path, monkeypatch):
+    """O schema aplicado é o do composition_id do blueprint (SCHEMAS['Quiz']):
+    um output inválido força o retry com o erro, e o output válido passa."""
     _isolate(tmp_path, monkeypatch)
     channel, task = _remotion_task(tmp_path)
     storage.write_json("channels.json", [channel])
     storage.write_json("tasks.json", [task])
 
-    assert SCHEMAS["quiz"].__name__ == "QuizVideosOutput"
+    assert SCHEMAS["Quiz"].__name__ == "QuizVideosOutput"
 
     monkeypatch.setattr(pipeline_worker, "_settings", lambda: {})
     monkeypatch.setattr(pipeline_worker, "_channel_for_task", lambda value: channel)
@@ -163,13 +155,13 @@ def test_remotion_pipeline_uses_format_schema_for_validation(tmp_path, monkeypat
         settings={},
         channel=channel,
         topic="Everyday science",
-        format_id="quiz",
-        blueprint_values={"topic": "Everyday science", "language": "English"},
+        blueprint_id=QUIZ_BLUEPRINT_ID,
+        blueprint_values={"topic": "Everyday science", "language": "English", "difficulty": "Average"},
     )
 
     assert video_path.is_file()
     assert len(llm_json["questions"]) == 5
-    # o retry levou o erro da validação Pydantic do formato no prompt
+    # o retry levou o erro da validação Pydantic do blueprint no prompt
     assert len(captured_prompts) == 2
     assert "failed validation" in captured_prompts[1]
 
@@ -189,7 +181,7 @@ def test_remotion_pipeline_remotion_unavailable(tmp_path, monkeypatch):
             settings={},
             channel=channel,
             topic="Everyday science",
-            format_id="quiz",
+            blueprint_id=QUIZ_BLUEPRINT_ID,
             blueprint_values={},
         )
 
@@ -213,8 +205,8 @@ def test_remotion_pipeline_cancel_during_assets(tmp_path, monkeypatch):
             settings={},
             channel=channel,
             topic="Everyday science",
-            format_id="quiz",
-            blueprint_values={"topic": "Everyday science", "language": "English"},
+            blueprint_id=QUIZ_BLUEPRINT_ID,
+            blueprint_values={"topic": "Everyday science", "language": "English", "difficulty": "Average"},
         )
 
 
@@ -234,6 +226,6 @@ def test_remotion_pipeline_requires_topic(tmp_path, monkeypatch):
             settings={},
             channel=channel,
             topic="",
-            format_id="quiz",
+            blueprint_id=QUIZ_BLUEPRINT_ID,
             blueprint_values={},
         )

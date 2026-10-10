@@ -1,10 +1,8 @@
 {
-  "format_id": "social_reel",
   "composition_id": "SocialReel",
   "fps": 30,
   "width": 1080,
   "height": 1920,
-
   "constraints": [
     "between 2 and 4 scenes",
     "scene_1 tagged as hook",
@@ -15,7 +13,6 @@
     "imagePrompt in English, photorealistic, safe for AI generation",
     "Return ONLY valid JSON. No markdown, no explanations."
   ],
-
   "output_schema": {
     "title": "string (in {{language}})",
     "scenes": [
@@ -28,7 +25,6 @@
       }
     ]
   },
-
   "reference_example": {
     "title": "The Broke Mindset Nobody Talks About",
     "scenes": [
@@ -62,7 +58,6 @@
       }
     ]
   },
-
   "remotion_mapping": {
     "composition_id": "SocialReel",
     "input_props": "The entire output_schema JSON is passed as inputProps.",

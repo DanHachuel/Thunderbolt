@@ -1,10 +1,8 @@
 {
-  "format_id": "inspirational",
   "composition_id": "InspirationalVideo",
   "fps": 30,
   "width": 1920,
   "height": 1080,
-
   "constraints": [
     "between 9 and 10 scenes",
     "scene 1 tagged as hook",
@@ -14,7 +12,6 @@
     "total voiceover_text across scenes ~220-260 words",
     "Return ONLY valid JSON. No markdown, no explanations."
   ],
-
   "output_schema": {
     "title": "string (in {{language}})",
     "scenes": [
@@ -27,7 +24,6 @@
       }
     ]
   },
-
   "reference_example": {
     "title": "The Voice You Keep Ignoring",
     "scenes": [
@@ -54,7 +50,6 @@
       }
     ]
   },
-
   "remotion_mapping": {
     "composition_id": "InspirationalVideo",
     "input_props": "The entire output_schema JSON is passed as inputProps.",

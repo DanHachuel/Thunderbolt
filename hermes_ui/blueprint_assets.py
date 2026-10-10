@@ -1,4 +1,4 @@
-﻿"""Asset generation for Remotion format pipelines (0.9.76: format_id).
+﻿"""Asset generation for Remotion format pipelines (0.9.76: composition_id).
 
 Extracts image prompts and TTS segments from the LLM-validated JSON, calls
 the configured providers (reusing the existing pool/failover), and injects
@@ -27,16 +27,16 @@ def _task_asset_dir(task_id: str, kind: str) -> Path:
 # Extraction â€” one mapping per blueprint
 # ---------------------------------------------------------------------------
 
-def extract_image_prompts(llm_json: dict[str, Any], format_id: str) -> list[dict[str, str]]:
+def extract_image_prompts(llm_json: dict[str, Any], composition_id: str) -> list[dict[str, str]]:
     """Return [{key, prompt}] with every image prompt in scene order."""
     prompts: list[dict[str, str]] = []
-    if format_id == "inspirational":
+    if composition_id == "InspirationalVideo":
         for scene in llm_json.get("scenes") or []:
             prompts.append({"key": scene.get("id", f"scene_{len(prompts)}"), "prompt": scene.get("image_prompt", "")})
-    elif format_id == "social_reel":
+    elif composition_id == "SocialReel":
         for scene in llm_json.get("scenes") or []:
             prompts.append({"key": scene.get("id", f"scene_{len(prompts)}"), "prompt": scene.get("imagePrompt", "")})
-    elif format_id == "top_10":
+    elif composition_id == "Top10":
         intro = llm_json.get("intro") or {}
         if intro.get("imagePrompt"):
             prompts.append({"key": "intro", "prompt": intro["imagePrompt"]})
@@ -45,7 +45,7 @@ def extract_image_prompts(llm_json: dict[str, Any], format_id: str) -> list[dict
         outro = llm_json.get("outro") or {}
         if outro.get("imagePrompt"):
             prompts.append({"key": "outro", "prompt": outro["imagePrompt"]})
-    elif format_id == "would_you_rather":
+    elif composition_id == "WouldYouRather":
         for question in llm_json.get("questions") or []:
             qid = question.get("id", f"q{len(prompts) // 2 + 1}")
             prompts.append({"key": f"{qid}_option1", "prompt": question.get("option1_image_prompt", "")})
@@ -54,23 +54,23 @@ def extract_image_prompts(llm_json: dict[str, Any], format_id: str) -> list[dict
     return [p for p in prompts if p["prompt"]]
 
 
-def extract_tts_segments(llm_json: dict[str, Any], format_id: str) -> list[dict[str, str]]:
+def extract_tts_segments(llm_json: dict[str, Any], composition_id: str) -> list[dict[str, str]]:
     """Return [{key, text}] with every TTS segment in playback order."""
     segments: list[dict[str, str]] = []
-    if format_id == "inspirational":
+    if composition_id == "InspirationalVideo":
         for scene in llm_json.get("scenes") or []:
             segments.append({"key": scene.get("id", f"scene_{len(segments)}"), "text": scene.get("voiceover_text", "")})
-    elif format_id == "social_reel":
+    elif composition_id == "SocialReel":
         for scene in llm_json.get("scenes") or []:
             segments.append({"key": scene.get("id", f"scene_{len(segments)}"), "text": scene.get("voiceOverText", "")})
-    elif format_id == "quiz":
+    elif composition_id == "Quiz":
         if llm_json.get("intro_voiceover"):
             segments.append({"key": "intro", "text": llm_json["intro_voiceover"]})
         for q in llm_json.get("questions") or []:
             segments.append({"key": f"q{len(segments)}", "text": q.get("question", "")})
         if llm_json.get("like_and_subscribe_voiceover"):
             segments.append({"key": "outro", "text": llm_json["like_and_subscribe_voiceover"]})
-    elif format_id == "top_10":
+    elif composition_id == "Top10":
         intro = llm_json.get("intro") or {}
         if intro.get("voiceoverText"):
             segments.append({"key": "intro", "text": intro["voiceoverText"]})
@@ -79,7 +79,7 @@ def extract_tts_segments(llm_json: dict[str, Any], format_id: str) -> list[dict[
         outro = llm_json.get("outro") or {}
         if outro.get("voiceoverText"):
             segments.append({"key": "outro", "text": outro["voiceoverText"]})
-    elif format_id == "would_you_rather":
+    elif composition_id == "WouldYouRather":
         if llm_json.get("like_and_subscribe_voiceover_text"):
             segments.append({"key": "outro", "text": llm_json["like_and_subscribe_voiceover_text"]})
         for question in llm_json.get("questions") or []:
@@ -142,7 +142,7 @@ def _generate_tts(provider: Callable, text: str, output: Path, task_id: str) -> 
 def generate_assets(
     task: dict[str, Any],
     llm_json: dict[str, Any],
-    format_id: str,
+    composition_id: str,
     image_provider: Callable,
     tts_provider: Callable,
     max_workers: int = 4,
@@ -160,7 +160,7 @@ def generate_assets(
     audio_dir = _task_asset_dir(task_id, "audio")
 
     # --- images (parallel) ---
-    image_prompts = extract_image_prompts(llm_json, format_id)
+    image_prompts = extract_image_prompts(llm_json, composition_id)
     image_paths: dict[str, Path] = {}
 
     def render_image(item: dict[str, str]) -> tuple[str, Path | None]:
@@ -180,7 +180,7 @@ def generate_assets(
                     image_paths[key] = path
 
     # --- TTS (serial to preserve order and avoid rate limits) ---
-    tts_segments = extract_tts_segments(llm_json, format_id)
+    tts_segments = extract_tts_segments(llm_json, composition_id)
     audio_paths: dict[str, Path] = {}
     for segment in tts_segments:
         if cancel_check and cancel_check():
@@ -196,7 +196,7 @@ def generate_assets(
         "images": {key: str(path) for key, path in image_paths.items()},
         "audio": {key: str(path) for key, path in audio_paths.items()},
     }
-    enriched = inject_assets(llm_json, assets_map, format_id)
+    enriched = inject_assets(llm_json, assets_map, composition_id)
     return enriched
 
 
@@ -204,7 +204,7 @@ def generate_assets(
 # Injection â€” add imageUrl/audioUrl at the correct locations per blueprint
 # ---------------------------------------------------------------------------
 
-def inject_assets(llm_json: dict[str, Any], assets_map: dict[str, Any], format_id: str) -> dict[str, Any]:
+def inject_assets(llm_json: dict[str, Any], assets_map: dict[str, Any], composition_id: str) -> dict[str, Any]:
     """Return a deep copy of the JSON with imageUrl/audioUrl added. Never removes keys."""
     import copy
 
@@ -212,7 +212,7 @@ def inject_assets(llm_json: dict[str, Any], assets_map: dict[str, Any], format_i
     images = assets_map.get("images") or {}
     audio = assets_map.get("audio") or {}
 
-    if format_id in ("inspirational", "social_reel"):
+    if composition_id in ("InspirationalVideo", "SocialReel"):
         for scene in enriched.get("scenes") or []:
             key = scene.get("id", "")
             if key in images:
@@ -220,7 +220,7 @@ def inject_assets(llm_json: dict[str, Any], assets_map: dict[str, Any], format_i
             if key in audio:
                 scene["audioUrl"] = audio[key]
 
-    elif format_id == "quiz":
+    elif composition_id == "Quiz":
         if "intro" in audio:
             enriched["introAudioUrl"] = audio["intro"]
         for index, question in enumerate(enriched.get("questions") or []):
@@ -230,7 +230,7 @@ def inject_assets(llm_json: dict[str, Any], assets_map: dict[str, Any], format_i
         if "outro" in audio:
             enriched["outroAudioUrl"] = audio["outro"]
 
-    elif format_id == "top_10":
+    elif composition_id == "Top10":
         intro = enriched.get("intro") or {}
         if "intro" in images:
             intro["imageUrl"] = images["intro"]
@@ -248,7 +248,7 @@ def inject_assets(llm_json: dict[str, Any], assets_map: dict[str, Any], format_i
         if "outro" in audio:
             outro["audioUrl"] = audio["outro"]
 
-    elif format_id == "would_you_rather":
+    elif composition_id == "WouldYouRather":
         for question in enriched.get("questions") or []:
             qid = question.get("id", "")
             if f"{qid}_option1" in images:
