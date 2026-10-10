@@ -4,10 +4,12 @@ from hermes_ui import storage
 def test_finance_content_seeds_are_separate_from_thumbnail_seed():
     from pathlib import Path
 
-    content = sorted(Path("seed/blueprints").glob("FINANCE*.md"))
+    # 0.9.80: as 15 versões FINANCE melhoradas são agora .json (como o
+    # FINANCE USA), substituindo os antigos .markdown de conteúdo.
+    content = sorted(Path("seed/blueprints").glob("FINANCE*.json"))
     thumbnails = sorted(Path("seed/blueprints/thumbnails").glob("FINANCE*.md"))
 
-    assert len(content) == 15
+    assert len(content) == 16  # 15 países + FINANCE USA
     assert [path.name for path in thumbnails] == ["FINANCE_Thumbnail_Blueprint.md"]
 
 

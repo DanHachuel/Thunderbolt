@@ -1,0 +1,598 @@
+{
+  "metadata": {
+    "task_type": "forensic_content_blueprint_extraction",
+    "sample_count": 8,
+    "dominant_domain_inferred": "long-form personal-finance, money-psychology and real-estate essays for a Spanish audience",
+    "core_promise_of_system": "Make abstract money topics feel urgent, personal, morally loaded and immediately actionable by translating the Spanish macroeconomy into high-stakes life consequences.",
+    "primary_content_engine": "History/metaphor-driven warning essay that reframes a familiar financial idea as misunderstood, structurally rigged, psychologically dangerous, and still navigable if the viewer adopts the creator's framework.",
+    "character_length_requirement": "STRICTLY 7,000–9,000 characters",
+    "character_length_rule": "The final FULL SCRIPT must be no less than 7,000 characters and no more than 9,000 characters.",
+    "strict_character_range": [7000, 9000],
+    "length_compliance_mandatory": true,
+    "audience_inference": {
+      "knowledge_level": "intermediate aspirational retail investor / financially anxious knowledge worker, familiar with cuenta corriente, cuenta de ahorro, depósito a plazo, Letras del Tesoro, fondos de inversión, planes de pensiones, hipotecas and real estate, but unsure of the whole picture",
+      "psychological_state": "skeptical, economically uneasy, wants clarity and edge, feels mainstream advice (banks, gestores, media, simplified guidance) is incomplete or too late",
+      "aspirational_identity": "calm, informed, anti-hype, system-level thinker who spots traps before the crowd — someone who understands the Spanish game beyond 'save in the depósito and buy a house'"
+    },
+    "channel_persona": {
+      "role": "translator of hidden financial mechanics inside the Spanish system",
+      "voice": "calm but severe, analytical but conversational, anti-guru while still authoritative",
+      "authority_basis": [
+        "claims personal investing experience in Spain",
+        "references long study time and obscure documents (CNMV regulations, Banco de España reports, ECB minutes, INE data, AIReF reports, Tribunal de Cuentas, DGSFP, State budgets, FROB reports, SAREB)",
+        "uses Spanish and global historical analogies",
+        "frames advice as mechanical, not motivational",
+        "signals distance from schemes, courses and hype",
+        "mentions hands-on experience with Agencia Tributaria, Banco de España, CNMV, BCE, FROB, SAREB and the Spanish mortgage market"
+      ]
+    }
+  },
+  "cross_sample_system": {
+    "dominant_pattern": "Each video opens with a striking anecdote or historical event, converts it into a present-day parallel, exposes a hidden structural trap, escalates consequences from portfolio-level to life-level, then resolves with a practical protocol and a worldview shift.",
+    "what_is_repeated_across_samples": [
+      "Title promises revelation plus correction of a false belief.",
+      "Cold open uses a vivid story, person or date cluster before the thesis.",
+      "Immediate pivot: 'this is happening again / right now / to you.'",
+      "Presenter positions himself as an obsessive researcher, not an entertainer.",
+      "Viewer is told mainstream advice is directionally true but dangerously incomplete.",
+      "Concepts are reduced to one central metaphor carried across the script.",
+      "Repeated contrast between spreadsheet math and human psychology.",
+      "Frequent use of named characters or mini-case studies to concretise abstractions.",
+      "Action steps appear after fear/diagnosis, never before.",
+      "Endings compress the message into 3 takeaways or a concise doctrine."
+    ],
+    "what_is_intentionally_avoided": [
+      "No dry textbook exposition without emotional framing.",
+      "No purely optimistic wealth-building tone.",
+      "No jargon left untranslated for long.",
+      "No absolute certainty; uses probabilistic seriousness.",
+      "No purely technical CTA; CTAs are embedded as practical tools, not hard sells.",
+      "No celebratory finance-bro energy, no luxury signalling, no macho alpha posture.",
+      "No references to exclusively American institutions or products (401k, Roth IRA, Social Security, Fannie Mae) without translation to Spanish equivalents."
+    ],
+    "exceptions_used_strategically": [
+      "Video 4 is simpler and more direct; less nuanced than the others because it targets urgency and beginner conversion.",
+      "Video 6 leans more speculative/conspiratorial but protects credibility with repeated disclaimers about lack of proof.",
+      "Video 7 is more constructive and motivational, but still framed through pain, misperception and psychological failure.",
+      "Video 8 focuses exclusively on the Spanish property market and the traps of financing, taxation and rental post-2023."
+    ]
+  },
+  "rotation_mandate": {
+    "purpose": "Force thematic diversity across videos. Prevent the model from collapsing into real-estate/financing on every generation. The blueprint's terminology and sample set are real-estate-heavy; without an explicit rotation rule, the model defaults to property math, mortgage mechanics, ITP and AJD structure, Ley de Vivienda, okupas and 'cultura del ladrillo' traps because they satisfy the content formula most easily.",
+    "principle": "Every generated script must be assigned to ONE category. Categories rotate. Consecutive videos must never share the same category. Real-estate has a hard cap.",
+    "categories": [
+      {
+        "id": "money_psychology",
+        "label": "Money Psychology & Identity",
+        "description": "Enoughness, lifestyle creep, freedom versus fantasy, delayed gratification, the psychology of wealth, identity-level shift, Spanish cultural pressure of 'aparentar', 'vida social' and 'cañas' spending, the emotional weight of 'hucha' saving mentality, family financial obligations, 'pagas extra' as fake wealth, and the fear of 'estafa' that paralyses action.",
+        "example_topics": [
+          "Why 'enough' is the hardest number to calculate in Spain",
+          "The lifestyle creep that silently eats every pay raise",
+          "How the pursuit of optionality can destroy your life",
+          "The difference between looking rich and being free"
+        ],
+        "must_avoid": [
+          "Property-specific advice",
+          "Mortgage math",
+          "ITP and AJD mechanics",
+          "Ley de Vivienda and LAU calculations"
+        ]
+      },
+      {
+        "id": "concentration_indexing",
+        "label": "Concentration, Indexing & Portfolio Structure",
+        "description": "Concentration risk, indexing revisionism, correlation, sequence-of-returns risk, portfolio design, systematic versus discretionary, IBEX 35 concentration in banks, construction and utilities, over-concentration in Spanish real estate through direct property or SOCIMIs, fondos de inversión vs ETFs vs direct shares, planes de pensiones structure and fees.",
+        "example_topics": [
+          "The hidden risk in every 'diversified' Spanish portfolio",
+          "What nobody tells you about the 4% rule in Spain",
+          "The 2000 dot-com pattern repeating in the IBEX in 2026",
+          "Why rebalancing is the only free lunch nobody eats"
+        ],
+        "must_avoid": [
+          "Direct property recommendations",
+          "Rental yield calculations",
+          "IBI and plusvalía municipal specifics",
+          "Mortgage refinancing mechanics"
+        ]
+      },
+      {
+        "id": "macro_currency",
+        "label": "Macroeconomics & Currency",
+        "description": "Inflation, deflation, debt cycles, EUR dynamics, ECB policy, Banco de España, Spanish public deficit, tourism dependency, energy exposure, immigration and productivity, sovereign spread, rating agencies, European fiscal rules.",
+        "example_topics": [
+          "The math behind the coming ECB trap",
+          "Why Spain's growth model is running out of road",
+          "The quiet collapse of the Spanish bond market",
+          "What happens when a tourism economy loses its bid"
+        ],
+        "must_avoid": [
+          "Personal property advice",
+          "Local property tax specifics",
+          "Specific mortgage products"
+        ]
+      },
+      {
+        "id": "fiscal_policy",
+        "label": "Domestic Fiscal Policy & Household Impact",
+        "description": "IRPF changes, Impuesto de Patrimonio, Impuesto de Sucesiones y Donaciones, Ley de Vivienda, Golden Visa elimination, SOCIMI taxation, alquiler regulations, LAU reform, autónomo quotas, pension reform, minimum wage, social security contributions.",
+        "example_topics": [
+          "The tax change nobody read in the budget",
+          "How the new IRPF brackets affect your pay slip",
+          "What Hacienda quietly changed this year",
+          "The Ley de Vivienda trap nobody is framing honestly"
+        ],
+        "must_avoid": [
+          "Property investment strategy",
+          "Mortgage refinancing mechanics",
+          "Rental property tax shelters"
+        ]
+      },
+      {
+        "id": "generational_systems",
+        "label": "Generational Systems & Structural Failure",
+        "description": "Pensión pública sustainability, Seguridad Social, healthcare system, education cost shifts, demographic collapse, intergenerational wealth transfer, boomers vs millennials, 'emancipación tardía', 'mileuristas' and 'ninis' as symptoms, dependency law, rural depopulation.",
+        "example_topics": [
+          "The generation that will work until 80",
+          "Why Spanish pension math stopped adding up",
+          "The hidden cost the boomers left the millennials",
+          "How the pensión pública became the real retirement question"
+        ],
+        "must_avoid": [
+          "Property investment mechanics",
+          "Property market timing",
+          "Local rent-control discussions"
+        ]
+      },
+      {
+        "id": "real_estate_financing",
+        "label": "Real Estate & Financing (Spain)",
+        "description": "Hipoteca fija, variable, mixta, Euribor, IRPH, cláusula suelo, ratio de endeudamiento, LTV, tasación, notaría, registro, gestoría, ITP, AJD, IVA, plusvalía municipal, IBI, IRPF, Ley de Vivienda, LAU, okupas, desahucio, alquiler, compraventa, Golden Visa, SOCIMI, crowdfunding inmobiliario, hipoteca inversa, cuenta vivienda.",
+        "example_topics": [
+          "The mortgage trap that quietly resets every cycle",
+          "Why home ownership is not the wealth builder it was sold as",
+          "The hidden cost of the Ley de Vivienda nobody models",
+          "What the Spanish real-estate math actually says"
+        ],
+        "restriction": "This category may appear at most once in every six consecutive videos. If any of the last two videos were in this category, skip it entirely and pick another."
+      }
+    ],
+    "selection_rules": [
+      "Track the last six videos produced by the channel and their assigned categories.",
+      "Before generating a new script, choose the category that has been used LEAST recently. On a tie, prefer the category with fewer appearances in the last twelve videos.",
+      "Never generate two consecutive videos in the same category.",
+      "The real_estate_financing category has an additional hard cap: at most one in every six videos.",
+      "If the channel has no history (first video), default to one of: money_psychology, concentration_indexing, or macro_currency.",
+      "If the user has explicitly requested a topic, honour it, but flag the rule violation in a single sentence inside the script's internal notes (not in the script body)."
+    ],
+    "user_command_override": "The user's explicit topic request always wins, but the generation model must warn in one sentence if the request breaks the rotation rule (e.g., 'this will be your third real-estate video in a row').",
+    "anti_patterns_to_avoid": [
+      "Do not default to real estate as the 'most visually compelling' or 'most urgent' category.",
+      "Do not use property metaphors (casa, piso, chalet, ladrillo, hipoteca, obra, solar, tejado, pared, puerta, llave, cimiento) as the central metaphor for non-property categories. Use different physical metaphors instead: gansos, bañera, bola de nieve, banco de tres patas, puente, engranajes, jardín, jarra, puerta, pozo, fuego, semilla, telar, escalera, mapa, brújula, río, presa, ancla, muro, castillo, barco, motor, rueda, espejo, eco, sombra, hilo, cadena, faro, túnel, escalera, red, cedazo, esponja, prisma, polea, válvula, cerradura, balanza, carretilla, mochila, embalse, olla, farol, grúa, fuelle, yunque, horno, balsa, vela, timón, mástil, quilla, proa, popa, puerto, marea, corriente, onda, tormenta, refugio, paraguas, capa, escudo, lanza, arco y flecha, carcaj, tambor, flauta, guitarra, castañuelas, bandurria, gaita, txistu, txalaparta, tamboril, dulzaina, chirimía, rabel, zanfoña, salterio, laúd, vihuela, violín, violonchelo, contrabajo, arpa, piano, órgano, acordeón, bandoneón.",
+      "Do not reference interest rates, home prices, ITP, AJD, IBI or housing markets as primary evidence in non-property categories.",
+      "Do not use the viewer's own piso or hipoteca as the emotional anchor in non-property categories. Anchor instead to their nómina, their net salary, their fondo de inversión, their plan de pensiones, their savings, their time, their family, their career, or their future pensión pública."
+    ]
+  },
+  "title_analysis": {
+    "title_mechanics": {
+      "structure": "Shock claim + topic + implied hidden truth/correction",
+      "common_forms": [
+        "X Explicado",
+        "Si Quieres X, Esto Es Lo Que Debes Hacer",
+        "Lo Que Viene Es Peor Que X",
+        "Están a Punto de X Tu Y",
+        "Grupo/Institución Está en Grandes Apuros",
+        "Las Matemáticas Que Te Volarán La Cabeza",
+        "Por Qué Tu Cuenta de Ahorro No Te Va a Salvar",
+        "Lo Que Nadie Te Dice Sobre las Hipotecas Españolas",
+        "Hacienda Está Haciendo Esto Con Tu Dinero",
+        "España Está Haciendo Esto Con Tu Inmobiliario",
+        "¿Tu Plan de Pensiones Es Una Trampa?",
+        "¿Va a Colapsar la Pensión Española?"
+      ],
+      "click_drivers": [
+        "threat escalation ('worse than the 2008 crisis')",
+        "identity relevance ('your money', 'you want to invest')",
+        "forbidden mechanism ('loophole', 'trap', 'reset')",
+        "compressed certainty ('this is what to do')",
+        "reversal of common belief ('passive income isn't passive')",
+        "Spanish specificity ('your depósito', 'your pensión', 'your hipoteca', 'Hacienda', 'Euribor', 'IRPF')"
+      ],
+      "tone_signature": "High-stakes, corrective, anti-naive, not playful.",
+      "number_usage": "Years, percentages, counts and EUR figures increase perceived seriousness and intellectual legitimacy.",
+      "title_psychology": "The viewer clicks because the title suggests they are unknowingly exposed to a system-level risk that others are missing — and that the Spanish system has specific vulnerabilities nobody is discussing."
+    },
+    "implied_enemies_and_allies": {
+      "implied_enemy": [
+        "Spanish financial industry",
+        "bad incentives (commissions, cross-selling, complex products)",
+        "simplified mainstream advice (including some social-media gurus and property salesmen)",
+        "political institutions (Agencia Tributaria, Ministerio de Hacienda, Banco de España, BCE)",
+        "the viewer's own undisciplined psychology",
+        "Spanish culture of property obsession and debt",
+        "depósitos a plazo treated as investment",
+        "planes de pensiones misunderstood",
+        "'cultura del ladrillo'"
+      ],
+      "implied_ally": [
+        "the narrator",
+        "historical truth",
+        "math",
+        "the prepared, disciplined viewer",
+        "regulators when they work (CNMV, Banco de España, DGSFP)",
+        "fiscal and accounting transparency"
+      ]
+    }
+  },
+  "script_architecture": {
+    "macro_flow": [
+      "1. Pattern interrupt opening: bizarre anecdote, historical collapse or jarring scenario with Spanish relevance (2008 crisis, burbuja inmobiliaria, 2012 bank bailout, SAREB, cláusulas suelo, participaciones preferentes, Catalan crisis, COVID, 2022 inflation, rental crisis).",
+      "2. Snap-link to present relevance: 'the same pattern is happening now.'",
+      "3. Presenter framing: why he is qualified / why this isn't hype.",
+      "4. Promise stack: explicit list of what the viewer will understand by the end.",
+      "5. Tool CTA early: free calculator/report framed as corrective utility.",
+      "6. Core metaphor introduced and sustained.",
+      "7. Conceptual explanation with simple language and arithmetic.",
+      "8. Historical precedent or analogical proof.",
+      "9. Psychological complication: why humans fail even when the math works.",
+      "10. Concrete examples/case studies with named people and specific numbers in EUR.",
+      "11. Action protocol / rules / allocation / checklist.",
+      "12. Identity-level conclusion: freedom comes from mindset/system, not mere returns.",
+      "13. Final compression into takeaways + soft internal CTA to another video/subscribe."
+    ],
+    "opening_pattern": {
+      "method": "Start with a highly specific anecdote before the thesis so the viewer is mentally hooked by narrative, not argument.",
+      "why_it_works": "The viewer unconsciously asks 'why are you telling me this?' and the script answers by connecting the anecdote to their money/life.",
+      "opening_variants": [
+        "Spanish historical scandal/collapse (2008 crisis, burbuja inmobiliaria, bank bailout, cláusulas suelo, participaciones preferentes, tarjetas revolving, IRPH)",
+        "three-case rapid montage",
+        "date-stamped macro timeline (1977, 1980s, 1992, 1998-2007, 2008, 2010-2012, 2020, 2022)",
+        "ordinary person scenario with hidden flaw",
+        "INE or Banco de España data used as a shock"
+      ]
+    },
+    "pacing_model": {
+      "rhythm": "Dense but segmented. Short-to-medium sentences dominate, broken by longer explanatory runs after hooks land.",
+      "acceleration_pattern": "Hook -> explanation -> new danger -> deeper mechanism -> practical release.",
+      "retention_devices": [
+        "forward promises ('here's what we're doing today')",
+        "mid-script escalations ('it gets worse')",
+        "counterintuitive turns ('the math works, human psychology doesn't')",
+        "repeated reframing",
+        "alternation between macro and personal examples",
+        "references to familiar Spanish institutions (Banco de España, Agencia Tributaria, CNMV, INE)"
+      ]
+    },
+    "information_release_timing": {
+      "front_loaded": [
+        "danger",
+        "pattern recognition",
+        "what the viewer will learn"
+      ],
+      "mid_loaded": [
+        "underlying mechanism",
+        "Spanish and global historical parallels",
+        "examples and equations"
+      ],
+      "back_loaded": [
+        "protocol",
+        "identity shift",
+        "summary takeaways"
+      ]
+    }
+  },
+  "micro_writing_mechanics": {
+    "sentence_design": {
+      "dominant_shapes": [
+        "Short declarative shock sentence.",
+        "Question-answer sequence.",
+        "Analogy sentence followed by translation sentence.",
+        "Claim -> immediate caveat -> stronger restatement.",
+        "Numeric sentence -> emotional interpretation sentence."
+      ],
+      "feel": "Controlled urgency. The prose sounds like spoken thinking, but it is tightly engineered.",
+      "cadence_trick": "Uses short punch lines after data-heavy passages to reset attention."
+    },
+    "word_choice": {
+      "preferred_lexicon": [
+        "trap",
+        "mechanism",
+        "system",
+        "math",
+        "psychology",
+        "freedom",
+        "optionality",
+        "structure",
+        "concentration",
+        "cash flow",
+        "sequence risk",
+        "the game",
+        "what nobody talks about",
+        "quietly",
+        "actually",
+        "here's the thing",
+        "Hacienda",
+        "Agencia Tributaria",
+        "Banco de España",
+        "CNMV",
+        "BCE",
+        "INE",
+        "FROB",
+        "SAREB",
+        "FGD",
+        "FOGAIN",
+        "cuenta corriente",
+        "cuenta de ahorro",
+        "depósito a plazo",
+        "Letras del Tesoro",
+        "Bonos del Estado",
+        "Obligaciones del Estado",
+        "fondos de inversión",
+        "ETF",
+        "plan de pensiones",
+        "PIAS",
+        "Unit Linked",
+        "seguro de vida-ahorro",
+        "hipoteca fija",
+        "hipoteca variable",
+        "hipoteca mixta",
+        "Euribor",
+        "IRPH",
+        "cláusula suelo",
+        "diferencial",
+        "TAE",
+        "TIN",
+        "comisión de apertura",
+        "vinculaciones",
+        "nómina",
+        "recibos",
+        "tarjetas",
+        "test de estrés",
+        "ratio de endeudamiento",
+        "LTV",
+        "tasación",
+        "notaría",
+        "registro",
+        "gestoría",
+        "ITP",
+        "AJD",
+        "IVA",
+        "plusvalía municipal",
+        "IBI",
+        "IRPF",
+        "Impuesto de Patrimonio",
+        "Impuesto de Sucesiones",
+        "SOCIMI",
+        "SICAV",
+        "sociedad patrimonial",
+        "comunidad de bienes",
+        "autónomo",
+        "funcionario",
+        "ERTE",
+        "paro",
+        "Seguridad Social",
+        "pensión pública",
+        "jubilación",
+        "Ley de Vivienda",
+        "Ley de Arrendamientos Urbanos",
+        "okupas",
+        "desahucio",
+        "alquiler",
+        "compraventa",
+        "Golden Visa",
+        "crowdfunding inmobiliario",
+        "hipoteca inversa",
+        "cuenta vivienda",
+        "pagarés",
+        "participaciones preferentes",
+        "obligaciones subordinadas",
+        "tarjetas revolving",
+        "swaps",
+        "productos estructurados",
+        "fondos garantizados",
+        "planes de ahorro"
+      ],
+      "language_behavior": "Abstract finance terms are almost always paired with tangible verbs or objects. The object bank should include a WIDE RANGE of physical metaphors, not predominantly property-related ones: gansos, bañera, bola de nieve, banco de tres patas, puente, engranajes, jardín, jarra, puerta, pozo, fuego, semilla, telar, escalera, mapa, brújula, río, presa, ancla, muro, castillo, barco, motor, rueda, espejo, eco, sombra, hilo, cadena, faro, túnel, escalera, red, cedazo, esponja, prisma, polea, válvula, cerradura, balanza, carretilla, mochila, embalse, olla, farol, grúa, fuelle, yunque, horno, balsa, vela, timón, mástil, quilla, proa, popa, puerto, marea, corriente, onda, tormenta, refugio, paraguas, capa, escudo, lanza, arco y flecha, carcaj, tambor, flauta, guitarra, castañuelas, bandurria, gaita, txistu, txalaparta, tamboril, dulzaina, chirimía, rabel, zanfoña, salterio, laúd, vihuela, violín, violonchelo, contrabajo, arpa, piano, órgano, acordeón, bandoneón.",
+      "credibility_words": "specific dates, named firms, exact percentages, Spanish historical names, concrete EUR amounts"
+    },
+    "rhetorical_devices": {
+      "most_common": [
+        "extended metaphor",
+        "strategic repetition",
+        "contrast pairs",
+        "mock dialogue",
+        "false belief -> corrected truth",
+        "stacked examples",
+        "escalating hypothetical scenario"
+      ],
+      "contrast_structure": [
+        "fantasy vs reality",
+        "gross revenue vs net income",
+        "average return vs sequence of return",
+        "looking rich vs being rich",
+        "recession vs monetary transition",
+        "retiring from vs retiring to",
+        "depósito vs fondo de inversión",
+        "plan de pensiones vs ETF",
+        "buying vs renting",
+        "Madrid vs Barcelona",
+        "piso vs chalet",
+        "primary residence vs investment",
+        "alquiler vs compra",
+        "hipoteca fija vs variable",
+        "IRPF vs IS",
+        "autónomo vs funcionario",
+        "gross vs net",
+        "nómina vs facturación"
+      ]
+    },
+    "tone_layering": {
+      "surface_tone": "helpful explainer",
+      "underlayer": "mild alarm, anti-naive skepticism",
+      "deeper_emotional_register": "betrayal by institutions, relief through understanding, dignity through disciplined realism"
+    }
+  },
+  "psychological_and_persuasive_mechanisms": {
+    "core_psychology": [
+      "Uses fear, but not random fear; fear is tied to mechanism, making it feel intelligent rather than sensational.",
+      "Creates relief by converting vague anxiety into understandable structure.",
+      "Makes viewer feel smarter than the passive majority if they keep watching.",
+      "Uses anti-hype disclaimers to increase trust before making strong claims.",
+      "Frames action as self-defence, not greed.",
+      "Leverages specific knowledge of the Spanish system (pensión pública, depósitos, planes de pensiones, hipotecas, IRPF, real estate) to create a sense of insider knowledge."
+    ],
+    "emotional_sequence": [
+      "confusion",
+      "recognition",
+      "alarm",
+      "clarity",
+      "agency",
+      "identity reinforcement"
+    ],
+    "credibility_engineering": {
+      "methods": [
+        "references institutions by name (Banco de España, Agencia Tributaria, CNMV, BCE, INE, AIReF, Tribunal de Cuentas, DGSFP)",
+        "admits uncertainty selectively",
+        "says 'this isn't about motivation'",
+        "uses personal skin-in-the-game statements",
+        "calls out bad incentives rather than cartoon villains",
+        "translates documents/regulations into plain Spanish (plan de pensiones rules, IRPF, hipotecas, Ley de Vivienda, LAU, cláusulas suelo, IRPH)",
+        "cites INE data, Banco de España reports, State budgets, AIReF analysis"
+      ],
+      "effect": "The narrator sounds like a sober insider decoding reality for outsiders."
+    },
+    "retention_psychology": {
+      "curiosity_loops": [
+        "What is the hidden pattern?",
+        "Why doesn't the obvious strategy work?",
+        "Who is actually winning?",
+        "What happens when the system breaks?",
+        "What should I do instead?"
+      ],
+      "tension_creation": "Tension is built by showing the viewer they are exposed to a risk they previously thought was safety.",
+      "relief_timing": "Relief arrives only after the system is fully diagnosed, which increases perceived value of the solution."
+    }
+  },
+  "worldview_embedded_in_scripts": {
+    "beliefs": [
+      "Most financial pain comes from incentives and psychology, not lack of information alone.",
+      "Institutions optimise for system preservation, not your well-being.",
+      "Conventional advice is often half-true and dangerous when decontextualised.",
+      "Freedom is more about flexibility, margin and enoughness than maximising returns.",
+      "The disciplined ordinary person can outperform the emotional crowd.",
+      "The Spanish system has specific vulnerabilities that most mainstream advice ignores.",
+      "Understanding the interplay between Agencia Tributaria, Banco de España, BCE and the mortgage market is essential for financial safety in Spain.",
+      "Depósitos a plazo are not investment; they are emergency reserves with negative real returns.",
+      "Depending exclusively on the pensión pública is a systemic risk for most Spaniards.",
+      "Spanish taxation is complex by design; ignorance is expensive.",
+      "The Spanish real-estate market is not rational; it is collective psychology amplified by leverage and 'cultura del ladrillo'."
+    ],
+    "status_framing": "High status is attached to calm realism, delayed gratification and structural understanding, not flashy consumption.",
+    "fear_framing": "The real danger is not one crash or one bad pick; it is building your life on false assumptions — especially about property, retirement and what the government will do next.",
+    "transformation_promise": "Move from reactive participant to system-aware allocator who can't be easily trapped — someone who understands the rules of the Spanish game better than the average Spaniard."
+  },
+  "replication_logic": {
+    "content_formula": {
+      "step_1": "Choose a financial topic with mainstream familiarity and hidden complexity, WITHIN the category assigned by the rotation_mandate (depósito, plan de pensiones, hipoteca, real estate, IRPF, Letras del Tesoro, fondos de inversión, SOCIMI, alquiler).",
+      "step_2": "Find a Spanish historical analogy, strange anecdote or sharp mini-story that mirrors the modern issue.",
+      "step_3": "Frame the common understanding as incomplete or dangerously naive.",
+      "step_4": "Introduce one sticky metaphor that can carry the full explanation. Prefer non-property metaphors unless the assigned category is real_estate_financing.",
+      "step_5": "Translate the mechanism into plain arithmetic with concrete EUR numbers.",
+      "step_6": "Add a human-failure layer: why people still mess this up even when the math is knowable.",
+      "step_7": "Insert one or more case studies with names, ages, incomes, balances, outcomes.",
+      "step_8": "Escalate from portfolio consequence to lifestyle, identity or societal consequence.",
+      "step_9": "Offer a protocol/ruleset that feels practical, not magical.",
+      "step_10": "End with worldview compression and a concise memorable doctrine."
+    },
+    "stylistic_rules_for_future_outputs": [
+      "Always make the invisible visible.",
+      "Never explain a concept without an image/object/metaphor.",
+      "Use numbers to anchor trust, not to overwhelm.",
+      "Alternate macro systems and individual stories.",
+      "Speak as if correcting a dangerous misunderstanding.",
+      "Let skepticism and humility coexist: strong thesis, selective uncertainty.",
+      "Avoid sounding like a trader; sound like a strategic realist.",
+      "Give the viewer dignity through understanding, not through hype.",
+      "Use Spanish-specific references (Agencia Tributaria, Banco de España, CNMV, INE, budget, planes de pensiones, IRPF, Euribor, etc.).",
+      "Avoid American financial terms (401k, Roth IRA, Social Security, 30-year fixed, FICO score, etc.) without translation."
+    ],
+    "title_generation_rules": [
+      "Centre danger, reversal or hidden mechanism.",
+      "Use direct second-order implications: not just 'recession' but 'worse than the 2008 crisis'.",
+      "Make titles feel like practical protection against a trap.",
+      "Keep phrasing blunt, not clever.",
+      "Include Spanish specificity whenever possible ('your depósito', 'your pensión', 'Hacienda', 'Euribor', 'IRPF')."
+    ],
+    "hook_generation_rules": [
+      "Open on a vivid story or date cluster before introducing the topic.",
+      "Reveal the present-day relevance within the first 5–8 lines.",
+      "Promise a deeper mechanism, not just surface explanation."
+    ]
+  },
+  "sample_specific_context": {
+    "video_1": {
+      "category": "money_psychology",
+      "blueprint": "Freedom fantasy versus mechanical reality. Strong on metaphor, optionality, lifestyle creep, psychology of enough. Spanish context: pensión pública, depósitos, real estate, cost of living."
+    },
+    "video_2": {
+      "category": "concentration_indexing",
+      "blueprint": "Historical concentration mania repeated today. Strong on structural analogy, anti-indexing revisionism, explicit portfolio protocol. Spanish context: concentration in IBEX 35, banks, construction, real estate, over-concentration in deposits and property."
+    },
+    "video_3": {
+      "category": "macro_currency",
+      "blueprint": "Macro regime change. Strong on date-stacking, institutional references, currency/industry framing, existential stakes. Spanish context: EUR, BCE, Banco de España, tourism, industry, energy, debt, immigration, productivity, public deficit."
+    },
+    "video_4": {
+      "category": "fiscal_policy",
+      "blueprint": "Policy move translated into household consequences. Simpler, more beginner-targeted, more direct villain/system framing. Spanish context: State budget, tax changes, IRPF, Impuesto de Patrimonio, Ley de Vivienda, Golden Visa, SOCIMI, alquiler."
+    },
+    "video_5": {
+      "category": "generational_systems",
+      "blueprint": "Generational systemic failure. Strong on metaphor (three-legged stool), demographic scaling, sympathy mixed with indictment. Spanish context: pensión pública, Seguridad Social, healthcare, dependency, housing, debt, boomers vs millennials."
+    },
+    "video_6": {
+      "category": "macro_currency",
+      "blueprint": "Conspiracy-adjacent mechanism explained with legal/financial precedent. Strong on debt-spiral metaphor and disclaimer-based credibility protection. Spanish context: public debt, QE, inflation, BCE, Banco de España, spread, rating agencies, SAREB, FROB."
+    },
+    "video_7": {
+      "category": "concentration_indexing",
+      "blueprint": "Slow boring compounding made emotionally compelling. Strong on motivational psychology without becoming inspirational fluff. Spanish context: fondos de inversión, ETFs, dividends, regular investing, patience, IRPF."
+    },
+    "video_8_reference": {
+      "category": "real_estate_financing",
+      "blueprint": "The Spanish property financing and investment trap post-2023. Strong on fiscal math, regulatory shifts, buyer reality, promise-versus-reality contrast. Context: ratio de endeudamiento, LTV, tasación, notaría, registro, ITP, AJD, IVA, plusvalía municipal, IBI, IRPF, Ley de Vivienda, LAU, okupas, desahucio, alquiler, Golden Visa, SOCIMI, hipoteca inversa.",
+      "rotation_note": "This sample exists as a reference for the real_estate_financing category ONLY. It must not be used as a template for other categories, and it counts against the 1-in-6 cap."
+    }
+  },
+  "generation_instructions_for_another_model": {
+    "objective": "Produce long-form Spanish finance scripts that feel like hidden-system exposés rather than generic educational content.",
+    "step_zero": "Before writing anything, read rotation_mandate, determine the last six video categories, and select the least recently used category that respects the selection_rules. State the chosen category internally before drafting.",
+    "must_include": [
+      "one category from rotation_mandate that respects the selection_rules",
+      "one strong metaphor (preferably non-property unless the category is real_estate_financing)",
+      "one Spanish historical or structural parallel",
+      "one explicit false belief being corrected",
+      "one psychological trap",
+      "one practical protocol",
+      "one identity-level takeaway",
+      "Spanish institutional references (Agencia Tributaria, Banco de España, CNMV, BCE, INE, DGSFP)",
+      "Spanish financial products (depósitos, Letras del Tesoro, fondos de inversión, planes de pensiones, hipotecas, real estate, IRPF, SOCIMI)",
+      "amounts in euros (EUR)"
+    ],
+    "must_avoid": [
+      "generic optimism",
+      "surface-level listicles",
+      "purely technical teaching without tension",
+      "guru posturing",
+      "advice without mechanism",
+      "untranslated American financial terms",
+      "references to exclusively American institutions without Spanish equivalents",
+      "defaulting to real estate when the category is not real_estate_financing",
+      "using piso/casa/hipoteca as the central metaphor in non-property categories",
+      "consecutive videos in the same category"
+    ],
+    "success_condition": "The final script should make the viewer feel simultaneously alarmed, intellectually satisfied and more in control — with a deeper understanding of the Spanish financial system, AND it should belong to a category that has not been used recently.",
+    "output_length_requirement": "The final FULL SCRIPT must be strictly between 7,000 and 9,000 characters.",
+    "output_length_verification": "Before sending the answer, verify the FULL SCRIPT character count. If it is below 7,000 or above 9,000 characters, rewrite it until it falls within range.",
+    "hard_fail_condition": "Any FULL SCRIPT under 7,000 characters or over 9,000 characters is invalid and must be rewritten before output. Any FULL SCRIPT that violates the rotation_mandate selection_rules is also invalid and must be rewritten."
+  }
+}

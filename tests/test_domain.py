@@ -252,7 +252,7 @@ def test_seed_blueprints_are_initialized_without_overwrite(tmp_path, monkeypatch
     storage.BLUEPRINTS = storage.STORAGE / "blueprints"
     storage.ensure_storage()
     imported = sorted((storage.BLUEPRINTS / "importados").glob("*.json"))
-    assert len(imported) == 19
+    assert len(imported) == 34
     assert (storage.BLUEPRINTS / "importados" / "FINANCE USA.json").is_file()
     assert not (storage.BLUEPRINTS / "importados" / "blueprintcanalfinanças.json").exists()
 
@@ -277,8 +277,8 @@ def test_seed_blueprints_do_not_duplicate_legacy_finance_file(tmp_path, monkeypa
 
     assert legacy.read_text(encoding="utf-8") == '{"name": "personalizado"}\n'
     assert not (legacy.parent / "FINANCE USA.json").exists()
-    # 0.9.79: os 5 Remotion voltaram ao seed (14 + 5 = 19).
-    assert len(list(legacy.parent.glob("*.json"))) == 19
+    # 0.9.80: as 15 versões FINANCE melhoradas entraram como .json (19 + 15 = 34).
+    assert len(list(legacy.parent.glob("*.json"))) == 34
 
 
 def test_seed_blueprints_avoid_duplicate_when_legacy_file_is_in_blueprint_root(tmp_path, monkeypatch):
@@ -297,8 +297,8 @@ def test_seed_blueprints_avoid_duplicate_when_legacy_file_is_in_blueprint_root(t
     imported = storage.BLUEPRINTS / "importados"
     assert legacy.read_text(encoding="utf-8") == '{"name": "personalizado"}\n'
     assert not (imported / "FINANCE USA.json").exists()
-    # 0.9.79: os 5 Remotion voltaram ao seed (13 + 5 = 18).
-    assert len(list(imported.glob("*.json"))) == 18
+    # 0.9.80: as 15 versões FINANCE melhoradas entraram como .json (18 + 15 = 33).
+    assert len(list(imported.glob("*.json"))) == 33
 
 
 def test_blueprint_creation_modes(tmp_path, monkeypatch):

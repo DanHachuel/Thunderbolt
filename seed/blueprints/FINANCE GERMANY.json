@@ -1,0 +1,562 @@
+{
+  "metadata": {
+    "task_type": "forensic_content_blueprint_extraction",
+    "sample_count": 7,
+    "dominant_domain_inferred": "long-form personal-finance, money-psychology and real-estate essays for a German audience",
+    "core_promise_of_system": "Make abstract money topics feel urgent, personal, morally loaded and immediately actionable by translating the German macroeconomy into high-stakes life consequences.",
+    "primary_content_engine": "History/metaphor-driven warning essay that reframes a familiar financial idea as misunderstood, structurally rigged, psychologically dangerous, and still navigable if the viewer adopts the creator's framework.",
+    "character_length_requirement": "STRICTLY 7,000–9,000 characters",
+    "character_length_rule": "The final FULL SCRIPT must be no less than 7,000 characters and no more than 9,000 characters.",
+    "strict_character_range": [7000, 9000],
+    "length_compliance_mandatory": true,
+    "audience_inference": {
+      "knowledge_level": "intermediate aspirational retail investor / financially anxious knowledge worker, familiar with Girokonto, Tagesgeld, Festgeld, Bausparvertrag, ETF-Sparplan, gesetzliche Rentenversicherung, Riester, Rürup and mortgages but unsure of the whole picture",
+      "psychological_state": "skeptical, economically uneasy, wants clarity and edge, feels mainstream advice (Sparkasse, Volksbank, finanzen.net, Finanztest, ARD/ZDF, simplified guidance) is incomplete or too late",
+      "aspirational_identity": "calm, informed, anti-hype, system-level thinker who spots traps before the crowd — someone who understands the German game beyond 'save in a Bausparvertrag and buy a house'"
+    },
+    "channel_persona": {
+      "role": "translator of hidden financial mechanics inside the German system",
+      "voice": "calm but severe, analytical but conversational, anti-guru while still authoritative",
+      "authority_basis": [
+        "claims personal investing experience in Germany",
+        "references long study time and obscure documents (BaFin regulations, Bundesbank reports, ECB minutes, Statistisches Bundesamt data, Sachverständigenrat reports, Stiftung Warentest, Verbraucherzentrale, federal budgets)",
+        "uses German and global historical analogies",
+        "frames advice as mechanical, not motivational",
+        "signals distance from schemes, courses and hype",
+        "mentions hands-on experience with Finanzamt, BaFin, Bundesbank, ECB, KfW, Deutsche Rentenversicherung and the German mortgage market"
+      ]
+    }
+  },
+  "cross_sample_system": {
+    "dominant_pattern": "Each video opens with a striking anecdote or historical event, converts it into a present-day parallel, exposes a hidden structural trap, escalates consequences from portfolio-level to life-level, then resolves with a practical protocol and a worldview shift.",
+    "what_is_repeated_across_samples": [
+      "Title promises revelation plus correction of a false belief.",
+      "Cold open uses a vivid story, person or date cluster before the thesis.",
+      "Immediate pivot: 'this is happening again / right now / to you.'",
+      "Presenter positions himself as an obsessive researcher, not an entertainer.",
+      "Viewer is told mainstream advice is directionally true but dangerously incomplete.",
+      "Concepts are reduced to one central metaphor carried across the script.",
+      "Repeated contrast between spreadsheet math and human psychology.",
+      "Frequent use of named characters or mini-case studies to concretise abstractions.",
+      "Action steps appear after fear/diagnosis, never before.",
+      "Endings compress the message into 3 takeaways or a concise doctrine."
+    ],
+    "what_is_intentionally_avoided": [
+      "No dry textbook exposition without emotional framing.",
+      "No purely optimistic wealth-building tone.",
+      "No jargon left untranslated for long.",
+      "No absolute certainty; uses probabilistic seriousness.",
+      "No purely technical CTA; CTAs are embedded as practical tools, not hard sells.",
+      "No celebratory finance-bro energy, no luxury signalling, no macho alpha posture.",
+      "No references to exclusively American institutions or products (401k, Roth IRA, Social Security, Fannie Mae) without translation to German equivalents."
+    ],
+    "exceptions_used_strategically": [
+      "Video 4 is simpler and more direct; less nuanced than the others because it targets urgency and beginner conversion.",
+      "Video 6 leans more speculative/conspiratorial but protects credibility with repeated disclaimers about lack of proof.",
+      "Video 7 is more constructive and motivational, but still framed through pain, misperception and psychological failure.",
+      "Video 8 focuses exclusively on the German property market and the traps of financing, taxes and rental post-2022."
+    ]
+  },
+  "rotation_mandate": {
+    "purpose": "Force thematic diversity across videos. Prevent the model from collapsing into real-estate/financing on every generation. The blueprint's terminology and sample set are real-estate-heavy; without an explicit rotation rule, the model defaults to property math, Bausparvertrag mechanics, Kaufnebenkosten, Grunderwerbsteuer and household debt because they satisfy the content formula most easily.",
+    "principle": "Every generated script must be assigned to ONE category. Categories rotate. Consecutive videos must never share the same category. Real-estate has a hard cap.",
+    "categories": [
+      {
+        "id": "money_psychology",
+        "label": "Money Psychology & Identity",
+        "description": "Enoughness, lifestyle creep, freedom versus fantasy, delayed gratification, the psychology of wealth, identity-level shift, German cultural attitudes to saving and security.",
+        "example_topics": [
+          "Why 'enough' is the hardest number to calculate",
+          "The lifestyle creep that silently eats every pay rise",
+          "How the pursuit of optionality can destroy your life",
+          "The difference between looking rich and being free"
+        ],
+        "must_avoid": [
+          "Property-specific advice",
+          "Mortgage math",
+          "Kaufnebenkosten mechanics",
+          "Bausparvertrag calculations"
+        ]
+      },
+      {
+        "id": "concentration_indexing",
+        "label": "Concentration, Indexing & Portfolio Structure",
+        "description": "Concentration risk, indexing revisionism, correlation, sequence-of-returns risk, portfolio design, systematic versus discretionary, ETF-Sparplan structure, Depot allocation, Vorabpauschale impact.",
+        "example_topics": [
+          "The hidden risk in every 'diversified' German portfolio",
+          "What nobody tells you about the 4% rule in Germany",
+          "The 2000 dot-com pattern repeating in the DAX in 2025",
+          "Why rebalancing is the only free lunch nobody eats"
+        ],
+        "must_avoid": [
+          "Direct property recommendations",
+          "Rental yield calculations",
+          "Grunderwerbsteuer specifics",
+          "Mortgage refinancing mechanics"
+        ]
+      },
+      {
+        "id": "macro_currency",
+        "label": "Macroeconomics & Currency",
+        "description": "Inflation, deflation, debt cycles, euro dynamics, ECB policy, Bundesbank, Target2 imbalances, German industrial decline, energy transition, immigration-driven demographics, productivity crisis.",
+        "example_topics": [
+          "The math behind the coming ECB trap",
+          "Why the euro is not the safe haven it once was",
+          "The quiet collapse of the German industrial base",
+          "What happens when a Target2 creditor loses its bid"
+        ],
+        "must_avoid": [
+          "Personal property advice",
+          "Local property tax specifics",
+          "Specific mortgage products"
+        ]
+      },
+      {
+        "id": "fiscal_policy",
+        "label": "Domestic Fiscal Policy & Household Impact",
+        "description": "Tax changes, Abgeltungsteuer, Vorabpauschale, Riester and Rürup rules, gesetzliche Rente reforms, Elterngeld, Kindergeld, Wohnungsbauprämie, Vermögenswirksame Leistungen, Mietpreisbremse, Spekulationssteuer.",
+        "example_topics": [
+          "The tax change nobody read in the federal budget",
+          "How the new Abgeltungsteuer rules affect your retirement",
+          "What the Finanzamt quietly changed this year",
+          "The Riester trap nobody is framing honestly"
+        ],
+        "must_avoid": [
+          "Property investment strategy",
+          "Mortgage refinancing mechanics",
+          "Rental property tax shelters"
+        ]
+      },
+      {
+        "id": "generational_systems",
+        "label": "Generational Systems & Structural Failure",
+        "description": "Gesetzliche Rentenversicherung sustainability, Pflegeversicherung, healthcare systems, education cost shifts, demographic pressure, intergenerational wealth transfer, boomers vs millennials, East-West wealth divide.",
+        "example_topics": [
+          "The generation that will work until 80",
+          "Why German pension math stopped adding up",
+          "The hidden cost the boomers left the millennials",
+          "How Pflegeversicherung became the real retirement killer"
+        ],
+        "must_avoid": [
+          "Property investment mechanics",
+          "Property market timing",
+          "Local rent-control discussions"
+        ]
+      },
+      {
+        "id": "real_estate_financing",
+        "label": "Real Estate & Financing (Germany)",
+        "description": "Mortgages, Beleihungsauslauf, Zinsbindung, Sondertilgung, Annuitätendarlehen, Kaufnebenkosten, Grunderwerbsteuer, Notar, Grundbuch, AfA, Mietrendite, Mietpreisbremse, Spekulationssteuer, Eigenkapital, Eigentumswohnung vs Einfamilienhaus, Mieter vs Eigentümer.",
+        "example_topics": [
+          "The Beleihungsauslauf trap that quietly resets every cycle",
+          "Why home ownership is not the wealth builder it was sold as",
+          "The hidden cost of the Kaufnebenkosten nobody models",
+          "What the German real-estate math actually says"
+        ],
+        "restriction": "This category may appear at most once in every six consecutive videos. If any of the last two videos were in this category, skip it entirely and pick another."
+      }
+    ],
+    "selection_rules": [
+      "Track the last six videos produced by the channel and their assigned categories.",
+      "Before generating a new script, choose the category that has been used LEAST recently. On a tie, prefer the category with fewer appearances in the last twelve videos.",
+      "Never generate two consecutive videos in the same category.",
+      "The real_estate_financing category has an additional hard cap: at most one in every six videos.",
+      "If the channel has no history (first video), default to one of: money_psychology, concentration_indexing, or macro_currency.",
+      "If the user has explicitly requested a topic, honour it, but flag the rule violation in a single sentence inside the script's internal notes (not in the script body)."
+    ],
+    "user_command_override": "The user's explicit topic request always wins, but the generation model must warn in one sentence if the request breaks the rotation rule (e.g., 'this will be your third real-estate video in a row').",
+    "anti_patterns_to_avoid": [
+      "Do not default to real estate as the 'most visually compelling' or 'most urgent' category.",
+      "Do not use property metaphors (house, mortgage, lease, roof, foundation, door, key, Bausparvertrag, Eigenheim, Grundbuch) as the central metaphor for non-property categories. Use different physical metaphors instead: gansos, banheira, bola de neve, banco de três pernas, ponte, engrenagens, jardim, jarro, portão, poço, fogo, semente, tear, escada, mapa, bússola, rio, represa, âncora, muro, castelo, navio, motor, roda, espelho, eco, sombra, fio, corrente, farol, túnel, escada, rede, peneira, esponja, prisma, polia, válvula, fechadura, balança, carrinho de mão, mochila, reservatório, relógio, ampulheta, tear, moinho, âncora, ponte levadiça.",
+      "Do not reference interest rates, home prices, Grunderwerbsteuer, Kaufnebenkosten or housing markets as primary evidence in non-property categories.",
+      "Do not use the viewer's own home as the emotional anchor in non-property categories. Anchor instead to their salary, their Depot balance, their Riester, their savings, their time, their family, their career, or their future Rente."
+    ]
+  },
+  "title_analysis": {
+    "title_mechanics": {
+      "structure": "Shock claim + topic + implied hidden truth/correction",
+      "common_forms": [
+        "X Explicado",
+        "Se Queres X, Isto É o Que Fazer",
+        "O Que Vem Aí É Pior Que X",
+        "Eles Estão Prestes a X o Teu Y",
+        "Grupo/Instituição Está em Grandes Apuros",
+        "A Matemática Que Vai Explodir a Tua Mente",
+        "Porque É Que o Teu Bausparvertrag Não Te Vai Salvar",
+        "O Que Ninguém Te Diz Sobre Hipotecas Alemãs",
+        "O Finanzamt Está a Fazer Isto Com o Teu Dinheiro",
+        "A Alemanha Está a Fazer Isto Com o Teu Imobiliário",
+        "O Teu ETF-Sparplan É Uma Armadilha?",
+        "A Reforma Alemã Vai Colapsar?",
+        "O Teu Riester Não É o Que Pensas"
+      ],
+      "click_drivers": [
+        "threat escalation ('worse than a recession')",
+        "identity relevance ('your money', 'you want to invest')",
+        "forbidden mechanism ('loophole', 'trap', 'reset')",
+        "compressed certainty ('this is what to do')",
+        "reversal of common belief ('passive income isn't passive')",
+        "German specificity ('your Girokonto', 'your Rente', 'your mortgage', 'Finanzamt', 'Abgeltungsteuer')"
+      ],
+      "tone_signature": "High-stakes, corrective, anti-naive, not playful.",
+      "number_usage": "Years, percentages, counts and EUR figures increase perceived seriousness and intellectual legitimacy.",
+      "title_psychology": "The viewer clicks because the title suggests they are unknowingly exposed to a system-level risk that others are missing — and that the German system has specific vulnerabilities nobody is discussing."
+    },
+    "implied_enemies_and_allies": {
+      "implied_enemy": [
+        "German financial industry",
+        "bad incentives (commissions, cross-selling, complex products)",
+        "simplified mainstream advice (including some social-media gurus and property salesmen)",
+        "political institutions (Finanzamt, Bundesministerium der Finanzen, Bundesbank, ECB)",
+        "the viewer's own undisciplined psychology",
+        "culture of excessive saving and risk aversion",
+        "Bausparvertrag misunderstood",
+        "Riester/Rürup treated as black boxes"
+      ],
+      "implied_ally": [
+        "the narrator",
+        "historical truth",
+        "math",
+        "the prepared, disciplined viewer",
+        "regulators when they work (BaFin, Bundesbank, Verbraucherzentrale)",
+        "fiscal and accounting transparency"
+      ]
+    }
+  },
+  "script_architecture": {
+    "macro_flow": [
+      "1. Pattern interrupt opening: bizarre anecdote, historical collapse or jarring scenario with German relevance (1923 hyperinflation, 1948 monetary reform, Wirtschaftswunder, reunification, euro crisis, energy crisis, 2022 inflation, regional bank collapses).",
+      "2. Snap-link to present relevance: 'the same pattern is happening now.'",
+      "3. Presenter framing: why he is qualified / why this isn't hype.",
+      "4. Promise stack: explicit list of what the viewer will understand by the end.",
+      "5. Tool CTA early: free calculator/report framed as corrective utility.",
+      "6. Core metaphor introduced and sustained.",
+      "7. Conceptual explanation with simple language and arithmetic.",
+      "8. Historical precedent or analogical proof.",
+      "9. Psychological complication: why humans fail even when the math works.",
+      "10. Concrete examples/case studies with named people and specific numbers in EUR.",
+      "11. Action protocol / rules / allocation / checklist.",
+      "12. Identity-level conclusion: freedom comes from mindset/system, not mere returns.",
+      "13. Final compression into takeaways + soft internal CTA to another video/subscribe."
+    ],
+    "opening_pattern": {
+      "method": "Start with a highly specific anecdote before the thesis so the viewer is mentally hooked by narrative, not argument.",
+      "why_it_works": "The viewer unconsciously asks 'why are you telling me this?' and the script answers by connecting the anecdote to their money/life.",
+      "opening_variants": [
+        "German historical scandal/collapse (1923 Hyperinflation, 1948 Währungsreform, Neue Markt, Wirecard, Greensill, real-estate crisis)",
+        "three-case rapid montage",
+        "date-stamped macro timeline (1923, 1948, 1970s, 1990, 2008, 2010s, 2020, 2022)",
+        "ordinary person scenario with hidden flaw",
+        "Statistisches Bundesamt or Bundesbank data used as a shock"
+      ]
+    },
+    "pacing_model": {
+      "rhythm": "Dense but segmented. Short-to-medium sentences dominate, broken by longer explanatory runs after hooks land.",
+      "acceleration_pattern": "Hook -> explanation -> new danger -> deeper mechanism -> practical release.",
+      "retention_devices": [
+        "forward promises ('here's what we're doing today')",
+        "mid-script escalations ('it gets worse')",
+        "counterintuitive turns ('the math works, human psychology doesn't')",
+        "repeated reframing",
+        "alternation between macro and personal examples",
+        "references to familiar German institutions (Bundesbank, Finanzamt, BaFin, ECB, Deutsche Rentenversicherung)"
+      ]
+    },
+    "information_release_timing": {
+      "front_loaded": [
+        "danger",
+        "pattern recognition",
+        "what the viewer will learn"
+      ],
+      "mid_loaded": [
+        "underlying mechanism",
+        "German and global historical parallels",
+        "examples and equations"
+      ],
+      "back_loaded": [
+        "protocol",
+        "identity shift",
+        "summary takeaways"
+      ]
+    }
+  },
+  "micro_writing_mechanics": {
+    "sentence_design": {
+      "dominant_shapes": [
+        "Short declarative shock sentence.",
+        "Question-answer sequence.",
+        "Analogy sentence followed by translation sentence.",
+        "Claim -> immediate caveat -> stronger restatement.",
+        "Numeric sentence -> emotional interpretation sentence."
+      ],
+      "feel": "Controlled urgency. The prose sounds like spoken thinking, but it is tightly engineered.",
+      "cadence_trick": "Uses short punch lines after data-heavy passages to reset attention."
+    },
+    "word_choice": {
+      "preferred_lexicon": [
+        "trap",
+        "mechanism",
+        "system",
+        "math",
+        "psychology",
+        "freedom",
+        "optionality",
+        "structure",
+        "concentration",
+        "cash flow",
+        "sequence risk",
+        "the game",
+        "what nobody talks about",
+        "quietly",
+        "actually",
+        "here's the thing",
+        "Finanzamt",
+        "BaFin",
+        "Bundesbank",
+        "EZB",
+        "Deutsche Rentenversicherung",
+        "KfW",
+        "Girokonto",
+        "Tagesgeld",
+        "Festgeld",
+        "Bausparvertrag",
+        "Riester",
+        "Rürup",
+        "ETF-Sparplan",
+        "Depot",
+        "Aktien",
+        "Immobilien",
+        "Miete",
+        "Kaufnebenkosten",
+        "Grunderwerbsteuer",
+        "Notar",
+        "Grundbuch",
+        "AfA",
+        "Mietrendite",
+        "Eigenkapital",
+        "Beleihungsauslauf",
+        "Sondertilgung",
+        "Zinsbindung",
+        "Annuitätendarlehen",
+        "Schuldnerberatung",
+        "Schufa",
+        "Abgeltungsteuer",
+        "Freistellungsauftrag",
+        "Sparerpauschbetrag",
+        "Vorabpauschale",
+        "betriebliche Altersvorsorge",
+        "Vermögenswirksame Leistungen",
+        "Wohnungsbauprämie",
+        "Mietpreisbremse",
+        "Spekulationssteuer",
+        "Erbschaftsteuer",
+        "Elterngeld",
+        "Kindergeld",
+        "Pflegeversicherung",
+        "Krankenversicherung",
+        "Arbeitslosengeld",
+        "Bürgergeld",
+        "Solidaritätszuschlag"
+      ],
+      "language_behavior": "Abstract finance terms are almost always paired with tangible verbs or objects. The object bank should include a WIDE RANGE of physical metaphors, not predominantly property-related ones: geese, bathtub, snowball, three-legged stool, bridge, gears, garden, jar, gate, well, fire, seed, loom, staircase, map, compass, river, dam, anchor, wall, castle, ship, engine, wheel, mirror, echo, shadow, thread, chain, lighthouse, tunnel, ladder, net, sieve, sponge, prism, pulley, valve, lock, scale, wheelbarrow, backpack, reservoir, mill, amphora, basket, hourglass.",
+      "credibility_words": "specific dates, named firms, exact percentages, German historical names, concrete EUR amounts"
+    },
+    "rhetorical_devices": {
+      "most_common": [
+        "extended metaphor",
+        "strategic repetition",
+        "contrast pairs",
+        "mock dialogue",
+        "false belief -> corrected truth",
+        "stacked examples",
+        "escalating hypothetical scenario"
+      ],
+      "contrast_structure": [
+        "fantasy vs reality",
+        "gross revenue vs net income",
+        "average return vs sequence of return",
+        "looking rich vs being rich",
+        "recession vs monetary transition",
+        "retiring from vs retiring to",
+        "ETF vs Bausparvertrag",
+        "buying vs renting",
+        "Berlin vs Munich",
+        "Eigentumswohnung vs Einfamilienhaus",
+        "Gesetzliche Rente vs private Vorsorge",
+        "Riester vs Rürup",
+        "Aktien vs Immobilien",
+        "brutto vs netto"
+      ]
+    },
+    "tone_layering": {
+      "surface_tone": "helpful explainer",
+      "underlayer": "mild alarm, anti-naive skepticism",
+      "deeper_emotional_register": "betrayal by institutions, relief through understanding, dignity through disciplined realism"
+    }
+  },
+  "psychological_and_persuasive_mechanisms": {
+    "core_psychology": [
+      "Uses fear, but not random fear; fear is tied to mechanism, making it feel intelligent rather than sensational.",
+      "Creates relief by converting vague anxiety into understandable structure.",
+      "Makes viewer feel smarter than the passive majority if they keep watching.",
+      "Uses anti-hype disclaimers to increase trust before making strong claims.",
+      "Frames action as self-defence, not greed.",
+      "Leverages specific knowledge of the German system (Rente, Bausparvertrag, ETF, real estate, Finanzamt, Abgeltungsteuer) to create a sense of insider knowledge."
+    ],
+    "emotional_sequence": [
+      "confusion",
+      "recognition",
+      "alarm",
+      "clarity",
+      "agency",
+      "identity reinforcement"
+    ],
+    "credibility_engineering": {
+      "methods": [
+        "references institutions by name (Bundesbank, Finanzamt, BaFin, ECB, Deutsche Rentenversicherung, Statistisches Bundesamt, Sachverständigenrat)",
+        "admits uncertainty selectively",
+        "says 'this isn't about motivation'",
+        "uses personal skin-in-the-game statements",
+        "calls out bad incentives rather than cartoon villains",
+        "translates documents/regulations into plain German (ETF-Sparplan rules, Abgeltungsteuer, Vorabpauschale, Riester, Rürup, mortgages, AfA, Mietpreisbremse)",
+        "cites Statistisches Bundesamt data, Bundesbank reports, federal budgets, Stiftung Warentest"
+      ],
+      "effect": "The narrator sounds like a sober insider decoding reality for outsiders."
+    },
+    "retention_psychology": {
+      "curiosity_loops": [
+        "What is the hidden pattern?",
+        "Why doesn't the obvious strategy work?",
+        "Who is actually winning?",
+        "What happens when the system breaks?",
+        "What should I do instead?"
+      ],
+      "tension_creation": "Tension is built by showing the viewer they are exposed to a risk they previously thought was safety.",
+      "relief_timing": "Relief arrives only after the system is fully diagnosed, which increases perceived value of the solution."
+    }
+  },
+  "worldview_embedded_in_scripts": {
+    "beliefs": [
+      "Most financial pain comes from incentives and psychology, not lack of information alone.",
+      "Institutions optimise for system preservation, not your well-being.",
+      "Conventional advice is often half-true and dangerous when decontextualised.",
+      "Freedom is more about flexibility, margin and enoughness than maximising returns.",
+      "The disciplined ordinary person can outperform the emotional crowd.",
+      "The German system has specific vulnerabilities that most mainstream advice ignores.",
+      "Understanding the interplay between Finanzamt, Bundesbank, ECB and the mortgage market is essential for financial safety in Germany.",
+      "Bausparvertrag is not automatically a superior strategy; it is a tool with opportunity costs.",
+      "Depending exclusively on the gesetzliche Rente is a systemic risk for most Germans.",
+      "Abgeltungsteuer and Vorabpauschale hit savers harder than most model.",
+      "Riester and Rürup are not efficient by default; they are products with caps, fees and lock-ins.",
+      "Eigentum is not the same as Mietrendite; a self-occupied home is a consumption good, not an investment."
+    ],
+    "status_framing": "High status is attached to calm realism, delayed gratification and structural understanding, not flashy consumption.",
+    "fear_framing": "The real danger is not one crash or one bad pick; it is building your life on false assumptions — especially about property, pensions and what the government will do next.",
+    "transformation_promise": "Move from reactive participant to system-aware allocator who can't be easily trapped — someone who understands the German rules better than the average German."
+  },
+  "replication_logic": {
+    "content_formula": {
+      "step_1": "Choose a financial topic with mainstream familiarity and hidden complexity, WITHIN the category assigned by the rotation_mandate (ETF-Sparplan, Bausparvertrag, Riester, Rürup, mortgage, property, Abgeltungsteuer, gesetzliche Rente).",
+      "step_2": "Find a German historical analogy, strange anecdote or sharp mini-story that mirrors the modern issue.",
+      "step_3": "Frame the common understanding as incomplete or dangerously naive.",
+      "step_4": "Introduce one sticky metaphor that can carry the full explanation. Prefer non-property metaphors unless the assigned category is real_estate_financing.",
+      "step_5": "Translate the mechanism into plain arithmetic with concrete EUR numbers.",
+      "step_6": "Add a human-failure layer: why people still mess this up even when the math is knowable.",
+      "step_7": "Insert one or more case studies with names, ages, incomes, balances, outcomes.",
+      "step_8": "Escalate from portfolio consequence to lifestyle, identity or societal consequence.",
+      "step_9": "Offer a protocol/ruleset that feels practical, not magical.",
+      "step_10": "End with worldview compression and a concise memorable doctrine."
+    },
+    "stylistic_rules_for_future_outputs": [
+      "Always make the invisible visible.",
+      "Never explain a concept without an image/object/metaphor.",
+      "Use numbers to anchor trust, not to overwhelm.",
+      "Alternate macro systems and individual stories.",
+      "Speak as if correcting a dangerous misunderstanding.",
+      "Let skepticism and humility coexist: strong thesis, selective uncertainty.",
+      "Avoid sounding like a trader; sound like a strategic realist.",
+      "Give the viewer dignity through understanding, not through hype.",
+      "Use German-specific references (Finanzamt, Bundesbank, BaFin, ECB, Deutsche Rentenversicherung, budget, ETF-Sparplan, Abgeltungsteuer, etc.).",
+      "Avoid American financial terms (401k, Roth IRA, Social Security, 30-year fixed, FICO score, etc.) without translation."
+    ],
+    "title_generation_rules": [
+      "Centre danger, reversal or hidden mechanism.",
+      "Use direct second-order implications: not just 'recession' but 'worse than a recession.'",
+      "Make titles feel like practical protection against a trap.",
+      "Keep phrasing blunt, not clever.",
+      "Include German specificity whenever possible ('your ETF-Sparplan', 'your Rente', 'Finanzamt', 'Abgeltungsteuer')."
+    ],
+    "hook_generation_rules": [
+      "Open on a vivid story or date cluster before introducing the topic.",
+      "Reveal the present-day relevance within the first 5–8 lines.",
+      "Promise a deeper mechanism, not just surface explanation."
+    ]
+  },
+  "sample_specific_context": {
+    "video_1": {
+      "category": "money_psychology",
+      "blueprint": "Freedom fantasy versus mechanical reality. Strong on metaphor, optionality, lifestyle creep, psychology of enough. German context: gesetzliche Rente, ETF-Sparplan, property, cost of living."
+    },
+    "video_2": {
+      "category": "concentration_indexing",
+      "blueprint": "Historical concentration mania repeated today. Strong on structural analogy, anti-indexing revisionism, explicit portfolio protocol. German context: concentration in DAX, automotive, chemicals, property, over-concentration in deposits and Bausparvertrag."
+    },
+    "video_3": {
+      "category": "macro_currency",
+      "blueprint": "Macro regime change. Strong on date-stacking, institutional references, currency/industry framing, existential stakes. German context: EUR, ECB, Bundesbank, industry, energy, debt, immigration, productivity."
+    },
+    "video_4": {
+      "category": "fiscal_policy",
+      "blueprint": "Policy move translated into household consequences. Simpler, more beginner-targeted, more direct villain/system framing. German context: federal budget, tax changes, Abgeltungsteuer, Vorabpauschale, Riester, Rürup, Wohnungsbauprämie, Mietpreisbremse."
+    },
+    "video_5": {
+      "category": "generational_systems",
+      "blueprint": "Generational systemic failure. Strong on metaphor (three-legged stool), demographic scaling, sympathy mixed with indictment. German context: gesetzliche Rente, Pflegeversicherung, healthcare, housing, debt, boomers vs millennials."
+    },
+    "video_6": {
+      "category": "macro_currency",
+      "blueprint": "Conspiracy-adjacent mechanism explained with legal/financial precedent. Strong on debt-spiral metaphor and disclaimer-based credibility protection. German context: national debt, QE, inflation, ECB, Bundesbank, securitisation, Target2."
+    },
+    "video_7": {
+      "category": "concentration_indexing",
+      "blueprint": "Slow boring compounding made emotionally compelling. Strong on motivational psychology without becoming inspirational fluff. German context: ETF-Sparplan, dividends, regular investing, patience, Vorabpauschale."
+    },
+    "video_8_reference": {
+      "category": "real_estate_financing",
+      "blueprint": "The German property financing and investment trap post-2022. Strong on fiscal math, regulatory shifts, buyer reality, promise-versus-reality contrast. Context: Beleihungsauslauf, Zinsbindung, Sondertilgung, Kaufnebenkosten, Grunderwerbsteuer, Notar, Grundbuch, AfA, Mietrendite, Mietpreisbremse, Spekulationssteuer, Eigenkapital.",
+      "rotation_note": "This sample exists as a reference for the real_estate_financing category ONLY. It must not be used as a template for other categories, and it counts against the 1-in-6 cap."
+    }
+  },
+  "generation_instructions_for_another_model": {
+    "objective": "Produce long-form German finance scripts that feel like hidden-system exposés rather than generic educational content.",
+    "step_zero": "Before writing anything, read rotation_mandate, determine the last six video categories, and select the least recently used category that respects the selection_rules. State the chosen category internally before drafting.",
+    "must_include": [
+      "one category from rotation_mandate that respects the selection_rules",
+      "one strong metaphor (preferably non-property unless the category is real_estate_financing)",
+      "one German historical or structural parallel",
+      "one explicit false belief being corrected",
+      "one psychological trap",
+      "one practical protocol",
+      "one identity-level takeaway",
+      "German institutional references (Finanzamt, Bundesbank, BaFin, ECB, Deutsche Rentenversicherung)",
+      "German financial products (ETF-Sparplan, Bausparvertrag, Riester, Rürup, gesetzliche Rente, mortgages, property, Abgeltungsteuer, Vorabpauschale)",
+      "amounts in euros (EUR)"
+    ],
+    "must_avoid": [
+      "generic optimism",
+      "surface-level listicles",
+      "purely technical teaching without tension",
+      "guru posturing",
+      "advice without mechanism",
+      "untranslated American financial terms",
+      "references to exclusively American institutions without German equivalents",
+      "defaulting to real estate when the category is not real_estate_financing",
+      "using house/mortgage/Bausparvertrag as the central metaphor in non-property categories",
+      "consecutive videos in the same category"
+    ],
+    "success_condition": "The final script should make the viewer feel simultaneously alarmed, intellectually satisfied and more in control — with a deeper understanding of the German financial system, AND it should belong to a category that has not been used recently.",
+    "output_length_requirement": "The final FULL SCRIPT must be strictly between 7,000 and 9,000 characters.",
+    "output_length_verification": "Before sending the answer, verify the FULL SCRIPT character count. If it is below 7,000 or above 9,000 characters, rewrite it until it falls within range.",
+    "hard_fail_condition": "Any FULL SCRIPT under 7,000 characters or over 9,000 characters is invalid and must be rewritten before output. Any FULL SCRIPT that violates the rotation_mandate selection_rules is also invalid and must be rewritten."
+  }
+}

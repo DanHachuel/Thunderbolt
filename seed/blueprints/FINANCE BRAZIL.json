@@ -1,0 +1,752 @@
+{
+  "metadata": {
+    "task_type": "forensic_content_blueprint_extraction",
+    "sample_count": 10,
+    "dominant_domain_inferred": "long-form personal-finance, money-psychology, real-estate, auction-acquisition and anti-gambling essays for a Brazilian audience",
+    "core_promise_of_system": "Make abstract money topics feel urgent, personal, morally loaded and immediately actionable by translating the Brazilian macroeconomy into high-stakes life consequences, exposing betting traps and misunderstood auction mechanics.",
+    "primary_content_engine": "History/metaphor-driven warning essay that reframes a familiar financial idea as misunderstood, structurally rigged, psychologically dangerous, and still navigable if the viewer adopts the creator's framework.",
+    "character_length_requirement": "STRICTLY 7,000–9,000 characters",
+    "character_length_rule": "The final FULL SCRIPT must be no less than 7,000 characters and no more than 9,000 characters.",
+    "strict_character_range": [7000, 9000],
+    "length_compliance_mandatory": true,
+    "audience_inference": {
+      "knowledge_level": "intermediate aspirational retail investor / financially anxious knowledge worker, familiar with poupança, CDB, Tesouro Direto, CDI, Selic, IPCA, FGTS, INSS, PGBL, VGBL, B3, Ibovespa, FIIs, ETFs, BDRs, Minha Casa Minha Vida, SBPE, financiamento imobiliário, consórcio, leilões da Caixa, leilões do Detran, leilões judiciais, and Bets like Blaze, Betano, Sportingbet, Fortune Tiger, Tigrinho, but unsure of the whole picture",
+      "psychological_state": "skeptical, economically uneasy, wants clarity and edge, feels mainstream advice (banks, managers, media, simplified guidance) is incomplete or too late, distrusts easy-money promises via bets or miracle auctions",
+      "aspirational_identity": "calm, informed, anti-hype, anti-betting, system-level thinker who spots traps before the crowd — someone who understands the Brazilian game beyond 'save in poupança and buy a house through Caixa'"
+    },
+    "channel_persona": {
+      "role": "translator of hidden financial mechanics inside the Brazilian system, exposer of betting and auction traps, and practical guide to safe asset acquisition via auctions",
+      "voice": "calm but severe, analytical but conversational, anti-guru while still authoritative, anti-betting and anti-hype, but pragmatic about auctions",
+      "authority_basis": [
+        "claims personal investing experience in Brazil",
+        "references long study time and obscure documents (Central Bank regulations, CVM, SUSEP, PREVIC, Receita Federal, IBGE, IPEA, Tesouro Nacional, B3, Caixa Econômica Federal, Detran, court auctions, auction edicts, Law 14.790/2023 on betting, Law 9.514/1997 on fiduciary alienation, Law 8.245/1991 on leases, Civil Code, CDC, City Statute)",
+        "uses Brazilian and global historical analogies",
+        "frames advice as mechanical, not motivational",
+        "signals distance from schemes, courses, hype, bets and easy-money promises",
+        "mentions hands-on experience with Receita Federal, Central Bank, CVM, B3, Caixa, Detran, official auctioneers, and the Brazilian mortgage market"
+      ]
+    }
+  },
+  "cross_sample_system": {
+    "dominant_pattern": "Each video opens with a striking anecdote or historical event, converts it into a present-day parallel, exposes a hidden structural trap (financial, real-estate, auction or betting), escalates consequences from portfolio-level to life-level, then resolves with a practical protocol and a worldview shift.",
+    "what_is_repeated_across_samples": [
+      "Title promises revelation plus correction of a false belief.",
+      "Cold open uses a vivid story, person or date cluster before the thesis.",
+      "Immediate pivot: 'this is happening again / right now / to you.'",
+      "Presenter positions himself as an obsessive researcher, not an entertainer.",
+      "Viewer is told mainstream advice is directionally true but dangerously incomplete.",
+      "Concepts are reduced to one central metaphor carried across the script.",
+      "Repeated contrast between spreadsheet math and human psychology.",
+      "Frequent use of named characters or mini-case studies to concretise abstractions.",
+      "Action steps appear after fear/diagnosis, never before.",
+      "Endings compress the message into 3 takeaways or a concise doctrine.",
+      "Auctions are presented as a serious tool, not a lottery.",
+      "Bets are presented as a mathematical and psychological trap, never as income."
+    ],
+    "what_is_intentionally_avoided": [
+      "No dry textbook exposition without emotional framing.",
+      "No purely optimistic wealth-building tone.",
+      "No jargon left untranslated for long.",
+      "No absolute certainty; uses probabilistic seriousness.",
+      "No purely technical CTA; CTAs are embedded as practical tools, not hard sells.",
+      "No celebratory finance-bro energy, no luxury signalling, no macho alpha posture.",
+      "No references to exclusively American institutions or products (401k, Roth IRA, Social Security, Fannie Mae) without translation to Brazilian equivalents.",
+      "No glorification of betting, bets, tigrinho, online casinos or gambling.",
+      "No promise of fast enrichment via auctions.",
+      "No romanticising 'entrepreneurship' that hides risk."
+    ],
+    "exceptions_used_strategically": [
+      "Video 4 is simpler and more direct; less nuanced than the others because it targets urgency and beginner conversion.",
+      "Video 6 leans more speculative/conspiratorial but protects credibility with repeated disclaimers about lack of proof.",
+      "Video 7 is more constructive and motivational, but still framed through pain, misperception and psychological failure.",
+      "Video 8 focuses exclusively on the Brazilian property market and the traps of financing, Minha Casa Minha Vida, consórcio and property auctions.",
+      "Video 9 focuses exclusively on vehicle auctions (Detran, Caixa, judicial, extrajudicial) and the traps of documentation, total loss, recovery and resale.",
+      "Video 10 focuses exclusively on fighting betting: Bets, tigrinho, Fortune Tiger, Blaze, Betano, Sportingbet, jogo do bicho, online casinos, and how to exit addiction."
+    ]
+  },
+  "rotation_mandate": {
+    "purpose": "Force thematic diversity across videos. Prevent the model from collapsing into real-estate, auctions or anti-betting on every generation. The blueprint's terminology and sample set are heavily skewed toward property, auctions and betting; without an explicit rotation rule, the model defaults to those categories because they satisfy the content formula most easily and provide the strongest emotional hooks.",
+    "principle": "Every generated script must be assigned to ONE category. Categories rotate. Consecutive videos must never share the same category. Real-estate, auctions and anti-betting have hard caps, but anti-betting is treated as a public-service category with a higher frequency allowance because it addresses a public-health epidemic.",
+    "categories": [
+      {
+        "id": "money_psychology",
+        "label": "Money Psychology & Identity",
+        "description": "Enoughness, lifestyle creep, freedom versus fantasy, delayed gratification, the psychology of wealth, identity-level shift, the cultural pressure of 'manter as aparências'.",
+        "example_topics": [
+          "Why 'enough' is the hardest number to calculate",
+          "The lifestyle creep that silently eats every salary raise",
+          "How the pursuit of optionality can destroy your life",
+          "The difference between looking rich and being free"
+        ],
+        "must_avoid": [
+          "Property-specific advice",
+          "Financing math",
+          "Auction mechanics",
+          "Betting references"
+        ]
+      },
+      {
+        "id": "concentration_indexing",
+        "label": "Concentration, Indexing & Portfolio Structure",
+        "description": "Concentration risk, indexing revisionism, correlation, sequence-of-returns risk, portfolio design, systematic versus discretionary, CDB/LCI/LCA structure, Brazilian fixed-income comparison.",
+        "example_topics": [
+          "The hidden risk in every 'diversified' Brazilian portfolio",
+          "What nobody tells you about the 4% rule in Brazil",
+          "The Petrobras concentration trap repeating today",
+          "Why rebalancing is the only free lunch nobody eats"
+        ],
+        "must_avoid": [
+          "Direct property recommendations",
+          "Rental yield calculations",
+          "Auction-specific strategy",
+          "Betting comparisons"
+        ]
+      },
+      {
+        "id": "macro_currency",
+        "label": "Macroeconomics & Currency",
+        "description": "Inflation, deflation, debt cycles, commodity currency dynamics, BRL, Central Bank policy, Selic cycle, fiscal dominance, China exposure, terms of trade.",
+        "example_topics": [
+          "The math behind the coming Central Bank trap",
+          "Why the real is not the safe haven it once was",
+          "The quiet collapse of the Brazilian bond market",
+          "What happens when a commodity currency loses its bid"
+        ],
+        "must_avoid": [
+          "Personal property advice",
+          "State-level property tax specifics",
+          "Auction guides",
+          "Betting references"
+        ]
+      },
+      {
+        "id": "fiscal_policy",
+        "label": "Domestic Fiscal Policy & Household Impact",
+        "description": "Tax changes, IRPF adjustments, ITBI, IPTU, IPVA, INSS reform, PGBL/VGBL rules, FGTS policy, Bolsa Família changes, Minha Casa Minha Vida rules, betting regulation.",
+        "example_topics": [
+          "The tax change nobody read in the budget",
+          "How the new INSS rules affect your retirement",
+          "What Receita Federal quietly changed this year",
+          "The Minha Casa Minha Vida trap nobody is framing honestly"
+        ],
+        "must_avoid": [
+          "Property investment strategy",
+          "Refinancing mechanics",
+          "Auction technique",
+          "Betting glorification"
+        ]
+      },
+      {
+        "id": "generational_systems",
+        "label": "Generational Systems & Structural Failure",
+        "description": "INSS sustainability, healthcare systems, education cost shifts, demographic pressure, intergenerational wealth transfer, 'geração nem-nem', informal labour.",
+        "example_topics": [
+          "The generation that will work until 80",
+          "Why INSS math stopped adding up",
+          "The hidden cost the boomers left the millennials",
+          "How private healthcare became the real retirement killer"
+        ],
+        "must_avoid": [
+          "Property investment mechanics",
+          "Property market timing",
+          "Auction mechanics",
+          "Betting references"
+        ]
+      },
+      {
+        "id": "real_estate_financing",
+        "label": "Real Estate & Financing (Brazil)",
+        "description": "Financing, SBPE, FGTS-backed loans, Minha Casa Minha Vida, alienação fiduciária, ITBI, IPTU, condomínio, consórcio, property auctions, hidden debts, occupation, reintegração de posse.",
+        "example_topics": [
+          "The alienação fiduciária trap that quietly resets every cycle",
+          "Why home ownership is not the wealth builder it was sold as",
+          "The hidden cost of the consórcio nobody models",
+          "What the real-estate math actually says"
+        ],
+        "restriction": "This category may appear at most once in every four consecutive videos. If any of the last two videos were in this category, skip it entirely and pick another."
+      },
+      {
+        "id": "asset_auctions",
+        "label": "Asset Auctions (Property & Vehicles)",
+        "description": "Judicial auctions, extrajudicial auctions, Caixa auctions, Detran auctions, Receita Federal auctions, Tribunal do Trabalho auctions, edicts, hidden debts, occupation, reintegração de posse, vehicle documents, total loss, salvage, resale, leiloeiro oficial, comitente, lance, arrematação, comissão.",
+        "example_topics": [
+          "The hidden debt that blows up every cheap auction deal",
+          "Why most vehicle auction winners lose money on resale",
+          "The edict clause that ruins the deal at signature",
+          "What an auction actually costs beyond the winning bid"
+        ],
+        "restriction": "This category may appear at most once in every four consecutive videos. If any of the last two videos were in this category, skip it entirely and pick another."
+      },
+      {
+        "id": "anti_gambling",
+        "label": "Anti-Gambling & Betting Addiction (Public Service)",
+        "description": "Bets, tigrinho, Fortune Tiger, Blaze, Betano, Sportingbet, jogo do bicho, online casinos, the mathematical expectation of gambling, the psychology of addiction, the social cost, how to exit the addiction, CVV, CAPS, Jogadores Anónimos.",
+        "example_topics": [
+          "The mathematics that guarantees you will lose",
+          "How the tigrinho mechanism is engineered to addict",
+          "The family cost the industry never advertises",
+          "How to actually leave betting when you're already inside"
+        ],
+        "public_service_note": "This category serves a public-health purpose. It has a HIGHER frequency allowance than other categories because it addresses an ongoing epidemic. However, it must still respect the non-consecutive rule and must not be used more than once in every three videos.",
+        "restriction": "This category may appear at most once in every three consecutive videos. Consecutive anti-gambling videos are forbidden — the message loses impact when it becomes repetitive.",
+        "must_avoid": [
+          "Any hint of glorification of betting",
+          "Sensationalist claims of winning strategies",
+          "Moralising tone that shames the victim",
+          "Replacing one addiction with a financial 'opportunity' that is itself a bet"
+        ]
+      }
+    ],
+    "selection_rules": [
+      "Track the last six videos produced by the channel and their assigned categories.",
+      "Before generating a new script, choose the category that has been used LEAST recently. On a tie, prefer the category with fewer appearances in the last twelve videos.",
+      "Never generate two consecutive videos in the same category.",
+      "The real_estate_financing and asset_auctions categories each have a hard cap: at most one in every four videos.",
+      "The anti_gambling category has a higher cap: at most one in every three videos, and never consecutively.",
+      "If the channel has no history (first video), default to one of: money_psychology, concentration_indexing, or macro_currency.",
+      "If the user has explicitly requested a topic, honour it, but flag the rule violation in a single sentence inside the script's internal notes (not in the script body)."
+    ],
+    "user_command_override": "The user's explicit topic request always wins, but the generation model must warn in one sentence if the request breaks the rotation rule (e.g., 'this will be your third real-estate video in a row').",
+    "anti_patterns_to_avoid": [
+      "Do not default to real estate, auctions or anti-betting as the 'most compelling' or 'most urgent' category.",
+      "Do not use property, auction or casino metaphors as the central metaphor for non-property, non-auction or non-betting categories. Use different physical metaphors instead: gansos, banheira, bola de neve, banco de três pernas, ponte, engrenagens, jardim, jarro, portão, poço, fogo, semente, tear, escada, mapa, bússola, rio, represa, âncora, muro, castelo, navio, motor, roda, espelho, eco, sombra, fio, corrente, farol, túnel, escada, rede, peneira, esponja, prisma, polia, válvula, fechadura, balança, carrinho de mão, mochila, reservatório.",
+      "Do not reference mortgage rates, property taxes, ITBI or housing markets as primary evidence in non-property categories.",
+      "Do not reference auction edicts, leiloeiro comissões or vehicle salvage as primary evidence in non-auction categories.",
+      "Do not reference betting odds, tigrinho mechanics or casino psychology as primary evidence in non-betting categories.",
+      "Do not use the viewer's own home as the emotional anchor in non-property categories. Anchor instead to their salary, their FGTS balance, their savings, their time, their family, their career, or their future retirement.",
+      "Do not use the viewer's own car as the emotional anchor in non-auction categories.",
+      "Do not use the viewer's own betting habit as the emotional anchor in non-betting categories."
+    ]
+  },
+  "title_analysis": {
+    "title_mechanics": {
+      "structure": "Shock claim + topic + implied hidden truth/correction",
+      "common_forms": [
+        "X Explicado",
+        "Se Você Quer X, Isto É o Que Fazer",
+        "O Que Vem Aí É Pior Que X",
+        "Eles Estão Prestes a X o Teu Y",
+        "Grupo/Instituição Está em Grandes Apuros",
+        "A Matemática Que Vai Explodir a Tua Mente",
+        "Por Que a Tua Poupança Não Vai Te Salvar",
+        "O Que Ninguém Te Diz Sobre Financiamento Imobiliário no Brasil",
+        "A Receita Federal Está Fazendo Isto Com o Teu Dinheiro",
+        "O Brasil Está Fazendo Isto Com o Teu Imobiliário",
+        "O Teu PGBL É Uma Armadilha?",
+        "A Previdência Social Vai Colapsar?",
+        "Leilão de Imóveis: A Armadilha Que Ninguém Te Conta",
+        "Leilão de Carros: Como Não Cair em Furada",
+        "Bets: A Armadilha Matemática Que Está a Roubar a Tua Vida",
+        "Tigrinho: O Jogo Que Nunca Vais Ganhar",
+        "Aposta Não É Investimento — É Imposto Sobre a Esperança"
+      ],
+      "click_drivers": [
+        "threat escalation ('worse than the 2008 crisis')",
+        "identity relevance ('your money', 'you want to invest')",
+        "forbidden mechanism ('loophole', 'trap', 'reset')",
+        "compressed certainty ('this is what to do')",
+        "reversal of common belief ('passive income isn't passive')",
+        "Brazilian specificity ('your poupança', 'your FGTS', 'Receita Federal', 'B3', 'Minha Casa Minha Vida', 'Detran', 'Bets')",
+        "auction trap exposure ('hidden edict', 'hidden debt', 'salvage vehicle')",
+        "betting trap exposure ('betting house', 'tigrinho', 'Fortune Tiger')"
+      ],
+      "tone_signature": "High-stakes, corrective, anti-naive, anti-betting, pragmatic about auctions, not playful.",
+      "number_usage": "Years, percentages, counts and BRL figures increase perceived seriousness and intellectual legitimacy.",
+      "title_psychology": "The viewer clicks because the title suggests they are unknowingly exposed to a system-level risk that others are missing — and that the Brazilian system has specific vulnerabilities nobody is discussing, including traps in auctions and betting."
+    },
+    "implied_enemies_and_allies": {
+      "implied_enemy": [
+        "Brazilian financial industry",
+        "bad incentives (commissions, cross-selling, complex products)",
+        "simplified mainstream advice (including some social-media gurus and property salesmen)",
+        "political institutions (Receita Federal, Ministério da Fazenda, Central Bank, CVM)",
+        "the viewer's own undisciplined psychology",
+        "Brazilian culture of debt and consumption",
+        "poupança treated as an investment",
+        "PGBL/VGBL misunderstood",
+        "consórcio as 'investment'",
+        "'property culture'",
+        "Bets, tigrinho, Fortune Tiger, Blaze, Betano, Sportingbet, online casinos, jogo do bicho",
+        "dishonest auctioneers, badly read edicts, hidden debts",
+        "sellers of auction courses promising easy money",
+        "betting influencers",
+        "pyramid schemes, Forex, crypto scams"
+      ],
+      "implied_ally": [
+        "the narrator",
+        "historical truth",
+        "math",
+        "the prepared, disciplined viewer",
+        "regulators when they work (Central Bank, CVM, SUSEP, PREVIC, Receita Federal, courts, Detran)",
+        "fiscal and accounting transparency",
+        "official auctioneers and well-read edicts",
+        "financial education",
+        "gambling addiction treatment (CVV, CAPS, support groups)"
+      ]
+    }
+  },
+  "script_architecture": {
+    "macro_flow": [
+      "1. Pattern interrupt opening: bizarre anecdote, historical collapse or jarring scenario with Brazilian relevance (1980s-90s hyperinflation, Plano Real, 1999 crisis, 2008 crisis, 2015-2016 crisis, COVID, 2022 inflation, betting scandal, Americanas crisis, tigrinho case, miraculous property auctions).",
+      "2. Snap-link to present relevance: 'the same pattern is happening now.'",
+      "3. Presenter framing: why he is qualified / why this isn't hype.",
+      "4. Promise stack: explicit list of what the viewer will understand by the end.",
+      "5. Tool CTA early: free calculator/report framed as corrective utility.",
+      "6. Core metaphor introduced and sustained.",
+      "7. Conceptual explanation with simple language and arithmetic.",
+      "8. Historical precedent or analogical proof.",
+      "9. Psychological complication: why humans fail even when the math works.",
+      "10. Concrete examples/case studies with named people and specific numbers in BRL.",
+      "11. Action protocol / rules / allocation / checklist.",
+      "12. Identity-level conclusion: freedom comes from mindset/system, not mere returns.",
+      "13. Final compression into takeaways + soft internal CTA to another video/subscribe."
+    ],
+    "opening_pattern": {
+      "method": "Start with a highly specific anecdote before the thesis so the viewer is mentally hooked by narrative, not argument.",
+      "why_it_works": "The viewer unconsciously asks 'why are you telling me this?' and the script answers by connecting the anecdote to their money/life.",
+      "opening_variants": [
+        "Brazilian historical scam/collapse (hyperinflation, 1990 poupança confiscation, Plano Real, 1999 crisis, 2008 crisis, 2015-2016 crisis, Americanas, bets, tigrinho)",
+        "three-case rapid montage",
+        "date-stamped macro timeline (1986, 1990, 1994, 1999, 2008, 2015, 2020, 2022, 2023, 2024)",
+        "ordinary person scenario with hidden flaw",
+        "IBGE or Central Bank data used as a shock",
+        "real auction gone wrong (hidden debt, occupation, salvage vehicle)",
+        "real betting case that destroyed a family"
+      ]
+    },
+    "pacing_model": {
+      "rhythm": "Dense but segmented. Short-to-medium sentences dominate, broken by longer explanatory runs after hooks land.",
+      "acceleration_pattern": "Hook -> explanation -> new danger -> deeper mechanism -> practical release.",
+      "retention_devices": [
+        "forward promises ('here's what we're doing today')",
+        "mid-script escalations ('it gets worse')",
+        "counterintuitive turns ('the math works, human psychology doesn't')",
+        "repeated reframing",
+        "alternation between macro and personal examples",
+        "references to familiar Brazilian institutions (Central Bank, Receita Federal, CVM, IBGE, B3, Caixa, Detran)"
+      ]
+    },
+    "information_release_timing": {
+      "front_loaded": [
+        "danger",
+        "pattern recognition",
+        "what the viewer will learn"
+      ],
+      "mid_loaded": [
+        "underlying mechanism",
+        "Brazilian and global historical parallels",
+        "examples and equations"
+      ],
+      "back_loaded": [
+        "protocol",
+        "identity shift",
+        "summary takeaways"
+      ]
+    }
+  },
+  "micro_writing_mechanics": {
+    "sentence_design": {
+      "dominant_shapes": [
+        "Short declarative shock sentence.",
+        "Question-answer sequence.",
+        "Analogy sentence followed by translation sentence.",
+        "Claim -> immediate caveat -> stronger restatement.",
+        "Numeric sentence -> emotional interpretation sentence."
+      ],
+      "feel": "Controlled urgency. The prose sounds like spoken thinking, but it is tightly engineered.",
+      "cadence_trick": "Uses short punch lines after data-heavy passages to reset attention."
+    },
+    "word_choice": {
+      "preferred_lexicon": [
+        "trap",
+        "mechanism",
+        "system",
+        "math",
+        "psychology",
+        "freedom",
+        "optionality",
+        "structure",
+        "concentration",
+        "cash flow",
+        "sequence risk",
+        "the game",
+        "what nobody talks about",
+        "quietly",
+        "actually",
+        "here's the thing",
+        "Receita Federal",
+        "Banco Central",
+        "CVM",
+        "SUSEP",
+        "PREVIC",
+        "IBGE",
+        "IPEA",
+        "Tesouro Nacional",
+        "B3",
+        "Ibovespa",
+        "Caixa Econômica Federal",
+        "Detran",
+        "Poupança",
+        "CDB",
+        "LCI",
+        "LCA",
+        "LIG",
+        "CRI",
+        "CRA",
+        "Debêntures",
+        "Tesouro Direto",
+        "Selic",
+        "IPCA",
+        "CDI",
+        "IGP-M",
+        "TR",
+        "FGTS",
+        "PIS/PASEP",
+        "INSS",
+        "Previdência Privada",
+        "PGBL",
+        "VGBL",
+        "IRPF",
+        "IRPJ",
+        "CSLL",
+        "IOF",
+        "ITBI",
+        "IPTU",
+        "IPVA",
+        "ICMS",
+        "ISS",
+        "Minha Casa Minha Vida",
+        "Casa Verde e Amarela",
+        "SBPE",
+        "Financiamento Imobiliário",
+        "Alienação Fiduciária",
+        "Consórcio",
+        "Leilão",
+        "Leilão Judicial",
+        "Leilão Extrajudicial",
+        "Leilão da Caixa",
+        "Leilão do Detran",
+        "Leilão da Receita Federal",
+        "Leilão do Tribunal do Trabalho",
+        "Edital",
+        "Matrícula",
+        "Certidão",
+        "Escritura",
+        "Registro de Imóveis",
+        "Imissão na Posse",
+        "Reintegração de Posse",
+        "Despejo",
+        "Ocupação",
+        "Dívida Oculta",
+        "IPTU Atrasado",
+        "Condomínio Atrasado",
+        "Veículo Sinistrado",
+        "Veículo Recuperado",
+        "Veículo Apreendido",
+        "Chassi Remarcado",
+        "Motor Batido",
+        "Leiloeiro Oficial",
+        "Comitente",
+        "Lance",
+        "Arrematação",
+        "Pagamento",
+        "Comissão",
+        "Bets",
+        "Blaze",
+        "Betano",
+        "Sportingbet",
+        "Fortune Tiger",
+        "Tigrinho",
+        "Jogo do Bicho",
+        "Cassino Online",
+        "Roleta",
+        "Blackjack",
+        "Pôquer",
+        "Crash",
+        "Aviator",
+        "Mines",
+        "Spaceman",
+        "Vício",
+        "Abstinência",
+        "Tratamento",
+        "CVV",
+        "CAPS",
+        "Jogadores Anónimos",
+        "Lei 14.790/2023",
+        "Lei 9.514/1997",
+        "Lei 8.245/1991",
+        "Código Civil",
+        "CDC",
+        "Estatuto da Cidade",
+        "Marco Legal das Garantias",
+        "MEI",
+        "Simples Nacional",
+        "ME",
+        "EPP",
+        "Lucro Presumido",
+        "Lucro Real",
+        "Declaração de Imposto de Renda",
+        "Restituição",
+        "Malha Fina",
+        "CPF",
+        "CNPJ",
+        "Pix",
+        "TED",
+        "DOC",
+        "Boleto",
+        "Cartão de Crédito",
+        "Cheque Especial",
+        "Crédito Consignado",
+        "Empréstimo Pessoal",
+        "CDC",
+        "Leasing",
+        "Consignado INSS",
+        "Consignado Servidor",
+        "FIES",
+        "PROUNI",
+        "Bolsa Família",
+        "Auxílio Brasil",
+        "BPC",
+        "LOAS",
+        "Seguro-Desemprego",
+        "FGTS",
+        "Saque-Aniversário",
+        "Saque-Rescisão"
+      ],
+      "language_behavior": "Abstract finance terms are almost always paired with tangible verbs or objects. The object bank should include a WIDE RANGE of physical metaphors, not predominantly property- or auction-related ones: gansos, banheira, bola de neve, banco de três pernas, ponte, engrenagens, jardim, jarro, portão, poço, fogo, semente, tear, escada, mapa, bússola, rio, represa, âncora, muro, castelo, navio, motor, roda, espelho, eco, sombra, fio, corrente, farol, túnel, escada, rede, peneira, esponja, prisma, polia, válvula, fechadura, balança, carrinho de mão, mochila, reservatório, casa, apartamento, carro, moto, caminhão, terreno, sítio, fazenda.",
+      "credibility_words": "specific dates, named firms, exact percentages, Brazilian historical names, concrete BRL amounts"
+    },
+    "rhetorical_devices": {
+      "most_common": [
+        "extended metaphor",
+        "strategic repetition",
+        "contrast pairs",
+        "mock dialogue",
+        "false belief -> corrected truth",
+        "stacked examples",
+        "escalating hypothetical scenario"
+      ],
+      "contrast_structure": [
+        "fantasy vs reality",
+        "gross revenue vs net income",
+        "average return vs sequence of return",
+        "looking rich vs being rich",
+        "recession vs monetary transition",
+        "retiring from vs retiring to",
+        "poupança vs Tesouro Direto",
+        "CDB vs LCI",
+        "PGBL vs VGBL",
+        "buying vs renting",
+        "São Paulo vs Nordeste",
+        "apartment vs house",
+        "first home vs investment",
+        "financing vs consórcio",
+        "auction vs traditional market",
+        "new car vs auction car",
+        "betting vs investment",
+        "Bets vs Tesouro Direto",
+        "Tigrinho vs CDB",
+        "gross vs net",
+        "CLT vs PJ",
+        "informal vs formal"
+      ]
+    },
+    "tone_layering": {
+      "surface_tone": "helpful explainer",
+      "underlayer": "mild alarm, anti-naive skepticism, anti-betting",
+      "deeper_emotional_register": "betrayal by institutions, relief through understanding, dignity through disciplined realism, compassion for betting victims"
+    }
+  },
+  "psychological_and_persuasive_mechanisms": {
+    "core_psychology": [
+      "Uses fear, but not random fear; fear is tied to mechanism, making it feel intelligent rather than sensational.",
+      "Creates relief by converting vague anxiety into understandable structure.",
+      "Makes viewer feel smarter than the passive majority if they keep watching.",
+      "Uses anti-hype disclaimers to increase trust before making strong claims.",
+      "Frames action as self-defence, not greed.",
+      "Leverages specific knowledge of the Brazilian system (Tesouro Direto, CDB, LCI, PGBL, VGBL, Minha Casa Minha Vida, FGTS, auctions, Bets) to create a sense of insider knowledge.",
+      "Exposes betting math as a tax on hope.",
+      "Exposes auction math as a real opportunity with real risks.",
+      "Uses compassion for betting victims without romanticising the addiction."
+    ],
+    "emotional_sequence": [
+      "confusion",
+      "recognition",
+      "alarm",
+      "clarity",
+      "agency",
+      "identity reinforcement"
+    ],
+    "credibility_engineering": {
+      "methods": [
+        "references institutions by name (Central Bank, Receita Federal, CVM, SUSEP, PREVIC, IBGE, IPEA, Tesouro Nacional, B3, Caixa, Detran)",
+        "admits uncertainty selectively",
+        "says 'this isn't about motivation'",
+        "uses personal skin-in-the-game statements",
+        "calls out bad incentives rather than cartoon villains",
+        "translates documents/regulations into plain Portuguese (Tesouro Direto rules, CDB, LCI, PGBL, VGBL, Minha Casa Minha Vida, FGTS, fiduciary alienation, auctions, Law 14.790/2023)",
+        "cites IBGE data, Central Bank reports, Tesouro Nacional budgets, CVM, B3"
+      ],
+      "effect": "The narrator sounds like a sober insider decoding reality for outsiders."
+    },
+    "retention_psychology": {
+      "curiosity_loops": [
+        "What is the hidden pattern?",
+        "Why doesn't the obvious strategy work?",
+        "Who is actually winning?",
+        "What happens when the system breaks?",
+        "What should I do instead?"
+      ],
+      "tension_creation": "Tension is built by showing the viewer they are exposed to a risk they previously thought was safety.",
+      "relief_timing": "Relief arrives only after the system is fully diagnosed, which increases perceived value of the solution."
+    }
+  },
+  "worldview_embedded_in_scripts": {
+    "beliefs": [
+      "Most financial pain comes from incentives and psychology, not lack of information alone.",
+      "Institutions optimise for system preservation, not your well-being.",
+      "Conventional advice is often half-true and dangerous when decontextualised.",
+      "Freedom is more about flexibility, margin and enoughness than maximising returns.",
+      "The disciplined ordinary person can outperform the emotional crowd.",
+      "The Brazilian system has specific vulnerabilities that most mainstream advice ignores.",
+      "Understanding the interplay between Receita Federal, Central Bank, CVM and the mortgage market is essential for financial safety in Brazil.",
+      "Poupança is not an investment; it is an emergency reserve with negative real return.",
+      "Depending exclusively on INSS is a systemic risk for most Brazilians.",
+      "Brazilian taxation is complex by design; ignorance is expensive.",
+      "Consórcio is not an investment; it is a programmed purchase with fees.",
+      "Auctions are not a lottery; they are a serious tool with real risks.",
+      "Bets, tigrinho, Fortune Tiger, Blaze, Betano, Sportingbet are not investments; they are games of chance with negative mathematical expectation.",
+      "Betting addiction is a disease; there is treatment and an exit.",
+      "The culture of 'easy money' is a trap.",
+      "Financial education is self-defence."
+    ],
+    "status_framing": "High status is attached to calm realism, delayed gratification and structural understanding, not flashy consumption.",
+    "fear_framing": "The real danger is not one crash or one bad pick; it is building your life on false assumptions — especially about property, retirement, auctions and betting.",
+    "transformation_promise": "Move from reactive participant to system-aware allocator who can't be easily trapped — someone who understands the Brazilian rules better than the average Brazilian, including auctions and betting."
+  },
+  "replication_logic": {
+    "content_formula": {
+      "step_1": "Choose a financial topic with mainstream familiarity and hidden complexity, WITHIN the category assigned by the rotation_mandate (poupança, CDB, Tesouro Direto, PGBL, VGBL, Minha Casa Minha Vida, FGTS, consórcio, property auctions, vehicle auctions, Bets, tigrinho).",
+      "step_2": "Find a Brazilian historical analogy, strange anecdote or sharp mini-story that mirrors the modern issue.",
+      "step_3": "Frame the common understanding as incomplete or dangerously naive.",
+      "step_4": "Introduce one sticky metaphor that can carry the full explanation. Prefer non-property, non-auction and non-betting metaphors unless the assigned category is one of those.",
+      "step_5": "Translate the mechanism into plain arithmetic with concrete BRL numbers.",
+      "step_6": "Add a human-failure layer: why people still mess this up even when the math is knowable.",
+      "step_7": "Insert one or more case studies with names, ages, incomes, balances, outcomes.",
+      "step_8": "Escalate from portfolio consequence to lifestyle, identity or societal consequence.",
+      "step_9": "Offer a protocol/ruleset that feels practical, not magical.",
+      "step_10": "End with worldview compression and a concise memorable doctrine."
+    },
+    "stylistic_rules_for_future_outputs": [
+      "Always make the invisible visible.",
+      "Never explain a concept without an image/object/metaphor.",
+      "Use numbers to anchor trust, not to overwhelm.",
+      "Alternate macro systems and individual stories.",
+      "Speak as if correcting a dangerous misunderstanding.",
+      "Let skepticism and humility coexist: strong thesis, selective uncertainty.",
+      "Avoid sounding like a trader; sound like a strategic realist.",
+      "Give the viewer dignity through understanding, not through hype.",
+      "Use Brazilian-specific references (Receita Federal, Central Bank, CVM, IBGE, budget, Tesouro Direto, CDB, LCI, PGBL, VGBL, Minha Casa Minha Vida, FGTS, auctions, Bets).",
+      "Avoid American financial terms (401k, Roth IRA, Social Security, 30-year fixed, FICO score, etc.) without translation.",
+      "Never glorify betting; always expose the math and the psychology of addiction.",
+      "Never promise fast enrichment via auctions; always expose risks and protocols.",
+      "Treat auctions as a serious tool, not as a lottery.",
+      "Treat betting victims with compassion, not contempt."
+    ],
+    "title_generation_rules": [
+      "Centre danger, reversal or hidden mechanism.",
+      "Use direct second-order implications: not just 'recession' but 'worse than the 2008 crisis.'",
+      "Make titles feel like practical protection against a trap.",
+      "Keep phrasing blunt, not clever.",
+      "Include Brazilian specificity whenever possible ('your poupança', 'your FGTS', 'Receita Federal', 'B3', 'Minha Casa Minha Vida', 'Detran', 'Bets').",
+      "Include auction specificity ('edict', 'hidden debt', 'salvage vehicle').",
+      "Include betting specificity ('tigrinho', 'Fortune Tiger', 'Blaze', 'Betano')."
+    ],
+    "hook_generation_rules": [
+      "Open on a vivid story or date cluster before introducing the topic.",
+      "Reveal the present-day relevance within the first 5–8 lines.",
+      "Promise a deeper mechanism, not just surface explanation."
+    ]
+  },
+  "sample_specific_context": {
+    "video_1": {
+      "category": "money_psychology",
+      "blueprint": "Freedom fantasy versus mechanical reality. Strong on metaphor, optionality, lifestyle creep, psychology of enough. Brazilian context: INSS, poupança, property, cost of living."
+    },
+    "video_2": {
+      "category": "concentration_indexing",
+      "blueprint": "Historical concentration mania repeated today. Strong on structural analogy, anti-indexing revisionism, explicit portfolio protocol. Brazilian context: concentration in Petrobras, Vale, banks, property, over-concentration in poupança and property."
+    },
+    "video_3": {
+      "category": "macro_currency",
+      "blueprint": "Macro regime change. Strong on date-stacking, institutional references, currency/industry framing, existential stakes. Brazilian context: BRL, Central Bank, commodities, debt, demographics, China, US."
+    },
+    "video_4": {
+      "category": "fiscal_policy",
+      "blueprint": "Policy move translated into household consequences. Simpler, more beginner-targeted, more direct villain/system framing. Brazilian context: federal budget, tax changes, IRPF, IPTU, ITBI, Minha Casa Minha Vida, FGTS, Bets."
+    },
+    "video_5": {
+      "category": "generational_systems",
+      "blueprint": "Generational systemic failure. Strong on metaphor (three-legged stool), demographic scaling, sympathy mixed with indictment. Brazilian context: INSS, healthcare, dependency, housing, debt, boomers vs millennials, 'geração nem-nem'."
+    },
+    "video_6": {
+      "category": "macro_currency",
+      "blueprint": "Conspiracy-adjacent mechanism explained with legal/financial precedent. Strong on debt-spiral metaphor and disclaimer-based credibility protection. Brazilian context: public debt, QE, inflation, Central Bank, CVM, betting scandal."
+    },
+    "video_7": {
+      "category": "concentration_indexing",
+      "blueprint": "Slow boring compounding made emotionally compelling. Strong on motivational psychology without becoming inspirational fluff. Brazilian context: Tesouro Direto, CDB, LCI, ETFs, dividends, regular investing, patience, IRPF."
+    },
+    "video_8": {
+      "category": "real_estate_financing",
+      "blueprint": "The Brazilian property financing and investment trap post-2024. Strong on fiscal math, regulatory shifts, buyer reality, promise-versus-reality contrast. Context: SBPE, FGTS, Minha Casa Minha Vida, fiduciary alienation, ITBI, IPTU, condomínio, property auctions, hidden debt, occupation, reintegração de posse."
+    },
+    "video_9": {
+      "category": "asset_auctions",
+      "blueprint": "Vehicle auction trap in Brazil. Strong on auction math, documentation, total loss, recovery, resale. Context: Detran, Caixa, Receita Federal, judicial auction, extrajudicial auction, edict, altered chassis, blown engine, salvage vehicle, recovered vehicle, seized vehicle."
+    },
+    "video_10": {
+      "category": "anti_gambling",
+      "blueprint": "Betting trap in Brazil. Strong on betting math, psychology of addiction, social impact, exit. Context: Bets, Blaze, Betano, Sportingbet, Fortune Tiger, Tigrinho, jogo do bicho, online casino, Law 14.790/2023, CVV, CAPS, Jogadores Anónimos."
+    }
+  },
+  "generation_instructions_for_another_model": {
+    "objective": "Produce long-form Brazilian finance scripts that feel like hidden-system exposés rather than generic educational content, with emphasis on: property and vehicle financing, acquisition of assets via auctions of all types, and fighting Bets and gambling.",
+    "step_zero": "Before writing anything, read rotation_mandate, determine the last six video categories, and select the least recently used category that respects the selection_rules. State the chosen category internally before drafting.",
+    "must_include": [
+      "one category from rotation_mandate that respects the selection_rules",
+      "one strong metaphor (preferably non-property, non-auction and non-betting unless the assigned category is one of those)",
+      "one Brazilian historical or structural parallel",
+      "one explicit false belief being corrected",
+      "one psychological trap",
+      "one practical protocol",
+      "one identity-level takeaway",
+      "Brazilian institutional references (Receita Federal, Central Bank, CVM, SUSEP, PREVIC, IBGE, B3, Caixa, Detran)",
+      "Brazilian financial products (poupança, CDB, LCI, LCA, Tesouro Direto, PGBL, VGBL, FGTS, Minha Casa Minha Vida, consórcio, financing, vehicle financing)",
+      "auction references (judicial, extrajudicial, Caixa, Detran, Receita Federal, Tribunal do Trabalho) when the category is asset_auctions",
+      "betting references (Blaze, Betano, Sportingbet, Fortune Tiger, Tigrinho, jogo do bicho, online casino) when the category is anti_gambling",
+      "amounts in Brazilian reais (BRL)"
+    ],
+    "must_avoid": [
+      "generic optimism",
+      "surface-level listicles",
+      "purely technical teaching without tension",
+      "guru posturing",
+      "advice without mechanism",
+      "untranslated American financial terms",
+      "references to exclusively American institutions without Brazilian equivalents",
+      "glorification of betting, bets, tigrinho, online casinos or gambling",
+      "promise of fast enrichment via auctions",
+      "romanticising 'entrepreneurship' that hides risk",
+      "defaulting to property, auctions or anti-betting when the category is not one of those",
+      "using house/mortgage/lease as the central metaphor in non-property categories",
+      "using auction/edict/bid as the central metaphor in non-auction categories",
+      "using casino/betting odds as the central metaphor in non-betting categories",
+      "consecutive videos in the same category"
+    ],
+    "success_condition": "The final script should make the viewer feel simultaneously alarmed, intellectually satisfied and more in control — with a deeper understanding of the Brazilian financial system, auction traps and betting dangers, AND it should belong to a category that has not been used recently.",
+    "output_length_requirement": "The final FULL SCRIPT must be strictly between 7,000 and 9,000 characters.",
+    "output_length_verification": "Before sending the answer, verify the FULL SCRIPT character count. If it is below 7,000 or above 9,000 characters, rewrite it until it falls within range.",
+    "hard_fail_condition": "Any FULL SCRIPT under 7,000 characters or over 9,000 characters is invalid and must be rewritten before output. Any FULL SCRIPT that violates the rotation_mandate selection_rules is also invalid and must be rewritten."
+  }
+}

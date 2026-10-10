@@ -1,0 +1,687 @@
+{
+  "metadata": {
+    "task_type": "forensic_content_blueprint_extraction",
+    "sample_count": 8,
+    "dominant_domain_inferred": "long-form personal-finance, money-psychology and real-estate essays for a South Korean audience",
+    "core_promise_of_system": "Make abstract money topics feel urgent, personal, morally loaded and immediately actionable by translating the South Korean macroeconomy into high-stakes life consequences.",
+    "primary_content_engine": "History/metaphor-driven warning essay that reframes a familiar financial idea as misunderstood, structurally rigged, psychologically dangerous, and still navigable if the viewer adopts the creator's framework.",
+    "character_length_requirement": "STRICTLY 7,000–9,000 characters",
+    "character_length_rule": "The final FULL SCRIPT must be no less than 7,000 characters and no more than 9,000 characters.",
+    "strict_character_range": [7000, 9000],
+    "length_compliance_mandatory": true,
+    "audience_inference": {
+      "knowledge_level": "intermediate aspirational retail investor / financially anxious knowledge worker, familiar with 청약통장 (housing subscription account), ISA, IRP, 전세 (jeonse), 재개발 (redevelopment) and 주택담보대출 (mortgage), but unsure of the whole picture",
+      "psychological_state": "skeptical, economically uneasy, wants clarity and edge, feels mainstream advice (banks, 증권사, media, simplified guidance) is incomplete or too late",
+      "aspirational_identity": "calm, informed, anti-hype, system-level thinker who spots traps before the crowd — someone who understands the Korean game beyond 'save in the 청약통장 and buy an apartment in Gangnam'"
+    },
+    "channel_persona": {
+      "role": "translator of hidden financial mechanics inside the South Korean system",
+      "voice": "calm but severe, analytical but conversational, anti-guru while still authoritative",
+      "authority_basis": [
+        "claims personal investing experience in South Korea",
+        "references long study time and obscure documents (FSC/FSS regulations, Bank of Korea reports, BOK minutes, KOSTAT data, NTS reports, government budgets, Korea Development Institute reports, Korea Housing Finance Corporation data)",
+        "uses Korean and global historical analogies",
+        "frames advice as mechanical, not motivational",
+        "signals distance from schemes, courses and hype",
+        "mentions hands-on experience with NTS, BOK, FSC, FSS, KHFC and the South Korean mortgage market"
+      ]
+    }
+  },
+  "cross_sample_system": {
+    "dominant_pattern": "Each video opens with a striking anecdote or historical event, converts it into a present-day parallel, exposes a hidden structural trap, escalates consequences from portfolio-level to life-level, then resolves with a practical protocol and a worldview shift.",
+    "what_is_repeated_across_samples": [
+      "Title promises revelation plus correction of a false belief.",
+      "Cold open uses a vivid story, person or date cluster before the thesis.",
+      "Immediate pivot: 'this is happening again / right now / to you.'",
+      "Presenter positions himself as an obsessive researcher, not an entertainer.",
+      "Viewer is told mainstream advice is directionally true but dangerously incomplete.",
+      "Concepts are reduced to one central metaphor carried across the script.",
+      "Repeated contrast between spreadsheet math and human psychology.",
+      "Frequent use of named characters or mini-case studies to concretise abstractions.",
+      "Action steps appear after fear/diagnosis, never before.",
+      "Endings compress the message into 3 takeaways or a concise doctrine."
+    ],
+    "what_is_intentionally_avoided": [
+      "No dry textbook exposition without emotional framing.",
+      "No purely optimistic wealth-building tone.",
+      "No jargon left untranslated for long.",
+      "No absolute certainty; uses probabilistic seriousness.",
+      "No purely technical CTA; CTAs are embedded as practical tools, not hard sells.",
+      "No celebratory finance-bro energy, no luxury signalling, no macho alpha posture.",
+      "No references to exclusively American institutions or products (401k, Roth IRA, Social Security, Fannie Mae) without translation to South Korean equivalents."
+    ],
+    "exceptions_used_strategically": [
+      "Video 4 is simpler and more direct; less nuanced than the others because it targets urgency and beginner conversion.",
+      "Video 6 leans more speculative/conspiratorial but protects credibility with repeated disclaimers about lack of proof.",
+      "Video 7 is more constructive and motivational, but still framed through pain, misperception and psychological failure.",
+      "Video 8 focuses exclusively on the South Korean property market and the traps of jeonse, redevelopment and post-2024 taxation."
+    ]
+  },
+  "rotation_mandate": {
+    "purpose": "Force thematic diversity across videos. Prevent the model from collapsing into real-estate/financing on every generation. The blueprint's terminology and sample set are real-estate-heavy; without an explicit rotation rule, the model defaults to property math, mortgage mechanics, jeonse deposit structure, redevelopment math and apartment-obsession traps because they satisfy the content formula most easily.",
+    "principle": "Every generated script must be assigned to ONE category. Categories rotate. Consecutive videos must never share the same category. Real-estate has a hard cap.",
+    "categories": [
+      {
+        "id": "money_psychology",
+        "label": "Money Psychology & Identity",
+        "description": "Enoughness, lifestyle creep, freedom versus fantasy, delayed gratification, the psychology of wealth, identity-level shift, Korean cultural pressure of '체면' (face), '눈치' (social perception), '서열' (hierarchy), '빨리빨리' (hurry-hurry) culture, comparison anxiety fuelled by KakaoTalk and Instagram, and the emotional cost of keeping up with the Gangnam standard.",
+        "example_topics": [
+          "Why 'enough' is the hardest number to calculate in Korea",
+          "The lifestyle creep that silently eats every pay raise",
+          "How the pursuit of optionality can destroy your life",
+          "The difference between looking rich and being free in Seoul"
+        ],
+        "must_avoid": [
+          "Property-specific advice",
+          "Mortgage math",
+          "Jeonse deposit mechanics",
+          "Redevelopment or reconstruction calculations"
+        ]
+      },
+      {
+        "id": "concentration_indexing",
+        "label": "Concentration, Indexing & Portfolio Structure",
+        "description": "Concentration risk, indexing revisionism, correlation, sequence-of-returns risk, portfolio design, systematic versus discretionary, ISA vs IRP allocation, retirement pension decisions, DB vs DC, unit trusts vs ETFs vs direct shares on KOSPI and KOSDAQ, Samsung and chaebol concentration, semiconductor cycle exposure.",
+        "example_topics": [
+          "The hidden risk in every 'diversified' Korean portfolio",
+          "What nobody tells you about the 4% rule in Korea",
+          "The 2000 dot-com pattern repeating in KOSPI in 2026",
+          "Why rebalancing is the only free lunch nobody eats"
+        ],
+        "must_avoid": [
+          "Direct property recommendations",
+          "Rental yield calculations",
+          "재산세 and 종합부동산세 specifics",
+          "Mortgage refinancing mechanics"
+        ]
+      },
+      {
+        "id": "macro_currency",
+        "label": "Macroeconomics & Currency",
+        "description": "Inflation, deflation, debt cycles, KRW dynamics, BOK policy, MPC decisions, semiconductor dependency, export exposure, household debt (가계부채), US-China exposure, demographic decline, sovereign credit ratings, jeonse market systemic risk.",
+        "example_topics": [
+          "The math behind the coming BOK trap",
+          "Why the won is not the safe haven it once was",
+          "The quiet collapse of the Korean bond market",
+          "What happens when a semiconductor currency loses its bid"
+        ],
+        "must_avoid": [
+          "Personal property advice",
+          "Local property tax specifics",
+          "Specific mortgage products"
+        ]
+      },
+      {
+        "id": "fiscal_policy",
+        "label": "Domestic Fiscal Policy & Household Impact",
+        "description": "Tax changes, VAT, income tax, CGT (양도소득세), inheritance tax (상속세), gift tax (증여세), 종합부동산세, DSR rules, LTV rules, DTI rules, ISA and IRP changes, National Pension reform, NTS enforcement, youth savings programmes (청년희망적금, 청년도약계좌).",
+        "example_topics": [
+          "The tax change nobody read in the budget",
+          "How the new DSR rules affect your mortgage",
+          "What the NTS quietly changed this year",
+          "The 종합부동산세 trap nobody is framing honestly"
+        ],
+        "must_avoid": [
+          "Property investment strategy",
+          "Mortgage refinancing mechanics",
+          "Rental property tax shelters"
+        ]
+      },
+      {
+        "id": "generational_systems",
+        "label": "Generational Systems & Structural Failure",
+        "description": "National Pension sustainability, 기초연금, healthcare system, education cost shifts, demographic collapse, intergenerational wealth transfer, boomers vs millennials, 'N포세대' (N-Po generation), '삼포세대' (Sampo generation), '헬조선' (Hell Joseon) framing, the gap between Seoul and the provinces.",
+        "example_topics": [
+          "The generation that will work until 80",
+          "Why Korean pension math stopped adding up",
+          "The hidden cost the boomers left the millennials",
+          "How the National Pension became the real retirement question"
+        ],
+        "must_avoid": [
+          "Property investment mechanics",
+          "Property market timing",
+          "Local rent-control discussions"
+        ]
+      },
+      {
+        "id": "real_estate_financing",
+        "label": "Real Estate & Financing (South Korea)",
+        "description": "주택담보대출, 전세자금대출, 전세 (jeonse), 월세 (wolse), 반전세 (ban-jeonse), 전세사기 (jeonse fraud), 깡통전세 (underwater jeonse), 재개발 (redevelopment), 재건축 (reconstruction), 청약 (subscription), 청약통장, DSR, LTV, DTI, 취득세, 등록세, 재산세, 종합부동산세, 양도소득세, 주택연금, reverse mortgage, apartment as status, 학군 (school district) pricing, Gangnam premium.",
+        "example_topics": [
+          "The jeonse trap that quietly resets every two years",
+          "Why apartment ownership is not the wealth builder it was sold as",
+          "The hidden cost of the redevelopment lottery nobody models",
+          "What the South Korean real-estate math actually says"
+        ],
+        "restriction": "This category may appear at most once in every six consecutive videos. If any of the last two videos were in this category, skip it entirely and pick another."
+      }
+    ],
+    "selection_rules": [
+      "Track the last six videos produced by the channel and their assigned categories.",
+      "Before generating a new script, choose the category that has been used LEAST recently. On a tie, prefer the category with fewer appearances in the last twelve videos.",
+      "Never generate two consecutive videos in the same category.",
+      "The real_estate_financing category has an additional hard cap: at most one in every six videos.",
+      "If the channel has no history (first video), default to one of: money_psychology, concentration_indexing, or macro_currency.",
+      "If the user has explicitly requested a topic, honour it, but flag the rule violation in a single sentence inside the script's internal notes (not in the script body)."
+    ],
+    "user_command_override": "The user's explicit topic request always wins, but the generation model must warn in one sentence if the request breaks the rotation rule (e.g., 'this will be your third real-estate video in a row').",
+    "anti_patterns_to_avoid": [
+      "Do not default to real estate as the 'most visually compelling' or 'most urgent' category.",
+      "Do not use property metaphors (house, apartment, 아파트, 집, 전세, 월세, 재개발, 청약, 담보, 대출) as the central metaphor for non-property categories. Use different physical metaphors instead: geese, bathtub, snowball, three-legged stool, bridge, gears, garden, jar, gate, well, fire, seed, loom, staircase, map, compass, river, dam, anchor, wall, fortress, ship, engine, wheel, mirror, echo, shadow, thread, chain, lighthouse, tunnel, ladder, net, sieve, sponge, prism, pulley, valve, lock, scale, wheelbarrow, backpack, reservoir, kettle, lantern, compass, loom, crane, bellows, anvil, kiln, raft, sail, rudder, mast, keel, bow, stern, harbor, tide, current, ripple, wave, storm, shelter, umbrella, cloak, shield, spear, bow-and-arrow, quiver, drum, flute, gayageum, haegeum, daegeum, janggu, buk, sogo, piri, taepyeongso, danso, saenghwang, yanggeum, ajaeng.",
+      "Do not reference interest rates, apartment prices, jeonse deposits, redevelopment premiums or housing markets as primary evidence in non-property categories.",
+      "Do not use the viewer's own apartment or jeonse deposit as the emotional anchor in non-property categories. Anchor instead to their salary (연봉), their 실수령액, their ISA balance, their IRP, their National Pension, their savings, their time, their family, their career, or their future 기초연금."
+    ]
+  },
+  "title_analysis": {
+    "title_mechanics": {
+      "structure": "Shock claim + topic + implied hidden truth/correction",
+      "common_forms": [
+        "X Explicado",
+        "Se Queres X, Isto É o Que Fazer",
+        "O Que Vem Aí É Pior Que X",
+        "Eles Estão Prestes a X o Teu Y",
+        "Grupo/Instituição Está em Grandes Apuros",
+        "A Matemática Que Vai Explodir a Tua Mente",
+        "Porque É Que o Teu 청약통장 Não Te Vai Salvar",
+        "O Que Ninguém Te Diz Sobre o 전세",
+        "O NTS Está a Fazer Isto Com o Teu Dinheiro",
+        "A Coreia Está a Fazer Isto Com o Teu Imobiliário",
+        "O Teu ISA É Uma Armadilha?",
+        "A Pensão Nacional Vai Colapsar?",
+        "O Teu IRP Não É o Que Pensas"
+      ],
+      "click_drivers": [
+        "threat escalation ('worse than the IMF crisis')",
+        "identity relevance ('your money', 'you want to invest')",
+        "forbidden mechanism ('loophole', 'trap', 'reset')",
+        "compressed certainty ('this is what to do')",
+        "reversal of common belief ('passive income isn't passive')",
+        "South Korean specificity ('your 청약', 'your 전세', 'the NTS', 'KOSPI', 'Gangnam')"
+      ],
+      "tone_signature": "High-stakes, corrective, anti-naive, not playful.",
+      "number_usage": "Years, percentages, counts and KRW figures increase perceived seriousness and intellectual legitimacy.",
+      "title_psychology": "The viewer clicks because the title suggests they are unknowingly exposed to a system-level risk that others are missing — and that the South Korean system has specific vulnerabilities nobody is discussing."
+    },
+    "implied_enemies_and_allies": {
+      "implied_enemy": [
+        "South Korean financial industry",
+        "bad incentives (commissions, cross-selling, complex products)",
+        "simplified mainstream advice (including some social-media gurus and property salesmen)",
+        "political institutions (NTS, Ministry of Economy and Finance, BOK, FSC)",
+        "the viewer's own undisciplined psychology",
+        "South Korean culture of property obsession and debt",
+        "청약통장 treated as investment",
+        "ISA misunderstood",
+        "전세 treated as 'safe investment'",
+        "the 'apartment culture'"
+      ],
+      "implied_ally": [
+        "the narrator",
+        "historical truth",
+        "math",
+        "the prepared, disciplined viewer",
+        "regulators when they work (FSS, FSC, KDIC)",
+        "fiscal and accounting transparency"
+      ]
+    }
+  },
+  "script_architecture": {
+    "macro_flow": [
+      "1. Pattern interrupt opening: bizarre anecdote, historical collapse or jarring scenario with South Korean relevance (1997 IMF crisis, 2003 credit card crisis, 2008 financial crisis, jeonse collapse, 전세사기 frauds, KOSPI bubble and crash 2025-2026, mutual savings bank scandal).",
+      "2. Snap-link to present relevance: 'the same pattern is happening now.'",
+      "3. Presenter framing: why he is qualified / why this isn't hype.",
+      "4. Promise stack: explicit list of what the viewer will understand by the end.",
+      "5. Tool CTA early: free calculator/report framed as corrective utility.",
+      "6. Core metaphor introduced and sustained.",
+      "7. Conceptual explanation with simple language and arithmetic.",
+      "8. Historical precedent or analogical proof.",
+      "9. Psychological complication: why humans fail even when the math works.",
+      "10. Concrete examples/case studies with named people and specific numbers in KRW.",
+      "11. Action protocol / rules / allocation / checklist.",
+      "12. Identity-level conclusion: freedom comes from mindset/system, not mere returns.",
+      "13. Final compression into takeaways + soft internal CTA to another video/subscribe."
+    ],
+    "opening_pattern": {
+      "method": "Start with a highly specific anecdote before the thesis so the viewer is mentally hooked by narrative, not argument.",
+      "why_it_works": "The viewer unconsciously asks 'why are you telling me this?' and the script answers by connecting the anecdote to their money/life.",
+      "opening_variants": [
+        "South Korean historical scandal/collapse (1997 IMF crisis, 2003 credit card crisis, jeonse frauds, KOSPI crash, mutual savings bank scandal)",
+        "three-case rapid montage",
+        "date-stamped macro timeline (1997, 2003, 2008, 2020, 2022, 2025)",
+        "ordinary person scenario with hidden flaw",
+        "KOSTAT or BOK data used as a shock"
+      ]
+    },
+    "pacing_model": {
+      "rhythm": "Dense but segmented. Short-to-medium sentences dominate, broken by longer explanatory runs after hooks land.",
+      "acceleration_pattern": "Hook -> explanation -> new danger -> deeper mechanism -> practical release.",
+      "retention_devices": [
+        "forward promises ('here's what we're doing today')",
+        "mid-script escalations ('it gets worse')",
+        "counterintuitive turns ('the math works, human psychology doesn't')",
+        "repeated reframing",
+        "alternation between macro and personal examples",
+        "references to familiar South Korean institutions (BOK, NTS, FSC, FSS, KOSTAT)"
+      ]
+    },
+    "information_release_timing": {
+      "front_loaded": [
+        "danger",
+        "pattern recognition",
+        "what the viewer will learn"
+      ],
+      "mid_loaded": [
+        "underlying mechanism",
+        "South Korean and global historical parallels",
+        "examples and equations"
+      ],
+      "back_loaded": [
+        "protocol",
+        "identity shift",
+        "summary takeaways"
+      ]
+    }
+  },
+  "micro_writing_mechanics": {
+    "sentence_design": {
+      "dominant_shapes": [
+        "Short declarative shock sentence.",
+        "Question-answer sequence.",
+        "Analogy sentence followed by translation sentence.",
+        "Claim -> immediate caveat -> stronger restatement.",
+        "Numeric sentence -> emotional interpretation sentence."
+      ],
+      "feel": "Controlled urgency. The prose sounds like spoken thinking, but it is tightly engineered.",
+      "cadence_trick": "Uses short punch lines after data-heavy passages to reset attention."
+    },
+    "word_choice": {
+      "preferred_lexicon": [
+        "trap",
+        "mechanism",
+        "system",
+        "math",
+        "psychology",
+        "freedom",
+        "optionality",
+        "structure",
+        "concentration",
+        "cash flow",
+        "sequence risk",
+        "the game",
+        "what nobody talks about",
+        "quietly",
+        "actually",
+        "here's the thing",
+        "NTS",
+        "BOK",
+        "FSC",
+        "FSS",
+        "KOSTAT",
+        "KDIC",
+        "KHFC",
+        "ISA",
+        "IRP",
+        "청약통장",
+        "전세",
+        "월세",
+        "반전세",
+        "재개발",
+        "재건축",
+        "주택담보대출",
+        "전세자금대출",
+        "신용대출",
+        "마이너스통장",
+        "가계부채",
+        "DSR",
+        "LTV",
+        "DTI",
+        "취득세",
+        "등록세",
+        "재산세",
+        "종합부동산세",
+        "양도소득세",
+        "상속세",
+        "증여세",
+        "연금저축",
+        "퇴직연금",
+        "DB",
+        "DC",
+        "국민연금",
+        "기초연금",
+        "KOSPI",
+        "KOSDAQ",
+        "코스닥",
+        "배당소득세",
+        "이자소득세",
+        "금융소득종합과세",
+        "비과세",
+        "분리과세",
+        "종합과세",
+        "공모주",
+        "청약",
+        "배정",
+        "균등배정",
+        "비례배정",
+        "따상",
+        "따따상",
+        "상한가",
+        "하한가",
+        "서킷브레이커",
+        "사이드카",
+        "공매도",
+        "대차거래",
+        "신용융자",
+        "미수금",
+        "반대매매",
+        "담보유지비율",
+        "마진콜",
+        "레버리지",
+        "인버스",
+        "ETF",
+        "ETN",
+        "ELW",
+        "스팩",
+        "SPAC",
+        "리츠",
+        "REITs",
+        "부동산펀드",
+        "PEF",
+        "사모펀드",
+        "헤지펀드",
+        "뮤추얼펀드",
+        "MMF",
+        "CMA",
+        "RP",
+        "발행어음",
+        "CD",
+        "CP",
+        "전단채",
+        "ABSTB",
+        "PF",
+        "PF-ABCP",
+        "브릿지론",
+        "본PF",
+        "시행사",
+        "시공사",
+        "신탁",
+        "부동산신탁",
+        "토지신탁",
+        "관리형토지신탁",
+        "차입형토지신탁",
+        "책임준공",
+        "책임준공확약",
+        "우발채무",
+        "자산유동화",
+        "ABS",
+        "MBS",
+        "커버드본드",
+        "후순위채",
+        "신종자본증권",
+        "코코본드",
+        "AT1",
+        "AT2",
+        "TLAC",
+        "바젤III",
+        "D-SIB",
+        "G-SIB",
+        "스트레스테스트",
+        "ELS",
+        "DLS",
+        "파생결합증권",
+        "홍콩H지수",
+        "니케이",
+        "S&P500",
+        "나스닥",
+        "환율",
+        "원달러",
+        "엔달러",
+        "위안달러",
+        "금리",
+        "기준금리",
+        "국고채",
+        "회사채",
+        "CD금리",
+        "COFIX",
+        "은행채",
+        "특은채",
+        "산금채",
+        "여전채",
+        "카드채",
+        "캐피탈채",
+        "저축은행채",
+        "상호금융채",
+        "새마을금고",
+        "신협",
+        "농협",
+        "수협",
+        "산림조합",
+        "저축은행",
+        "상호저축은행",
+        "상호금융",
+        "신용협동조합",
+        "우체국예금",
+        "우체국보험",
+        "우체국적금",
+        "우체국펀드",
+        "우체국ISA",
+        "우체국IRP",
+        "청년희망적금",
+        "청년도약계좌",
+        "청년주택드림청약통장",
+        "주택청약종합저축",
+        "청약저축",
+        "청약예금",
+        "청약부금",
+        "종합저축",
+        "예금",
+        "적금",
+        "정기예금",
+        "정기적금",
+        "자유적금",
+        "입출금통장",
+        "파킹통장"
+      ],
+      "language_behavior": "Abstract finance terms are almost always paired with tangible verbs or objects. The object bank should include a WIDE RANGE of physical metaphors, not predominantly property-related ones: geese, bathtub, snowball, three-legged stool, bridge, gears, garden, jar, gate, well, fire, seed, loom, staircase, map, compass, river, dam, anchor, wall, fortress, ship, engine, wheel, mirror, echo, shadow, thread, chain, lighthouse, tunnel, ladder, net, sieve, sponge, prism, pulley, valve, lock, scale, wheelbarrow, backpack, reservoir, kettle, lantern, crane, bellows, anvil, kiln, raft, sail, rudder, mast, keel, bow, stern, harbor, tide, current, ripple, wave, storm, shelter, umbrella, cloak, shield, spear, bow-and-arrow, quiver, drum, flute, gayageum, haegeum, daegeum, janggu, buk, sogo, piri, taepyeongso, danso, saenghwang, yanggeum, ajaeng.",
+      "credibility_words": "specific dates, named firms, exact percentages, South Korean historical names, concrete KRW amounts"
+    },
+    "rhetorical_devices": {
+      "most_common": [
+        "extended metaphor",
+        "strategic repetition",
+        "contrast pairs",
+        "mock dialogue",
+        "false belief -> corrected truth",
+        "stacked examples",
+        "escalating hypothetical scenario"
+      ],
+      "contrast_structure": [
+        "fantasy vs reality",
+        "gross revenue vs net income",
+        "average return vs sequence of return",
+        "looking rich vs being rich",
+        "recession vs monetary transition",
+        "retiring from vs retiring to",
+        "청약통장 vs ISA",
+        "전세 vs 월세",
+        "buying vs renting",
+        "Gangnam vs province",
+        "apartment vs villa",
+        "primary residence vs investment",
+        "IRP vs 연금저축",
+        "KOSPI vs KOSDAQ",
+        "stocks vs real estate",
+        "gross salary vs 실수령액"
+      ]
+    },
+    "tone_layering": {
+      "surface_tone": "helpful explainer",
+      "underlayer": "mild alarm, anti-naive skepticism",
+      "deeper_emotional_register": "betrayal by institutions, relief through understanding, dignity through disciplined realism"
+    }
+  },
+  "psychological_and_persuasive_mechanisms": {
+    "core_psychology": [
+      "Uses fear, but not random fear; fear is tied to mechanism, making it feel intelligent rather than sensational.",
+      "Creates relief by converting vague anxiety into understandable structure.",
+      "Makes viewer feel smarter than the passive majority if they keep watching.",
+      "Uses anti-hype disclaimers to increase trust before making strong claims.",
+      "Frames action as self-defence, not greed.",
+      "Leverages specific knowledge of the South Korean system (NPS, ISA, IRP, jeonse, redevelopment, NTS) to create a sense of insider knowledge."
+    ],
+    "emotional_sequence": [
+      "confusion",
+      "recognition",
+      "alarm",
+      "clarity",
+      "agency",
+      "identity reinforcement"
+    ],
+    "credibility_engineering": {
+      "methods": [
+        "references institutions by name (BOK, NTS, FSC, FSS, KOSTAT, KDIC, KHFC, Korea Development Institute)",
+        "admits uncertainty selectively",
+        "says 'this isn't about motivation'",
+        "uses personal skin-in-the-game statements",
+        "calls out bad incentives rather than cartoon villains",
+        "translates documents/regulations into plain Korean (ISA rules, IRP, jeonse, DSR, LTV, 취득세, 양도소득세)",
+        "cites KOSTAT data, BOK reports, government budgets, Korea Development Institute data"
+      ],
+      "effect": "The narrator sounds like a sober insider decoding reality for outsiders."
+    },
+    "retention_psychology": {
+      "curiosity_loops": [
+        "What is the hidden pattern?",
+        "Why doesn't the obvious strategy work?",
+        "Who is actually winning?",
+        "What happens when the system breaks?",
+        "What should I do instead?"
+      ],
+      "tension_creation": "Tension is built by showing the viewer they are exposed to a risk they previously thought was safety.",
+      "relief_timing": "Relief arrives only after the system is fully diagnosed, which increases perceived value of the solution."
+    }
+  },
+  "worldview_embedded_in_scripts": {
+    "beliefs": [
+      "Most financial pain comes from incentives and psychology, not lack of information alone.",
+      "Institutions optimise for system preservation, not your well-being.",
+      "Conventional advice is often half-true and dangerous when decontextualised.",
+      "Freedom is more about flexibility, margin and enoughness than maximising returns.",
+      "The disciplined ordinary person can outperform the emotional crowd.",
+      "The South Korean system has specific vulnerabilities that most mainstream advice ignores.",
+      "Understanding the interplay between NTS, BOK, FSC and the mortgage market is essential for financial safety in South Korea.",
+      "청약통장 is not an investment; it is a low-interest lottery ticket.",
+      "전세 is a form of private financing with landlord credit risk.",
+      "Depending exclusively on the National Pension is a systemic risk for most South Koreans.",
+      "South Korean taxation is complex by design; ignorance is expensive.",
+      "The Korean real-estate market is not rational; it is collective psychology amplified by leverage."
+    ],
+    "status_framing": "High status is attached to calm realism, delayed gratification and structural understanding, not flashy consumption.",
+    "fear_framing": "The real danger is not one crash or one bad pick; it is building your life on false assumptions — especially about property, retirement and what the government will do next.",
+    "transformation_promise": "Move from reactive participant to system-aware allocator who can't be easily trapped — someone who understands the rules of the South Korean game better than the average South Korean."
+  },
+  "replication_logic": {
+    "content_formula": {
+      "step_1": "Choose a financial topic with mainstream familiarity and hidden complexity, WITHIN the category assigned by the rotation_mandate (청약통장, ISA, IRP, jeonse, redevelopment, DSR, 취득세, 양도소득세, NPS).",
+      "step_2": "Find a South Korean historical analogy, strange anecdote or sharp mini-story that mirrors the modern issue.",
+      "step_3": "Frame the common understanding as incomplete or dangerously naive.",
+      "step_4": "Introduce one sticky metaphor that can carry the full explanation. Prefer non-property metaphors unless the assigned category is real_estate_financing.",
+      "step_5": "Translate the mechanism into plain arithmetic with concrete KRW numbers.",
+      "step_6": "Add a human-failure layer: why people still mess this up even when the math is knowable.",
+      "step_7": "Insert one or more case studies with names, ages, incomes, balances, outcomes.",
+      "step_8": "Escalate from portfolio consequence to lifestyle, identity or societal consequence.",
+      "step_9": "Offer a protocol/ruleset that feels practical, not magical.",
+      "step_10": "End with worldview compression and a concise memorable doctrine."
+    },
+    "stylistic_rules_for_future_outputs": [
+      "Always make the invisible visible.",
+      "Never explain a concept without an image/object/metaphor.",
+      "Use numbers to anchor trust, not to overwhelm.",
+      "Alternate macro systems and individual stories.",
+      "Speak as if correcting a dangerous misunderstanding.",
+      "Let skepticism and humility coexist: strong thesis, selective uncertainty.",
+      "Avoid sounding like a trader; sound like a strategic realist.",
+      "Give the viewer dignity through understanding, not through hype.",
+      "Use South Korean-specific references (NTS, BOK, FSC, KOSTAT, budget, ISA, IRP, jeonse, etc.).",
+      "Avoid American financial terms (401k, Roth IRA, Social Security, 30-year fixed, FICO score, etc.) without translation."
+    ],
+    "title_generation_rules": [
+      "Centre danger, reversal or hidden mechanism.",
+      "Use direct second-order implications: not just 'recession' but 'worse than the IMF crisis'.",
+      "Make titles feel like practical protection against a trap.",
+      "Keep phrasing blunt, not clever.",
+      "Include South Korean specificity whenever possible ('your 청약', 'your 전세', 'the NTS', 'KOSPI', 'Gangnam')."
+    ],
+    "hook_generation_rules": [
+      "Open on a vivid story or date cluster before introducing the topic.",
+      "Reveal the present-day relevance within the first 5–8 lines.",
+      "Promise a deeper mechanism, not just surface explanation."
+    ]
+  },
+  "sample_specific_context": {
+    "video_1": {
+      "category": "money_psychology",
+      "blueprint": "Freedom fantasy versus mechanical reality. Strong on metaphor, optionality, lifestyle creep, psychology of enough. South Korean context: NPS, 청약, property, cost of living."
+    },
+    "video_2": {
+      "category": "concentration_indexing",
+      "blueprint": "Historical concentration mania repeated today. Strong on structural analogy, anti-indexing revisionism, explicit portfolio protocol. South Korean context: concentration in Samsung, semiconductors, chaebols, real estate, over-concentration in apartments."
+    },
+    "video_3": {
+      "category": "macro_currency",
+      "blueprint": "Macro regime change. Strong on date-stacking, institutional references, currency/industry framing, existential stakes. South Korean context: KRW, BOK, semiconductors, exports, debt, demographics, China, US."
+    },
+    "video_4": {
+      "category": "fiscal_policy",
+      "blueprint": "Policy move translated into household consequences. Simpler, more beginner-targeted, more direct villain/system framing. South Korean context: government budget, tax changes, 종부세, 양도세, DSR, 청약, 전세."
+    },
+    "video_5": {
+      "category": "generational_systems",
+      "blueprint": "Generational systemic failure. Strong on metaphor (three-legged stool), demographic scaling, sympathy mixed with indictment. South Korean context: NPS, healthcare, dependency, housing, debt, boomers vs millennials, 'gap' generation."
+    },
+    "video_6": {
+      "category": "macro_currency",
+      "blueprint": "Conspiracy-adjacent mechanism explained with legal/financial precedent. Strong on debt-spiral metaphor and disclaimer-based credibility protection. South Korean context: public debt, QE, inflation, BOK, FSC, KDIC, 가계부채."
+    },
+    "video_7": {
+      "category": "concentration_indexing",
+      "blueprint": "Slow boring compounding made emotionally compelling. Strong on motivational psychology without becoming inspirational fluff. South Korean context: ISA, IRP, dividends, regular investing, patience, ETFs."
+    },
+    "video_8_reference": {
+      "category": "real_estate_financing",
+      "blueprint": "The South Korean property financing and investment trap post-2024. Strong on fiscal math, regulatory shifts, buyer reality, promise-versus-reality contrast. Context: DSR, LTV, DTI, 전세사기, 깡통전세, 취득세, 양도소득세, 재개발, 재건축, 청약, ISA, IRP, NPS.",
+      "rotation_note": "This sample exists as a reference for the real_estate_financing category ONLY. It must not be used as a template for other categories, and it counts against the 1-in-6 cap."
+    }
+  },
+  "generation_instructions_for_another_model": {
+    "objective": "Produce long-form South Korean finance scripts that feel like hidden-system exposés rather than generic educational content.",
+    "step_zero": "Before writing anything, read rotation_mandate, determine the last six video categories, and select the least recently used category that respects the selection_rules. State the chosen category internally before drafting.",
+    "must_include": [
+      "one category from rotation_mandate that respects the selection_rules",
+      "one strong metaphor (preferably non-property unless the category is real_estate_financing)",
+      "one South Korean historical or structural parallel",
+      "one explicit false belief being corrected",
+      "one psychological trap",
+      "one practical protocol",
+      "one identity-level takeaway",
+      "South Korean institutional references (NTS, BOK, FSC, FSS, KOSTAT, KDIC, KHFC)",
+      "South Korean financial products (ISA, IRP, 청약통장, jeonse, NPS, mortgages, real estate, 취득세, 양도소득세)",
+      "amounts in South Korean won (KRW)"
+    ],
+    "must_avoid": [
+      "generic optimism",
+      "surface-level listicles",
+      "purely technical teaching without tension",
+      "guru posturing",
+      "advice without mechanism",
+      "untranslated American financial terms",
+      "references to exclusively American institutions without South Korean equivalents",
+      "defaulting to real estate when the category is not real_estate_financing",
+      "using apartment/jeonse as the central metaphor in non-property categories",
+      "consecutive videos in the same category"
+    ],
+    "success_condition": "The final script should make the viewer feel simultaneously alarmed, intellectually satisfied and more in control — with a deeper understanding of the South Korean financial system, AND it should belong to a category that has not been used recently.",
+    "output_length_requirement": "The final FULL SCRIPT must be strictly between 7,000 and 9,000 characters.",
+    "output_length_verification": "Before sending the answer, verify the FULL SCRIPT character count. If it is below 7,000 or above 9,000 characters, rewrite it until it falls within range.",
+    "hard_fail_condition": "Any FULL SCRIPT under 7,000 characters or over 9,000 characters is invalid and must be rewritten before output. Any FULL SCRIPT that violates the rotation_mandate selection_rules is also invalid and must be rewritten."
+  }
+}

@@ -1,4 +1,10 @@
 # Changelog
+## 0.9.80 — 2026-10-10
+- **Substituídos os 16 blueprints FINANCE pelas versões melhoradas do utilizador** (`seed/blueprints/`): os 15 países (AUSTRALIA, BRAZIL, CANADA, FRANCE, GERMANY, IRELAND, ISRAEL, ITALY, JAPAN, MEXICO, POLONY, SOUTH AFRICA, SOUTH COREA, SPAIN, UK) passam de `.md` para **`.json`** com a nova estrutura (metadata, cross_sample_system, rotation_mandate, title_analysis, script_architecture, micro_writing_mechanics, …) e o `FINANCE USA.json` é substituído pela versão melhorada (17 KB → 25,7 KB). O `FINANCE ISRAEL.json` usa a cópia corrigida do utilizador (a aspa do acrónico hebraico תמ״א devidamente escapada — o carácter é preservado na íntegra).
+- Os 15 `.md` antigos saem do seed e do storage do utilizador (as cópias antigas foram removidas da raiz do storage); os 16 `.json` são semeados para `storage/blueprints/importados/` como qualquer outro blueprint e aparecem em **Blueprints > Blueprints Youtube** na mesma tabela.
+- O pacote do Google Drive incluía ficheiros de apoio (imagens, PDF, LISTA.txt) que **não** entram no seed — só os 16 blueprints.
+- Testes: contagens do seed actualizadas (15 FINANCE .json + 16 restantes = 34/33 em importados); `test_finance_content_seeds_are_separate_from_thumbnail_seed` passa a verificar os 16 `.json` — **1281 testes verdes**.
+
 ## 0.9.79 — 2026-10-10
 - **Um blueprint é um blueprint** (segundo a especificação "Corrigir: os 5 Remotion são blueprints, ponto"): a separação "personalidade vs formato" da 0.9.76/0.9.77 foi **removida por completo**. Não existem "blueprints de personalidade", "formatos Remotion", `format_id`, `packages/remotion/schemas/` nem dois dropdowns — existe **um tipo** de blueprint.
 - **Os 5 Remotion voltaram para `seed/blueprints/`** com os nomes originais (Blueprint Remotion - Quiz Videos, Social Media Reels, Top 10 Ranking Videos, Would You Rather, Inspirational Long-Form Videos) e o conteúdo actual (`format_id` removido). São copiados para `storage/blueprints/importados/` no arranque como todos os outros e **aparecem em Blueprints > Blueprints Youtube na mesma tabela** — sem secção separada.

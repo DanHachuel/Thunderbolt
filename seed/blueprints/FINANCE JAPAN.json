@@ -1,0 +1,797 @@
+{
+  "metadata": {
+    "task_type": "forensic_content_blueprint_extraction",
+    "sample_count": 7,
+    "dominant_domain_inferred": "long-form personal-finance, money-psychology and real-estate essays for a Japanese audience",
+    "core_promise_of_system": "Make abstract money topics feel urgent, personal, morally loaded and immediately actionable by translating the Japanese macroeconomy into high-stakes life consequences.",
+    "primary_content_engine": "History/metaphor-driven warning essay that reframes a familiar financial idea as misunderstood, structurally rigged, psychologically dangerous, and still navigable if the viewer adopts the creator's framework.",
+    "character_length_requirement": "STRICTLY 7,000–9,000 characters",
+    "character_length_rule": "The final FULL SCRIPT must be no less than 7,000 characters and no more than 9,000 characters.",
+    "strict_character_range": [7000, 9000],
+    "length_compliance_mandatory": true,
+    "audience_inference": {
+      "knowledge_level": "intermediate aspirational retail investor / financially anxious knowledge worker, familiar with 普通預金, 定期預金, 財形貯蓄, NISA, iDeCo, 投資信託, 住宅ローン, 変動金利, 固定金利, 団信 and 確定拠出年金 but unsure of the whole picture",
+      "psychological_state": "skeptical, economically uneasy, wants clarity and edge, feels mainstream advice (banks, 証券会社, 郵便局, media, simplified guidance) is incomplete or too late",
+      "aspirational_identity": "calm, informed, anti-hype, system-level thinker who spots traps before the crowd — someone who understands the Japanese game beyond 'save in 定期預金 and buy a house'"
+    },
+    "channel_persona": {
+      "role": "translator of hidden financial mechanics inside the Japanese system",
+      "voice": "calm but severe, analytical but conversational, anti-guru while still authoritative",
+      "authority_basis": [
+        "claims personal investing experience in Japan",
+        "references long study time and obscure documents (金融庁 regulations, 日本銀行 reports, BOJ minutes, 総務省統計局 data, 財務省 reports, 国税庁, 厚生労働省, 預金保険機構, 日本投資者保護基金)",
+        "uses Japanese and global historical analogies",
+        "frames advice as mechanical, not motivational",
+        "signals distance from schemes, courses and hype",
+        "mentions hands-on experience with 国税庁, 日本銀行, 金融庁, 財務省, 預金保険機構 and the Japanese mortgage market"
+      ]
+    }
+  },
+  "cross_sample_system": {
+    "dominant_pattern": "Each video opens with a striking anecdote or historical event, converts it into a present-day parallel, exposes a hidden structural trap, escalates consequences from portfolio-level to life-level, then resolves with a practical protocol and a worldview shift.",
+    "what_is_repeated_across_samples": [
+      "Title promises revelation plus correction of a false belief.",
+      "Cold open uses a vivid story, person or date cluster before the thesis.",
+      "Immediate pivot: 'this is happening again / right now / to you.'",
+      "Presenter positions himself as an obsessive researcher, not an entertainer.",
+      "Viewer is told mainstream advice is directionally true but dangerously incomplete.",
+      "Concepts are reduced to one central metaphor carried across the script.",
+      "Repeated contrast between spreadsheet math and human psychology.",
+      "Frequent use of named characters or mini-case studies to concretise abstractions.",
+      "Action steps appear after fear/diagnosis, never before.",
+      "Endings compress the message into 3 takeaways or a concise doctrine."
+    ],
+    "what_is_intentionally_avoided": [
+      "No dry textbook exposition without emotional framing.",
+      "No purely optimistic wealth-building tone.",
+      "No jargon left untranslated for long.",
+      "No absolute certainty; uses probabilistic seriousness.",
+      "No purely technical CTA; CTAs are embedded as practical tools, not hard sells.",
+      "No celebratory finance-bro energy, no luxury signalling, no macho alpha posture.",
+      "No references to exclusively American institutions or products (401k, Roth IRA, Social Security, Fannie Mae) without translation to Japanese equivalents."
+    ],
+    "exceptions_used_strategically": [
+      "Video 4 is simpler and more direct; less nuanced than the others because it targets urgency and beginner conversion.",
+      "Video 6 leans more speculative/conspiratorial but protects credibility with repeated disclaimers about lack of proof.",
+      "Video 7 is more constructive and motivational, but still framed through pain, misperception and psychological failure.",
+      "Video 8 focuses exclusively on the Japanese property market and the traps of 住宅ローン, 変動金利, 空き家 and 相続 post-2024."
+    ]
+  },
+  "rotation_mandate": {
+    "purpose": "Force thematic diversity across videos. Prevent the model from collapsing into real-estate/financing on every generation. The blueprint's terminology and sample set are real-estate-heavy; without an explicit rotation rule, the model defaults to property math, 変動金利 vs 固定金利 mechanics, 団信 as pseudo-benefit, 空き家 inheritance traps, 固定資産税 and household debt because they satisfy the content formula most easily.",
+    "principle": "Every generated script must be assigned to ONE category. Categories rotate. Consecutive videos must never share the same category. Real-estate has a hard cap.",
+    "categories": [
+      {
+        "id": "money_psychology",
+        "label": "Money Psychology & Identity",
+        "description": "Enoughness, lifestyle creep, freedom versus fantasy, delayed gratification, the psychology of wealth, identity-level shift, Japanese cultural attitudes to saving, status and 我慢 (endurance).",
+        "example_topics": [
+          "Why 'enough' is the hardest number to calculate",
+          "The lifestyle creep that silently eats every salary rise",
+          "How the pursuit of optionality can destroy your life",
+          "The difference between looking rich and being free"
+        ],
+        "must_avoid": [
+          "Property-specific advice",
+          "Mortgage math",
+          "団信 mechanics",
+          "空き家 inheritance specifics"
+        ]
+      },
+      {
+        "id": "concentration_indexing",
+        "label": "Concentration, Indexing & Portfolio Structure",
+        "description": "Concentration risk, indexing revisionism, correlation, sequence-of-returns risk, portfolio design, systematic versus discretionary, NISA vs iDeCo allocation, 確定拠出年金 structure, 投資信託 fee drag.",
+        "example_topics": [
+          "The hidden risk in every 'diversified' Japanese portfolio",
+          "What nobody tells you about the 4% rule in Japan",
+          "The 1990 bubble pattern repeating in the 日経平均 in 2025",
+          "Why rebalancing is the only free lunch nobody eats"
+        ],
+        "must_avoid": [
+          "Direct property recommendations",
+          "Rental yield calculations",
+          "固定資産税 specifics",
+          "Mortgage refinancing mechanics"
+        ]
+      },
+      {
+        "id": "macro_currency",
+        "label": "Macroeconomics & Currency",
+        "description": "Inflation, deflation, debt cycles, yen dynamics, 日本銀行 policy, YCC legacy, negative-rate exit, trade balance, demographics, energy dependency, China exposure, US alliance.",
+        "example_topics": [
+          "The math behind the coming 日本銀行 trap",
+          "Why the yen is not the safe haven it once was",
+          "The quiet collapse of the JGB market",
+          "What happens when a 250% debt-to-GDP nation loses its bid"
+        ],
+        "must_avoid": [
+          "Personal property advice",
+          "Local property tax specifics",
+          "Specific mortgage products"
+        ]
+      },
+      {
+        "id": "fiscal_policy",
+        "label": "Domestic Fiscal Policy & Household Impact",
+        "description": "Tax changes, 消費税, 所得税, 住民税, 相続税, 贈与税, NISA reform, iDeCo rules, ふるさと納税, 住宅ローン控除, インボイス制度, 電子帳簿保存法.",
+        "example_topics": [
+          "The tax change nobody read in the 税制改正大綱",
+          "How the new 相続税 rules affect your retirement",
+          "What 国税庁 quietly changed this year",
+          "The iDeCo trap nobody is framing honestly"
+        ],
+        "must_avoid": [
+          "Property investment strategy",
+          "Mortgage refinancing mechanics",
+          "Rental property tax shelters"
+        ]
+      },
+      {
+        "id": "generational_systems",
+        "label": "Generational Systems & Structural Failure",
+        "description": "国民年金 and 厚生年金 sustainability, 介護保険, healthcare system, education cost shifts, demographic collapse, intergenerational wealth transfer, boomers vs millennials, 下流老人, 老後破産.",
+        "example_topics": [
+          "The generation that will work until 80",
+          "Why Japanese pension math stopped adding up",
+          "The hidden cost the boomers left the millennials",
+          "How 介護保険 became the real retirement killer"
+        ],
+        "must_avoid": [
+          "Property investment mechanics",
+          "Property market timing",
+          "Local rent-control discussions"
+        ]
+      },
+      {
+        "id": "real_estate_financing",
+        "label": "Real Estate & Financing (Japan)",
+        "description": "住宅ローン (変動 / 固定 / フラット35), 団信, ペアローン, 住宅ローン控除, すまい給付金, 空き家, 空き家バンク, 相続, 贈与, 固定資産税, 都市計画税, 不動産取得税, 登録免許税, 印紙税, マイホーム vs 投資.",
+        "example_topics": [
+          "The 変動金利 trap that quietly resets every cycle",
+          "Why マイホーム is not the wealth builder it was sold as",
+          "The hidden cost of the 空き家 inheritance nobody models",
+          "What the Japanese real-estate math actually says"
+        ],
+        "restriction": "This category may appear at most once in every six consecutive videos. If any of the last two videos were in this category, skip it entirely and pick another."
+      }
+    ],
+    "selection_rules": [
+      "Track the last six videos produced by the channel and their assigned categories.",
+      "Before generating a new script, choose the category that has been used LEAST recently. On a tie, prefer the category with fewer appearances in the last twelve videos.",
+      "Never generate two consecutive videos in the same category.",
+      "The real_estate_financing category has an additional hard cap: at most one in every six videos.",
+      "If the channel has no history (first video), default to one of: money_psychology, concentration_indexing, or macro_currency.",
+      "If the user has explicitly requested a topic, honour it, but flag the rule violation in a single sentence inside the script's internal notes (not in the script body)."
+    ],
+    "user_command_override": "The user's explicit topic request always wins, but the generation model must warn in one sentence if the request breaks the rotation rule (e.g., 'this will be your third real-estate video in a row').",
+    "anti_patterns_to_avoid": [
+      "Do not default to real estate as the 'most visually compelling' or 'most urgent' category.",
+      "Do not use property metaphors (house, 家, マイホーム, 住宅, マンション, 戸建て, 住宅ローン, key, gate, fence, land, roof, foundation) as the central metaphor for non-property categories. Use different physical metaphors instead: geese, bathtub, snowball, three-legged stool, bridge, gears, garden, jar, gate, well, fire, seed, loom, staircase, map, compass, river, dam, anchor, wall, fortress, ship, engine, wheel, mirror, echo, shadow, thread, chain, lighthouse, tunnel, ladder, net, sieve, sponge, prism, pulley, valve, lock, scale, wheelbarrow, backpack, reservoir, 屏風 (folding screen), 掛軸 (hanging scroll), 灯籠 (lantern), 重箱 (stacked box), 石庭 (zen garden), 障子 (paper screen), 茶筅 (tea whisk).",
+      "Do not reference interest rates, home prices, 固定資産税, 都市計画税, 不動産取得税 or housing markets as primary evidence in non-property categories.",
+      "Do not use the viewer's own マイホーム as the emotional anchor in non-property categories. Anchor instead to their salary, their NISA balance, their iDeCo, their savings, their time, their family, their career, or their future 国民年金."
+    ]
+  },
+  "title_analysis": {
+    "title_mechanics": {
+      "structure": "Shock claim + topic + implied hidden truth/correction",
+      "common_forms": [
+        "X 解説",
+        "X したければこうしろ",
+        "来るのは X より悪い",
+        "彼らはあなたの Y を X しようとしている",
+        "グループ/機関が大ピンチ",
+        "あなたの頭を吹き飛ばす数学",
+        "なぜあなたの 定期預金 はあなたを救わないのか",
+        "誰も教えてくれない日本の住宅ローン",
+        "国税庁があなたのお金でやっていること",
+        "日本があなたの不動産でやっていること",
+        "あなたの NISA は罠か？",
+        "日本の年金は崩壊するのか？",
+        "あなたの iDeCo は思っているのと違う"
+      ],
+      "click_drivers": [
+        "threat escalation ('worse than the IMF crisis')",
+        "identity relevance ('your money', 'you want to invest')",
+        "forbidden mechanism ('loophole', 'trap', 'reset')",
+        "compressed certainty ('this is what to do')",
+        "reversal of common belief ('passive income isn't passive')",
+        "Japanese specificity ('your 定期預金', 'your 住宅ローン', 'the 国税庁', '日経平均', 'NISA')"
+      ],
+      "tone_signature": "High-stakes, corrective, anti-naive, not playful.",
+      "number_usage": "Years, percentages, counts and JPY figures increase perceived seriousness and intellectual legitimacy.",
+      "title_psychology": "The viewer clicks because the title suggests they are unknowingly exposed to a system-level risk that others are missing — and that the Japanese system has specific vulnerabilities nobody is discussing."
+    },
+    "implied_enemies_and_allies": {
+      "implied_enemy": [
+        "Japanese financial industry",
+        "bad incentives (commissions, cross-selling, complex products)",
+        "simplified mainstream advice (including some social-media gurus and property salesmen)",
+        "political institutions (国税庁, 財務省, 日本銀行, 金融庁)",
+        "the viewer's own undisciplined psychology",
+        "culture of excessive saving and risk aversion",
+        "定期預金 treated as an investment",
+        "NISA misunderstood",
+        "変動金利 as 'insurance'",
+        "'マイホーム culture'"
+      ],
+      "implied_ally": [
+        "the narrator",
+        "historical truth",
+        "math",
+        "the prepared, disciplined viewer",
+        "regulators when they work (金融庁, 日本銀行, 預金保険機構, 日本投資者保護基金)",
+        "fiscal and accounting transparency"
+      ]
+    }
+  },
+  "script_architecture": {
+    "macro_flow": [
+      "1. Pattern interrupt opening: bizarre anecdote, historical collapse or jarring scenario with Japanese relevance (1980s bubble economy, 1990 collapse, 1997 financial crisis, Lehman Shock, 2011 earthquake, Abenomics, COVID, 2022 inflation, 2025 bond-market breakdown).",
+      "2. Snap-link to present relevance: 'the same pattern is happening now.'",
+      "3. Presenter framing: why he is qualified / why this isn't hype.",
+      "4. Promise stack: explicit list of what the viewer will understand by the end.",
+      "5. Tool CTA early: free calculator/report framed as corrective utility.",
+      "6. Core metaphor introduced and sustained.",
+      "7. Conceptual explanation with simple language and arithmetic.",
+      "8. Historical precedent or analogical proof.",
+      "9. Psychological complication: why humans fail even when the math works.",
+      "10. Concrete examples/case studies with named people and specific numbers in JPY.",
+      "11. Action protocol / rules / allocation / checklist.",
+      "12. Identity-level conclusion: freedom comes from mindset/system, not mere returns.",
+      "13. Final compression into takeaways + soft internal CTA to another video/subscribe."
+    ],
+    "opening_pattern": {
+      "method": "Start with a highly specific anecdote before the thesis so the viewer is mentally hooked by narrative, not argument.",
+      "why_it_works": "The viewer unconsciously asks 'why are you telling me this?' and the script answers by connecting the anecdote to their money/life.",
+      "opening_variants": [
+        "Japanese historical scandal/collapse (bubble economy, 1990 collapse, 1997 crisis, Lehman Shock, 2011 earthquake, オリンパス, 東芝, 日産 scandals)",
+        "three-case rapid montage",
+        "date-stamped macro timeline (1980s, 1990, 1997, 2008, 2011, 2013, 2020, 2022, 2024)",
+        "ordinary person scenario with hidden flaw",
+        "総務省統計局 or 日本銀行 data used as a shock"
+      ]
+    },
+    "pacing_model": {
+      "rhythm": "Dense but segmented. Short-to-medium sentences dominate, broken by longer explanatory runs after hooks land.",
+      "acceleration_pattern": "Hook -> explanation -> new danger -> deeper mechanism -> practical release.",
+      "retention_devices": [
+        "forward promises ('here's what we're doing today')",
+        "mid-script escalations ('it gets worse')",
+        "counterintuitive turns ('the math works, human psychology doesn't')",
+        "repeated reframing",
+        "alternation between macro and personal examples",
+        "references to familiar Japanese institutions (日本銀行, 国税庁, 金融庁, 総務省)"
+      ]
+    },
+    "information_release_timing": {
+      "front_loaded": [
+        "danger",
+        "pattern recognition",
+        "what the viewer will learn"
+      ],
+      "mid_loaded": [
+        "underlying mechanism",
+        "Japanese and global historical parallels",
+        "examples and equations"
+      ],
+      "back_loaded": [
+        "protocol",
+        "identity shift",
+        "summary takeaways"
+      ]
+    }
+  },
+  "micro_writing_mechanics": {
+    "sentence_design": {
+      "dominant_shapes": [
+        "Short declarative shock sentence.",
+        "Question-answer sequence.",
+        "Analogy sentence followed by translation sentence.",
+        "Claim -> immediate caveat -> stronger restatement.",
+        "Numeric sentence -> emotional interpretation sentence."
+      ],
+      "feel": "Controlled urgency. The prose sounds like spoken thinking, but it is tightly engineered.",
+      "cadence_trick": "Uses short punch lines after data-heavy passages to reset attention."
+    },
+    "word_choice": {
+      "preferred_lexicon": [
+        "trap",
+        "mechanism",
+        "system",
+        "math",
+        "psychology",
+        "freedom",
+        "optionality",
+        "structure",
+        "concentration",
+        "cash flow",
+        "sequence risk",
+        "the game",
+        "what nobody talks about",
+        "quietly",
+        "actually",
+        "here's the thing",
+        "国税庁",
+        "日本銀行",
+        "金融庁",
+        "財務省",
+        "総務省",
+        "厚生労働省",
+        "預金保険機構",
+        "日本投資者保護基金",
+        "普通預金",
+        "定期預金",
+        "財形貯蓄",
+        "NISA",
+        "つみたてNISA",
+        "一般NISA",
+        "ジュニアNISA",
+        "新NISA",
+        "iDeCo",
+        "確定拠出年金",
+        "確定給付年金",
+        "企業型DC",
+        "個人型DC",
+        "国民年金",
+        "厚生年金",
+        "共済年金",
+        "国民年金基金",
+        "付加年金",
+        "住宅ローン",
+        "変動金利",
+        "固定金利",
+        "フラット35",
+        "団信",
+        "ペアローン",
+        "住宅ローン控除",
+        "すまい給付金",
+        "空き家",
+        "空き家バンク",
+        "相続",
+        "贈与",
+        "相続税",
+        "贈与税",
+        "固定資産税",
+        "都市計画税",
+        "不動産取得税",
+        "登録免許税",
+        "印紙税",
+        "消費税",
+        "所得税",
+        "住民税",
+        "法人税",
+        "譲渡所得",
+        "譲渡損",
+        "損益通算",
+        "繰越控除",
+        "配当控除",
+        "外国税額控除",
+        "二重課税調整",
+        "為替差益",
+        "為替差損",
+        "特定口座",
+        "一般口座",
+        "源泉徴収あり",
+        "源泉徴収なし",
+        "確定申告",
+        "年末調整",
+        "ふるさと納税",
+        "ワンストップ特例制度",
+        "医療費控除",
+        "寄付金控除",
+        "雑損控除",
+        "小規模企業共済",
+        "青色申告",
+        "白色申告",
+        "個人事業主",
+        "フリーランス",
+        "副業",
+        "兼業",
+        "日経平均",
+        "TOPIX",
+        "JPX日経400",
+        "プライム",
+        "スタンダード",
+        "グロース",
+        "東証",
+        "配当",
+        "配当金",
+        "配当利回り",
+        "配当性向",
+        "自社株買い",
+        "株式分割",
+        "増資",
+        "減資",
+        "空売り",
+        "信用取引",
+        "レバレッジ",
+        "委託保証金",
+        "追証",
+        "担保",
+        "代用有価証券",
+        "現金保証金",
+        "保証金率",
+        "貸借取引",
+        "貸株料",
+        "配当落ち",
+        "権利落ち",
+        "権利付最終日",
+        "株主優待",
+        "株主総会",
+        "議決権",
+        "買収防衛策",
+        "敵対的買収",
+        "友好的買収",
+        "M&A",
+        "合併",
+        "買収",
+        "売却",
+        "会社分割",
+        "株式交換",
+        "株式移転",
+        "現物出資",
+        "事業譲渡",
+        "のれん",
+        "減損",
+        "無形資産",
+        "有形資産",
+        "流動資産",
+        "固定資産",
+        "繰延資産",
+        "流動負債",
+        "固定負債",
+        "純資産",
+        "株主資本",
+        "自己資本",
+        "利益剰余金",
+        "資本剰余金",
+        "資本金",
+        "自己株式",
+        "新株予約権",
+        "売上高",
+        "営業利益",
+        "経常利益",
+        "当期純利益",
+        "包括利益",
+        "EPS",
+        "BPS",
+        "DPS",
+        "PER",
+        "PBR",
+        "ROE",
+        "ROA",
+        "ROIC",
+        "自己資本比率",
+        "配当性向",
+        "総還元性向",
+        "時価総額",
+        "企業価値",
+        "フリーキャッシュフロー",
+        "営業キャッシュフロー",
+        "投資キャッシュフロー",
+        "財務キャッシュフロー",
+        "貸借対照表",
+        "損益計算書",
+        "有価証券報告書",
+        "決算短信",
+        "適時開示",
+        "インサイダー取引",
+        "課徴金",
+        "行政処分",
+        "業務改善命令",
+        "金融リテラシー",
+        "金融教育",
+        "マネーリテラシー",
+        "ライフプラン",
+        "キャッシュフロー表",
+        "老後資金",
+        "緊急予備資金",
+        "生活防衛資金",
+        "半年生活費",
+        "固定費",
+        "変動費",
+        "住居費",
+        "食費",
+        "水道光熱費",
+        "通信費",
+        "保険料",
+        "教育費",
+        "年金",
+        "貯蓄",
+        "投資",
+        "資産運用",
+        "分散投資",
+        "長期投資",
+        "積立投資",
+        "ドルコスト平均法",
+        "リバランス",
+        "アセットアロケーション",
+        "ポートフォリオ",
+        "リスク",
+        "リターン",
+        "ボラティリティ",
+        "インデックス",
+        "アクティブ",
+        "パッシブ",
+        "インデックスファンド",
+        "アクティブファンド",
+        "ETF",
+        "投資信託",
+        "信託報酬",
+        "販売手数料",
+        "解約手数料",
+        "純資産総額",
+        "基準価額",
+        "分配金",
+        "再投資",
+        "普通分配金",
+        "元本払戻金",
+        "特別分配金",
+        "タコ足配当",
+        "トータルリターン",
+        "インフレ",
+        "デフレ",
+        "スタグフレーション",
+        "リフレ",
+        "量的緩和",
+        "マイナス金利",
+        "イールドカーブコントロール",
+        "異次元緩和",
+        "日銀短観",
+        "消費者物価指数",
+        "GDP",
+        "実質賃金",
+        "名目賃金",
+        "春闘",
+        "ボーナス",
+        "退職金",
+        "中小企業退職金共済",
+        "繰上げ受給",
+        "繰下げ受給",
+        "在職老齢年金",
+        "遺族年金",
+        "障害年金",
+        "介護保険",
+        "高額療養費",
+        "特定健康診査",
+        "健康保険組合",
+        "協会けんぽ",
+        "国民健康保険",
+        "後期高齢者医療制度",
+        "すまい給付金",
+        "住宅取得資金贈与の非課税",
+        "相続時精算課税制度",
+        "暦年贈与",
+        "青色申告",
+        "白色申告",
+        "個人事業主",
+        "フリーランス",
+        "副業",
+        "兼業",
+        "確定申告",
+        "年末調整",
+        "源泉徴収",
+        "特別徴収",
+        "普通徴収",
+        "住民税",
+        "所得税",
+        "復興特別所得税",
+        "消費税",
+        "軽減税率",
+        "インボイス制度",
+        "電子帳簿保存法",
+        "ふるさと納税",
+        "ワンストップ特例制度",
+        "医療費控除",
+        "寄付金控除",
+        "雑損控除",
+        "小規模企業共済"
+      ],
+      "language_behavior": "Abstract finance terms are almost always paired with tangible verbs or objects. The object bank should include a WIDE RANGE of physical metaphors, not predominantly property-related ones: geese, bathtub, snowball, three-legged stool, bridge, gears, garden, jar, gate, well, fire, seed, loom, staircase, map, compass, river, dam, anchor, wall, fortress, ship, engine, wheel, mirror, echo, shadow, thread, chain, lighthouse, tunnel, ladder, net, sieve, sponge, prism, pulley, valve, lock, scale, wheelbarrow, backpack, reservoir, 屏風, 掛軸, 灯籠, 重箱, 石庭, 障子, 茶筅.",
+      "credibility_words": "specific dates, named firms, exact percentages, Japanese historical names, concrete JPY amounts"
+    },
+    "rhetorical_devices": {
+      "most_common": [
+        "extended metaphor",
+        "strategic repetition",
+        "contrast pairs",
+        "mock dialogue",
+        "false belief -> corrected truth",
+        "stacked examples",
+        "escalating hypothetical scenario"
+      ],
+      "contrast_structure": [
+        "fantasy vs reality",
+        "gross revenue vs net income",
+        "average return vs sequence of return",
+        "looking rich vs being rich",
+        "recession vs monetary transition",
+        "retiring from vs retiring to",
+        "定期預金 vs NISA",
+        "変動金利 vs 固定金利",
+        "buying vs renting",
+        "東京 vs 地方",
+        "マンション vs 戸建て",
+        "マイホーム vs 投資",
+        "iDeCo vs NISA",
+        "日経平均 vs TOPIX",
+        "株 vs 不動産",
+        "額面 vs 手取り",
+        "年収 vs 手取り"
+      ]
+    },
+    "tone_layering": {
+      "surface_tone": "helpful explainer",
+      "underlayer": "mild alarm, anti-naive skepticism",
+      "deeper_emotional_register": "betrayal by institutions, relief through understanding, dignity through disciplined realism"
+    }
+  },
+  "psychological_and_persuasive_mechanisms": {
+    "core_psychology": [
+      "Uses fear, but not random fear; fear is tied to mechanism, making it feel intelligent rather than sensational.",
+      "Creates relief by converting vague anxiety into understandable structure.",
+      "Makes viewer feel smarter than the passive majority if they keep watching.",
+      "Uses anti-hype disclaimers to increase trust before making strong claims.",
+      "Frames action as self-defence, not greed.",
+      "Leverages specific knowledge of the Japanese system (NISA, iDeCo, 確定拠出年金, 住宅ローン, 変動金利, 国税庁) to create a sense of insider knowledge."
+    ],
+    "emotional_sequence": [
+      "confusion",
+      "recognition",
+      "alarm",
+      "clarity",
+      "agency",
+      "identity reinforcement"
+    ],
+    "credibility_engineering": {
+      "methods": [
+        "references institutions by name (日本銀行, 国税庁, 金融庁, 財務省, 総務省, 厚生労働省, 預金保険機構, 日本投資者保護基金)",
+        "admits uncertainty selectively",
+        "says 'this isn't about motivation'",
+        "uses personal skin-in-the-game statements",
+        "calls out bad incentives rather than cartoon villains",
+        "translates documents/regulations into plain Japanese (NISA rules, iDeCo, 住宅ローン, 変動金利, 団信, 確定申告)",
+        "cites 総務省統計局 data, 日本銀行 reports, government budgets, 金融庁"
+      ],
+      "effect": "The narrator sounds like a sober insider decoding reality for outsiders."
+    },
+    "retention_psychology": {
+      "curiosity_loops": [
+        "What is the hidden pattern?",
+        "Why doesn't the obvious strategy work?",
+        "Who is actually winning?",
+        "What happens when the system breaks?",
+        "What should I do instead?"
+      ],
+      "tension_creation": "Tension is built by showing the viewer they are exposed to a risk they previously thought was safety.",
+      "relief_timing": "Relief arrives only after the system is fully diagnosed, which increases perceived value of the solution."
+    }
+  },
+  "worldview_embedded_in_scripts": {
+    "beliefs": [
+      "Most financial pain comes from incentives and psychology, not lack of information alone.",
+      "Institutions optimise for system preservation, not your well-being.",
+      "Conventional advice is often half-true and dangerous when decontextualised.",
+      "Freedom is more about flexibility, margin and enoughness than maximising returns.",
+      "The disciplined ordinary person can outperform the emotional crowd.",
+      "The Japanese system has specific vulnerabilities that most mainstream advice ignores.",
+      "Understanding the interplay between 国税庁, 日本銀行, 金融庁 and the mortgage market is essential for financial safety in Japan.",
+      "定期預金 is not an investment; it is an emergency reserve with a negative real return.",
+      "Depending exclusively on 国民年金 is a systemic risk for most Japanese.",
+      "Japanese taxation is complex by design; ignorance is expensive.",
+      "変動金利 is not automatically cheaper; it is a bet on monetary policy.",
+      "団信 is a life-insurance product disguised as a benefit.",
+      "空き家 inheritance is not passive wealth; it is a structural liability with tax and maintenance traps.",
+      "NISA and iDeCo have caps, rules and lock-ins that most savers never fully model."
+    ],
+    "status_framing": "High status is attached to calm realism, delayed gratification and structural understanding, not flashy consumption.",
+    "fear_framing": "The real danger is not one crash or one bad pick; it is building your life on false assumptions — especially about property, retirement and what the government will do next.",
+    "transformation_promise": "Move from reactive participant to system-aware allocator who can't be easily trapped — someone who understands the Japanese rules better than the average Japanese."
+  },
+  "replication_logic": {
+    "content_formula": {
+      "step_1": "Choose a financial topic with mainstream familiarity and hidden complexity, WITHIN the category assigned by the rotation_mandate (定期預金, NISA, iDeCo, 住宅ローン, 変動金利, 団信, 確定拠出年金, 相続).",
+      "step_2": "Find a Japanese historical analogy, strange anecdote or sharp mini-story that mirrors the modern issue.",
+      "step_3": "Frame the common understanding as incomplete or dangerously naive.",
+      "step_4": "Introduce one sticky metaphor that can carry the full explanation. Prefer non-property metaphors unless the assigned category is real_estate_financing.",
+      "step_5": "Translate the mechanism into plain arithmetic with concrete JPY numbers.",
+      "step_6": "Add a human-failure layer: why people still mess this up even when the math is knowable.",
+      "step_7": "Insert one or more case studies with names, ages, incomes, balances, outcomes.",
+      "step_8": "Escalate from portfolio consequence to lifestyle, identity or societal consequence.",
+      "step_9": "Offer a protocol/ruleset that feels practical, not magical.",
+      "step_10": "End with worldview compression and a concise memorable doctrine."
+    },
+    "stylistic_rules_for_future_outputs": [
+      "Always make the invisible visible.",
+      "Never explain a concept without an image/object/metaphor.",
+      "Use numbers to anchor trust, not to overwhelm.",
+      "Alternate macro systems and individual stories.",
+      "Speak as if correcting a dangerous misunderstanding.",
+      "Let skepticism and humility coexist: strong thesis, selective uncertainty.",
+      "Avoid sounding like a trader; sound like a strategic realist.",
+      "Give the viewer dignity through understanding, not through hype.",
+      "Use Japanese-specific references (国税庁, 日本銀行, 金融庁, 総務省, budget, NISA, iDeCo, 変動金利, etc.).",
+      "Avoid American financial terms (401k, Roth IRA, Social Security, 30-year fixed, FICO score, etc.) without translation."
+    ],
+    "title_generation_rules": [
+      "Centre danger, reversal or hidden mechanism.",
+      "Use direct second-order implications: not just 'recession' but 'worse than the IMF crisis.'",
+      "Make titles feel like practical protection against a trap.",
+      "Keep phrasing blunt, not clever.",
+      "Include Japanese specificity whenever possible ('your 定期預金', 'your 住宅ローン', 'the 国税庁', '日経平均', 'NISA')."
+    ],
+    "hook_generation_rules": [
+      "Open on a vivid story or date cluster before introducing the topic.",
+      "Reveal the present-day relevance within the first 5–8 lines.",
+      "Promise a deeper mechanism, not just surface explanation."
+    ]
+  },
+  "sample_specific_context": {
+    "video_1": {
+      "category": "money_psychology",
+      "blueprint": "Freedom fantasy versus mechanical reality. Strong on metaphor, optionality, lifestyle creep, psychology of enough. Japanese context: 国民年金, 定期預金, property, cost of living."
+    },
+    "video_2": {
+      "category": "concentration_indexing",
+      "blueprint": "Historical concentration mania repeated today. Strong on structural analogy, anti-indexing revisionism, explicit portfolio protocol. Japanese context: concentration in トヨタ, ソニー, 任天堂, semiconductors, property, over-concentration in 定期預金 and 保険."
+    },
+    "video_3": {
+      "category": "macro_currency",
+      "blueprint": "Macro regime change. Strong on date-stacking, institutional references, currency/industry framing, existential stakes. Japanese context: JPY, 日本銀行, semiconductors, exports, debt, demographics, China, US."
+    },
+    "video_4": {
+      "category": "fiscal_policy",
+      "blueprint": "Policy move translated into household consequences. Simpler, more beginner-targeted, more direct villain/system framing. Japanese context: government budget, tax changes, 消費税, 所得税, 住民税, NISA, iDeCo, 住宅ローン控除."
+    },
+    "video_5": {
+      "category": "generational_systems",
+      "blueprint": "Generational systemic failure. Strong on metaphor (three-legged stool), demographic scaling, sympathy mixed with indictment. Japanese context: 国民年金, 厚生年金, healthcare, dependency, housing, debt, boomers vs millennials, 下流老人."
+    },
+    "video_6": {
+      "category": "macro_currency",
+      "blueprint": "Conspiracy-adjacent mechanism explained with legal/financial precedent. Strong on debt-spiral metaphor and disclaimer-based credibility protection. Japanese context: public debt, QE, inflation, 日本銀行, 金融庁, 預金保険機構, 日銀."
+    },
+    "video_7": {
+      "category": "concentration_indexing",
+      "blueprint": "Slow boring compounding made emotionally compelling. Strong on motivational psychology without becoming inspirational fluff. Japanese context: NISA, iDeCo, dividends, regular investing, patience, ETF."
+    },
+    "video_8_reference": {
+      "category": "real_estate_financing",
+      "blueprint": "The Japanese property financing and investment trap post-2024. Strong on fiscal math, regulatory shifts, buyer reality, promise-versus-reality contrast. Context: 変動金利, 固定金利, 団信, ペアローン, 住宅ローン控除, 空き家, 相続, 固定資産税, 都市計画税, 不動産取得税, 登録免許税.",
+      "rotation_note": "This sample exists as a reference for the real_estate_financing category ONLY. It must not be used as a template for other categories, and it counts against the 1-in-6 cap."
+    }
+  },
+  "generation_instructions_for_another_model": {
+    "objective": "Produce long-form Japanese finance scripts that feel like hidden-system exposés rather than generic educational content.",
+    "step_zero": "Before writing anything, read rotation_mandate, determine the last six video categories, and select the least recently used category that respects the selection_rules. State the chosen category internally before drafting.",
+    "must_include": [
+      "one category from rotation_mandate that respects the selection_rules",
+      "one strong metaphor (preferably non-property unless the category is real_estate_financing)",
+      "one Japanese historical or structural parallel",
+      "one explicit false belief being corrected",
+      "one psychological trap",
+      "one practical protocol",
+      "one identity-level takeaway",
+      "Japanese institutional references (国税庁, 日本銀行, 金融庁, 財務省, 総務省)",
+      "Japanese financial products (定期預金, NISA, iDeCo, 確定拠出年金, 住宅ローン, 変動金利, 団信, 相続)",
+      "amounts in Japanese yen (JPY)"
+    ],
+    "must_avoid": [
+      "generic optimism",
+      "surface-level listicles",
+      "purely technical teaching without tension",
+      "guru posturing",
+      "advice without mechanism",
+      "untranslated American financial terms",
+      "references to exclusively American institutions without Japanese equivalents",
+      "defaulting to real estate when the category is not real_estate_financing",
+      "using マイホーム/住宅ローン as the central metaphor in non-property categories",
+      "consecutive videos in the same category"
+    ],
+    "success_condition": "The final script should make the viewer feel simultaneously alarmed, intellectually satisfied and more in control — with a deeper understanding of the Japanese financial system, AND it should belong to a category that has not been used recently.",
+    "output_length_requirement": "The final FULL SCRIPT must be strictly between 7,000 and 9,000 characters.",
+    "output_length_verification": "Before sending the answer, verify the FULL SCRIPT character count. If it is below 7,000 or above 9,000 characters, rewrite it until it falls within range.",
+    "hard_fail_condition": "Any FULL SCRIPT under 7,000 characters or over 9,000 characters is invalid and must be rewritten before output. Any FULL SCRIPT that violates the rotation_mandate selection_rules is also invalid and must be rewritten."
+  }
+}

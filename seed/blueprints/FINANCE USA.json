@@ -7,10 +7,7 @@
     "primary_content_engine": "History/metaphor-driven warning essay that reframes a familiar financial idea as misunderstood, structurally rigged, psychologically dangerous, and still navigable if the viewer adopts the creator's framework.",
     "character_length_requirement": "STRICTLY 7,000–9,000 characters",
     "character_length_rule": "The final FULL SCRIPT must be no less than 7,000 characters and no more than 9,000 characters.",
-    "strict_character_range": [
-      7000,
-      9000
-    ],
+    "strict_character_range": [7000, 9000],
     "length_compliance_mandatory": true,
     "audience_inference": {
       "knowledge_level": "intermediate aspirational retail investor / financially anxious knowledge worker",
@@ -55,6 +52,119 @@
       "Video 4 is simpler and more direct; less nuanced than the others because it targets urgency and beginner conversion.",
       "Video 6 leans more speculative/conspiratorial but protects credibility with repeated disclaimers about lack of proof.",
       "Video 7 is more constructive and motivational, but still framed through pain, misperception, and psychological failure."
+    ]
+  },
+  "rotation_mandate": {
+    "purpose": "Force thematic diversity across videos. Prevent the model from collapsing into real-estate/financing on every generation. The blueprint's terminology and sample set are real-estate-heavy; without an explicit rotation rule, the model defaults to property math, mortgage mechanics and household debt because they satisfy the content formula most easily.",
+    "principle": "Every generated script must be assigned to ONE category. Categories rotate. Consecutive videos must never share the same category. Real-estate has a hard cap.",
+    "categories": [
+      {
+        "id": "money_psychology",
+        "label": "Money Psychology & Identity",
+        "description": "Enoughness, lifestyle creep, freedom vs fantasy, delayed gratification, the psychology of wealth, identity-level shift.",
+        "example_topics": [
+          "Why 'enough' is the hardest number to calculate",
+          "The lifestyle creep that silently eats every raise",
+          "How the pursuit of optionality can destroy your life",
+          "The difference between looking rich and being free"
+        ],
+        "must_avoid": [
+          "Property-specific advice",
+          "Mortgage math",
+          "Real-estate investing mechanics"
+        ]
+      },
+      {
+        "id": "concentration_indexing",
+        "label": "Concentration, Indexing & Portfolio Structure",
+        "description": "Concentration risk, indexing revisionism, correlation, sequence-of-returns risk, portfolio design, systematic vs discretionary.",
+        "example_topics": [
+          "The hidden risk in every 'diversified' portfolio",
+          "What nobody tells you about the 4% rule",
+          "The 2000 dot-com pattern repeating in 2025",
+          "Why rebalancing is the only free lunch nobody eats"
+        ],
+        "must_avoid": [
+          "Direct property recommendations",
+          "Rental yield calculations",
+          "Local property tax discussion"
+        ]
+      },
+      {
+        "id": "macro_currency",
+        "label": "Macroeconomics & Currency",
+        "description": "Inflation, deflation, debt cycles, reserve-currency dynamics, interest rate regimes, central bank policy, fiscal dominance.",
+        "example_topics": [
+          "The math behind the coming monetary reset",
+          "Why the Fed is trapped",
+          "The quiet collapse of the bond market",
+          "What happens when a reserve currency loses its status"
+        ],
+        "must_avoid": [
+          "Personal property advice",
+          "US state-level property tax",
+          "Specific mortgage products"
+        ]
+      },
+      {
+        "id": "fiscal_policy",
+        "label": "Domestic Fiscal Policy & Household Impact",
+        "description": "Tax changes, subsidy changes, retirement account rules, personal income tax brackets, capital gains changes, Social Security adjustments, healthcare cost policy.",
+        "example_topics": [
+          "The tax change nobody read in the bill",
+          "How the new 401k rules affect your retirement",
+          "What the IRS quietly changed this year",
+          "The Social Security fix that will cost you more"
+        ],
+        "must_avoid": [
+          "Real-estate investment strategy",
+          "Mortgage refinancing mechanics",
+          "Rental property tax shelters"
+        ]
+      },
+      {
+        "id": "generational_systems",
+        "label": "Generational Systems & Structural Failure",
+        "description": "Pension sustainability, healthcare systems, education cost shifts, demographic pressure, intergenerational wealth transfer.",
+        "example_topics": [
+          "The generation that will work until 80",
+          "Why Social Security math stopped adding up",
+          "The hidden cost the boomers left the millennials",
+          "How healthcare became the real retirement killer"
+        ],
+        "must_avoid": [
+          "Property investment mechanics",
+          "Real-estate market timing",
+          "Local rent control discussions"
+        ]
+      },
+      {
+        "id": "real_estate_financing",
+        "label": "Real Estate & Financing",
+        "description": "Mortgages, mortgage refinance, property taxes, real-estate investing, home buying, HELOCs, house-as-investment.",
+        "example_topics": [
+          "The mortgage trap that quietly resets every 5 years",
+          "Why home ownership is not the wealth builder it was sold as",
+          "The hidden cost of the 30-year mortgage nobody models",
+          "What the real-estate math actually says"
+        ],
+        "restriction": "This category may appear at most once in every six consecutive videos. If any of the last two videos were in this category, skip it entirely and pick another."
+      }
+    ],
+    "selection_rules": [
+      "Track the last six videos produced by the channel and their assigned categories.",
+      "Before generating a new script, choose the category that has been used LEAST recently. On a tie, prefer the category with fewer appearances in the last twelve videos.",
+      "Never generate two consecutive videos in the same category.",
+      "The real_estate_financing category has an additional hard cap: at most one in every six videos.",
+      "If the channel has no history (first video), default to one of: money_psychology, concentration_indexing, or macro_currency.",
+      "If the user has explicitly requested a topic, honor it, but flag the rule violation in a single sentence inside the script's internal notes (not in the script body)."
+    ],
+    "user_command_override": "The user's explicit topic request always wins, but the generation model must warn in one sentence if the request breaks the rotation rule (e.g., 'this will be your third real-estate video in a row').",
+    "anti_patterns_to_avoid": [
+      "Do not default to real estate as the 'most visually compelling' or 'most urgent' category.",
+      "Do not use property metaphors (house, mortgage, lease, roof, foundation, door, key) as the central metaphor for non-property categories. Use different physical metaphors instead: bathtub, snowball, stool with three legs, bridge, gears, garden, jar, gate, well, fire, seed, loom, staircase, map, compass, river, dam, anchor, wall, castle, ship, engine, wheel, mirror, echo, shadow, thread, chain, anchor.",
+      "Do not reference mortgage rates, home prices, or housing markets as primary evidence in non-property categories.",
+      "Do not use the viewer's own home as the emotional anchor in non-property categories. Anchor instead to their paycheck, their retirement account, their savings, their time, their family, or their work."
     ]
   },
   "title_analysis": {
@@ -181,7 +291,7 @@
         "actually",
         "here's the thing"
       ],
-      "language_behavior": "Abstract finance terms are almost always paired with tangible verbs or objects: geese, bathtub, snowball, beams, stool, lease, house.",
+      "language_behavior": "Abstract finance terms are almost always paired with tangible verbs or objects. The object bank should include a WIDE RANGE of physical metaphors, not predominantly property-related ones: geese, bathtub, snowball, three-legged stool, bridge, gears, garden, jar, gate, well, fire, seed, loom, staircase, map, compass, river, dam, anchor, wall, castle, ship, engine, wheel, mirror, echo, shadow, thread, chain, lease, house.",
       "credibility_words": "specific dates, named firms, exact percentages, historical names, concrete dollar amounts"
     },
     "rhetorical_devices": {
@@ -262,10 +372,10 @@
   },
   "replication_logic": {
     "content_formula": {
-      "step_1": "Choose a financial topic with mainstream familiarity and hidden complexity.",
+      "step_1": "Choose a financial topic with mainstream familiarity and hidden complexity, WITHIN the category assigned by the rotation_mandate.",
       "step_2": "Find a historical analogy, strange anecdote, or sharp mini-story that mirrors the modern issue.",
       "step_3": "Frame the common understanding as incomplete or dangerously naive.",
-      "step_4": "Introduce one sticky metaphor that can carry the full explanation.",
+      "step_4": "Introduce one sticky metaphor that can carry the full explanation. Prefer non-property metaphors unless the assigned category is real_estate_financing.",
       "step_5": "Translate the mechanism into plain arithmetic with concrete numbers.",
       "step_6": "Add a human-failure layer: why people still mess this up even when the math is knowable.",
       "step_7": "Insert one or more case studies with names, ages, incomes, balances, outcomes.",
@@ -296,18 +406,46 @@
     ]
   },
   "sample_specific_context": {
-    "video_1": "Blueprint for 'freedom fantasy versus mechanical reality.' Strong on metaphor, optionality, lifestyle creep, psychology of enough.",
-    "video_2": "Blueprint for 'historical concentration mania repeated today.' Strong on structural analogy, anti-indexing revisionism, explicit portfolio protocol.",
-    "video_3": "Blueprint for 'macro regime change.' Strong on date-stacking, institutional references, reserve-currency collapse framing, existential stakes.",
-    "video_4": "Blueprint for 'policy move translated into household consequences.' Simpler, more beginner-targeted, more direct villain/system framing.",
-    "video_5": "Blueprint for 'generational systemic failure.' Strong on metaphor (three-legged stool), demographic scaling, sympathy mixed with indictment.",
-    "video_6": "Blueprint for 'conspiracy-adjacent mechanism explained with legal/financial precedent.' Strong on debt spiral metaphor and disclaimer-based credibility protection.",
-    "video_7": "Blueprint for 'slow boring compounding made emotionally compelling.' Strong on motivational psychology without becoming inspirational fluff."
+    "video_1": {
+      "category": "money_psychology",
+      "blueprint": "Freedom fantasy versus mechanical reality. Strong on metaphor, optionality, lifestyle creep, psychology of enough."
+    },
+    "video_2": {
+      "category": "concentration_indexing",
+      "blueprint": "Historical concentration mania repeated today. Strong on structural analogy, anti-indexing revisionism, explicit portfolio protocol."
+    },
+    "video_3": {
+      "category": "macro_currency",
+      "blueprint": "Macro regime change. Strong on date-stacking, institutional references, reserve-currency collapse framing, existential stakes."
+    },
+    "video_4": {
+      "category": "fiscal_policy",
+      "blueprint": "Policy move translated into household consequences. Simpler, more beginner-targeted, more direct villain/system framing."
+    },
+    "video_5": {
+      "category": "generational_systems",
+      "blueprint": "Generational systemic failure. Strong on metaphor (three-legged stool), demographic scaling, sympathy mixed with indictment."
+    },
+    "video_6": {
+      "category": "macro_currency",
+      "blueprint": "Conspiracy-adjacent mechanism explained with legal/financial precedent. Strong on debt spiral metaphor and disclaimer-based credibility protection."
+    },
+    "video_7": {
+      "category": "concentration_indexing",
+      "blueprint": "Slow boring compounding made emotionally compelling. Strong on motivational psychology without becoming inspirational fluff."
+    },
+    "video_8_reference": {
+      "category": "real_estate_financing",
+      "blueprint": "Real-estate financing trap and post-2024 investment reality. Strong on fiscal math, regulatory shifts, buyer reality, promise-versus-reality contrast.",
+      "rotation_note": "This sample exists as a reference for the real_estate_financing category ONLY. It must not be used as a template for other categories, and it counts against the 1-in-6 cap."
+    }
   },
   "generation_instructions_for_another_model": {
     "objective": "Produce long-form finance scripts that feel like hidden-system exposés rather than generic educational content.",
+    "step_zero": "Before writing anything, read rotation_mandate, determine the last six video categories, and select the least recently used category that respects the selection_rules. State the chosen category internally before drafting.",
     "must_include": [
-      "one strong metaphor",
+      "one category from rotation_mandate that respects the selection_rules",
+      "one strong metaphor (preferably non-property unless the category is real_estate_financing)",
       "one historical or structural parallel",
       "one explicit false belief being corrected",
       "one psychological trap",
@@ -319,11 +457,14 @@
       "surface-level listicles",
       "purely technical teaching without tension",
       "guru posturing",
-      "advice without mechanism"
+      "advice without mechanism",
+      "defaulting to real estate when the category is not real_estate_financing",
+      "using house/mortgage/lease as the central metaphor in non-property categories",
+      "consecutive videos in the same category"
     ],
-    "success_condition": "The final script should make the viewer feel simultaneously alarmed, intellectually satisfied, and more in control.",
+    "success_condition": "The final script should make the viewer feel simultaneously alarmed, intellectually satisfied, and more in control — AND it should belong to a category that has not been used recently.",
     "output_length_requirement": "The final FULL SCRIPT must be strictly between 7,000 and 9,000 characters.",
     "output_length_verification": "Before sending the answer, verify the FULL SCRIPT character count. If it is below 7,000 or above 9,000 characters, rewrite it until it falls within range.",
-    "hard_fail_condition": "Any FULL SCRIPT under 7,000 characters or over 9,000 characters is invalid and must be rewritten before output."
+    "hard_fail_condition": "Any FULL SCRIPT under 7,000 characters or over 9,000 characters is invalid and must be rewritten before output. Any FULL SCRIPT that violates the rotation_mandate selection_rules is also invalid and must be rewritten."
   }
 }

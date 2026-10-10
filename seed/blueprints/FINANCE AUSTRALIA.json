@@ -1,0 +1,529 @@
+{
+  "metadata": {
+    "task_type": "forensic_content_blueprint_extraction",
+    "sample_count": 7,
+    "dominant_domain_inferred": "long-form personal-finance, money-psychology and real-estate essays for an Australian audience",
+    "core_promise_of_system": "Make abstract money topics feel urgent, personal, morally loaded and immediately actionable by translating the Australian macroeconomy into high-stakes life consequences.",
+    "primary_content_engine": "History/metaphor-driven warning essay that reframes a familiar financial idea as misunderstood, structurally rigged, psychologically dangerous, and still navigable if the viewer adopts the creator's framework.",
+    "character_length_requirement": "STRICTLY 7,000–9,000 characters",
+    "character_length_rule": "The final FULL SCRIPT must be no less than 7,000 characters and no more than 9,000 characters.",
+    "strict_character_range": [7000, 9000],
+    "length_compliance_mandatory": true,
+    "audience_inference": {
+      "knowledge_level": "intermediate aspirational retail investor / financially anxious knowledge worker, familiar with superannuation, negative gearing, offset accounts and mortgages but unsure of the whole picture",
+      "psychological_state": "skeptical, economically uneasy, wants clarity and edge, feels mainstream advice (banks, media, spruikers, simplified guidance) is incomplete or too late",
+      "aspirational_identity": "calm, informed, anti-hype, system-level thinker who spots traps before the crowd — someone who understands the Australian game beyond 'buy a house and dump everything into super'"
+    },
+    "channel_persona": {
+      "role": "translator of hidden financial mechanics inside the Australian system",
+      "voice": "calm but severe, analytical but conversational, anti-guru while still authoritative",
+      "authority_basis": [
+        "claims personal investing experience in Australia",
+        "references long study time and obscure documents (ATO rulings, RBA reports, APRA minutes, ABS data, federal budgets, Productivity Commission reports, Royal Commission findings)",
+        "uses Australian and global historical analogies",
+        "frames advice as mechanical, not motivational",
+        "signals distance from schemes, courses and hype",
+        "mentions hands-on experience with the ATO, RBA, APRA, ASIC, superannuation, negative gearing and the Australian mortgage market"
+      ]
+    }
+  },
+  "cross_sample_system": {
+    "dominant_pattern": "Each video opens with a striking anecdote or historical event, converts it into a present-day parallel, exposes a hidden structural trap, escalates consequences from portfolio-level to life-level, then resolves with a practical protocol and a worldview shift.",
+    "what_is_repeated_across_samples": [
+      "Title promises revelation plus correction of a false belief.",
+      "Cold open uses a vivid story, person or date cluster before the thesis.",
+      "Immediate pivot: 'this is happening again / right now / to you.'",
+      "Presenter positions himself as an obsessive researcher, not an entertainer.",
+      "Viewer is told mainstream advice is directionally true but dangerously incomplete.",
+      "Concepts are reduced to one central metaphor carried across the script.",
+      "Repeated contrast between spreadsheet math and human psychology.",
+      "Frequent use of named characters or mini-case studies to concretise abstractions.",
+      "Action steps appear after fear/diagnosis, never before.",
+      "Endings compress the message into 3 takeaways or a concise doctrine."
+    ],
+    "what_is_intentionally_avoided": [
+      "No dry textbook exposition without emotional framing.",
+      "No purely optimistic wealth-building tone.",
+      "No jargon left untranslated for long.",
+      "No absolute certainty; uses probabilistic seriousness.",
+      "No purely technical CTA; CTAs are embedded as practical tools, not hard sells.",
+      "No celebratory finance-bro energy, no luxury signalling, no macho alpha posture.",
+      "No references to exclusively American institutions or products (401k, Roth IRA, Social Security, Fannie Mae) without translation to Australian equivalents."
+    ],
+    "exceptions_used_strategically": [
+      "Video 4 is simpler and more direct; less nuanced than the others because it targets urgency and beginner conversion.",
+      "Video 6 leans more speculative/conspiratorial but protects credibility with repeated disclaimers about lack of proof.",
+      "Video 7 is more constructive and motivational, but still framed through pain, misperception and psychological failure.",
+      "Video 8 focuses exclusively on the Australian property market and the traps of negative gearing and post-2022 leverage."
+    ]
+  },
+  "rotation_mandate": {
+    "purpose": "Force thematic diversity across videos. Prevent the model from collapsing into real-estate/financing on every generation. The blueprint's terminology and sample set are real-estate-heavy; without an explicit rotation rule, the model defaults to property math, mortgage mechanics, negative gearing and household debt because they satisfy the content formula most easily.",
+    "principle": "Every generated script must be assigned to ONE category. Categories rotate. Consecutive videos must never share the same category. Real-estate has a hard cap.",
+    "categories": [
+      {
+        "id": "money_psychology",
+        "label": "Money Psychology & Identity",
+        "description": "Enoughness, lifestyle creep, freedom versus fantasy, delayed gratification, the psychology of wealth, identity-level shift.",
+        "example_topics": [
+          "Why 'enough' is the hardest number to calculate",
+          "The lifestyle creep that silently eats every pay rise",
+          "How the pursuit of optionality can destroy your life",
+          "The difference between looking rich and being free"
+        ],
+        "must_avoid": [
+          "Property-specific advice",
+          "Mortgage math",
+          "Negative gearing mechanics"
+        ]
+      },
+      {
+        "id": "concentration_indexing",
+        "label": "Concentration, Indexing & Portfolio Structure",
+        "description": "Concentration risk, indexing revisionism, correlation, sequence-of-returns risk, portfolio design, systematic versus discretionary, franking credits as structural feature.",
+        "example_topics": [
+          "The hidden risk in every 'diversified' portfolio",
+          "What nobody tells you about the 4% rule in Australia",
+          "The 2000 dot-com pattern repeating in the ASX in 2025",
+          "Why rebalancing is the only free lunch nobody eats"
+        ],
+        "must_avoid": [
+          "Direct property recommendations",
+          "Rental yield calculations",
+          "Stamp duty and land tax specifics"
+        ]
+      },
+      {
+        "id": "macro_currency",
+        "label": "Macroeconomics & Currency",
+        "description": "Inflation, deflation, debt cycles, commodity currency dynamics, AUD, RBA policy, China exposure, terms of trade, fiscal dominance.",
+        "example_topics": [
+          "The math behind the coming RBA trap",
+          "Why the AUD is not the safe haven it once was",
+          "The quiet collapse of the Australian bond market",
+          "What happens when a commodity currency loses its bid"
+        ],
+        "must_avoid": [
+          "Personal property advice",
+          "State-level property tax",
+          "Specific mortgage products"
+        ]
+      },
+      {
+        "id": "fiscal_policy",
+        "label": "Domestic Fiscal Policy & Household Impact",
+        "description": "Tax changes, superannuation rule changes, CGT adjustments, franking credit policy, family tax benefits, healthcare cost policy, Home Guarantee Scheme changes.",
+        "example_topics": [
+          "The tax change nobody read in the federal budget",
+          "How the new super rules affect your retirement",
+          "What the ATO quietly changed this year",
+          "The negative gearing debate nobody is framing honestly"
+        ],
+        "must_avoid": [
+          "Property investment strategy",
+          "Refinancing mechanics",
+          "Trust structure advice"
+        ]
+      },
+      {
+        "id": "generational_systems",
+        "label": "Generational Systems & Structural Failure",
+        "description": "Super sustainability, Age Pension sustainability, healthcare systems, education cost shifts, demographic pressure, intergenerational wealth transfer.",
+        "example_topics": [
+          "The generation that will work until 80",
+          "Why the Age Pension math stopped adding up",
+          "The hidden cost the boomers left the millennials",
+          "How healthcare became the real retirement killer"
+        ],
+        "must_avoid": [
+          "Property investment mechanics",
+          "Property market timing",
+          "Local rent-control discussions"
+        ]
+      },
+      {
+        "id": "real_estate_financing",
+        "label": "Real Estate & Financing (Australia)",
+        "description": "Mortgages, offset accounts, redraw, fixed-rate cliff, LMI, serviceability buffer, stamp duty, land tax, negative gearing, SMSF property, trust structures, house-as-investment.",
+        "example_topics": [
+          "The negative gearing trap that quietly resets every rate cycle",
+          "Why home ownership is not the wealth builder it was sold as",
+          "The hidden cost of the interest-only loan nobody models",
+          "What the real-estate math actually says"
+        ],
+        "restriction": "This category may appear at most once in every six consecutive videos. If any of the last two videos were in this category, skip it entirely and pick another."
+      }
+    ],
+    "selection_rules": [
+      "Track the last six videos produced by the channel and their assigned categories.",
+      "Before generating a new script, choose the category that has been used LEAST recently. On a tie, prefer the category with fewer appearances in the last twelve videos.",
+      "Never generate two consecutive videos in the same category.",
+      "The real_estate_financing category has an additional hard cap: at most one in every six videos.",
+      "If the channel has no history (first video), default to one of: money_psychology, concentration_indexing, or macro_currency.",
+      "If the user has explicitly requested a topic, honour it, but flag the rule violation in a single sentence inside the script's internal notes (not in the script body)."
+    ],
+    "user_command_override": "The user's explicit topic request always wins, but the generation model must warn in one sentence if the request breaks the rotation rule (e.g., 'this will be your third real-estate video in a row').",
+    "anti_patterns_to_avoid": [
+      "Do not default to real estate as the 'most visually compelling' or 'most urgent' category.",
+      "Do not use property metaphors (house, mortgage, lease, roof, foundation, door, key, fence, land) as the central metaphor for non-property categories. Use different physical metaphors instead: bathtub, snowball, three-legged stool, bridge, gears, garden, jar, gate, well, fire, seed, loom, staircase, map, compass, river, dam, anchor, wall, castle, ship, engine, wheel, mirror, echo, shadow, thread, chain, lighthouse, tunnel, ladder, net, sieve, sponge, prism, pulley, valve, lock, key (only as unlock not property key), scale, sieve, wheelbarrow, backpack, reservoir.",
+      "Do not reference interest rates, home prices, stamp duty or housing markets as primary evidence in non-property categories.",
+      "Do not use the viewer's own home as the emotional anchor in non-property categories. Anchor instead to their salary, their super balance, their savings, their time, their family, their career, or their future retirement."
+    ]
+  },
+  "title_analysis": {
+    "title_mechanics": {
+      "structure": "Shock claim + topic + implied hidden truth/correction",
+      "common_forms": [
+        "X Explicado",
+        "Se Queres X, Isto É o Que Fazer",
+        "O Que Vem Aí É Pior Que X",
+        "Eles Estão Prestes a X o Teu Y",
+        "Grupo/Instituição Está em Grandes Apuros",
+        "A Matemática Que Vai Explodir a Tua Mente",
+        "Porque É Que o Teu Super Não Te Vai Salvar",
+        "O Que Ninguém Te Diz Sobre Negative Gearing",
+        "A ATO Está a Fazer Isto Com o Teu Dinheiro",
+        "A Austrália Está a Fazer Isto Com o Teu Imobiliário",
+        "O Teu Offset Account É Uma Armadilha?"
+      ],
+      "click_drivers": [
+        "threat escalation ('worse than a recession')",
+        "identity relevance ('your money', 'you want to invest')",
+        "forbidden mechanism ('loophole', 'trap', 'reset')",
+        "compressed certainty ('this is what to do')",
+        "reversal of common belief ('passive income isn't passive')",
+        "Australian specificity ('your super', 'your mortgage', 'the ATO', 'negative gearing')"
+      ],
+      "tone_signature": "High-stakes, corrective, anti-naive, not playful.",
+      "number_usage": "Years, percentages, counts and AUD figures increase perceived seriousness and intellectual legitimacy.",
+      "title_psychology": "The viewer clicks because the title suggests they are unknowingly exposed to a system-level risk that others are missing — and that the Australian system has specific vulnerabilities nobody is discussing."
+    },
+    "implied_enemies_and_allies": {
+      "implied_enemy": [
+        "Australian financial industry",
+        "bad incentives (commissions, cross-selling, complex products)",
+        "simplified mainstream advice (including some social-media gurus and property spruikers)",
+        "political institutions (ATO, Treasury, RBA, APRA)",
+        "the viewer's own undisciplined psychology",
+        "Australian culture of property and debt",
+        "negative gearing misunderstood",
+        "superannuation treated as a black box"
+      ],
+      "implied_ally": [
+        "the narrator",
+        "historical truth",
+        "math",
+        "the prepared, disciplined viewer",
+        "regulators when they work (ASIC, APRA, ATO)",
+        "fiscal and accounting transparency"
+      ]
+    }
+  },
+  "script_architecture": {
+    "macro_flow": [
+      "1. Pattern interrupt opening: bizarre anecdote, historical collapse or jarring scenario with Australian relevance (1890s banking crisis, 1991 recession, 2008 GFC, Royal Commission, COVID, 2022 rate rises, housing affordability crisis).",
+      "2. Snap-link to present relevance: 'the same pattern is happening now.'",
+      "3. Presenter framing: why he is qualified / why this isn't hype.",
+      "4. Promise stack: explicit list of what the viewer will understand by the end.",
+      "5. Tool CTA early: free calculator/report framed as corrective utility.",
+      "6. Core metaphor introduced and sustained.",
+      "7. Conceptual explanation with simple language and arithmetic.",
+      "8. Historical precedent or analogical proof.",
+      "9. Psychological complication: why humans fail even when the math works.",
+      "10. Concrete examples/case studies with named people and specific numbers in AUD.",
+      "11. Action protocol / rules / allocation / checklist.",
+      "12. Identity-level conclusion: freedom comes from mindset/system, not mere returns.",
+      "13. Final compression into takeaways + soft internal CTA to another video/subscribe."
+    ],
+    "opening_pattern": {
+      "method": "Start with a highly specific anecdote before the thesis so the viewer is mentally hooked by narrative, not argument.",
+      "why_it_works": "The viewer unconsciously asks 'why are you telling me this?' and the script answers by connecting the anecdote to their money/life.",
+      "opening_variants": [
+        "Australian historical scam/collapse (Storm Financial, Westpoint, Royal Commission, collapse of secondary banks)",
+        "three-case rapid montage",
+        "date-stamped macro timeline (1970s inflation, 1980s deregulation, 1991 recession, 2008 GFC, 2020 pandemic, 2022 rate rises)",
+        "ordinary person scenario with hidden flaw",
+        "ABS or RBA data used as a shock"
+      ]
+    },
+    "pacing_model": {
+      "rhythm": "Dense but segmented. Short-to-medium sentences dominate, broken by longer explanatory runs after hooks land.",
+      "acceleration_pattern": "Hook -> explanation -> new danger -> deeper mechanism -> practical release.",
+      "retention_devices": [
+        "forward promises ('here's what we're doing today')",
+        "mid-script escalations ('it gets worse')",
+        "counterintuitive turns ('the math works, human psychology doesn't')",
+        "repeated reframing",
+        "alternation between macro and personal examples",
+        "references to familiar Australian institutions (RBA, ATO, APRA, ASIC, ABS)"
+      ]
+    },
+    "information_release_timing": {
+      "front_loaded": [
+        "danger",
+        "pattern recognition",
+        "what the viewer will learn"
+      ],
+      "mid_loaded": [
+        "underlying mechanism",
+        "Australian and global historical parallels",
+        "examples and equations"
+      ],
+      "back_loaded": [
+        "protocol",
+        "identity shift",
+        "summary takeaways"
+      ]
+    }
+  },
+  "micro_writing_mechanics": {
+    "sentence_design": {
+      "dominant_shapes": [
+        "Short declarative shock sentence.",
+        "Question-answer sequence.",
+        "Analogy sentence followed by translation sentence.",
+        "Claim -> immediate caveat -> stronger restatement.",
+        "Numeric sentence -> emotional interpretation sentence."
+      ],
+      "feel": "Controlled urgency. The prose sounds like spoken thinking, but it is tightly engineered.",
+      "cadence_trick": "Uses short punch lines after data-heavy passages to reset attention."
+    },
+    "word_choice": {
+      "preferred_lexicon": [
+        "trap",
+        "mechanism",
+        "system",
+        "math",
+        "psychology",
+        "freedom",
+        "optionality",
+        "structure",
+        "concentration",
+        "cash flow",
+        "sequence risk",
+        "the game",
+        "what nobody talks about",
+        "quietly",
+        "actually",
+        "here's the thing",
+        "ATO",
+        "RBA",
+        "APRA",
+        "ASIC",
+        "ABS",
+        "superannuation",
+        "SMSF",
+        "negative gearing",
+        "offset account",
+        "redraw",
+        "LMI",
+        "CGT",
+        "franking credits",
+        "dividend imputation",
+        "stamp duty",
+        "land tax",
+        "principal place of residence",
+        "First Home Super Saver",
+        "Home Guarantee Scheme",
+        "serviceability buffer",
+        "fixed-rate cliff",
+        "interest-only",
+        "trust structures",
+        "bucket company"
+      ],
+      "language_behavior": "Abstract finance terms are almost always paired with tangible verbs or objects. The object bank should include a WIDE RANGE of physical metaphors, not predominantly property-related ones: geese, bathtub, snowball, three-legged stool, bridge, gears, garden, jar, gate, well, fire, seed, loom, staircase, map, compass, river, dam, anchor, wall, castle, ship, engine, wheel, mirror, echo, shadow, thread, chain, lighthouse, tunnel, ladder, net, sieve, sponge, prism, pulley, valve, lock, scale, wheelbarrow, backpack, reservoir.",
+      "credibility_words": "specific dates, named firms, exact percentages, Australian historical names, concrete AUD amounts"
+    },
+    "rhetorical_devices": {
+      "most_common": [
+        "extended metaphor",
+        "strategic repetition",
+        "contrast pairs",
+        "mock dialogue",
+        "false belief -> corrected truth",
+        "stacked examples",
+        "escalating hypothetical scenario"
+      ],
+      "contrast_structure": [
+        "fantasy vs reality",
+        "gross revenue vs net income",
+        "average return vs sequence of return",
+        "looking rich vs being rich",
+        "recession vs monetary transition",
+        "retiring from vs retiring to",
+        "super vs property",
+        "negative gearing vs positive cash flow",
+        "Sydney vs Perth",
+        "owner-occupier vs investor",
+        "offset vs redraw",
+        "trust vs personal name"
+      ]
+    },
+    "tone_layering": {
+      "surface_tone": "helpful explainer",
+      "underlayer": "mild alarm, anti-naive skepticism",
+      "deeper_emotional_register": "betrayal by institutions, relief through understanding, dignity through disciplined realism"
+    }
+  },
+  "psychological_and_persuasive_mechanisms": {
+    "core_psychology": [
+      "Uses fear, but not random fear; fear is tied to mechanism, making it feel intelligent rather than sensational.",
+      "Creates relief by converting vague anxiety into understandable structure.",
+      "Makes viewer feel smarter than the passive majority if they keep watching.",
+      "Uses anti-hype disclaimers to increase trust before making strong claims.",
+      "Frames action as self-defence, not greed.",
+      "Leverages specific knowledge of the Australian system (super, negative gearing, offset, ATO, RBA) to create a sense of insider knowledge."
+    ],
+    "emotional_sequence": [
+      "confusion",
+      "recognition",
+      "alarm",
+      "clarity",
+      "agency",
+      "identity reinforcement"
+    ],
+    "credibility_engineering": {
+      "methods": [
+        "references institutions by name (RBA, ATO, APRA, ASIC, ABS, Productivity Commission)",
+        "admits uncertainty selectively",
+        "says 'this isn't about motivation'",
+        "uses personal skin-in-the-game statements",
+        "calls out bad incentives rather than cartoon villains",
+        "translates documents/regulations into plain English (super rules, negative gearing, CGT, serviceability buffer, franking credits)",
+        "cites ABS data, RBA reports, federal budgets, Royal Commission findings"
+      ],
+      "effect": "The narrator sounds like a sober insider decoding reality for outsiders."
+    },
+    "retention_psychology": {
+      "curiosity_loops": [
+        "What is the hidden pattern?",
+        "Why doesn't the obvious strategy work?",
+        "Who is actually winning?",
+        "What happens when the system breaks?",
+        "What should I do instead?"
+      ],
+      "tension_creation": "Tension is built by showing the viewer they are exposed to a risk they previously thought was safety.",
+      "relief_timing": "Relief arrives only after the system is fully diagnosed, which increases perceived value of the solution."
+    }
+  },
+  "worldview_embedded_in_scripts": {
+    "beliefs": [
+      "Most financial pain comes from incentives and psychology, not lack of information alone.",
+      "Institutions optimise for system preservation, not your well-being.",
+      "Conventional advice is often half-true and dangerous when decontextualised.",
+      "Freedom is more about flexibility, margin and enoughness than maximising returns.",
+      "The disciplined ordinary person can outperform the emotional crowd.",
+      "The Australian system has specific vulnerabilities that most mainstream advice ignores.",
+      "Understanding the interplay between the ATO, RBA, APRA and the mortgage market is essential for financial safety in Australia.",
+      "Negative gearing is not an automatic strategy; it is a tax tool with asymmetric risks."
+    ],
+    "status_framing": "High status is attached to calm realism, delayed gratification and structural understanding, not flashy consumption.",
+    "fear_framing": "The real danger is not one crash or one bad pick; it is building your life on false assumptions — especially about property, superannuation and what the government will do next.",
+    "transformation_promise": "Move from reactive participant to system-aware allocator who can't be easily trapped — someone who understands the Australian rules better than the average Australian."
+  },
+  "replication_logic": {
+    "content_formula": {
+      "step_1": "Choose a financial topic with mainstream familiarity and hidden complexity, WITHIN the category assigned by the rotation_mandate (super, SMSF, negative gearing, offset, mortgage, CGT, franking credits, property).",
+      "step_2": "Find an Australian historical analogy, strange anecdote or sharp mini-story that mirrors the modern issue.",
+      "step_3": "Frame the common understanding as incomplete or dangerously naive.",
+      "step_4": "Introduce one sticky metaphor that can carry the full explanation. Prefer non-property metaphors unless the assigned category is real_estate_financing.",
+      "step_5": "Translate the mechanism into plain arithmetic with concrete AUD numbers.",
+      "step_6": "Add a human-failure layer: why people still mess this up even when the math is knowable.",
+      "step_7": "Insert one or more case studies with names, ages, incomes, balances, outcomes.",
+      "step_8": "Escalate from portfolio consequence to lifestyle, identity or societal consequence.",
+      "step_9": "Offer a protocol/ruleset that feels practical, not magical.",
+      "step_10": "End with worldview compression and a concise memorable doctrine."
+    },
+    "stylistic_rules_for_future_outputs": [
+      "Always make the invisible visible.",
+      "Never explain a concept without an image/object/metaphor.",
+      "Use numbers to anchor trust, not to overwhelm.",
+      "Alternate macro systems and individual stories.",
+      "Speak as if correcting a dangerous misunderstanding.",
+      "Let skepticism and humility coexist: strong thesis, selective uncertainty.",
+      "Avoid sounding like a trader; sound like a strategic realist.",
+      "Give the viewer dignity through understanding, not through hype.",
+      "Use Australian-specific references (ATO, RBA, APRA, ASIC, ABS, budget, super, negative gearing, franking credits, etc.).",
+      "Avoid American financial terms (401k, Roth IRA, Social Security, 30-year fixed, FICO score, etc.) without translation."
+    ],
+    "title_generation_rules": [
+      "Centre danger, reversal or hidden mechanism.",
+      "Use direct second-order implications: not just 'recession' but 'worse than a recession.'",
+      "Make titles feel like practical protection against a trap.",
+      "Keep phrasing blunt, not clever.",
+      "Include Australian specificity whenever possible ('your super', 'your mortgage', 'the ATO', 'negative gearing')."
+    ],
+    "hook_generation_rules": [
+      "Open on a vivid story or date cluster before introducing the topic.",
+      "Reveal the present-day relevance within the first 5–8 lines.",
+      "Promise a deeper mechanism, not just surface explanation."
+    ]
+  },
+  "sample_specific_context": {
+    "video_1": {
+      "category": "money_psychology",
+      "blueprint": "Freedom fantasy versus mechanical reality. Strong on metaphor, optionality, lifestyle creep, psychology of enough. Australian context: super, property, mortgages, cost of living."
+    },
+    "video_2": {
+      "category": "concentration_indexing",
+      "blueprint": "Historical concentration mania repeated today. Strong on structural analogy, anti-indexing revisionism, explicit portfolio protocol. Australian context: concentration in banks, mining, property, ASX, over-concentration in super."
+    },
+    "video_3": {
+      "category": "macro_currency",
+      "blueprint": "Macro regime change. Strong on date-stacking, institutional references, currency/commodity framing, existential stakes. Australian context: AUD, RBA, mining, debt, immigration, productivity, China."
+    },
+    "video_4": {
+      "category": "fiscal_policy",
+      "blueprint": "Policy move translated into household consequences. Simpler, more beginner-targeted, more direct villain/system framing. Australian context: federal budget, CGT changes, negative gearing, super, Home Guarantee Scheme, state taxes."
+    },
+    "video_5": {
+      "category": "generational_systems",
+      "blueprint": "Generational systemic failure. Strong on metaphor (three-legged stool), demographic scaling, sympathy mixed with indictment. Australian context: super, Age Pension, healthcare, housing, debt, boomers vs millennials."
+    },
+    "video_6": {
+      "category": "macro_currency",
+      "blueprint": "Conspiracy-adjacent mechanism explained with legal/financial precedent. Strong on debt-spiral metaphor and disclaimer-based credibility protection. Australian context: national debt, QE, inflation, APRA, mortgage securitisation, RBA."
+    },
+    "video_7": {
+      "category": "concentration_indexing",
+      "blueprint": "Slow boring compounding made emotionally compelling. Strong on motivational psychology without becoming inspirational fluff. Australian context: super, ETFs, franked dividends, regular investing, patience."
+    },
+    "video_8_reference": {
+      "category": "real_estate_financing",
+      "blueprint": "The negative gearing and Australian property trap post-2022. Strong on fiscal math, regulatory shifts, investor reality, promise-versus-reality contrast. Context: serviceability buffer, fixed-rate cliff, offset, interest-only, LMI, stamp duty, land tax, CGT, principal place of residence, trust structures, SMSF property.",
+      "rotation_note": "This sample exists as a reference for the real_estate_financing category ONLY. It must not be used as a template for other categories, and it counts against the 1-in-6 cap."
+    }
+  },
+  "generation_instructions_for_another_model": {
+    "objective": "Produce long-form Australian finance scripts that feel like hidden-system exposés rather than generic educational content.",
+    "step_zero": "Before writing anything, read rotation_mandate, determine the last six video categories, and select the least recently used category that respects the selection_rules. State the chosen category internally before drafting.",
+    "must_include": [
+      "one category from rotation_mandate that respects the selection_rules",
+      "one strong metaphor (preferably non-property unless the category is real_estate_financing)",
+      "one historical or structural Australian parallel",
+      "one explicit false belief being corrected",
+      "one psychological trap",
+      "one practical protocol",
+      "one identity-level takeaway",
+      "Australian institutional references (ATO, RBA, APRA, ASIC, ABS)",
+      "Australian financial products (super, SMSF, negative gearing, offset, CGT, franking credits, mortgages, property)",
+      "amounts in Australian dollars (AUD)"
+    ],
+    "must_avoid": [
+      "generic optimism",
+      "surface-level listicles",
+      "purely technical teaching without tension",
+      "guru posturing",
+      "advice without mechanism",
+      "untranslated American financial terms",
+      "references to exclusively American institutions without Australian equivalents",
+      "defaulting to real estate when the category is not real_estate_financing",
+      "using house/mortgage/lease as the central metaphor in non-property categories",
+      "consecutive videos in the same category"
+    ],
+    "success_condition": "The final script should make the viewer feel simultaneously alarmed, intellectually satisfied and more in control — with a deeper understanding of the Australian financial system, AND it should belong to a category that has not been used recently.",
+    "output_length_requirement": "The final FULL SCRIPT must be strictly between 7,000 and 9,000 characters.",
+    "output_length_verification": "Before sending the answer, verify the FULL SCRIPT character count. If it is below 7,000 or above 9,000 characters, rewrite it until it falls within range.",
+    "hard_fail_condition": "Any FULL SCRIPT under 7,000 characters or over 9,000 characters is invalid and must be rewritten before output. Any FULL SCRIPT that violates the rotation_mandate selection_rules is also invalid and must be rewritten."
+  }
+}
