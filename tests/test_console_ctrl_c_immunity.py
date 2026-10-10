@@ -53,10 +53,10 @@ def test_video_helper_tree_gets_its_own_windows_process_group():
 
 
 def test_launcher_ignores_single_ctrl_c_and_requires_double_press():
-    assert 'diagnostic("ctrl_c_ignored"' in CLI_SOURCE
-    assert 'diagnostic("ctrl_c_burst_ignored"' in CLI_SOURCE
-    assert "CTRL_C_BURST_WINDOW_MS = 300" in CLI_SOURCE
-    assert "gap <= CTRL_C_BURST_WINDOW_MS" in CLI_SOURCE
+    assert 'diagnostic("ctrl_c_shutdown"' in CLI_SOURCE
+    assert 'diagnostic("ctrl_c_echo_absorbed"' in CLI_SOURCE
+    assert "CTRL_C_ECHO_WINDOW_MS = 300" in CLI_SOURCE
+    assert "gap <= CTRL_C_ECHO_WINDOW_MS" in CLI_SOURCE
     assert 'stopWorker("ctrl+c")' in CLI_SOURCE
 
 

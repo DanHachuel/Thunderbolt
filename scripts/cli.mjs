@@ -794,40 +794,35 @@ const stopWorker = (reason = "unknown") => {
   shutdownForceTimer = setTimeout(finishShutdown, 5000);
   shutdownForceTimer.unref();
 };
-// Ctrl+C: no Windows um CTRL_C_EVENT atinge TODOS os processos da consola
-// (cadeia npx → launcher → workers → MPT/ffmpeg) e cada evento isolado
-// fechava a aplicação inteira "sozinha" (evidência 08-09/10: launcher_exiting
-// ctrl+c sem ninguém tocar no teclado, worker em auto-pausa e MPT em
-// KeyboardInterrupt a meio da renderização — reproduzido em várias sessões).
-// 0.9.71: Ctrl+C isolado passou a ser ignorado. 0.9.72: a fonte externa
-// envia RAJADAS (evidência 09/10 01:29: dois SIGINT com 27 ms de intervalo
-// que a janela de confirmação de 3 s interpretava como Ctrl+C duplo) — um
-// segundo Ctrl+C a menos de 300 ms do anterior é eco da mesma interrupção e
-// NUNCA conta como confirmação; encerrar exige dois Ctrl+C com 0,3-3 s de
-// intervalo.
+// Ctrl+C: comportamento PADRÃO — um único Ctrl+C encerra a aplicação.
+//
+// 0.9.81: REVERTIDA a gambiarra do "Ctrl+C duplo para encerrar" — contra
+// padrão de software e contra o utilizador. As rajadas de 2 SIGINTs com
+// ~27 ms de intervalo são um eco do mesmo evento (um só Ctrl+C gera dois
+// sinais no MobaXterm/PowerShell); o eco é absorvido silenciosamente e o
+// PRIMEIRO evento encerra imediatamente, como qualquer CLI.
+//
+// A forense (ctrl_c_forensics.py) continua activa para capturar a origem
+// dos Ctrl+C espúrios que por vezes surgem sem teclado envolvido.
 let lastCtrlCAt = 0;
-const CTRL_C_BURST_WINDOW_MS = 300;
-const CTRL_C_CONFIRM_WINDOW_MS = 3000;
+const CTRL_C_ECHO_WINDOW_MS = 300;
 process.on("SIGINT", () => {
   const now = Date.now();
   const gap = now - lastCtrlCAt;
-  if (lastCtrlCAt > 0 && gap <= CTRL_C_BURST_WINDOW_MS) {
-    diagnostic("ctrl_c_burst_ignored", { pid: process.pid, gap_ms: gap });
+  if (lastCtrlCAt > 0 && gap <= CTRL_C_ECHO_WINDOW_MS) {
+    // Eco da mesma tecla (~27ms depois) — absorver e não fazer nada.
+    diagnostic("ctrl_c_echo_absorbed", { pid: process.pid, gap_ms: gap });
     lastCtrlCAt = now;
     return;
   }
-  if (lastCtrlCAt > 0 && gap <= CTRL_C_CONFIRM_WINDOW_MS) {
-    stopWorker("ctrl+c");
-    return;
-  }
   lastCtrlCAt = now;
-  diagnostic("ctrl_c_ignored", { pid: process.pid, uptime_seconds: Math.round(process.uptime()) });
+  diagnostic("ctrl_c_shutdown", { pid: process.pid, uptime_seconds: Math.round(process.uptime()) });
   captureCtrlCForensics();
-  console.log("Thunderbolt: Ctrl+C ignorado para não interromper execuções (interrupções espúrias fechavam a app sozinha). Prima Ctrl+C de novo (0,3-3 s depois) para encerrar.");
+  stopWorker("ctrl+c");
 });
 // Ctrl+Break e o fecho da janela da consola continuam a ser encerramentos
 // deliberados — a janela a fechar não pode deixar workers órfãos vivos a
-// disputar os locks do storage (o ciclo "app encerra sozinho" deixava-os).
+// disputar os locks do storage.
 process.on("SIGBREAK", () => stopWorker("ctrl+break"));
 process.on("SIGHUP", () => stopWorker("console_closed"));
 process.on("SIGTERM", () => stopWorker("external_kill"));
