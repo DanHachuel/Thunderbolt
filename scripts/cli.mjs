@@ -290,24 +290,35 @@ if (args[0] === "doctor" || args.includes("--check")) {
 
 // 0.9.83: O launcher auto-relança-se numa CONSOLA PRÓPRIA ISOLADA.
 // A evidência forense é conclusiva: os Ctrl+C espúrios NUNCA têm input de
-// teclado (input_records: 0) e o utilizador está sempre em outra janela
-// (foreground: chrome/whatsapp). O MobaXterm/PowerShell gera CTRL_C_EVENT
-// na consola partilhada por razões fora do nosso controlo. A única solução
-// robusta é desanexar COMPLETAMENTE o launcher dessa consola: ele relança-se
-// numa nova janela de terminal própria (visível na barra de tarefas como
-// "Thunderbolt"), e o Ctrl+C do MobaXterm nunca mais o atinge. O encerramento
-// é feito com Ctrl+C na nova janela ou fechando-a — SIGINT/SIGHUP chegam e
-// o stopWorker corre normalmente.
+// teclado (input_records: 0) e o utilizador está sempre em outra janela.
+// O MobaXterm gera CTRL_C_EVENT na consola partilhada — solução robusta:
+// o launcher relança-se numa janela própria via script .cmd que define
+// THUNDERBOLT_DETACHED=1 antes de executar o node (o `start` do cmd.exe
+// não propaga variáveis de ambiente — por isso as janelas repetiam em loop).
 if (platform() === "win32" && process.env.THUNDERBOLT_DETACHED !== "1") {
-  const titleScript = resolve(root, "scripts", "title_launcher.mjs");
-  const relaunchArgs = [...process.argv.slice(1)];
-  const detached = spawn(process.execPath, [process.argv[1], ...relaunchArgs], {
-    env: { ...process.env, THUNDERBOLT_DETACHED: "1" },
+  const relaunchArgs = process.argv.slice(2).join(" ");
+  const launcherScript = process.argv[1];
+  // Escreve um .cmd temporário que define a variável ANTES do node —
+  // garante que o novo processo sabe que já está desanexado.
+  mkdirSync(diagnosticsDir, { recursive: true });
+  const launchScriptPath = join(diagnosticsDir, "launch_thunderbolt.cmd");
+  const scriptContent = [
+    "@echo off",
+    "title Thunderbolt",
+    "set THUNDERBOLT_DETACHED=1",
+    `cd /d "${root}"`,
+    `"${process.execPath}" "${launcherScript}" ${relaunchArgs}`,
+    "if errorlevel 1 pause",
+    "",
+  ].join("\n");
+  writeFileSync(launchScriptPath, scriptContent, "utf8");
+  // `start` abre uma NOVA janela de terminal visível com o título "Thunderbolt"
+  const child = spawn(`start "Thunderbolt" "${launchScriptPath}"`, {
     detached: true,
-    stdio: ["ignore", "ignore", "ignore"],
-    windowsHide: false,
+    stdio: "ignore",
+    shell: "cmd.exe",
   });
-  detached.unref();
+  child.unref();
   console.log("Thunderbolt: iniciado em janela própria isolada — interface em http://localhost:3030/");
   console.log("Thunderbolt: para encerrar, feche a janela 'Thunderbolt' na barra de tarefas ou use Ctrl+C nela.");
   process.exit(0);
