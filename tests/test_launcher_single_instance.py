@@ -115,20 +115,19 @@ def test_ci_replacement_stops_the_old_stack_before_spawning_the_new_one():
 
 
 def test_ci_logs_launcher_exiting_on_every_exit_path_with_reason():
-    # O shutdown pelos sinais grava o motivo e o launcher_exiting corre no
-    # finishShutdown do stopWorker; crash cobre uncaughtException e o bind
-    # falhado; update cobre a reposição.
-    # 0.9.71: Ctrl+C isolado é registado (ctrl_c_ignored) e ignorado —
-    # interrupções espúrias da consola fechavam a app "sozinha"; encerrar
-    # exige Ctrl+C duplo em 3 s.
-    sigint_block = CLI_SOURCE.split('process.on("SIGINT"', 1)[1].split('process.on("SIGBREAK"', 1)[0]
-    # 0.9.81: Ctrl+C único encerra (padrão CLI); eco de <300ms é absorvido.
-    assert "CTRL_C_ECHO_WINDOW_MS = 300" in CLI_SOURCE
-    assert "gap <= CTRL_C_ECHO_WINDOW_MS" in sigint_block
-    assert 'stopWorker("ctrl+c");' in sigint_block
-    assert 'diagnostic("ctrl_c_shutdown"' in sigint_block
-    assert 'diagnostic("ctrl_c_echo_absorbed"' in sigint_block
-    assert 'process.on("SIGTERM", () => stopWorker("external_kill"));' in CLI_SOURCE
+    # O shutdown grava o motivo e o launcher_exiting corre no finishShutdown
+    # do stopWorker; crash cobre uncaughtException e o bind falhado; update
+    # cobre a reposição.
+    # 0.9.86: no Windows, SIGINT é absorvido (CTRL_C_EVENT espúrio do Win11);
+    # no Unix, SIGINT encerra. SIGBREAK/SIGTERM/SIGHUP encerram sempre.
+    assert 'diagnostic("launcher_exiting"' in CLI_SOURCE
+    assert 'stopWorker("ctrl+break")' in CLI_SOURCE
+    assert 'stopWorker("external_kill")' in CLI_SOURCE
+    assert 'stopWorker("console_closed")' in CLI_SOURCE
+    assert 'stopWorker("stop-file")' in CLI_SOURCE
+    assert 'launcherExiting("crash")' in CLI_SOURCE
+    assert 'launcherExiting("update")' in CLI_SOURCE
+    assert CLI_SOURCE.count('launcherExiting("crash")') >= 2
     assert 'process.on("SIGHUP", () => stopWorker("console_closed"));' in CLI_SOURCE
     assert 'process.on("SIGBREAK", () => stopWorker("ctrl+break"));' in CLI_SOURCE
     assert 'launcherExiting(shutdownReason);' in CLI_SOURCE

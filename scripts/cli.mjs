@@ -47,28 +47,6 @@ function diagnostic(event, payload = {}) {
   } catch { /* logging never changes launcher behaviour */ }
 }
 
-let lastCtrlCForensicsAt = 0;
-function captureCtrlCForensics() {
-  // 0.9.73: fotografia da consola no momento do Ctrl+C ignorado. Os
-  // registos de input provam se houve entrega por teclado (KEY_EVENT
-  // Ctrl+C) ou geração por software (GenerateConsoleCtrlEvent); a janela
-  // em primeiro plano mostra se o utilizador estava no terminal. Corre no
-  // máximo uma vez por rajada (janela de 10 s) e nunca afecta o
-  // comportamento do launcher.
-  if (platform() !== "win32" || Date.now() - lastCtrlCForensicsAt < 10000) return;
-  lastCtrlCForensicsAt = Date.now();
-  if (!existsSync(venvPython)) return;
-  try {
-    const result = spawnSync(venvPython, [resolve(root, "scripts", "ctrl_c_forensics.py")], {
-      encoding: "utf8",
-      timeout: 8000,
-      windowsHide: true,
-    });
-    const payload = String(result.stdout || "").trim();
-    if (payload.startsWith("{")) diagnostic("ctrl_c_forensics", { snapshot: JSON.parse(payload) });
-  } catch { /* forensics nunca muda o comportamento */ }
-}
-
 function runKillTreeHelper(modeArgs) {
   // O venv do Thunderbolt tem sempre psutil (os workers dependem dele); o
   // Python de sistema pode não ter, por isso é tentado primeiro o venv.
@@ -665,26 +643,8 @@ function startPipelineWorker() {
 
 function monitorWorkers() {
   if (shuttingDown) return;
-  checkLauncherOrphan();
   startPipelineWorker();
   startAutomationWorker();
-}
-
-let orphanNoticeShown = false;
-function checkLauncherOrphan() {
-  // 0.9.72: quando a fonte externa de Ctrl+C mata a cadeia npx/cmd (que não
-  // ignora o evento), o launcher sobrevive órfão e a app continua a correr
-  // — mas o prompt do terminal regressa e o utilizador pensa que fechou.
-  // O aviso deixa claro que a interface continua activa e como encerrar.
-  if (shuttingDown || orphanNoticeShown) return;
-  if (!process.ppid) return;
-  try {
-    process.kill(process.ppid, 0);
-  } catch {
-    orphanNoticeShown = true;
-    diagnostic("launcher_orphaned", { pid: process.pid, ppid: process.ppid });
-    console.log("Thunderbolt: o processo de arranque (npx/terminal) terminou, mas a app continua a correr em segundo plano — interface em http://localhost:3030/. Prima Ctrl+C duas vezes (0,3-3 s de intervalo) nesta janela para encerrar.");
-  }
 }
 
 function startStreamlit() {
@@ -798,64 +758,44 @@ const stopWorker = (reason = "unknown") => {
   shutdownForceTimer = setTimeout(finishShutdown, 5000);
   shutdownForceTimer.unref();
 };
-// Ctrl+C: comportamento PADRÃO com protecção contra espúrios do MobaXterm.
-//
-// A forense capturada provou: os Ctrl+C espúrios têm SEMPRE a janela em
-// primeiro plano como Chrome/WhatsApp (o utilizador estava noutra app),
-// enquanto um Ctrl+C legítimo só acontece quando a janela em primeiro
-// plano é o terminal. Quando SIGINT chega, verificamos quem está em
-// primeiro plano: se for o terminal → Ctrl+C legítimo → encerra (padrão).
-// Se for outra aplicação → espúrio do MobaXterm → ignora.
-let lastCtrlCAt = 0;
-const CTRL_C_ECHO_WINDOW_MS = 300;
-const TERMINAL_PROCESS_NAMES = new Set([
-  "mobaxterm", "mobaxterm_ptysrv", "windowsterminal", "wt", "cmd", "cmd.exe",
-  "powershell", "powershell.exe", "pwsh", "conhost", "conhost.exe", "openconsole",
-]);
-const _getForegroundScript = resolve(root, "scripts", "get_foreground.py");
-function _foregroundProcess() {
-  try {
-    const result = spawnSync(venvPython, [_getForegroundScript], {
-      encoding: "utf8", timeout: 2000, windowsHide: true, env: pythonEnvironment,
-    });
-    if (result.status === 0 && result.stdout) {
-      return { name: result.stdout.trim() };
-    }
-  } catch { }
-  return null;
+// ─────────────────────────────────────────────────────────────────────────
+// Windows: absorver SIGINT espúrio
+// ─────────────────────────────────────────────────────────────────────────
+// O Windows 11 entrega o MESMO SIGINT para Ctrl+C real e para CTRL_C_EVENT
+// espúrio gerado quando um navegador é aberto ou um subprocesso .cmd é criado
+// em thread secundária (comportamento documentado: Hermes Agent, DeepTutor).
+// Não é possível distingui-los. No Windows, absorvemos o sinal e oferecemos
+// Ctrl+Break (SIGBREAK) e o arquivo .thunderbolt.stop como alternativa.
+// No Linux/macOS, Ctrl+C continua funcionando normalmente.
+const STOP_FILE = join(userHome, ".thunderbolt.stop");
+
+if (platform() === "win32") {
+  process.on("SIGINT", () => {
+    diagnostic("ctrl_c_absorbed_windows", { pid: process.pid, uptime_seconds: Math.round(process.uptime()) });
+    console.log("Thunderbolt: SIGINT ignorado no Windows (proteção contra CTRL_C_EVENT espúrio do Win11).");
+    console.log("Thunderbolt: para encerrar — Ctrl+Break, ou crie o arquivo ~/.thunderbolt.stop");
+  });
+} else {
+  process.on("SIGINT", () => stopWorker("ctrl+c"));
 }
-process.on("SIGINT", () => {
-  const now = Date.now();
-  const gap = now - lastCtrlCAt;
-  lastCtrlCAt = now;
-  if (gap <= CTRL_C_ECHO_WINDOW_MS) {
-    // Eco da mesma tecla — absorver.
-    diagnostic("ctrl_c_echo_absorbed", { pid: process.pid, gap_ms: gap });
-    return;
-  }
-  // Verificar se o Ctrl+C veio do terminal (foreground) ou de espúrio.
-  const foreground = _foregroundProcess();
-  const isTerminal = foreground && TERMINAL_PROCESS_NAMES.has(String(foreground.name || "").toLowerCase());
-  if (!isTerminal) {
-    // A janela em primeiro plano não é o terminal → Ctrl+C espúrio do
-    // MobaXterm (foreground era chrome/whatsapp nos 5 eventos capturados).
-    diagnostic("ctrl_c_spurious_ignored", {
-      pid: process.pid,
-      uptime_seconds: Math.round(process.uptime()),
-      foreground: foreground || { name: "unknown" },
-    });
-    return;
-  }
-  // Terminal em primeiro plano → Ctrl+C legítimo → encerrar.
-  diagnostic("ctrl_c_shutdown", { pid: process.pid, uptime_seconds: Math.round(process.uptime()), foreground });
-  stopWorker("ctrl+c");
-});
-// Ctrl+Break e o fecho da janela da consola continuam a ser encerramentos
-// deliberados — a janela a fechar não pode deixar workers órfãos vivos a
-// disputar os locks do storage.
+// Ctrl+Break (Windows) e SIGTERM (Unix) são paragens legítimas em todas as
+// plataformas. O fecho da janela (SIGHUP) também.
 process.on("SIGBREAK", () => stopWorker("ctrl+break"));
 process.on("SIGHUP", () => stopWorker("console_closed"));
 process.on("SIGTERM", () => stopWorker("external_kill"));
+
+// Watcher do arquivo .thunderbolt.stop — encerramento sem depender de sinais.
+const stopFileWatcher = setInterval(() => {
+  try {
+    if (existsSync(STOP_FILE)) {
+      diagnostic("stop_file_detected", { pid: process.pid, path: STOP_FILE });
+      console.log("Thunderbolt: arquivo .thunderbolt.stop detectado — encerrando...");
+      try { rmSync(STOP_FILE, { force: true }); } catch { }
+      stopWorker("stop-file");
+    }
+  } catch { }
+}, 3000);
+stopFileWatcher.unref();
 process.on("uncaughtException", (error) => {
   diagnostic("launcher_uncaught_exception", { error: String((error && (error.stack || error.message)) || error).slice(-500) });
   launcherExiting("crash");

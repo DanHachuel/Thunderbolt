@@ -1,4 +1,8 @@
 # Changelog
+## 0.9.86 — 2026-10-11
+- **Corrigido o desligamento espúrio por SIGINT no Windows**: o Windows 11 entrega o MESMO sinal SIGINT para Ctrl+C real e para `CTRL_C_EVENT` espúrio gerado quando um navegador é aberto ou um subprocesso `.cmd` é criado em thread secundária (comportamento documentado em Hermes Agent e DeepTutor). Não é possível distingui-los — o Thunderbolt **absorve SIGINT incondicionalmente no Windows** e oferece **quatro formas de encerrar**: Ctrl+Break, arquivo `.thunderbolt.stop`, fechar a janela do terminal, ou Gerenciador de Tarefas. No Linux/macOS, Ctrl+C continua funcionando normalmente.
+- 1284 testes verdes.
+
 ## 0.9.85 — 2026-10-11
 - **Ctrl+C espúrios resolvidos com verificação de janela em primeiro plano**: quando SIGINT chega ao launcher, ele verifica qual processo tem a janela em primeiro plano (`get_foreground.py`, <500ms). Se for um **terminal** (MobaXterm, cmd, PowerShell, Windows Terminal) → Ctrl+C legítimo → encerra imediatamente. Se for **outra aplicação** (Chrome, WhatsApp, etc.) → espúrio do MobaXterm → ignora com log. Baseado na evidência forense: os 5 Ctrl+C espúrios capturados tinham SEMPRE `foreground: chrome.exe/WhatsApp` e `input_records: 0`. Ctrl+C no terminal funciona normalmente (padrão CLI), Ctrl+C espúrio do MobaXterm nunca mais mata a app. Janela separada removida (0.9.84). 1280 testes verdes.
 

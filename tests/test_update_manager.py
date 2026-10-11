@@ -191,12 +191,13 @@ def test_sigint_handlers_shutdown_launcher_and_release_port():
     launcher = (Path(__file__).resolve().parents[1] / "scripts" / "cli.mjs").read_text(encoding="utf-8")
     bootstrap = (Path(__file__).resolve().parents[1] / "scripts" / "streamlit_bootstrap.py").read_text(encoding="utf-8")
     # Desde 0.9.48 os handlers passam o motivo de saída à telemetria
-    # (launcher_exiting). Desde 0.9.81 um Ctrl+C único encerra (padrão CLI) —
-    # o eco de <300ms do mesmo evento é absorvido silenciosamente.
-    assert 'process.on("SIGINT", () => {' in launcher
-    assert 'stopWorker("ctrl+c");' in launcher
-    assert "CTRL_C_ECHO_WINDOW_MS = 300" in launcher
-    assert 'diagnostic("ctrl_c_echo_absorbed"' in launcher
+    # (launcher_exiting). Desde 0.9.86: no Windows, SIGINT é absorvido
+    # (CTRL_C_EVENT espúrio do Win11); no Unix, SIGINT encerra.
+    # SIGBREAK/SIGTERM/SIGHUP encerram sempre. .thunderbolt.stop também.
+    assert 'process.on("SIGINT"' in launcher
+    assert "ctrl_c_absorbed_windows" in launcher
+    assert 'stopWorker("ctrl+c")' in launcher  # no ramo Unix
+    assert 'stopWorker("stop-file")' in launcher
     assert 'process.on("SIGTERM", () => stopWorker("external_kill"));' in launcher
     assert 'process.on("SIGHUP", () => stopWorker("console_closed"));' in launcher
     assert 'process.on("SIGBREAK", () => stopWorker("ctrl+break"));' in launcher
