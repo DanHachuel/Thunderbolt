@@ -71,15 +71,14 @@ def test_launcher_warns_when_parents_die_and_it_becomes_orphan():
     assert "checkLauncherOrphan();" in monitor_block
 
 
-def test_launcher_captures_console_forensics_on_ignored_ctrl_c():
-    # 0.9.73: quando um Ctrl+C é ignorado, o launcher fotografa a consola
-    # (registos de input, janela em primeiro plano, processos anexados) para
-    # identificar a origem das rajadas — teclado/terminal vs. software.
-    assert "function captureCtrlCForensics()" in CLI_SOURCE
-    assert 'diagnostic("ctrl_c_forensics"' in CLI_SOURCE
-    assert (ROOT / "scripts" / "ctrl_c_forensics.py").is_file()
-    sigint_block = CLI_SOURCE.split('process.on("SIGINT"', 1)[1].split('process.on("SIGBREAK"', 1)[0]
-    assert "captureCtrlCForensics();" in sigint_block
+def test_launcher_uses_foreground_process_to_filter_spurious_ctrl_c():
+    """0.9.84: Ctrl+C espúrio (foreground ≠ terminal) é ignorado; Ctrl+C
+    legítimo (foreground = terminal) encerra imediatamente (padrão CLI)."""
+    assert "function _foregroundProcess()" in CLI_SOURCE
+    assert "TERMINAL_PROCESS_NAMES" in CLI_SOURCE
+    assert "ctrl_c_spurious_ignored" in CLI_SOURCE
+    assert 'stopWorker("ctrl+c")' in CLI_SOURCE
+    assert (ROOT / "scripts" / "get_foreground.py").is_file()
 
 
 def test_launcher_stops_respawning_automation_worker_after_five_failures():

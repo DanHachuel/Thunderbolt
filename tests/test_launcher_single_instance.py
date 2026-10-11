@@ -73,7 +73,10 @@ def test_ci_kill_tree_helper_accepts_survivor_exit_codes_and_retries_cleanup():
     # tentar de novo com um interpretador sem psutil. O resultado é aceite
     # sempre que o stdout é JSON, e sobreviventes repetem a limpeza uma vez.
     assert "if (result.stdout) {" in CLI_SOURCE
-    assert "result.status === 0" not in CLI_SOURCE
+    # 0.9.84: `result.status === 0` agora existe no _foregroundProcess() mas
+    # NÃO no runKillTreeHelper — verificamos especificamente o bloco do guard.
+    guard_block = CLI_SOURCE.split("function runKillTreeHelper", 1)[1].split("function ", 1)[0]
+    assert "result.status === 0" not in guard_block
     assert "summary = runKillTreeHelper" in CLI_SOURCE
     retry_block = CLI_SOURCE.split("if (Array.isArray(summary.survivors)", 1)[1].split("}", 1)[0]
     assert "runKillTreeHelper" in retry_block

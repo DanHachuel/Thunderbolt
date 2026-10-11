@@ -798,30 +798,56 @@ const stopWorker = (reason = "unknown") => {
   shutdownForceTimer = setTimeout(finishShutdown, 5000);
   shutdownForceTimer.unref();
 };
-// Ctrl+C: comportamento PADRÃO — um único Ctrl+C encerra a aplicação.
+// Ctrl+C: comportamento PADRÃO com protecção contra espúrios do MobaXterm.
 //
-// 0.9.81: REVERTIDA a gambiarra do "Ctrl+C duplo para encerrar" — contra
-// padrão de software e contra o utilizador. As rajadas de 2 SIGINTs com
-// ~27 ms de intervalo são um eco do mesmo evento (um só Ctrl+C gera dois
-// sinais no MobaXterm/PowerShell); o eco é absorvido silenciosamente e o
-// PRIMEIRO evento encerra imediatamente, como qualquer CLI.
-//
-// A forense (ctrl_c_forensics.py) continua activa para capturar a origem
-// dos Ctrl+C espúrios que por vezes surgem sem teclado envolvido.
+// A forense capturada provou: os Ctrl+C espúrios têm SEMPRE a janela em
+// primeiro plano como Chrome/WhatsApp (o utilizador estava noutra app),
+// enquanto um Ctrl+C legítimo só acontece quando a janela em primeiro
+// plano é o terminal. Quando SIGINT chega, verificamos quem está em
+// primeiro plano: se for o terminal → Ctrl+C legítimo → encerra (padrão).
+// Se for outra aplicação → espúrio do MobaXterm → ignora.
 let lastCtrlCAt = 0;
 const CTRL_C_ECHO_WINDOW_MS = 300;
+const TERMINAL_PROCESS_NAMES = new Set([
+  "mobaxterm", "mobaxterm_ptysrv", "windowsterminal", "wt", "cmd", "cmd.exe",
+  "powershell", "powershell.exe", "pwsh", "conhost", "conhost.exe", "openconsole",
+]);
+const _getForegroundScript = resolve(root, "scripts", "get_foreground.py");
+function _foregroundProcess() {
+  try {
+    const result = spawnSync(venvPython, [_getForegroundScript], {
+      encoding: "utf8", timeout: 2000, windowsHide: true, env: pythonEnvironment,
+    });
+    if (result.status === 0 && result.stdout) {
+      return { name: result.stdout.trim() };
+    }
+  } catch { }
+  return null;
+}
 process.on("SIGINT", () => {
   const now = Date.now();
   const gap = now - lastCtrlCAt;
-  if (lastCtrlCAt > 0 && gap <= CTRL_C_ECHO_WINDOW_MS) {
-    // Eco da mesma tecla (~27ms depois) — absorver e não fazer nada.
+  lastCtrlCAt = now;
+  if (gap <= CTRL_C_ECHO_WINDOW_MS) {
+    // Eco da mesma tecla — absorver.
     diagnostic("ctrl_c_echo_absorbed", { pid: process.pid, gap_ms: gap });
-    lastCtrlCAt = now;
     return;
   }
-  lastCtrlCAt = now;
-  diagnostic("ctrl_c_shutdown", { pid: process.pid, uptime_seconds: Math.round(process.uptime()) });
-  captureCtrlCForensics();
+  // Verificar se o Ctrl+C veio do terminal (foreground) ou de espúrio.
+  const foreground = _foregroundProcess();
+  const isTerminal = foreground && TERMINAL_PROCESS_NAMES.has(String(foreground.name || "").toLowerCase());
+  if (!isTerminal) {
+    // A janela em primeiro plano não é o terminal → Ctrl+C espúrio do
+    // MobaXterm (foreground era chrome/whatsapp nos 5 eventos capturados).
+    diagnostic("ctrl_c_spurious_ignored", {
+      pid: process.pid,
+      uptime_seconds: Math.round(process.uptime()),
+      foreground: foreground || { name: "unknown" },
+    });
+    return;
+  }
+  // Terminal em primeiro plano → Ctrl+C legítimo → encerrar.
+  diagnostic("ctrl_c_shutdown", { pid: process.pid, uptime_seconds: Math.round(process.uptime()), foreground });
   stopWorker("ctrl+c");
 });
 // Ctrl+Break e o fecho da janela da consola continuam a ser encerramentos
