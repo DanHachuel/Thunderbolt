@@ -287,6 +287,37 @@ if (args[0] === "doctor" || args.includes("--check")) {
   check();
   process.exit(0);
 }
+
+// 0.9.83: O launcher auto-relança-se numa CONSOLA PRÓPRIA ISOLADA.
+// A evidência forense é conclusiva: os Ctrl+C espúrios NUNCA têm input de
+// teclado (input_records: 0) e o utilizador está sempre em outra janela
+// (foreground: chrome/whatsapp). O MobaXterm/PowerShell gera CTRL_C_EVENT
+// na consola partilhada por razões fora do nosso controlo. A única solução
+// robusta é desanexar COMPLETAMENTE o launcher dessa consola: ele relança-se
+// numa nova janela de terminal própria (visível na barra de tarefas como
+// "Thunderbolt"), e o Ctrl+C do MobaXterm nunca mais o atinge. O encerramento
+// é feito com Ctrl+C na nova janela ou fechando-a — SIGINT/SIGHUP chegam e
+// o stopWorker corre normalmente.
+if (platform() === "win32" && process.env.THUNDERBOLT_DETACHED !== "1") {
+  const titleScript = resolve(root, "scripts", "title_launcher.mjs");
+  const relaunchArgs = [...process.argv.slice(1)];
+  const detached = spawn(process.execPath, [process.argv[1], ...relaunchArgs], {
+    env: { ...process.env, THUNDERBOLT_DETACHED: "1" },
+    detached: true,
+    stdio: ["ignore", "ignore", "ignore"],
+    windowsHide: false,
+  });
+  detached.unref();
+  console.log("Thunderbolt: iniciado em janela própria isolada — interface em http://localhost:3030/");
+  console.log("Thunderbolt: para encerrar, feche a janela 'Thunderbolt' na barra de tarefas ou use Ctrl+C nela.");
+  process.exit(0);
+}
+
+if (process.env.THUNDERBOLT_DETACHED === "1") {
+  // Título da janela própria: o utilizador identifica facilmente na barra.
+  try { process.title = "Thunderbolt"; } catch { /* best effort */ }
+}
+
 if (!existsSync(main)) {
   console.error(`Entrada não encontrada: ${main}`);
   process.exit(1);
