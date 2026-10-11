@@ -1,4 +1,7 @@
 # Changelog
+## 0.9.84 — 2026-10-11
+- **REVERTIDO o relançamento em janela separada** (0.9.83) — o launcher corre directamente no terminal onde foi chamado, como sempre correu. Ctrl+C único encerra (padrão CLI), filtro de eco de 300ms absorve o duplicado do MobaXterm.
+
 ## 0.9.83 — 2026-10-11
 - **RESOLUÇÃO DEFINITIVA dos Ctrl+C espúrios**: o launcher desanexa-se COMPLETAMENTE da consola do MobaXterm/PowerShell e auto-relança-se numa **janela de terminal própria e isolada** (visível na barra de tarefas como "Thunderbolt"). A evidência forense de 5 eventos capturados é conclusiva: `input_records: 0` em TODOS (nunca houve tecla), `foreground: chrome.exe/WhatsApp` em TODOS (o utilizador nunca estava no terminal). O CTRL_C_EVENT espúrio é gerado pelo MobaXterm/PowerShell na consola partilhada — fora do controlo do Thunderbolt — e a única solução robusta é o launcher viver numa consola própria.
 - **Como funciona**: `npx.cmd @danhachuel/thunderbolt` arranca → o launcher relança-se numa nova janela (com a sua própria consola) → o processo original sai e o prompt volta. A UI continua em **http://localhost:3030**. Para encerrar: **Ctrl+C na janela "Thunderbolt"** ou fechá-la — SIGINT/SIGHUP chegam ao launcher isolado e o shutdown corre normalmente.
