@@ -621,6 +621,7 @@ def _run_sau_cli(arguments: list[str], *, timeout_seconds: int = 30) -> dict[str
             encoding="utf-8",
             errors="replace",
             timeout=max(1, int(timeout_seconds)),
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
@@ -744,7 +745,7 @@ def _launch_bilibili_login(command: list[str], *, runtime: Path, env: dict[str, 
         terminal = shutil.which("x-terminal-emulator") or shutil.which("xterm")
         if terminal and has_gui_environment():
             args = [terminal, "-e", *command] if Path(terminal).name != "x-terminal-emulator" else [terminal, "-e", *command]
-            process = subprocess.Popen(args, cwd=str(runtime), env=env)
+            process = subprocess.Popen(args, cwd=str(runtime), env=env, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
             return {"success": True, "status": "terminal_opened", "message": "Foi aberta uma consola separada para concluir o login Bilibili. Depois, use Verificar sessão.", "process_id": process.pid}
     except OSError as exc:
         return {"success": False, "status": "terminal_error", "message": f"Não foi possível abrir a consola interactiva: {type(exc).__name__}: {exc}"}

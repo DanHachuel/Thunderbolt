@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -166,7 +167,7 @@ def probe_duration(source: Path, *, ffprobe_path: str | None = None) -> float | 
         return None
     command = [binary, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(source)]
     try:
-        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        completed = subprocess.run(command, capture_output=True, text=True, check=False, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
     except OSError:
         return None
     if completed.returncode != 0:
@@ -298,7 +299,7 @@ def build_clip_command(source: Path, output: Path, segment: dict[str, float], ou
 
 def _run_ffmpeg(command: list[str], output: Path, *, source: Path, segment: dict[str, float]) -> dict[str, Any]:
     try:
-        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        completed = subprocess.run(command, capture_output=True, text=True, check=False, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
     except OSError as exc:
         raise CutsError(f"Não foi possível iniciar FFmpeg: {exc}") from exc
     executed_command = list(command)
@@ -306,7 +307,7 @@ def _run_ffmpeg(command: list[str], output: Path, *, source: Path, segment: dict
         fallback = ["libx264" if item == "h264_nvenc" else "veryfast" if item == "p1" else item for item in executed_command]
         if output.exists():
             output.unlink()
-        completed = subprocess.run(fallback, capture_output=True, text=True, check=False)
+        completed = subprocess.run(fallback, capture_output=True, text=True, check=False, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         executed_command = fallback
     if completed.returncode != 0 or not output.is_file() or output.stat().st_size == 0:
         if output.exists():

@@ -354,6 +354,7 @@ class PushtunesAdapter:
                 text=True,
                 timeout=self.timeout,
                 check=False,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
         except (OSError, subprocess.SubprocessError) as exc:
             return _error(f"Não foi possível iniciar o Pushtunes: {exc}", {"status": "process_error"})

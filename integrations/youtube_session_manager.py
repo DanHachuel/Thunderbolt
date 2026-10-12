@@ -73,6 +73,7 @@ def _install_playwright_chromium() -> bool:
             capture_output=True,
             text=True,
             timeout=300,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         logger.warning("Não foi possível preparar o Chromium do Playwright: %s", _safe_error(exc))

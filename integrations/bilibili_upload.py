@@ -7,6 +7,7 @@ interface síncrona adequada à UI Streamlit e nunca devolve os cookies nos dado
 from __future__ import annotations
 
 import asyncio
+import os
 import subprocess
 import tempfile
 import threading
@@ -119,6 +120,7 @@ def _derive_cover(video_path: Path, directory: Path) -> Path:
     completed = subprocess.run(
         [executable, "-y", "-hide_banner", "-loglevel", "error", "-ss", "0", "-i", str(video_path), "-frames:v", "1", "-q:v", "3", str(target)],
         capture_output=True, text=True, timeout=90, check=False,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
     if completed.returncode != 0 or not target.is_file():
         raise RuntimeError("FFmpeg não conseguiu criar uma capa a partir do vídeo Bilibili.")

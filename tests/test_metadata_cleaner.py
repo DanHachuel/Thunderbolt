@@ -38,7 +38,7 @@ def test_external_video_is_copied_and_clean_output_is_recorded(tmp_path, monkeyp
     assert len(digest) == 64
     assert source.read_bytes() == b"original-video"
 
-    def fake_run(command, capture_output, text, check):
+    def fake_run(command, capture_output, text, check, creationflags=0, **kwargs):
         Path(command[-1]).write_bytes(b"clean-video")
         return subprocess.CompletedProcess(command, 0, "", "")
 

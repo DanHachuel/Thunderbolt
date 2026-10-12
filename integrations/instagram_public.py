@@ -343,6 +343,7 @@ def _fetch_web_profile_user(username: str) -> dict[str, Any] | None:
                     errors='replace',
                     timeout=25,
                     check=False,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
                 )
                 payload = json.loads(completed.stdout) if completed.returncode == 0 and completed.stdout else None
                 user = ((payload.get('data') or {}).get('user') if isinstance(payload, dict) else None)
@@ -610,7 +611,7 @@ def _fetch_posts_with_ytdlp(username: str, limit: int = 10) -> list[dict[str, An
         '--playlist-end', str(max(1, int(limit))), url,
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         if result.returncode != 0:
             print(f'yt-dlp erro para @{username}: {result.stderr.strip()}')
             return []

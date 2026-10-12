@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -147,7 +148,7 @@ def clean_video_metadata(
     command = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", str(source)]
     command.extend(_ffmpeg_metadata_args(metadata))
     command.extend(["-c", "copy", str(output)])
-    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    completed = subprocess.run(command, capture_output=True, text=True, check=False, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
     if completed.returncode != 0 or not output.exists() or output.stat().st_size == 0:
         if output.exists():
             output.unlink()

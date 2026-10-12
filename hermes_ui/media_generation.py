@@ -1264,6 +1264,7 @@ def validate_motion_control_file(path: str | Path, *, kind: str) -> dict[str, An
                 text=True,
                 timeout=30,
                 check=False,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
             duration = float(probe.stdout.strip())
         except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
@@ -1499,7 +1500,7 @@ def concatenate_video_files(paths: list[Path], output_path: Path) -> Path:
         manifest.write_text("\n".join(f"file '{str(path).replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))}'" for path in valid) + "\n", encoding="utf-8")
         output_path.parent.mkdir(parents=True, exist_ok=True)
         command = [ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(manifest), "-c", "copy", str(output_path)]
-        completed = subprocess.run(command, capture_output=True, text=True, timeout=600, check=False)
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=600, check=False, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         if completed.returncode != 0:
             raise MediaGenerationError(f"FFmpeg não conseguiu juntar os segmentos UGC: {completed.stderr[-500:]}")
     except OSError as exc:

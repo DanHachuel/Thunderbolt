@@ -67,6 +67,7 @@ def _node_satisfiable_version(node: str) -> tuple[bool, str]:
             capture_output=True,
             text=True,
             timeout=30,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
     except (OSError, subprocess.SubprocessError):
         return False, ""
@@ -171,6 +172,7 @@ def _renderer_dependency_installed(node: str) -> bool:
             cwd=str(REMOTION_PACKAGE_DIR),
             capture_output=True,
             timeout=120,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
     except (OSError, subprocess.SubprocessError):
         return False
@@ -269,6 +271,7 @@ def prepare_input_props(script: dict[str, Any] | str, config: dict[str, Any] | N
             capture_output=True,
             text=True,
             timeout=REMOTION_PREPARE_TIMEOUT_SECONDS,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise RemotionProviderError(f"Não foi possível executar o adaptador Remotion: {exc}") from exc

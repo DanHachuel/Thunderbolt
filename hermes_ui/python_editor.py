@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -154,14 +155,14 @@ def _run(command: list[str], output: Path, operation: str, source: Path, *, extr
     output.parent.mkdir(parents=True, exist_ok=True)
     executed_command = list(command)
     try:
-        completed = subprocess.run(executed_command, capture_output=True, text=True, check=False)
+        completed = subprocess.run(executed_command, capture_output=True, text=True, check=False, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
     except OSError as exc:
         raise PythonEditorError(f"Não foi possível iniciar FFmpeg: {exc}") from exc
     if completed.returncode != 0 and "h264_nvenc" in executed_command:
         fallback = ["libx264" if item == "h264_nvenc" else "veryfast" if item == "p1" else item for item in executed_command]
         if output.exists():
             output.unlink()
-        completed = subprocess.run(fallback, capture_output=True, text=True, check=False)
+        completed = subprocess.run(fallback, capture_output=True, text=True, check=False, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         executed_command = fallback
     if completed.returncode != 0 or not output.is_file() or output.stat().st_size == 0:
         if output.exists():

@@ -105,6 +105,7 @@ def _camoufox_browser_downloaded() -> bool:
             text=True,
             timeout=15,
             check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
     except (OSError, subprocess.TimeoutExpired):
         return False

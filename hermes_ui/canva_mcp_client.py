@@ -51,6 +51,7 @@ class CanvaMCPClient:
             encoding="utf-8",
             errors="replace",
             bufsize=1,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         self._reader = threading.Thread(target=self._read_stdout, name="canva-mcp-reader", daemon=True)
         self._reader.start()
