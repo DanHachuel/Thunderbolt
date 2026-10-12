@@ -366,7 +366,7 @@ def supported_cli_options(root: Path, uv: str) -> dict[str, bool] | None:
     MoneyPrinterTurbo evolves independently of Thunderbolt: forwarding an
     option that the installed cli.py does not know yet aborts argparse with
     "unrecognized arguments" before any pipeline stage runs. Detection is
-    best-effort — on any failure we return None and forward everything,
+    best-effort â€” on any failure we return None and forward everything,
     preserving the legacy behaviour.
     """
     try:
@@ -374,10 +374,10 @@ def supported_cli_options(root: Path, uv: str) -> dict[str, bool] | None:
             [uv, "run", "python", "cli.py", "--help"],
             cwd=root,
             capture_output=True,
+            creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
             text=True,
             timeout=300,
             check=False,
-            creationflags=_windows_process_group_flags(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -524,6 +524,7 @@ def _prepare_azure_v2_chunked_audio(
             command,
             cwd=root,
             env=environment,
+            creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -734,31 +735,6 @@ def write_result_manifest(root: Path, payload: dict[str, object]) -> Path:
     temp_path.replace(result_path)
     return result_path.resolve()
 
-def _windows_process_group_flags() -> int:
-    """Windows: consola SEPARADA para a árvore uv/MPT/ffmpeg (0.9.81).
-
-    Evidência forense: 3 timestamps ao segundo entre o fecho de logs MPT e
-    launcher_exiting ctrl+c — subprocessos desta árvore emitem CTRL_C_EVENT
-    à consola quando terminam. DETACHED_PROCESS cria uma consola separada:
-    qualquer sinal gerado internamente (uv, ffmpeg, Python) fica isolado e
-    nunca chega ao launcher. CREATE_NEW_PROCESS_GROUP assegura que Ctrl+C
-    do grupo 0 também não interrompa a renderização.
-    """
-    if os.name != "nt":
-        return 0
-    return subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-
-
-def _ignore_console_ctrl_c() -> None:
-    """Windows: ignora CTRL_C_EVENT (o pipeline termina via TerminateProcess)."""
-    if os.name != "nt":
-        return
-    try:
-        import ctypes
-
-        ctypes.windll.kernel32.SetConsoleCtrlHandler(None, True)
-    except (OSError, AttributeError, ImportError):
-        pass
 
 
 def run_checked(command: list[str], *, cwd: Path) -> None:
@@ -769,13 +745,13 @@ def run_checked(command: list[str], *, cwd: Path) -> None:
             command,
             cwd=cwd,
             stdout=subprocess.PIPE,
+            creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
             stderr=subprocess.STDOUT,
             text=True,
             errors="replace",
             check=False,
             timeout=DEPENDENCY_SYNC_TIMEOUT_SECONDS,
-            creationflags=_windows_process_group_flags(),
-        )
+                    )
     except subprocess.TimeoutExpired as exc:
         raise SkillError(
             "A verificação das dependências com uv excedeu 15 minutos; "
@@ -824,7 +800,7 @@ def generate_video(
     ensure_moviepy(root, uv)
     config_path = ensure_config(root)
     # As opções encaminhadas dependem da versão instalada do cli.py: opções
-    # recentes (estilo completo de legendas, transições, …) são ignoradas em
+    # recentes (estilo completo de legendas, transições, â€¦) são ignoradas em
     # instalações mais antigas em vez de abortarem o argparse.
     cli_args = filter_forwarded_args(cli_args, supported_cli_options(root, uv))
 
@@ -903,10 +879,10 @@ def generate_video(
             command,
             cwd=root,
             stdout=log_file,
+            creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
             stderr=subprocess.STDOUT,
             text=True,
             check=False,
-            creationflags=_windows_process_group_flags(),
         )
     if result.returncode != 0:
         tail = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-30:]
@@ -965,7 +941,6 @@ def generate_video(
 
 
 def main(argv: list[str] | None = None) -> int:
-    _ignore_console_ctrl_c()
     args = parse_args(argv)
     root = args.root.expanduser().resolve()
     try:

@@ -1,4 +1,15 @@
 # Changelog
+## 0.9.88 — 2026-10-11
+- **Corrigidas as várias janelas CMD**: `DETACHED_PROCESS` removido por completo de todo o código; substituído por `CREATE_NO_WINDOW` em todos os subprocessos de background (`pipeline_worker.py` Popen do mpt_agent, `mpt_agent.py` uv sync / cli.py --help / render cli.py / Azure TTS chunked, `remotion_provider.py` render Node.js). `CREATE_NO_WINDOW` suprime a janela sem desanexar da consola — output continua via pipes. Zero janelas CMD ao retomar tarefas pausadas.
+- Corrigidos 43 caracteres corrompidos (double-encoding UTF-8) no `mpt_agent.py` causados por um `Set-Content` PowerShell anterior.
+- Novo teste `tests/test_no_detached_process.py` (4 testes) garante que `DETACHED_PROCESS` nunca volta e que `CREATE_NO_WINDOW` está presente em todos os spawns de background.
+- SIGINT absorvido no Windows (0.9.86) continua intacto. Linux/macOS inalterado.
+- **1288 testes verdes** (1284 + 4 novos).
+
+## 0.9.87 — 2026-10-11
+- **Corrigidas as várias janelas CMD ao retomar tarefas**: o `DETACHED_PROCESS` (0.9.82, restaurado por engano via `git checkout`) fazia cada `uv`/`ffmpeg` abrir a sua própria janela CMD visível quando o pipeline retomava uma tarefa pausada. Substituído por **`CREATE_NO_WINDOW`** — suprime a janela sem desanexar da consola; o output continua a chegar via pipes. Aplicado ao `Popen` do mpt_agent no `pipeline_worker.py` e a todos os subprocessos do `mpt_agent.py` (`uv sync`, `cli.py --help`, render `cli.py`).
+- 1284 testes verdes.
+
 ## 0.9.86 — 2026-10-11
 - **Corrigido o desligamento espúrio por SIGINT no Windows**: o Windows 11 entrega o MESMO sinal SIGINT para Ctrl+C real e para `CTRL_C_EVENT` espúrio gerado quando um navegador é aberto ou um subprocesso `.cmd` é criado em thread secundária (comportamento documentado em Hermes Agent e DeepTutor). Não é possível distingui-los — o Thunderbolt **absorve SIGINT incondicionalmente no Windows** e oferece **quatro formas de encerrar**: Ctrl+Break, arquivo `.thunderbolt.stop`, fechar a janela do terminal, ou Gerenciador de Tarefas. No Linux/macOS, Ctrl+C continua funcionando normalmente.
 - 1284 testes verdes.

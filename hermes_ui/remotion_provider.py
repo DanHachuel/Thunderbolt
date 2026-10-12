@@ -414,6 +414,7 @@ def run_remotion_render(
             text=True,
             bufsize=1,
             start_new_session=os.name != "nt",
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
     except OSError as exc:
         raise RemotionProviderError(f"Não foi possível iniciar o subprocesso Remotion: {exc}") from exc

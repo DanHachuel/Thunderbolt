@@ -1510,16 +1510,7 @@ def _run_video_helper_once(
             cwd=helper_dir,
             env=env,
             start_new_session=os.name != "nt",
-            # 0.9.81: DETACHED_PROCESS — a árvore uv/MPT/ffmpeg corre numa
-            # consola SEPARADA. A evidência forense é conclusiva: 3 timestamps
-            # ao segundo exacto entre o fecho de logs MPT e launcher_exiting
-            # ctrl+c — quando um subprocesso da árvore MPT termina, algo dentro
-            # dela (uv/ffmpeg/Python) emite CTRL_C_EVENT à consola partilhada,
-            # atingindo o launcher. Com consola separada, qualquer sinal
-            # gerado internamente fica isolado e nunca chega ao launcher.
-            # O output continua a chegar via PIPE (stdout/stderr) — nunca
-            # dependeu da consola.
-            creationflags=(subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP) if os.name == "nt" else 0,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
