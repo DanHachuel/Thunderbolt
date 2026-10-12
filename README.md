@@ -302,6 +302,18 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
 Após `install`, o launcher usa o ambiente virtual instalado em `~/.thunderbolt/.venv` — no Windows, `%LOCALAPPDATA%\\THUNDERBOLT\\.venv` — e inicia a UI em `localhost:3030`. No Windows, a raiz é `%LOCALAPPDATA%\\THUNDERBOLT`; no computador indicado, o caminho será `C:\\Users\\danha\\AppData\\Local\\THUNDERBOLT`. Isto evita a redirecção de `HOME` que pode ocorrer no MobaXterm.
+
+### Encerrando o Thunderbolt no Windows
+
+O Windows 11 entrega o mesmo `CTRL_C_EVENT` para Ctrl+C real e para o sinal espúrio disparado quando navegadores são abertos ou subprocessos `.cmd` são criados — é impossível distingui-los. Por isso, o Thunderbolt **absorve Ctrl+C no Windows** e não encerra com ele. Para parar:
+
+1. **Ctrl+Break** no terminal.
+2. **Criar o arquivo `~/.thunderbolt.stop`** — o launcher verifica a cada 3 segundos e encerra.
+3. **Fechar a janela do terminal**.
+4. **Gerenciador de Tarefas** → `node.exe` → Finalizar Tarefa.
+
+No Linux e macOS, Ctrl+C continua encerrando normalmente.
+
  O instalador não instala drivers de GPU, Docker, chaves de API, modelos Whisper ou credenciais de plataformas; esses componentes continuam dependentes do sistema e da configuração do utilizador. Para desenvolvimento a partir do clone, continue a usar `node scripts/cli.mjs`.
 
 ## Niche Finder
