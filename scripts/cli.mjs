@@ -772,8 +772,6 @@ const STOP_FILE = join(userHome, ".thunderbolt.stop");
 if (platform() === "win32") {
   process.on("SIGINT", () => {
     diagnostic("ctrl_c_absorbed_windows", { pid: process.pid, uptime_seconds: Math.round(process.uptime()) });
-    console.log("Thunderbolt: SIGINT ignorado no Windows (proteção contra CTRL_C_EVENT espúrio do Win11).");
-    console.log("Thunderbolt: para encerrar — Ctrl+Break, ou crie o arquivo ~/.thunderbolt.stop");
   });
 } else {
   process.on("SIGINT", () => stopWorker("ctrl+c"));
