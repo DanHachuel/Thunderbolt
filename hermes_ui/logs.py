@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from . import storage
+from .domain import load_tasks
 from .notifications import EVENTS_BY_CODE, list_notifications, reconcile_persisted_notifications
 
 MAX_LOGS = 500
@@ -291,7 +292,8 @@ def list_logs(*, operation: str = "", query: str = "", status: str = "", limit: 
     except Exception:
         # A diagnostic page must remain available even if one source is malformed.
         pass
-    tasks = storage.read_json("tasks.json", [])
+    # 0.9.94: leitura migrada — tarefas antigas são normalizadas no projection.
+    tasks = load_tasks()
     tasks = [item for item in tasks if isinstance(item, dict)] if isinstance(tasks, list) else []
     task_ids = {str(item.get("id") or "") for item in tasks if item.get("id")}
     task_logs = {str(item.get("id")): _task_log_path(item) for item in tasks if item.get("id")}

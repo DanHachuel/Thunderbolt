@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from . import storage
-from .domain import create_batch, create_tasks_for_batch, pipeline_summary
+from .domain import create_batch, create_tasks_for_batch, load_tasks, pipeline_summary
 
 LOGGER = logging.getLogger(__name__)
 MCP_ENDPOINT_PATH = "/mcp"
@@ -145,7 +145,8 @@ def _tool_call(name: str, arguments: dict[str, Any], write_enabled: bool) -> Any
         valid_states = {"to_do", "doing", "blocked", "done", "failed", "cancelled"}
         if state and state not in valid_states:
             raise ValueError(f"state inválido: {state}.")
-        tasks = storage.read_json("tasks.json", [])
+        # 0.9.94: leitura migrada — a exposição MCP mostra o schema actual.
+        tasks = load_tasks()
         filtered = [
             task for task in tasks
             if isinstance(task, dict)

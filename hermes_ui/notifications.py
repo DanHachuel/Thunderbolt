@@ -225,7 +225,10 @@ def clear_notifications() -> int:
 
 def _task_notifications() -> int:
     created = 0
-    tasks = storage.read_json("tasks.json", [])
+    # 0.9.94: leitura migrada (import deferido — domain importa este módulo).
+    from hermes_ui.domain import load_tasks
+
+    tasks = load_tasks()
     if not isinstance(tasks, list):
         return 0
     for task in tasks:

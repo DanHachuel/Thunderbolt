@@ -11,6 +11,7 @@ from .creative_generation import _language_instruction, generate_thumbnail_promp
 from .media_generation import generate_image_from_pool
 from .media_providers import media_cards_for_pool
 from .storage import STORAGE, ensure_storage, now, read_json, update_json, write_json
+from .domain import load_tasks
 from .thumbnail_generation import ThumbnailGenerationError, generate_thumbnail_image, infer_thumbnail_aspect_ratio
 from .thumbnail_blueprints import thumbnail_aspect_ratio_for_channel_task, thumbnail_blueprint_for_task
 
@@ -118,7 +119,7 @@ def normalize_thumbnail_task(task: dict[str, Any]) -> dict[str, Any]:
 
 
 def list_thumbnail_tasks() -> list[dict[str, Any]]:
-    tasks = read_json("tasks.json", [])
+    tasks = load_tasks()
     if not isinstance(tasks, list):
         return []
     records = []
@@ -257,7 +258,7 @@ def generate_thumbnail_for_task(
     thumbnail_blueprint: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], Path]:
     """Generate an image from the task's current prompt and persist it on the task."""
-    tasks = read_json("tasks.json", [])
+    tasks = load_tasks()
     if not isinstance(tasks, list):
         raise ThumbnailGenerationError("O índice de tarefas não está disponível.")
     task, record = _find_task(tasks, task_id)
@@ -312,7 +313,7 @@ def regenerate_thumbnail_prompt(
     language: str = "",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Regenerate and persist only the thumbnail prompt, keeping the existing image unchanged."""
-    tasks = read_json("tasks.json", [])
+    tasks = load_tasks()
     if not isinstance(tasks, list):
         raise ThumbnailGenerationError("O índice de tarefas não está disponível.")
     task, record = _find_task(tasks, task_id)
@@ -345,7 +346,7 @@ def regenerate_thumbnail_prompt_and_image(
     variant: dict[str, Any],
 ) -> tuple[dict[str, Any], Path]:
     """Persist a newly generated prompt and render its image as one atomic task update."""
-    tasks = read_json("tasks.json", [])
+    tasks = load_tasks()
     if not isinstance(tasks, list):
         raise ThumbnailGenerationError("O índice de tarefas não está disponível.")
     task, record = _find_task(tasks, task_id)
@@ -387,7 +388,7 @@ def regenerate_thumbnail_lettering(
     channel: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], Path]:
     """Edit only the lettering while sending the existing image as a Nano Banana reference."""
-    tasks = read_json("tasks.json", [])
+    tasks = load_tasks()
     if not isinstance(tasks, list):
         raise ThumbnailGenerationError("O índice de tarefas não está disponível.")
     task, record = _find_task(tasks, task_id)
@@ -478,7 +479,7 @@ def upload_thumbnail_image(
         raise ThumbnailGenerationError("Use uma imagem PNG, JPG, JPEG ou WEBP.")
     if content_type and not str(content_type).lower().startswith("image/"):
         raise ThumbnailGenerationError("O ficheiro enviado não é uma imagem válida.")
-    tasks = read_json("tasks.json", [])
+    tasks = load_tasks()
     if not isinstance(tasks, list):
         raise ThumbnailGenerationError("O índice de tarefas não está disponível.")
     task, record = _find_task(tasks, task_id)

@@ -531,7 +531,7 @@ def stop_task_by_user(task_id: str) -> dict[str, Any] | None:
     task = transition_task(task_id, "blocked")
     if task is None:
         return None
-    tasks = read_json("tasks.json", [])
+    tasks = load_tasks()
     for persisted in tasks:
         if persisted.get("id") == task_id:
             persisted["stop_reason"] = "user"
@@ -566,7 +566,7 @@ def _rebuild_orchestration(task: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def migrate_task(task: dict[str, Any]) -> dict[str, Any]:
+def migrate_task(task: dict[str, Any], *, for_requeue: bool = False) -> dict[str, Any]:
     """
     Normaliza o schema de uma tarefa antiga para o formato atual.
 
@@ -579,6 +579,12 @@ def migrate_task(task: dict[str, Any]) -> dict[str, Any]:
       defaults para campos estruturais que o pipeline atual exige.
     - Preserva qualquer campo desconhecido (forward-compat).
     - Idempotente: chamar duas vezes produz o mesmo resultado.
+
+    0.9.94: os marcadores de falha (error, failure_api, …) só são removidos
+    com ``for_requeue=True`` — a limpeza pertence ao contexto de re-fila
+    (retry/remake). As leituras do pipeline (load_tasks) NUNCA removem
+    falhas: as projecções (logs, notificações, MCP) e os write-backs
+    (thumbnails, stop) precisam de ver e preservar a falha original.
     """
     task = dict(task)  # cópia rasa, não muta o original
 
@@ -597,10 +603,11 @@ def migrate_task(task: dict[str, Any]) -> dict[str, Any]:
     task.setdefault("failed_stage", "")
     task.setdefault("schema_version", CURRENT_SCHEMA_VERSION)
 
-    # 4. Remover marcadores de falha obsoletos (não é conteúdo criativo)
-    for key in ("failure_api", "failure_provider", "failure_stage",
-                "error", "error_detail"):
-        task.pop(key, None)
+    # 4. Remover marcadores de falha obsoletos — APENAS na re-fila
+    if for_requeue:
+        for key in ("failure_api", "failure_provider", "failure_stage",
+                    "error", "error_detail"):
+            task.pop(key, None)
 
     # 5. Actualizar versão do schema
     task["schema_version"] = CURRENT_SCHEMA_VERSION
@@ -641,8 +648,9 @@ def retry_task_with_current_settings(task_id: str, *, confirm_upload_uncertain: 
             # 0.9.93: migrar o schema ANTES de qualquer alteração de estado —
             # tarefas antigas (stage legado, orchestration em formato antigo)
             # ficam normalizadas sem tocar em roteiro, blueprint, tags,
-            # thumbnail, voz nem artefactos baixados.
-            migrated = migrate_task(task)
+            # thumbnail, voz nem artefactos baixados. for_requeue=True: na
+            # re-fila os marcadores de falha são mesmo limpos (0.9.94).
+            migrated = migrate_task(task, for_requeue=True)
             task.clear()
             task.update(migrated)
             task["state"] = "to_do"
@@ -772,7 +780,8 @@ def remake_video_task(task_id: str) -> dict[str, Any] | None:
             # normalizado e a orchestration reconstruída para o formato
             # actual. O conteúdo criativo (roteiro, blueprint, tags,
             # thumbnail, voz) e os artefactos baixados não são tocados.
-            migrated = migrate_task(task)
+            # for_requeue=True: a remontagem re-fila a tarefa (0.9.94).
+            migrated = migrate_task(task, for_requeue=True)
             task.clear()
             task.update(migrated)
             _refresh_task_channel_video_settings(task)
@@ -822,7 +831,7 @@ def remake_video_task(task_id: str) -> dict[str, Any] | None:
 
 
 def pipeline_summary() -> dict[str, Any]:
-    tasks = read_json("tasks.json", [])
+    tasks = load_tasks()
     channels = read_json("channels.json", [])
     return {
         "channels": len(channels),

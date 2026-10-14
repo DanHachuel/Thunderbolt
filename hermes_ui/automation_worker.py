@@ -19,7 +19,7 @@ from typing import Any
 
 from . import storage
 from .creative_generation import generate_title_and_keywords, generate_topic_for_channel
-from .domain import create_batch, create_tasks_for_batch
+from .domain import create_batch, create_tasks_for_batch, load_tasks
 from .languages import language_code
 from .material_sources import selected_material_source
 from .notifications import record_notification
@@ -262,7 +262,8 @@ def _batch_for_day(channel_id: str, day: str) -> dict[str, Any] | None:
 
 
 def _tasks_for_batch(batch_id: str) -> list[dict[str, Any]]:
-    tasks = storage.read_json("tasks.json", [])
+    # 0.9.94: leitura migrada — tarefas antigas do lote ficam com schema actual.
+    tasks = load_tasks()
     return [task for task in tasks if isinstance(task, dict) and task.get("batch_id") == batch_id]
 
 

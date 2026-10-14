@@ -52,7 +52,7 @@ class ThumbnailPipelineTests(unittest.TestCase):
             {"id": "with-image", "title": "Com imagem", "artifacts": {"thumbnail": "thumb.jpg"}, "thumbnail_status": "generated"},
             {"id": "unrelated", "title": "Sem thumbnail"},
         ]
-        with patch("hermes_ui.thumbnails.read_json", return_value=tasks):
+        with patch("hermes_ui.thumbnails.load_tasks", return_value=tasks):
             records = list_thumbnail_tasks()
         self.assertEqual([record["task_id"] for record in records], ["with-prompt", "with-image"])
 
@@ -76,7 +76,7 @@ class ThumbnailPipelineTests(unittest.TestCase):
                 captured.update({"settings": settings, "prompt": prompt, "topic": topic, "variant_index": variant_index, "kwargs": kwargs})
                 return generated_path
 
-            with patch("hermes_ui.thumbnails.read_json", return_value=tasks), patch("hermes_ui.thumbnails.write_json", side_effect=lambda _name, value: captured.update({"saved": value})), patch("hermes_ui.thumbnails.update_json", side_effect=_fake_update_json_factory(tasks, captured)), patch("hermes_ui.thumbnails.thumbnail_blueprint_for_task", return_value={}), patch("hermes_ui.thumbnails.generate_thumbnail_image", side_effect=fake_generate):
+            with patch("hermes_ui.thumbnails.load_tasks", return_value=tasks), patch("hermes_ui.thumbnails.write_json", side_effect=lambda _name, value: captured.update({"saved": value})), patch("hermes_ui.thumbnails.update_json", side_effect=_fake_update_json_factory(tasks, captured)), patch("hermes_ui.thumbnails.thumbnail_blueprint_for_task", return_value={}), patch("hermes_ui.thumbnails.generate_thumbnail_image", side_effect=fake_generate):
                 task, image_path = regenerate_thumbnail("video-1", {"gemini_image_api_key": "key"})
 
         self.assertEqual(image_path, generated_path)
@@ -102,7 +102,7 @@ class ThumbnailPipelineTests(unittest.TestCase):
         }]
         generated_path = Path("/tmp/generated-thumbnail.jpg")
         captured = {}
-        with patch("hermes_ui.thumbnails.read_json", return_value=tasks), patch("hermes_ui.thumbnails.write_json", side_effect=lambda _name, value: captured.update({"saved": value})), patch("hermes_ui.thumbnails.update_json", side_effect=_fake_update_json_factory(tasks, captured)), patch("hermes_ui.thumbnails._archive_image"), patch("hermes_ui.thumbnails.generate_thumbnail_image", return_value=generated_path):
+        with patch("hermes_ui.thumbnails.load_tasks", return_value=tasks), patch("hermes_ui.thumbnails.write_json", side_effect=lambda _name, value: captured.update({"saved": value})), patch("hermes_ui.thumbnails.update_json", side_effect=_fake_update_json_factory(tasks, captured)), patch("hermes_ui.thumbnails._archive_image"), patch("hermes_ui.thumbnails.generate_thumbnail_image", return_value=generated_path):
             task, image_path = generate_thumbnail_for_task("video-1", {"gemini_image_api_key": "key"})
         self.assertEqual(image_path, generated_path)
         self.assertEqual(task["thumbnail_source"], "generated")
@@ -173,7 +173,7 @@ class ThumbnailPipelineTests(unittest.TestCase):
         generated_path = Path("/tmp/prompt-regenerated.jpg")
         variant = {"image_prompt": "new prompt", "overlay_text": "New", "lettering_prompt": "short text"}
         captured = {}
-        with patch("hermes_ui.thumbnails.read_json", return_value=tasks), patch("hermes_ui.thumbnails.write_json", side_effect=lambda _name, value: captured.update({"saved": value})), patch("hermes_ui.thumbnails.update_json", side_effect=_fake_update_json_factory(tasks, captured)), patch("hermes_ui.thumbnails._archive_image"), patch("hermes_ui.thumbnails.generate_thumbnail_image", return_value=generated_path):
+        with patch("hermes_ui.thumbnails.load_tasks", return_value=tasks), patch("hermes_ui.thumbnails.write_json", side_effect=lambda _name, value: captured.update({"saved": value})), patch("hermes_ui.thumbnails.update_json", side_effect=_fake_update_json_factory(tasks, captured)), patch("hermes_ui.thumbnails._archive_image"), patch("hermes_ui.thumbnails.generate_thumbnail_image", return_value=generated_path):
             task, _image_path = regenerate_thumbnail_prompt_and_image("video-1", {"gemini_image_api_key": "key"}, variant)
         self.assertEqual(task["thumbnail_source"], "prompt_regenerated")
         self.assertEqual(task["thumbnail_prompt"], "new prompt")
@@ -199,7 +199,7 @@ class ThumbnailPipelineTests(unittest.TestCase):
             "lettering_prompt": "new lettering",
         }
         captured = {}
-        with patch("hermes_ui.thumbnails.read_json", return_value=tasks), patch("hermes_ui.thumbnails.write_json", side_effect=lambda _name, value: captured.update({"saved": value})), patch("hermes_ui.thumbnails.update_json", side_effect=_fake_update_json_factory(tasks, captured)), patch("hermes_ui.thumbnails.generate_thumbnail_prompt", return_value=new_variant) as prompt_generator, patch("hermes_ui.thumbnails.generate_thumbnail_image") as image_generator:
+        with patch("hermes_ui.thumbnails.load_tasks", return_value=tasks), patch("hermes_ui.thumbnails.write_json", side_effect=lambda _name, value: captured.update({"saved": value})), patch("hermes_ui.thumbnails.update_json", side_effect=_fake_update_json_factory(tasks, captured)), patch("hermes_ui.thumbnails.generate_thumbnail_prompt", return_value=new_variant) as prompt_generator, patch("hermes_ui.thumbnails.generate_thumbnail_image") as image_generator:
             task, variant = regenerate_thumbnail_prompt(
                 "video-1",
                 {"llm": "settings"},
@@ -235,7 +235,7 @@ class ThumbnailPipelineTests(unittest.TestCase):
             existing = Path(directory) / "existing.jpg"
             existing.write_bytes(b"image")
             tasks[0]["artifacts"]["thumbnail"] = str(existing)
-            with patch("hermes_ui.thumbnails.read_json", return_value=tasks), patch("hermes_ui.thumbnails.write_json"), patch("hermes_ui.thumbnails.update_json", side_effect=_fake_update_json_factory(tasks, captured)), patch("hermes_ui.thumbnails._archive_image"), patch("hermes_ui.thumbnails.generate_thumbnail_image", side_effect=lambda _settings, prompt, **kwargs: captured.update({"prompt": prompt, "kwargs": kwargs}) or generated_path):
+            with patch("hermes_ui.thumbnails.load_tasks", return_value=tasks), patch("hermes_ui.thumbnails.write_json"), patch("hermes_ui.thumbnails.update_json", side_effect=_fake_update_json_factory(tasks, captured)), patch("hermes_ui.thumbnails._archive_image"), patch("hermes_ui.thumbnails.generate_thumbnail_image", side_effect=lambda _settings, prompt, **kwargs: captured.update({"prompt": prompt, "kwargs": kwargs}) or generated_path):
                 task, _image_path = regenerate_thumbnail_lettering("video-1", {"gemini_image_api_key": "key"})
         self.assertIn("BASE IMAGE LAYER", captured["prompt"])
         self.assertIn("LETTERING EDIT LAYER", captured["prompt"])
@@ -259,7 +259,7 @@ class ThumbnailPipelineTests(unittest.TestCase):
             existing.write_bytes(b"image")
             tasks[0]["artifacts"]["thumbnail"] = str(existing)
             generated = Path(directory) / "generated.jpg"
-            with patch("hermes_ui.thumbnails.read_json", return_value=tasks), patch("hermes_ui.thumbnails.update_json", side_effect=lambda _name, _default, callback: callback(tasks)), patch("hermes_ui.thumbnails._archive_image"), patch("hermes_ui.thumbnails._generate_image_with_pool", side_effect=lambda _settings, prompt, **kwargs: captured.update({"prompt": prompt, "kwargs": kwargs}) or generated):
+            with patch("hermes_ui.thumbnails.load_tasks", return_value=tasks), patch("hermes_ui.thumbnails.update_json", side_effect=lambda _name, _default, callback: callback(tasks)), patch("hermes_ui.thumbnails._archive_image"), patch("hermes_ui.thumbnails._generate_image_with_pool", side_effect=lambda _settings, prompt, **kwargs: captured.update({"prompt": prompt, "kwargs": kwargs}) or generated):
                 regenerate_thumbnail_lettering("video-language", {}, language="en")
         self.assertIn("LANGUAGE LOCK", captured["prompt"])
         self.assertIn("English (en)", captured["prompt"])
@@ -274,7 +274,7 @@ class ThumbnailPipelineTests(unittest.TestCase):
         }]
         captured = {}
         with tempfile.TemporaryDirectory() as directory:
-            with patch("hermes_ui.thumbnails.STORAGE", Path(directory)), patch("hermes_ui.thumbnails.read_json", return_value=tasks), patch("hermes_ui.thumbnails.write_json", side_effect=lambda _name, value: captured.update({"saved": value})), patch("hermes_ui.thumbnails.update_json", side_effect=_fake_update_json_factory(tasks, captured)), patch("hermes_ui.thumbnails._archive_image"):
+            with patch("hermes_ui.thumbnails.STORAGE", Path(directory)), patch("hermes_ui.thumbnails.load_tasks", return_value=tasks), patch("hermes_ui.thumbnails.write_json", side_effect=lambda _name, value: captured.update({"saved": value})), patch("hermes_ui.thumbnails.update_json", side_effect=_fake_update_json_factory(tasks, captured)), patch("hermes_ui.thumbnails._archive_image"):
                 task, image_path = upload_thumbnail_image("video-1", b"fake image", "custom.png", "image/png")
             self.assertTrue(image_path.is_file())
             self.assertEqual(image_path.read_bytes(), b"fake image")
@@ -284,7 +284,7 @@ class ThumbnailPipelineTests(unittest.TestCase):
 
     def test_regenerate_requires_prompt(self):
         tasks = [{"id": "video-2", "title": "Sem prompt", "thumbnail_status": "not_generated"}]
-        with patch("hermes_ui.thumbnails.read_json", return_value=tasks), self.assertRaisesRegex(RuntimeError, "não tem um prompt"):
+        with patch("hermes_ui.thumbnails.load_tasks", return_value=tasks), self.assertRaisesRegex(RuntimeError, "não tem um prompt"):
             regenerate_thumbnail("video-2", {})
 
 
