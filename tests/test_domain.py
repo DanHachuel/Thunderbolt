@@ -671,6 +671,38 @@ def test_migrate_task_is_idempotent():
     assert once == twice
 
 
+def test_all_schema_migrations_are_callable_and_idempotent():
+    """Cada migração registada em SCHEMA_MIGRATIONS é chamável e idempotente."""
+    from hermes_ui.domain import CURRENT_SCHEMA_VERSION, SCHEMA_MIGRATIONS
+
+    assert CURRENT_SCHEMA_VERSION == max(SCHEMA_MIGRATIONS)
+    for version, migration in SCHEMA_MIGRATIONS.items():
+        assert callable(migration)
+        sample = {"schema_version": version - 1, "stage": "edit"}
+        once = migration(sample)
+        twice = migration(once)
+        assert once == twice
+
+
+def test_migrate_task_chains_registered_migrations_in_order():
+    """A cadeia corre da versão da tarefa até à actual, em ordem e sem saltos."""
+    from hermes_ui.domain import CURRENT_SCHEMA_VERSION, SCHEMA_MIGRATIONS, migrate_task
+
+    calls: list[int] = []
+    real = dict(SCHEMA_MIGRATIONS)
+    for version, migration in real.items():
+        SCHEMA_MIGRATIONS[version] = lambda task, fn=migration, v=version: (calls.append(v), fn(task))[1]
+    try:
+        migrated = migrate_task({"stage": "edit", "schema_version": 0})
+    finally:
+        SCHEMA_MIGRATIONS.clear()
+        SCHEMA_MIGRATIONS.update(real)
+
+    assert calls == sorted(real)
+    assert migrated["schema_version"] == CURRENT_SCHEMA_VERSION
+    assert migrated["stage"] == "topic"
+
+
 def test_retry_applies_migration_before_requeue(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))
     from hermes_ui import storage

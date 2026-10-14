@@ -4,7 +4,7 @@ import re
 import unicodedata
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from . import storage as storage_module
 from .material_sources import selected_material_source
@@ -20,7 +20,9 @@ LEGACY_STAGES = {"edit"}
 VALID_STATES = {"to_do", "doing", "blocked", "done", "failed", "cancelled"}
 # Versão do schema das tarefas. Tarefas sem este campo (ou criadas antes dele)
 # são normalizadas por migrate_task no "Refazer vídeo"/retry e nas leituras do
-# pipeline — nunca na escrita.
+# pipeline — nunca na escrita. As migrações vivem em SCHEMA_MIGRATIONS (junto
+# a migrate_task): quando o schema evoluir, adicione a migração seguinte e
+# incremente esta constante — a cadeia (v0 → v1 → v2 → …) corre sozinha.
 CURRENT_SCHEMA_VERSION = 1
 
 
@@ -566,6 +568,32 @@ def _rebuild_orchestration(task: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _migrate_v0_to_v1(task: dict[str, Any]) -> dict[str, Any]:
+    """v0 → v1 (0.9.93): normaliza stage legado, reconstrói a orchestration e
+    adiciona os defaults estruturais exigidos pelo pipeline actual. Nunca
+    toca em conteúdo criativo nem em artefactos; é idempotente."""
+    task = dict(task)
+    stage = str(task.get("stage") or "").strip().lower()
+    if stage in LEGACY_STAGES or stage not in CASCADE_STAGE_ORDER:
+        task["stage"] = "topic"
+    task["orchestration"] = _rebuild_orchestration(task)
+    task.setdefault("manual_start_required", False)
+    task.setdefault("topic_source", "manual")
+    task.setdefault("worker_interrupted", False)
+    task.setdefault("failed_stage", "")
+    task["schema_version"] = 1
+    return task
+
+
+# Registro de migrações por versão de DESTINO. migrate_task corre a cadeia
+# completa (v0 → v1 → v2 → …) para tarefas que ficaram várias versões atrás.
+# Cada migração tem de ser idempotente — garantido por teste.
+SCHEMA_MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    1: _migrate_v0_to_v1,
+    # 2: _migrate_v1_to_v2,  # exemplo futuro
+}
+
+
 def migrate_task(task: dict[str, Any], *, for_requeue: bool = False) -> dict[str, Any]:
     """
     Normaliza o schema de uma tarefa antiga para o formato atual.
@@ -588,30 +616,22 @@ def migrate_task(task: dict[str, Any], *, for_requeue: bool = False) -> dict[str
     """
     task = dict(task)  # cópia rasa, não muta o original
 
-    # 1. Corrigir stage legado
-    stage = str(task.get("stage") or "").strip().lower()
-    if stage in LEGACY_STAGES or stage not in CASCADE_STAGE_ORDER:
-        task["stage"] = "topic"
+    # Migrações em cadeia: v0 → v1 → v2 → … até à versão actual
+    try:
+        version = int(task.get("schema_version") or 0)
+    except (TypeError, ValueError):
+        version = 0
+    while version < CURRENT_SCHEMA_VERSION:
+        version += 1
+        task = SCHEMA_MIGRATIONS[version](task)
 
-    # 2. Reconstruir orchestration se ausente ou inválida
-    task["orchestration"] = _rebuild_orchestration(task)
-
-    # 3. Adicionar defaults para campos estruturais (nunca criativos)
-    task.setdefault("manual_start_required", False)
-    task.setdefault("topic_source", "manual")
-    task.setdefault("worker_interrupted", False)
-    task.setdefault("failed_stage", "")
-    task.setdefault("schema_version", CURRENT_SCHEMA_VERSION)
-
-    # 4. Remover marcadores de falha obsoletos — APENAS na re-fila
+    # Limpeza de marcadores de falha obsoletos — APENAS na re-fila
     if for_requeue:
         for key in ("failure_api", "failure_provider", "failure_stage",
                     "error", "error_detail"):
             task.pop(key, None)
 
-    # 5. Actualizar versão do schema
     task["schema_version"] = CURRENT_SCHEMA_VERSION
-
     return task
 
 
