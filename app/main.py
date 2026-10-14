@@ -158,7 +158,7 @@ def display_version(version: str) -> str:
 
 APP_VERSION_LABEL = display_version(APP_VERSION)
 
-from hermes_ui.domain import STAGES, create_batch, create_channel, create_tasks_for_batch, delete_channel, delete_task, pipeline_summary, remake_video_task, retry_task_with_current_settings, set_channel_defaults, stop_task_by_user, transition_task, update_channel, update_channel_video
+from hermes_ui.domain import STAGES, create_batch, create_channel, create_tasks_for_batch, delete_channel, delete_task, pipeline_summary, remake_video_task, repair_task_queue, retry_task_with_current_settings, set_channel_defaults, stop_task_by_user, transition_task, update_channel, update_channel_video
 from hermes_ui.channel_import import build_channel_template_xlsx, channel_is_duplicate, find_duplicate_channel, parse_channel_workbook, resolve_blueprint, resolve_google_account, resolve_voice
 from hermes_ui.drafts import list_drafts, save_draft
 from hermes_ui.automation_worker import create_video_now_for_channel, load_worker_status
@@ -6324,6 +6324,25 @@ def render_videos():
     if "videos_state_filter" not in st.session_state:
         st.session_state["videos_state_filter"] = "Todos"
     state_filter = st.selectbox("Filtrar por estado", ["Todos", *known_states, *extra_states], key="videos_state_filter")
+    # 0.9.94 (item 4): "Reparar Fila" — migra o schema de TODAS as tarefas
+    # persistidas de uma vez (stage legado, orchestration, schema_version),
+    # com confirmação explícita. Preserva roteiro, blueprint, tags,
+    # thumbnail, voz, artefactos e marcadores de falha; é idempotente.
+    if st.session_state.get("repair_queue_armed", False):
+        st.warning("Normaliza o schema de todas as tarefas salvas. Tarefas em estado legado serão convertidas para o formato atual. Nenhum conteúdo criativo (roteiro, blueprint, tags, thumbnail, voz, artefatos) será alterado.")
+        repair_cols = st.columns(2)
+        if repair_cols[0].button("Reparar agora", icon=":material/build:", type="primary", key="repair_queue_execute"):
+            report = repair_task_queue()
+            st.session_state["repair_queue_armed"] = False
+            st.toast(f"{report['migrated']} tarefa(s) migrada(s), {report['unchanged']} já estavam no formato atual, {report['dropped']} descartada(s) (formato inválido).")
+            st.rerun()
+        if repair_cols[1].button("Cancelar", key="repair_queue_cancel"):
+            st.session_state["repair_queue_armed"] = False
+            st.rerun()
+    else:
+        if st.button("Reparar Fila", icon=":material/build:", key="repair_queue_arm", help="Normaliza o schema de todas as tarefas salvas para o formato atual, preservando todo o conteúdo criativo e artefactos."):
+            st.session_state["repair_queue_armed"] = True
+            st.rerun()
     for task in tasks:
         task_state = _catalog_task_state(task)
         if state_filter != "Todos" and task_state != str(state_filter).strip().casefold():

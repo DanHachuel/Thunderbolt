@@ -842,6 +842,122 @@ def test_remake_migrates_legacy_task_schema_before_requeue(tmp_path, monkeypatch
     assert remade["artifacts"] == {"script": "/tmp/roteiro.md", "thumbnail": "/x/y.png"}
 
 
+def test_repair_task_queue_migrates_legacy_tasks(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))
+    from hermes_ui import storage
+    from hermes_ui.domain import migrate_task, repair_task_queue
+
+    storage.STORAGE = tmp_path / "storage"
+    storage.STATE = storage.STORAGE / "state"
+    storage.BLUEPRINTS = storage.STORAGE / "blueprints"
+    storage.ensure_storage()
+    canonical = migrate_task({"id": "video_current", "state": "to_do", "stage": "script", "script": "ok"})
+    storage.write_json("tasks.json", [
+        {"id": "video_legacy_1", "state": "failed", "stage": "edit", "script": "um"},
+        {"id": "video_legacy_2", "state": "blocked", "script": "dois"},
+        canonical,
+    ])
+
+    report = repair_task_queue()
+
+    assert report["total"] == 3
+    assert report["migrated"] == 2
+    assert report["unchanged"] == 1
+    assert report["dropped"] == 0
+    persisted = storage.read_json("tasks.json")
+    assert [task["stage"] for task in persisted] == ["topic", "topic", "script"]
+    assert all(task["schema_version"] == 1 for task in persisted)
+
+
+def test_repair_task_queue_preserves_creative_content(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))
+    from hermes_ui import storage
+    from hermes_ui.domain import repair_task_queue
+
+    storage.STORAGE = tmp_path / "storage"
+    storage.STATE = storage.STORAGE / "state"
+    storage.BLUEPRINTS = storage.STORAGE / "blueprints"
+    storage.ensure_storage()
+    storage.write_json("tasks.json", [{
+        "id": "video_legacy_creative",
+        "state": "failed",
+        "stage": "edit",
+        "script": "roteiro original",
+        "blueprint_id": "bp-keep",
+        "tags": ["tag1", "tag2"],
+        "thumbnail": {"path": "/x/y.png"},
+        "voice": "pt-BR-A",
+        "artifacts": {"script": "/tmp/roteiro.md", "audio": "/tmp/narr.wav"},
+        "error": "falha original",
+        "failure_api": "Pixabay API",
+    }])
+
+    report = repair_task_queue()
+    persisted = storage.read_json("tasks.json")[0]
+
+    assert report["migrated"] == 1
+    assert persisted["script"] == "roteiro original"
+    assert persisted["blueprint_id"] == "bp-keep"
+    assert persisted["tags"] == ["tag1", "tag2"]
+    assert persisted["thumbnail"] == {"path": "/x/y.png"}
+    assert persisted["voice"] == "pt-BR-A"
+    assert persisted["artifacts"] == {"script": "/tmp/roteiro.md", "audio": "/tmp/narr.wav"}
+    # A reparação é de schema — os marcadores de falha ficam intactos.
+    assert persisted["error"] == "falha original"
+    assert persisted["failure_api"] == "Pixabay API"
+
+
+def test_repair_task_queue_handles_corrupted_entries(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))
+    from hermes_ui import storage
+    from hermes_ui.domain import repair_task_queue
+
+    storage.STORAGE = tmp_path / "storage"
+    storage.STATE = storage.STORAGE / "state"
+    storage.BLUEPRINTS = storage.STORAGE / "blueprints"
+    storage.ensure_storage()
+    storage.write_json("tasks.json", [
+        {"id": "video_legacy", "state": "failed", "stage": "edit"},
+        "registo corrompido (string)",
+        42,
+    ])
+
+    report = repair_task_queue()
+
+    assert report["total"] == 1
+    assert report["migrated"] == 1
+    assert report["dropped"] == 2
+    persisted = storage.read_json("tasks.json")
+    assert len(persisted) == 1
+    assert persisted[0]["id"] == "video_legacy"
+    assert persisted[0]["stage"] == "topic"
+
+
+def test_repair_task_queue_idempotent(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))
+    from hermes_ui import storage
+    from hermes_ui.domain import repair_task_queue
+
+    storage.STORAGE = tmp_path / "storage"
+    storage.STATE = storage.STORAGE / "state"
+    storage.BLUEPRINTS = storage.STORAGE / "blueprints"
+    storage.ensure_storage()
+    storage.write_json("tasks.json", [
+        {"id": "video_legacy", "state": "failed", "stage": "edit"},
+        {"id": "video_current", "state": "to_do", "stage": "script"},
+        "lixo",
+    ])
+
+    first = repair_task_queue()
+    second = repair_task_queue()
+
+    assert first["migrated"] == 2
+    assert second["migrated"] == 0
+    assert second["unchanged"] == 2
+    assert second["total"] == first["total"] == 2
+    assert second["dropped"] == 0  # o lixo já foi descartado na primeira passada
+
+
 def test_load_tasks_migrates_legacy_schema_in_memory_only(tmp_path, monkeypatch):
     """A leitura do pipeline normaliza em memória sem alterar o disco."""
     monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))

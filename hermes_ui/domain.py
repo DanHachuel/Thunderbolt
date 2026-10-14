@@ -643,6 +643,49 @@ def load_tasks() -> list[dict[str, Any]]:
     return [migrate_task(task) for task in raw if isinstance(task, dict)]
 
 
+def repair_task_queue() -> dict[str, int]:
+    """
+    Normaliza o schema de todas as tarefas persistidas (botão "Reparar Fila").
+
+    Migração de schema APENAS — nunca remove marcadores de falha (error,
+    failure_api, …), nunca toca em conteúdo criativo (roteiro, blueprint,
+    tags, thumbnail, voz) nem em artefactos: essa limpeza pertence ao
+    retry/remake de cada tarefa. Registos inválidos (não-dict) são
+    descartados. Idempotente: voltar a correr não altera o que já foi migrado.
+
+    0.9.94 (item 4): até agora o disco só ficava migrado quando o utilizador
+    clicava em "Refazer vídeo"/"Retomar" tarefa a tarefa — com 50 tarefas
+    antigas, o legado persistia e inconsistia telemetria, export e rollback.
+    """
+    counters = {"total": 0, "migrated": 0, "unchanged": 0, "dropped": 0}
+
+    def mutate(tasks: Any) -> list[dict[str, Any]]:
+        if not isinstance(tasks, list):
+            raise StorageIntegrityError("O ficheiro tasks.json não contém uma lista válida.")
+        result: list[dict[str, Any]] = []
+        migrated = 0
+        unchanged = 0
+        dropped = 0
+        for task in tasks:
+            if not isinstance(task, dict):
+                dropped += 1
+                continue
+            before = dict(task)
+            after = migrate_task(task)
+            if before != after:
+                migrated += 1
+            else:
+                unchanged += 1
+            result.append(after)
+        # update_json persiste o objecto original — mutar in-place.
+        tasks[:] = result
+        counters.update(total=len(result), migrated=migrated, unchanged=unchanged, dropped=dropped)
+        return tasks
+
+    update_json("tasks.json", [], mutate)
+    return dict(counters)
+
+
 def retry_task_with_current_settings(task_id: str, *, confirm_upload_uncertain: bool = False) -> dict[str, Any] | None:
     """Queue a failed or blocked task without persisting API credentials or provider snapshots.
 
