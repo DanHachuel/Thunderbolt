@@ -55,6 +55,24 @@ jobs:
           # (execute localmente: node scripts/sync_pyproject_version.mjs).
           node scripts/sync_pyproject_version.mjs --check
 
+      - name: Setup Python (test gate)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      # 0.9.94 - CI gate: a 0.9.92 foi publicada com a suite vermelha em 3
+      # testes porque a verificacao pre-release corria apenas testes focais.
+      # A suite COMPLETA passa a ser obrigatoria antes de qualquer publish:
+      # qualquer falha aqui bloqueia o publish (dispatch) e a promocao a
+      # latest (push da tag). Sem continue-on-error, por design.
+      - name: Run full test suite (gate)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          PYTHONPATH=. python -m pytest tests/ -q -n auto
+
       - name: Validate package metadata
         run: |
           node --check scripts/cli.mjs

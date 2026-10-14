@@ -1,0 +1,32 @@
+# Dependências da suíte de testes — CI gate do workflow "Publish npm package".
+#
+# Subconjunto EMPÍRICO do requirements.txt: tudo o que a suíte completa
+# importa em tempo de execução, sem os motores pesados que os testes não
+# tocam (playwright, patchright, camoufox, deno, supabase, kaggle,
+# social-auto-upload, composio, serpapi, pushtunes, ytmusicapi, yt-dlp).
+# Paridade verificada localmente na 0.9.94: 1295 passados + 2 skipped,
+# 3 execuções seguidas verdes com `PYTHONPATH=. python -m pytest tests/ -q -n auto`.
+pytest>=8
+pytest-xdist>=3.5
+psutil>=5.9,<8
+requests[socks]>=2.31,<3
+streamlit>=1.37,<2
+pandas>=2.0,<3
+toml>=0.10,<1
+plotly>=5.18,<7
+seaborn>=0.13,<1
+scikit-learn>=1.3,<2
+mlxtend>=0.23,<1
+openpyxl>=3.1,<4
+xlrd>=2.0,<3
+edge-tts>=7.0,<8
+imageio-ffmpeg>=0.6,<1
+moviepy==2.2.1
+Pillow>=10,<12
+google-auth>=2.29,<3
+google-auth-oauthlib>=1.2,<2
+google-api-python-client>=2.120,<3
+huggingface_hub>=0.30,<1
+pydantic>=2,<3
+bilibili-api-python>=17.4,<18
+justokenmax @ https://github.com/Kalmantic/jusTokenMax/archive/refs/heads/main.zip#subdirectory=python
