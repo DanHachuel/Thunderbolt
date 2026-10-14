@@ -233,6 +233,46 @@ def test_kill_tree_pid_mode_reports_a_missing_pid_gracefully():
     assert summary["survivors"] == []
 
 
+def test_kill_tree_treats_posix_zombies_as_terminated():
+    """0.9.94 (bug real capturado pelo CI gate no Ubuntu): no Linux, um filho
+    terminado vira zombie até o reap assíncrono pelo pai/init — `is_running()`
+    devolve True para zombies e o helper reportava falsos sobreviventes
+    (exit 1) no guard de instância única. Um zombie já não executa código:
+    conta como terminado."""
+    module = _load_kill_tree()
+
+    class _ZombieProcess:
+        pid = 1234
+
+        def is_running(self):
+            return True
+
+        def status(self):
+            return module.psutil.STATUS_ZOMBIE
+
+    class _LiveProcess:
+        pid = 1235
+
+        def is_running(self):
+            return True
+
+        def status(self):
+            return module.psutil.STATUS_RUNNING
+
+    class _EndedProcess:
+        pid = 1236
+
+        def is_running(self):
+            return False
+
+        def status(self):
+            return module.psutil.STATUS_RUNNING
+
+    assert module._is_live_process(_ZombieProcess()) is False
+    assert module._is_live_process(_LiveProcess()) is True
+    assert module._is_live_process(_EndedProcess()) is False
+
+
 # ── 0.9.52: exclusão dos renders Remotion (spec tarefa 9/11.2) ────────────────
 
 

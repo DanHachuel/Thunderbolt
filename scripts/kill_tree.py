@@ -125,6 +125,18 @@ def collect_tree(process: psutil.Process) -> list[psutil.Process]:
     return children + [process]
 
 
+def _is_live_process(process: psutil.Process) -> bool:
+    """Alive de verdade: um zombie POSIX já não executa código — conta como
+    terminado. 0.9.94 (bug real capturado pelo CI gate no Ubuntu): no Linux,
+    um filho terminado fica zombie até o reap assíncrono pelo pai/init e
+    `is_running()` devolve True para zombies — o guard de instância única
+    reportava falsos sobreviventes (exit 1) e repetia a limpeza à toa."""
+    try:
+        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+    except (psutil.Error, OSError):
+        return False
+
+
 def terminate(targets: list[psutil.Process], wait_seconds: float = 3.0) -> tuple[list[int], list[int]]:
     """Terminate children first (so no orphans escape), then the roots."""
     processes: dict[int, psutil.Process] = {}
@@ -146,7 +158,7 @@ def terminate(targets: list[psutil.Process], wait_seconds: float = 3.0) -> tuple
     alive = dict(processes)
     deadline = time.monotonic() + wait_seconds
     while alive and time.monotonic() < deadline:
-        alive = {pid: process for pid, process in alive.items() if process.is_running()}
+        alive = {pid: process for pid, process in alive.items() if _is_live_process(process)}
         if alive:
             time.sleep(0.1)
     for process in alive.values():
@@ -158,7 +170,7 @@ def terminate(targets: list[psutil.Process], wait_seconds: float = 3.0) -> tuple
     survivors: list[int] = []
     for pid in alive:
         try:
-            if psutil.Process(pid).is_running():
+            if _is_live_process(psutil.Process(pid)):
                 survivors.append(pid)
         except (psutil.Error, OSError):
             pass  # the process ended between checks
