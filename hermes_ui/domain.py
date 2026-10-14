@@ -18,6 +18,10 @@ STAGES = ["niche", "blueprint", "brand", "topic", "script", "title", "keywords",
 CASCADE_STAGE_ORDER = ("topic", "script", "title", "keywords", "video", "thumbnail_prompt", "thumbnail", "upload")
 LEGACY_STAGES = {"edit"}
 VALID_STATES = {"to_do", "doing", "blocked", "done", "failed", "cancelled"}
+# Versão do schema das tarefas. Tarefas sem este campo (ou criadas antes dele)
+# são normalizadas por migrate_task no "Refazer vídeo"/retry e nas leituras do
+# pipeline — nunca na escrita.
+CURRENT_SCHEMA_VERSION = 1
 
 
 def slugify(value: str) -> str:
@@ -537,6 +541,81 @@ def stop_task_by_user(task_id: str) -> dict[str, Any] | None:
     return task
 
 
+def _rebuild_orchestration(task: dict[str, Any]) -> dict[str, Any]:
+    """
+    Reconstrói a estrutura de orquestração mantendo o histórico válido
+    de etapas concluídas. Preserva artefatos; só ajusta metadados.
+    """
+    current = task.get("orchestration") if isinstance(task.get("orchestration"), dict) else {}
+    completed = current.get("completed_stages") if isinstance(current.get("completed_stages"), list) else []
+
+    # Filtra apenas estágios que ainda existem no pipeline atual
+    completed = [stage for stage in completed if stage in CASCADE_STAGE_ORDER]
+
+    # Determina current_stage a partir do estado atual
+    stage = str(task.get("stage") or "").strip().lower()
+    if stage not in CASCADE_STAGE_ORDER:
+        stage = "topic"
+
+    return {
+        "name": current.get("name") or "local-cascade",
+        "stage_order": list(CASCADE_STAGE_ORDER),
+        "current_stage": stage,
+        "completed_stages": completed,
+        "resumable": True,
+    }
+
+
+def migrate_task(task: dict[str, Any]) -> dict[str, Any]:
+    """
+    Normaliza o schema de uma tarefa antiga para o formato atual.
+
+    REGRAS INVIOLÁVEIS:
+    - NÃO altera: script, blueprint, prompt_master, tags, thumbnail, voice,
+      nem qualquer artefato já baixado (clips, áudios, imagens).
+    - NÃO altera: generation_settings de conteúdo criativo (legendas são
+      revalidadas pelo _refresh_task_channel_video_settings, não aqui).
+    - APENAS normaliza: stage, orchestration, schema_version, e adiciona
+      defaults para campos estruturais que o pipeline atual exige.
+    - Preserva qualquer campo desconhecido (forward-compat).
+    - Idempotente: chamar duas vezes produz o mesmo resultado.
+    """
+    task = dict(task)  # cópia rasa, não muta o original
+
+    # 1. Corrigir stage legado
+    stage = str(task.get("stage") or "").strip().lower()
+    if stage in LEGACY_STAGES or stage not in CASCADE_STAGE_ORDER:
+        task["stage"] = "topic"
+
+    # 2. Reconstruir orchestration se ausente ou inválida
+    task["orchestration"] = _rebuild_orchestration(task)
+
+    # 3. Adicionar defaults para campos estruturais (nunca criativos)
+    task.setdefault("manual_start_required", False)
+    task.setdefault("topic_source", "manual")
+    task.setdefault("worker_interrupted", False)
+    task.setdefault("failed_stage", "")
+    task.setdefault("schema_version", CURRENT_SCHEMA_VERSION)
+
+    # 4. Remover marcadores de falha obsoletos (não é conteúdo criativo)
+    for key in ("failure_api", "failure_provider", "failure_stage",
+                "error", "error_detail"):
+        task.pop(key, None)
+
+    # 5. Actualizar versão do schema
+    task["schema_version"] = CURRENT_SCHEMA_VERSION
+
+    return task
+
+
+def load_tasks() -> list[dict[str, Any]]:
+    """Carrega tarefas e aplica migração silenciosa de schema (só leitura)."""
+    raw = read_json("tasks.json", [])
+    if not isinstance(raw, list):
+        return []
+    return [migrate_task(task) for task in raw if isinstance(task, dict)]
+
+
 def retry_task_with_current_settings(task_id: str, *, confirm_upload_uncertain: bool = False) -> dict[str, Any] | None:
     """Queue a failed or blocked task without persisting API credentials or provider snapshots.
 
@@ -559,6 +638,13 @@ def retry_task_with_current_settings(task_id: str, *, confirm_upload_uncertain: 
                 retry_count = int(task.get("retry_count") or 0)
             except (TypeError, ValueError):
                 retry_count = 0
+            # 0.9.93: migrar o schema ANTES de qualquer alteração de estado —
+            # tarefas antigas (stage legado, orchestration em formato antigo)
+            # ficam normalizadas sem tocar em roteiro, blueprint, tags,
+            # thumbnail, voz nem artefactos baixados.
+            migrated = migrate_task(task)
+            task.clear()
+            task.update(migrated)
             task["state"] = "to_do"
             task["error"] = None
             task["retry_count"] = retry_count + 1
@@ -572,6 +658,10 @@ def retry_task_with_current_settings(task_id: str, *, confirm_upload_uncertain: 
             for field in ("failure_api", "failure_provider", "failure_service", "failure_config_fields"):
                 task.pop(field, None)
             task["updated_at"] = now()
+            # Revalidação de canal: legendas, duração máxima do clip, fonte de
+            # materiais e restantes definições actuais (novo contrato do
+            # "Refazer vídeo") — o canal, quando existe, é a fonte de verdade.
+            _refresh_task_channel_video_settings(task)
             return task
         return None
 
@@ -678,6 +768,13 @@ def remake_video_task(task_id: str) -> dict[str, Any] | None:
                 continue
             if str(task.get("state") or "") == "doing":
                 raise ValueError("Pare a tarefa antes de refazer o vídeo.")
+            # 0.9.93: migrar o schema antes da remontagem — stage legado é
+            # normalizado e a orchestration reconstruída para o formato
+            # actual. O conteúdo criativo (roteiro, blueprint, tags,
+            # thumbnail, voz) e os artefactos baixados não são tocados.
+            migrated = migrate_task(task)
+            task.clear()
+            task.update(migrated)
             _refresh_task_channel_video_settings(task)
             artifacts = dict(task.get("artifacts") or {})
             artifacts.pop("video", None)

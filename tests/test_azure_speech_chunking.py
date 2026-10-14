@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import threading
 import pytest
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +20,46 @@ def _load_module(path: Path, name: str):
 
 CHUNKED = _load_module(ROOT / "seed" / "skills" / "azure_tts_chunked.py", "azure_tts_chunked_test")
 MPT_AGENT = _load_module(ROOT / "seed" / "skills" / "mpt_agent.py", "mpt_agent_test")
+
+
+class _FakeStreamedProcess:
+    """Fake process for _run_streamed (0.9.92): finishes after stdout is drained.
+
+    Keeps the process "alive" (poll() == None) until the reader consumes every
+    line, mirroring a real subprocess, then exposes the configured return code.
+    """
+
+    def __init__(self, lines, returncode=0):
+        self._lines = [str(line) + "\n" for line in lines]
+        self._exhausted = threading.Event()
+        self._returncode = returncode
+        self._stdout = None
+        self.returncode = None
+        self.killed = False
+
+    def _iter_stdout(self):
+        for line in self._lines:
+            yield line
+        self._exhausted.set()
+
+    @property
+    def stdout(self):
+        if self._stdout is None:
+            self._stdout = self._iter_stdout()
+        return self._stdout
+
+    def poll(self):
+        if not self._exhausted.is_set():
+            return None
+        if self.returncode is None:
+            self.returncode = self._returncode
+        return self.returncode
+
+    def kill(self):
+        self.killed = True
+        if self.returncode is None:
+            self.returncode = -9
+        self._exhausted.set()
 
 
 def test_mpt_agent_requires_moneyprinter_moviepy_release(tmp_path, monkeypatch):
@@ -82,15 +123,15 @@ def test_mpt_agent_prepares_azure_audio_without_logging_credentials(tmp_path, mo
     task_dir = root / "storage" / "tasks" / "task-1"
     captured: dict[str, object] = {}
 
-    def fake_run(command, **kwargs):
+    def fake_popen(command, **kwargs):
         captured["command"] = command
-        captured["env"] = kwargs["env"]
+        captured["env"] = kwargs.get("env")
         output = Path(command[command.index("--output") + 1])
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"prepared-audio")
-        return SimpleNamespace(returncode=0, stdout="AZURE_CHUNK_COUNT=4\n")
+        return _FakeStreamedProcess(["AZURE_CHUNK_COUNT=4"])
 
-    monkeypatch.setattr(MPT_AGENT.subprocess, "run", fake_run)
+    monkeypatch.setattr(MPT_AGENT.subprocess, "Popen", fake_popen)
     result = MPT_AGENT._prepare_azure_v2_chunked_audio(
         root,
         config_path,
@@ -246,16 +287,16 @@ def test_prepare_rejects_audio_without_segment_count_and_redacts_credentials(tmp
     )
     task_dir = root / "storage" / "tasks" / "task-fail"
 
-    def fake_run(command, **kwargs):
+    def fake_popen(command, **kwargs):
         output = Path(command[command.index("--output") + 1])
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"audio-without-proof")
-        return SimpleNamespace(
+        return _FakeStreamedProcess(
+            ["Azure Speech V2 chunked synthesis failed: azure-secret eastus"],
             returncode=0,
-            stdout="Azure Speech V2 chunked synthesis failed: azure-secret eastus\n",
         )
 
-    monkeypatch.setattr(MPT_AGENT.subprocess, "run", fake_run)
+    monkeypatch.setattr(MPT_AGENT.subprocess, "Popen", fake_popen)
     with pytest.raises(MPT_AGENT.SkillError) as raised:
         MPT_AGENT._prepare_azure_v2_chunked_audio(
             root,
@@ -312,14 +353,14 @@ def test_generate_video_stops_before_upstream_when_chunked_audio_is_unavailable(
 def test_run_checked_surfaces_uv_failure_detail_without_secret(tmp_path, monkeypatch):
     secret = "uv-secret-api-key"
 
-    def fake_run(*args, **kwargs):
-        return SimpleNamespace(
+    def fake_popen(*args, **kwargs):
+        return _FakeStreamedProcess(
+            [f"error: resolver failed for package; token={secret}"],
             returncode=1,
-            stdout=f"error: resolver failed for package; token={secret}\n",
         )
 
     monkeypatch.setenv("MPT_LLM_API_KEY", secret)
-    monkeypatch.setattr(MPT_AGENT.subprocess, "run", fake_run)
+    monkeypatch.setattr(MPT_AGENT.subprocess, "Popen", fake_popen)
     with pytest.raises(MPT_AGENT.SkillError) as raised:
         MPT_AGENT.run_checked(["uv", "sync", "--frozen"], cwd=tmp_path)
     message = str(raised.value)

@@ -624,3 +624,217 @@ def test_update_channel_video_persists_local_override(tmp_path, monkeypatch):
     assert updated["status"] == "finalizado"
     stored = storage.read_json("channel_videos.json", [])
     assert stored[1]["title"] == "Outro canal"
+
+
+def test_migrate_task_converts_legacy_stage():
+    from hermes_ui.domain import migrate_task
+
+    task = {"stage": "edit", "state": "failed", "script": "meu roteiro"}
+    migrated = migrate_task(task)
+
+    assert migrated["stage"] == "topic"
+    assert migrated["script"] == "meu roteiro"  # criativo preservado
+    assert task["stage"] == "edit"  # o original nunca é mutado
+
+
+def test_migrate_task_preserves_creative_content():
+    from hermes_ui.domain import migrate_task
+
+    task = {
+        "stage": "edit",
+        "script": "roteiro original",
+        "blueprint": {"name": "bp-1"},
+        "tags": ["tag1", "tag2"],
+        "thumbnail": {"path": "/x/y.png"},
+        "voice": "pt-BR-A",
+        "clips": [{"path": "/a.mp4"}],  # artefato baixado
+        "artifacts": {"script": "/tmp/roteiro.md", "audio": "/tmp/narracao.wav"},
+    }
+    migrated = migrate_task(task)
+
+    assert migrated["script"] == "roteiro original"
+    assert migrated["blueprint"] == {"name": "bp-1"}
+    assert migrated["tags"] == ["tag1", "tag2"]
+    assert migrated["thumbnail"] == {"path": "/x/y.png"}
+    assert migrated["voice"] == "pt-BR-A"
+    assert migrated["clips"] == [{"path": "/a.mp4"}]
+    assert migrated["artifacts"] == {"script": "/tmp/roteiro.md", "audio": "/tmp/narracao.wav"}
+
+
+def test_migrate_task_is_idempotent():
+    from hermes_ui.domain import migrate_task
+
+    task = {"stage": "edit", "state": "failed"}
+    once = migrate_task(task)
+    twice = migrate_task(once)
+
+    assert once == twice
+
+
+def test_retry_applies_migration_before_requeue(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))
+    from hermes_ui import storage
+    from hermes_ui.domain import CASCADE_STAGE_ORDER, retry_task_with_current_settings
+
+    storage.STORAGE = tmp_path / "storage"
+    storage.STATE = storage.STORAGE / "state"
+    storage.BLUEPRINTS = storage.STORAGE / "blueprints"
+    storage.ensure_storage()
+    storage.write_json("tasks.json", [{
+        "id": "video_retry_legacy",
+        "state": "failed",
+        "stage": "edit",
+        "script": "roteiro original",
+        "blueprint_id": "bp-1",
+        "tags": ["tag1", "tag2"],
+        "thumbnail": {"path": "/x/y.png"},
+        "voice": "pt-BR-A",
+        "artifacts": {"script": "/tmp/roteiro.md", "thumbnail": "/x/y.png"},
+        "error": "falha antiga",
+        "failure_api": "API antiga",
+    }])
+
+    retried = retry_task_with_current_settings("video_retry_legacy")
+
+    assert retried is not None
+    assert retried["state"] == "to_do"
+    assert retried["stage"] == "topic"  # stage legado corrigido pela migração
+    assert retried["retry_count"] == 1
+    assert retried["schema_version"] == 1
+    assert retried["orchestration"]["stage_order"] == list(CASCADE_STAGE_ORDER)
+    assert retried["orchestration"]["current_stage"] == "topic"
+    # Conteúdo criativo e artefactos preservados integralmente
+    assert retried["script"] == "roteiro original"
+    assert retried["blueprint_id"] == "bp-1"
+    assert retried["tags"] == ["tag1", "tag2"]
+    assert retried["thumbnail"] == {"path": "/x/y.png"}
+    assert retried["voice"] == "pt-BR-A"
+    assert retried["artifacts"] == {"script": "/tmp/roteiro.md", "thumbnail": "/x/y.png"}
+    # A migração é persistida com o retry (a escrita em si não muda de formato)
+    persisted = storage.read_json("tasks.json")[0]
+    assert persisted["state"] == "to_do"
+    assert persisted["stage"] == "topic"
+    assert persisted["schema_version"] == 1
+
+
+def test_retry_revalidates_channel_video_settings_after_migration(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))
+    from hermes_ui import storage
+    from hermes_ui.domain import retry_task_with_current_settings
+
+    storage.STORAGE = tmp_path / "storage"
+    storage.STATE = storage.STORAGE / "state"
+    storage.BLUEPRINTS = storage.STORAGE / "blueprints"
+    storage.ensure_storage()
+    storage.write_json("settings.json", {"video_source": "pixabay"})
+    storage.write_json("channels.json", [{
+        "id": "channel-current",
+        "platform": "tiktok",
+        "default_enable_subtitles": False,
+        "default_subtitle_position": "Top",
+        "default_maximum_clip_duration": 15,
+        "default_video_aspect_ratio": "Portrait 9:16",
+        "default_voice": "voice-current",
+        "style_wide": "pexels",
+    }])
+    storage.write_json("tasks.json", [{
+        "id": "video_retry_channel",
+        "channel_id": "channel-current",
+        "state": "failed",
+        "stage": "edit",
+        "voice": "voice-old",
+        "generation_settings": {
+            "enable_subtitles": True,
+            "maximum_clip_duration": 5,
+            "material_source": "pexels",
+            "video_material_source": "pexels",
+        },
+    }])
+
+    retried = retry_task_with_current_settings("video_retry_channel")
+
+    assert retried["stage"] == "topic"  # migração aplicada
+    assert retried["state"] == "to_do"
+    # Revalidação de canal após a migração: valores vêm do canal actual
+    assert retried["voice"] == "voice-current"
+    assert retried["generation_settings"]["enable_subtitles"] is False
+    assert retried["generation_settings"]["subtitle_position"] == "Top"
+    assert retried["generation_settings"]["maximum_clip_duration"] == 15
+    assert retried["generation_settings"]["video_aspect_ratio"] == "Portrait 9:16"
+    assert retried["material_source"] == "pixabay"
+    assert retried["generation_settings"]["material_source"] == "pixabay"
+    assert "video_material_source" not in retried["generation_settings"]
+
+
+def test_remake_migrates_legacy_task_schema_before_requeue(tmp_path, monkeypatch):
+    """O botão "Refazer vídeo" (remake_video_task) também migra o schema."""
+    monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))
+    from hermes_ui import storage
+    from hermes_ui.domain import CASCADE_STAGE_ORDER, remake_video_task
+
+    storage.STORAGE = tmp_path / "storage"
+    storage.STATE = storage.STORAGE / "state"
+    storage.BLUEPRINTS = storage.STORAGE / "blueprints"
+    storage.ensure_storage()
+    storage.write_json("tasks.json", [{
+        "id": "video-remake-legacy-schema",
+        "state": "done",
+        "stage": "edit",
+        "orchestration": {
+            "name": "old-format",
+            "stage_order": ["topic", "edit"],
+            "current_stage": "edit",
+            "completed_stages": ["topic", "edit"],
+            "resumable": True,
+        },
+        "script": "roteiro preservado",
+        "blueprint_id": "bp-keep",
+        "tags": ["tag1"],
+        "voice": "pt-BR-A",
+        "artifacts": {"script": "/tmp/roteiro.md", "thumbnail": "/x/y.png", "video": "/tmp/old.mp4"},
+    }])
+
+    remade = remake_video_task("video-remake-legacy-schema")
+
+    assert remade["state"] == "to_do"
+    assert remade["stage"] == "video"  # alvo da remontagem
+    assert remade["schema_version"] == 1
+    assert remade["orchestration"]["stage_order"] == list(CASCADE_STAGE_ORDER)
+    assert remade["orchestration"]["current_stage"] == "video"
+    assert remade["orchestration"]["completed_stages"] == ["topic"]  # "edit" filtrado
+    # Conteúdo criativo preservado; só o vídeo/áudio são invalidados
+    assert remade["script"] == "roteiro preservado"
+    assert remade["blueprint_id"] == "bp-keep"
+    assert remade["tags"] == ["tag1"]
+    assert remade["voice"] == "pt-BR-A"
+    assert remade["artifacts"] == {"script": "/tmp/roteiro.md", "thumbnail": "/x/y.png"}
+
+
+def test_load_tasks_migrates_legacy_schema_in_memory_only(tmp_path, monkeypatch):
+    """A leitura do pipeline normaliza em memória sem alterar o disco."""
+    monkeypatch.setenv("HERMES_STORAGE_DIR", str(tmp_path / "storage"))
+    from hermes_ui import storage
+    from hermes_ui.domain import load_tasks
+
+    storage.STORAGE = tmp_path / "storage"
+    storage.STATE = storage.STORAGE / "state"
+    storage.BLUEPRINTS = storage.STORAGE / "blueprints"
+    storage.ensure_storage()
+    storage.write_json("tasks.json", [
+        {"id": "video_legacy", "state": "blocked", "stage": "edit", "script": "roteiro"},
+        {"not_a_dict": True},
+        "registo inválido",
+    ])
+
+    tasks = load_tasks()
+
+    assert len(tasks) == 2  # o registo não-dict é descartado; os dicts são migrados
+    assert tasks[0]["stage"] == "topic"
+    assert tasks[0]["schema_version"] == 1
+    assert tasks[0]["orchestration"]["current_stage"] == "topic"
+    assert tasks[1]["not_a_dict"] is True  # campo desconhecido preservado (forward-compat)
+    # Escrita intacta: o disco mantém o registo original até um retry/remake o migrar
+    persisted = storage.read_json("tasks.json")
+    assert len(persisted) == 3
+    assert persisted[0]["stage"] == "edit"
+    assert "schema_version" not in persisted[0]

@@ -297,11 +297,11 @@ def load_pipeline_worker_status() -> dict[str, Any]:
 
 def _recover_stale_tasks() -> list[str]:
     """Convert abandoned doing tasks to failed after the worker timeout window."""
-    from hermes_ui.domain import update_task
+    from hermes_ui.domain import load_tasks, update_task
 
     recovered: list[str] = []
     current_time = datetime.now(timezone.utc)
-    for task in read_json("tasks.json", []):
+    for task in load_tasks():
         if not isinstance(task, dict) or str(task.get("state") or "") != "doing":
             continue
         timestamps = [
@@ -339,7 +339,9 @@ def recover_stale_tasks() -> list[str]:
 
 
 def _task_by_id(task_id: str) -> dict[str, Any] | None:
-    return next((task for task in read_json("tasks.json", []) if isinstance(task, dict) and task.get("id") == task_id), None)
+    from hermes_ui.domain import load_tasks
+
+    return next((task for task in load_tasks() if isinstance(task, dict) and task.get("id") == task_id), None)
 
 
 def _recover_interrupted_pipeline_worker() -> bool:
@@ -2665,7 +2667,9 @@ def run_once() -> dict[str, Any]:
             uncertain_recovered = []
             _worker_heartbeat(social_auto_upload_recovery_error=type(exc).__name__)
         recovered = list(dict.fromkeys([*uncertain_recovered, *_recover_stale_tasks()]))
-        tasks = read_json("tasks.json", [])
+        from hermes_ui.domain import load_tasks
+
+        tasks = load_tasks()
         candidate = _next_runnable_task(tasks)
         if not candidate:
             _worker_heartbeat(last_task_id=None, last_error="", status="idle", stage="idle", progress=0, recovered_task_ids=recovered)
