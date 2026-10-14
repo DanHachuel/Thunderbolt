@@ -12,6 +12,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import tomllib
 import urllib.error
 import urllib.request
@@ -519,34 +521,28 @@ def _prepare_azure_v2_chunked_audio(
     ffmpeg_path = _toml_section_value(config_path, "app", "ffmpeg_path")
     if ffmpeg_path:
         environment["IMAGEIO_FFMPEG_EXE"] = ffmpeg_path
-    try:
-        result = subprocess.run(
-            command,
-            cwd=root,
-            env=environment,
-            creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            errors="replace",
-            check=False,
-            timeout=CHUNKED_SYNTHESIS_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise SkillError(
+    returncode, output = _run_streamed(
+        command,
+        cwd=root,
+        env=environment,
+        timeout=CHUNKED_SYNTHESIS_TIMEOUT_SECONDS,
+        label="azure-tts",
+        extra_secrets=[speech_key, speech_region],
+        timeout_message=(
             "A síntese segmentada Azure Speech SDK V2 excedeu 15 minutos; "
             "a chamada monolítica não será usada."
-        ) from exc
-    chunk_match = re.search(r"(?m)^AZURE_CHUNK_COUNT=(\d+)$", result.stdout or "")
+        ),
+    )
+    chunk_match = re.search(r"(?m)^AZURE_CHUNK_COUNT=(\d+)$", output)
     if not chunk_match:
-        detail = "\n".join((result.stdout or "").splitlines()[-12:]).strip()
+        detail = "\n".join(output.splitlines()[-12:]).strip()
         detail = detail.replace(speech_key, "[redacted]").replace(speech_region, "[redacted]")
         raise SkillError(
             "Azure Speech SDK V2 não confirmou segmentos e áudio customizado. "
             + (detail or "O helper não devolveu detalhes.")
         )
-    if result.returncode != 0 or not audio_file.is_file() or audio_file.stat().st_size <= 0:
-        detail = "\n".join((result.stdout or "").splitlines()[-12:]).strip()
+    if returncode != 0 or not audio_file.is_file() or audio_file.stat().st_size <= 0:
+        detail = "\n".join(output.splitlines()[-12:]).strip()
         detail = detail.replace(speech_key, "[redacted]").replace(speech_region, "[redacted]")
         raise SkillError(
             "Azure Speech SDK V2 falhou na síntese segmentada. "
@@ -737,35 +733,110 @@ def write_result_manifest(root: Path, payload: dict[str, object]) -> Path:
 
 
 
-def run_checked(command: list[str], *, cwd: Path) -> None:
-    """Run dependency sync with a bounded wait and safe failure output."""
-    log("installing or verifying project dependencies with uv")
+def _redact_secrets(text: str, extra_secrets: list[str] | None = None) -> str:
+    """Remove credentials from subprocess output before it is logged."""
+    secrets = [
+        value.strip()
+        for key in (
+            "MPT_LLM_API_KEY",
+            "MPT_PEXELS_API_KEY",
+            "MPT_PIXABAY_API_KEY",
+            "AZURE_SPEECH_KEY",
+            "AZURE_SPEECH_REGION",
+        )
+        if (value := os.environ.get(key, "")).strip()
+    ]
+    secrets.extend(str(secret).strip() for secret in (extra_secrets or []) if str(secret).strip())
+    for secret in secrets:
+        text = text.replace(secret, "[redacted]")
+    return text
+
+
+def _run_streamed(
+    command: list[str],
+    *,
+    cwd: Path,
+    timeout: int,
+    label: str = "uv",
+    env: dict[str, str] | None = None,
+    extra_secrets: list[str] | None = None,
+    timeout_message: str = "",
+) -> tuple[int, str]:
+    """Run a subprocess with live output and a periodic heartbeat.
+
+    0.9.92: o worker mede a actividade da etapa Vídeo pelo stdout do helper
+    e pelo mtime do log do motor. As fases silenciosas com output capturado
+    (verificação de dependências, síntese Azure) podiam exceder o idle
+    watchdog sem uma única linha — a etapa era morta como "sem actividade"
+    mesmo com o motor a trabalhar. Cada linha do subprocesso é retransmitida
+    (com segredos removidos) e um batimento é emitido enquanto está vivo.
+    """
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             command,
             cwd=cwd,
+            env=env,
             stdout=subprocess.PIPE,
-            creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
             stderr=subprocess.STDOUT,
             text=True,
             errors="replace",
-            check=False,
-            timeout=DEPENDENCY_SYNC_TIMEOUT_SECONDS,
-                    )
-    except subprocess.TimeoutExpired as exc:
-        raise SkillError(
+            creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
+        )
+    except OSError as exc:
+        raise SkillError(f"failed to start {label}: {exc}") from exc
+
+    output_lines: list[str] = []
+
+    def _pump() -> None:
+        for raw in process.stdout or []:
+            line = _redact_secrets(raw.rstrip(), extra_secrets)
+            output_lines.append(line)
+            if line:
+                log(f"{label}: {line}")
+
+    reader = threading.Thread(target=_pump, daemon=True)
+    reader.start()
+    started = time.monotonic()
+    last_beat = started
+    try:
+        while process.poll() is None:
+            elapsed = time.monotonic() - started
+            if elapsed >= timeout:
+                process.kill()
+                message = timeout_message or (
+                    f"A execução de {label} excedeu {timeout // 60} minutos e foi interrompida."
+                )
+                raise SkillError(message)
+            time.sleep(2.0)
+            now = time.monotonic()
+            if now - last_beat >= 45:
+                last_beat = now
+                log(f"{label} still running ({int(elapsed)}s)")
+    finally:
+        try:
+            reader.join(timeout=2)
+        except RuntimeError:
+            pass
+    returncode = process.returncode or 0
+    return returncode, "\n".join(output_lines)
+
+
+def run_checked(command: list[str], *, cwd: Path) -> None:
+    """Run dependency sync with a bounded wait and safe failure output."""
+    log("installing or verifying project dependencies with uv")
+    returncode, output = _run_streamed(
+        command,
+        cwd=cwd,
+        timeout=DEPENDENCY_SYNC_TIMEOUT_SECONDS,
+        timeout_message=(
             "A verificação das dependências com uv excedeu 15 minutos; "
             "a execução foi interrompida."
-        ) from exc
-    output = result.stdout or ""
-    for key in ("MPT_LLM_API_KEY", "MPT_PEXELS_API_KEY", "MPT_PIXABAY_API_KEY", "AZURE_SPEECH_KEY", "AZURE_SPEECH_REGION"):
-        secret = os.environ.get(key, "").strip()
-        if secret:
-            output = output.replace(secret, "[redacted]")
-    if result.returncode != 0:
+        ),
+    )
+    if returncode != 0:
         output_tail = "\n".join(output.splitlines()[-30:]).strip()
         raise SkillError(
-            f"dependency installation failed with exit code {result.returncode}. "
+            f"dependency installation failed with exit code {returncode}. "
             + (f"Detalhe do uv: {output_tail}" if output_tail else "O uv não devolveu detalhes.")
         )
     log("project dependencies verified with uv")
@@ -802,6 +873,7 @@ def generate_video(
     # As opções encaminhadas dependem da versão instalada do cli.py: opções
     # recentes (estilo completo de legendas, transições, â€¦) são ignoradas em
     # instalações mais antigas em vez de abortarem o argparse.
+    log("checking installed CLI options")
     cli_args = filter_forwarded_args(cli_args, supported_cli_options(root, uv))
 
     task_id = str(uuid.uuid4())
@@ -874,16 +946,32 @@ def generate_video(
     ]
     log(f"starting video generation, task ID: {task_id}")
     log(f"full generation log: {log_path}")
-    with log_path.open("w", encoding="utf-8") as log_file:
-        result = subprocess.run(
-            command,
-            cwd=root,
-            stdout=log_file,
-            creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
-            stderr=subprocess.STDOUT,
-            text=True,
-            check=False,
-        )
+    generation_stop = threading.Event()
+
+    def _generation_beat() -> None:
+        # 0.9.92: se o wrapper `uv run` da geração engasgar antes de o motor
+        # escrever no log, o mtime do log não avança e o worker mataria a
+        # etapa como inactiva. Este batimento prova que o helper está vivo.
+        elapsed = 0
+        while not generation_stop.wait(45):
+            elapsed += 45
+            log(f"generation still running ({elapsed}s)")
+
+    generation_beater = threading.Thread(target=_generation_beat, daemon=True)
+    generation_beater.start()
+    try:
+        with log_path.open("w", encoding="utf-8") as log_file:
+            result = subprocess.run(
+                command,
+                cwd=root,
+                stdout=log_file,
+                creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
+                stderr=subprocess.STDOUT,
+                text=True,
+                check=False,
+            )
+    finally:
+        generation_stop.set()
     if result.returncode != 0:
         tail = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-30:]
         if tail:

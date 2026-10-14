@@ -13,8 +13,10 @@ if getattr(sys.stderr, "buffer", None) is not None and str(getattr(sys.stderr, "
 import json
 import queue
 import re
+import shutil
 import signal
 import subprocess
+import sys
 import threading
 import time
 import psutil
@@ -1338,6 +1340,24 @@ def _append_bounded_video_helper_output(lines: deque[str], line: str, current_ch
     return current_chars
 
 
+def _video_helper_python_bin() -> str:
+    """Interpreter of the worker itself — no uv wrapper, no resolution stalls.
+
+    0.9.92: o wrapper ``uv run --no-project`` engasgava por vezes na
+    inicialização (resolução de interpretador/cache do uv) sem escrever uma
+    única linha — o idle watchdog matava a etapa com zero output e a falha
+    era atribuída à toa à API de material. O interpretador que corre o
+    worker está garantidamente disponível e arranca em milissegundos.
+    """
+    candidate = str(sys.executable or "").strip()
+    if candidate and Path(candidate).is_file():
+        return candidate
+    located = shutil.which("python") or shutil.which("python3")
+    if located and Path(located).is_file():
+        return str(located)
+    return ""
+
+
 def _run_video_helper_once(
     task: dict[str, Any],
     *,
@@ -1426,7 +1446,14 @@ def _run_video_helper_once(
     for key, value in env_values.items():
         if value:
             env[key] = value
-    command = ["uv", "run", "--no-project", "--python", "3.11", "python", "mpt_agent.py"]
+    # 0.9.92: arranque directo no interpretador do worker — ver
+    # _video_helper_python_bin. O wrapper `uv run` só é usado como fallback
+    # se o interpretador não for localizável de todo.
+    python_bin = _video_helper_python_bin()
+    if python_bin:
+        command = [python_bin, "mpt_agent.py"]
+    else:
+        command = ["uv", "run", "--no-project", "--python", "3.11", "python", "mpt_agent.py"]
     if configured_root:
         command.extend(["--root", str(configured_root)])
     command.extend(["--subject", subject, "--"])
@@ -1594,6 +1621,22 @@ def _run_video_helper_once(
                     f"{idle_timeout_seconds // 60} minutos e foi encerrada."
                 )
                 metadata = _failure_attribution(task, settings, "video", error=message)
+                if not last_output_line and helper_log_path is None:
+                    # 0.9.92: zero output do helper e nenhum log do motor
+                    # significam que o runtime nunca arrancou — a falha é do
+                    # arranque do helper, não da API de material da rota.
+                    message = (
+                        "A etapa Vídeo não apresentou actividade comprovada do motor durante "
+                        f"{idle_timeout_seconds // 60} minutos e foi encerrada. O motor não "
+                        "chegou a arrancar (zero output do helper): falha no arranque do "
+                        "runtime MoneyPrinterTurbo — não na API de material (Pixabay/Pexels)."
+                    )
+                    metadata.update({
+                        "failure_api": "Runtime MoneyPrinterTurbo",
+                        "failure_provider": "mpt_runtime",
+                        "failure_service": "Arranque do runtime MoneyPrinterTurbo",
+                        "failure_config_fields": "",
+                    })
                 raise PipelineError(
                     _failure_message(message, metadata),
                     failure_metadata=metadata,
