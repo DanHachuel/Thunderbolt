@@ -33,6 +33,7 @@ EVENT_CATALOG: tuple[dict[str, str], ...] = (
     {"code": "media_download_failed", "category": "Edição", "label": "Download Mídia falhou", "description": "Quando um download de vídeo ou áudio terminar com erro."},
     {"code": "automation_completed", "category": "Automação", "label": "Automação concluída", "description": "Quando o worker concluir o lote agendado de um canal."},
     {"code": "automation_failed", "category": "Automação", "label": "Automação falhou", "description": "Quando uma execução automática terminar com erro."},
+    {"code": "subtitles_reapplied", "category": "Produção", "label": "Legendas reaplicadas", "description": "Quando a config de legendas do canal é reaplicada manualmente a um vídeo."},
     {"code": "activity_failed", "category": "Sistema", "label": "Actividade falhou", "description": "Quando uma tarefa ou operação persistida terminar em erro."},
     {"code": "session_info_expiring", "category": "Autenticação", "label": "SessionInfo a expirar", "description": "Quando o token sessionInfo de uma conta Google/YouTube se aproximar da expiração estimada."},
     {"code": "session_info_expired", "category": "Autenticação", "label": "SessionInfo expirado", "description": "Quando o token sessionInfo de uma conta Google/YouTube ultrapassar a expiração estimada."},

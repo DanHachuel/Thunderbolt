@@ -686,6 +686,92 @@ def repair_task_queue() -> dict[str, int]:
     return dict(counters)
 
 
+def apply_subtitles_to_task(task_id: str) -> dict[str, Any] | None:
+    """Reaplica a configuração de legendas actual do canal a um vídeo (Task 3).
+
+    0.9.95: as legendas são QUEIMADAS no render pelo motor (pipeline_worker
+    passa --subtitle-* e o MoviePy queima no vídeo final), por isso a
+    reaplicação revalida APENAS o bloco de legendas do canal (enable,
+    fonte, posição, cor, fundo, contorno) — roteiro, blueprint, tags,
+    thumbnail, voz e artefactos baixados ficam intactos — e recoloca o
+    vídeo na fila com a flag ``subtitles_regeneration_requested`` para o
+    worker saber que é uma remontagem parcial. Nunca carrega o .mp4.
+    """
+    normalized_id = str(task_id or "").strip()
+
+    def mutate(tasks: Any) -> dict[str, Any] | None:
+        if not isinstance(tasks, list):
+            raise StorageIntegrityError("O ficheiro tasks.json não contém uma lista válida.")
+        for task in tasks:
+            if not isinstance(task, dict) or str(task.get("id") or "") != normalized_id:
+                continue
+            if str(task.get("state") or "") == "doing":
+                raise ValueError("Pare a tarefa antes de aplicar a legenda.")
+            channel_id = str(task.get("channel_id") or "").strip()
+            channels = read_json("channels.json", [])
+            channel = next(
+                (item for item in channels if isinstance(item, dict) and str(item.get("id") or "") == channel_id),
+                None,
+            )
+            if not channel:
+                raise ValueError("Canal sem config de legendas — configure em Canais e Perfis.")
+            generation_settings = dict(task.get("generation_settings") or {})
+            # Só o bloco de legendas — nunca duração/fonte de vídeo/voz (isso
+            # pertence ao "Refazer Vídeo" completo).
+            for setting_name, (channel_key, default) in {
+                "enable_subtitles": ("default_enable_subtitles", True),
+                "subtitle_font": ("default_subtitle_font", "MicrosoftYaHeiBold.ttc"),
+                "subtitle_position": ("default_subtitle_position", "Bottom (Recommended)"),
+                "subtitle_color": ("default_subtitle_color", "#FFFFFF"),
+                "subtitle_background": ("default_subtitle_background", True),
+                "subtitle_background_color": ("default_subtitle_background_color", "#000000"),
+                "subtitle_rounded_background": ("default_subtitle_rounded_background", False),
+                "subtitle_font_size": ("default_subtitle_font_size", 60),
+                "subtitle_outline": ("default_subtitle_outline", "#000000"),
+                "subtitle_outline_width": ("default_subtitle_outline_width", 1.5),
+            }.items():
+                generation_settings[setting_name] = channel.get(channel_key, default)
+            artifacts = dict(task.get("artifacts") or {})
+            artifacts.pop("video", None)
+            artifacts.pop("upload", None)
+            task.update({
+                "generation_settings": generation_settings,
+                "artifacts": artifacts,
+                "stage": "video",
+                "state": "to_do",
+                "progress": 50,
+                "video_ready": False,
+                "subtitles_regeneration_requested": True,
+                "subtitles_regeneration_requested_at": now(),
+                "error": None,
+                "updated_at": now(),
+            })
+            orchestration = dict(task.get("orchestration") or {})
+            orchestration["current_stage"] = "video"
+            orchestration["resumable"] = True
+            orchestration["last_transition_at"] = now()
+            task["orchestration"] = orchestration
+            return task
+        return None
+
+    updated = update_json("tasks.json", [], mutate)
+    if updated is not None:
+        # Registo da acção manual no registo de actividade (equivalente ao
+        # provider_attempts para acções manuais do utilizador).
+        record_notification(
+            "subtitles_reapplied",
+            f"Legendas reaplicadas: {updated.get('title') or updated.get('topic') or 'Vídeo'}",
+            "Config de legendas do canal reaplicada manualmente; o vídeo voltou à fila para remontagem.",
+            metadata={
+                "task_id": normalized_id,
+                "channel_name": updated.get("channel_name") or "",
+                "manual_action": True,
+            },
+            dedupe_key=f"task:{normalized_id}:subtitles:{now()}",
+        )
+    return updated
+
+
 def retry_task_with_current_settings(task_id: str, *, confirm_upload_uncertain: bool = False) -> dict[str, Any] | None:
     """Queue a failed or blocked task without persisting API credentials or provider snapshots.
 

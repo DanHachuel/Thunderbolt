@@ -172,7 +172,7 @@ def display_version(version: str) -> str:
 
 APP_VERSION_LABEL = display_version(APP_VERSION)
 
-from hermes_ui.domain import STAGES, create_batch, create_channel, create_tasks_for_batch, delete_channel, delete_task, pipeline_summary, remake_video_task, repair_task_queue, retry_task_with_current_settings, set_channel_defaults, stop_task_by_user, transition_task, update_channel, update_channel_video
+from hermes_ui.domain import STAGES, apply_subtitles_to_task, create_batch, create_channel, create_tasks_for_batch, delete_channel, delete_task, pipeline_summary, remake_video_task, repair_task_queue, retry_task_with_current_settings, set_channel_defaults, stop_task_by_user, transition_task, update_channel, update_channel_video
 from hermes_ui.channel_import import build_channel_template_xlsx, channel_is_duplicate, find_duplicate_channel, parse_channel_workbook, resolve_blueprint, resolve_google_account, resolve_voice
 from hermes_ui.drafts import list_drafts, save_draft
 from hermes_ui.automation_worker import create_video_now_for_channel, load_worker_status
@@ -6365,6 +6365,27 @@ def _remake_video_from_card(task: dict[str, Any]) -> bool:
     return True
 
 
+def _apply_subtitles_from_card(task: dict[str, Any]) -> bool:
+    """0.9.95 (Task 3): reaplica a config de legendas actual do canal.
+
+    As legendas são queimadas no render (pipeline_worker), por isso a acção
+    revalida só o bloco de legendas e recoloca o vídeo na fila — sem tocar em
+    roteiro, blueprint, tags, thumbnail, voz nem artefactos baixados. Nunca
+    carrega o .mp4: trabalha apenas sobre o JSON de configuração da tarefa.
+    """
+    task_id = str(task.get("id") or "")
+    try:
+        updated = apply_subtitles_to_task(task_id)
+    except ValueError as exc:
+        st.error(str(exc))
+        return False
+    if not updated:
+        st.error("Não foi possível aplicar a legenda: a tarefa já não existe na fila.")
+        return False
+    st.toast("Legenda reaplicada — o vídeo voltou à fila para remontagem.")
+    return True
+
+
 def _catalog_task_state(task: dict[str, Any]) -> str:
     raw_state = str(task.get("state") or task.get("status") or task.get("task_status") or "").strip().casefold()
     video_path = _task_artifact_path(task, "video")
@@ -7300,6 +7321,18 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False, tasks: li
                             help="Remonta apenas o vídeo, mantendo o mesmo roteiro, Blueprint/Prompt Master, tags, thumbnail, voz e artefactos já baixados. Revalida legendas, duração máxima do clip, fonte de vídeo e restantes definições actuais do canal (novas chamadas à fonte configurada).",
                         ):
                             if _remake_video_from_card(task):
+                                st.rerun()
+                        # 0.9.95 (Task 3): reaplicar a config de legendas do
+                        # canal sem recriar roteiro/blueprint/tags/thumbnail.
+                        if st.button(
+                            "Aplicar legenda",
+                            key=f"automation_apply_subtitles_{task_id}",
+                            icon=":material/subtitles:",
+                            width="stretch",
+                            disabled=video_path is None or state == "doing",
+                            help="Reaplica a configuração de legendas actual do canal e recoloca o vídeo na fila para remontagem (as legendas são queimadas no render)." if video_path is not None else "O vídeo ainda não existe — finalize a geração antes de aplicar legendas.",
+                        ):
+                            if _apply_subtitles_from_card(task):
                                 st.rerun()
                         script_download_col, video_download_col = st.columns(2, gap="small")
                         with script_download_col:
