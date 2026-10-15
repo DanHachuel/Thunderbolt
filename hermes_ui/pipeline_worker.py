@@ -11,6 +11,7 @@ if getattr(sys.stderr, "buffer", None) is not None and str(getattr(sys.stderr, "
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True)
 
 import json
+import hashlib
 import queue
 import re
 import shutil
@@ -42,6 +43,7 @@ from hermes_ui.thumbnail_blueprints import thumbnail_aspect_ratio_for_channel_ta
 from hermes_ui.voice_preview import synthesize_preview
 from hermes_ui.script_voice import narration_text_from_script
 from hermes_ui.only_music import run_only_music_task
+from hermes_ui.channel_music import music_scope_for_channel, select_music_for_render
 from hermes_ui.text_to_images import assemble_text_to_images_video, generate_image_prompts_for_scenes, split_script_into_scenes, synthesize_text_to_images_audio
 from hermes_ui.remotion_provider import (
     COMPOSITION_SIZES,
@@ -1311,8 +1313,16 @@ def _moneyprinter_cli_args(task: dict[str, Any], route: str, settings: dict[str,
             if rounded is not None:
                 args.append("--rounded-subtitle-background" if bool(rounded) else "--no-rounded-subtitle-background")
     bgm_source = str(generation_settings.get("background_music_source") or "").strip().casefold()
-    bgm_type = {"sem música": "none", "sem musica": "none", "random background music": "random", "ficheiro existente": "custom"}.get(bgm_source)
-    if bgm_type:
+    bgm_file = str(generation_settings.get("background_music_file") or "").strip()
+    bgm_type = {"sem música": "none", "sem musica": "none", "random background music": "random", "ficheiro existente": "custom", "carregar ficheiro": "custom"}.get(bgm_source)
+    if bgm_type == "custom" and bgm_source == "carregar ficheiro":
+        # 0.9.99 — Carregar ficheiro: usa a faixa anexada ao canal/tarefa, já
+        # copiada para storage/bgm do MPT pelo worker (_stage_bgm… abaixo). Sem
+        # faixas anexadas mantém o comportamento legado (nenhum --bgm-type, o
+        # MPT segue o seu próprio default).
+        if bgm_file:
+            args.extend(["--bgm-type", "custom", "--bgm-file", bgm_file])
+    elif bgm_type:
         args.extend(["--bgm-type", bgm_type])
     bgm_volume = generation_settings.get("background_music_volume")
     if bgm_volume is not None:
@@ -1722,9 +1732,79 @@ def _stock_fallback_is_eligible(route: str, error: PipelineError) -> bool:
     return True
 
 
+def _uploaded_bgm_scope(task: dict[str, Any]) -> str:
+    """Escopo do manifest: o explícito da criação ou a pasta do canal da tarefa."""
+    generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else {}
+    scope = str(generation_settings.get("background_music_scope") or "").strip()
+    if scope:
+        return scope
+    return music_scope_for_channel(str(task.get("channel_id") or "").strip())
+
+
+def _stage_bgm_for_moneyprinter(entry: dict[str, Any], settings: dict[str, Any]) -> str:
+    """Copiar a faixa escolhida para storage/bgm do MPT e devolver o nome.
+
+    O cli.py do MoneyPrinterTurbo só aceita --bgm-file dentro de
+    {MPT_ROOT}/storage/bgm ou resource/songs (app/services/bgm.py
+    resolve_bgm_file). O nome é determinístico por checksum: renders
+    repetidos da mesma faixa reutilizam a mesma cópia em vez de duplicar
+    bytes na pasta do MPT.
+    """
+    root = _configured_moneyprinter_root(settings)
+    if root is None:
+        return ""
+    source = Path(str(entry.get("path") or "")).expanduser()
+    if not source.is_file() or source.stat().st_size <= 0:
+        return ""
+    suffix = source.suffix.lower()
+    if suffix not in {".mp3", ".wav", ".m4a", ".ogg", ".flac"}:
+        return ""
+    checksum = str(entry.get("checksum") or "").strip()
+    if not checksum:
+        digest = hashlib.md5()
+        with source.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        checksum = digest.hexdigest()
+    bgm_dir = Path(root) / "storage" / "bgm"
+    try:
+        bgm_dir.mkdir(parents=True, exist_ok=True)
+        target = bgm_dir / f"thunderbolt-{checksum}{suffix}"
+        if not target.exists():
+            shutil.copy2(source, target)
+    except OSError:
+        return ""
+    return target.name
+
+
+def _with_uploaded_background_music(task: dict[str, Any], settings: dict[str, Any]) -> dict[str, Any]:
+    """Resolver a música "Carregar ficheiro" (com rodízio) antes do render.
+
+    select_music_for_render avança e persiste last_used_index no manifest do
+    escopo ANTES de devolver a faixa — se o worker morrer a meio do render, o
+    próximo vídeo continua a rotação correctamente. A chamada acontece uma
+    única vez por tarefa (antes das tentativas de rota), para que um fallback
+    Pexels→Pixabay não avance o rodízio duas vezes.
+    """
+    generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else {}
+    source = str(generation_settings.get("background_music_source") or "").strip().casefold()
+    if source != "carregar ficheiro":
+        return task
+    if str(generation_settings.get("background_music_file") or "").strip():
+        return task
+    selected = select_music_for_render(_uploaded_bgm_scope(task))
+    if selected is None:
+        return task
+    staged = _stage_bgm_for_moneyprinter(selected, settings)
+    if not staged:
+        return task
+    return {**task, "generation_settings": {**generation_settings, "background_music_file": staged}}
+
+
 def _run_video_helper(task: dict[str, Any]) -> Path:
     """Run the stock helper with provider fallback in the configured priority order."""
     settings = _settings()
+    task = _with_uploaded_background_music(task, settings)
     attempts = _material_video_attempts(task, settings)
     if len(attempts) <= 1:
         route, api_key = attempts[0] if attempts else ("", "")

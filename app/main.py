@@ -204,6 +204,7 @@ from hermes_ui.media_providers import FULL_IA_VIDEO_PROVIDER_CODES, KIE_MEDIA_MO
 from hermes_ui.media_generation import GOOGLE_IMAGES_COPYRIGHT_WARNING, WEB_IMAGES_COPYRIGHT_WARNING, ensure_web_images_cards, new_web_images_card, test_web_images_card
 from hermes_ui.remotion_provider import get_remotion_status
 from hermes_ui.music import create_music_task, list_music_files, list_music_tasks, materialize_suno_audio, request_suno_generation, run_music_task, store_music_file, store_voiceover_file, transition_music_task
+from hermes_ui.channel_music import VIDEO_CREATION_SCOPE, list_channel_musics, music_scope_for_channel, render_music_upload_section
 from hermes_ui.music_generation import MUSIC_GENRES, MUSIC_VOCAL_OPTIONS, generate_music_fields
 from hermes_ui.music_blueprints import list_music_blueprint_documents, read_music_blueprint, save_music_blueprint
 from hermes_ui.media_downloader import AUDIO_FORMATS, IMAGE_CONTAINERS, IMAGE_QUALITY_OPTIONS, VIDEO_CONTAINERS, VIDEO_QUALITY_OPTIONS, MediaDownloadError, build_download_options, clear_media_download_history, dependency_status, download_media, list_media_downloads, media_download_file
@@ -1762,6 +1763,13 @@ def render_video_generation_settings(
                 background_music_label = "Fonte da música de fundo" if current_ui_language() == "pt" else "Background Music Source"
                 settings["background_music_source"] = st.selectbox(background_music_label, BACKGROUND_MUSIC_SOURCE_OPTIONS, index=3, key=f"{prefix}_background_music_source")
                 settings["background_music_volume"] = st.selectbox("Background Music Volume", BACKGROUND_MUSIC_VOLUME_OPTIONS, index=2, key=f"{prefix}_background_music_volume")
+                # 0.9.99: uploader partilhado com o card do canal (Local A/B);
+                # com canal seleccionado usa a pasta do canal, senão a área global.
+                if settings["background_music_source"] == "Carregar ficheiro":
+                    music_scope = music_scope_for_channel(str((channel or {}).get("id") or ""))
+                    music_state = render_music_upload_section(music_scope)
+                    settings["background_music_scope"] = music_scope
+                    settings["background_music_rotation_enabled"] = bool(music_state.get("rotation_enabled"))
 
     if "Configurações de legendas" in visible_sections:
         with st.expander("Configurações de legendas", expanded=False):
@@ -1927,6 +1935,10 @@ def render_channel_audio_subtitle_defaults(channel: dict) -> None:
     with st.expander("Configurações de Audio", expanded=False):
         selected_music_source = st.selectbox("Fonte da música de fundo", BACKGROUND_MUSIC_SOURCE_OPTIONS, index=BACKGROUND_MUSIC_SOURCE_OPTIONS.index(music_source) if music_source in BACKGROUND_MUSIC_SOURCE_OPTIONS else BACKGROUND_MUSIC_SOURCE_OPTIONS.index("Sem música"), key=f"channel_default_music_source_{channel_id}")
         selected_music_volume = st.selectbox("Volume da música de fundo", BACKGROUND_MUSIC_VOLUME_OPTIONS, index=BACKGROUND_MUSIC_VOLUME_OPTIONS.index(music_volume) if music_volume in BACKGROUND_MUSIC_VOLUME_OPTIONS else 2, key=f"channel_default_music_volume_{channel_id}")
+        # 0.9.99: "Carregar ficheiro" finalmente renderiza o uploader partilhado
+        # — antes a opção não mostrava nenhum widget (bug reportado no Local A).
+        if selected_music_source == "Carregar ficheiro":
+            render_music_upload_section(music_scope_for_channel(channel_id))
         if st.button("Guardar configurações de Audio", type="primary", key=f"save_channel_audio_defaults_{channel_id}", width="stretch"):
             update_channel(channel_id, {"default_background_music_source": selected_music_source, "default_background_music_volume": selected_music_volume})
             st.success("Default de Audio guardado para este canal.")
