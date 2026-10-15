@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import time
 import os
 import shutil
 import tempfile
@@ -659,6 +661,63 @@ def _migrate_settings(settings: Any) -> tuple[dict[str, Any], bool]:
 # porque os testes isolam STATE em raízes tmp sem tocar STORAGE.
 _ENSURE_STORAGE_LOCK = RLock()
 _ensured_storage_root: str | None = None
+
+
+# ── 0.9.98: fingerprint persistente do sync de roteiros ──────────────────────
+# Poupa ~4,1s por sessão nova: o sync de roteiros só corre quando o conteúdo
+# de storage/scripts/ ou state/scripts.json realmente mudar — inclusive entre
+# sessões de navegador. O hash cobre (path, mtime_ns, size) de cada .md +
+# do índice; custa ~5ms para 62 ficheiros.
+
+SYNC_FINGERPRINT_FILE = ".sync_fingerprint.json"
+
+
+def compute_scripts_fingerprint() -> str:
+    """Hash determinístico de (path, mtime_ns, size) dos roteiros + índice."""
+    h = hashlib.sha256()
+    idx = STATE / "scripts.json"
+    try:
+        st = idx.stat()
+        h.update(f"{idx}|{st.st_mtime_ns}|{st.st_size}\n".encode())
+    except OSError:
+        pass
+    scripts_dir = STORAGE / "scripts"
+    try:
+        for p in sorted(scripts_dir.rglob("*.md")):
+            st = p.stat()
+            h.update(f"{p.relative_to(scripts_dir)}|{st.st_mtime_ns}|{st.st_size}\n".encode())
+    except OSError:
+        pass
+    return h.hexdigest()
+
+
+def read_stored_fingerprint() -> str | None:
+    """Lê o fingerprint guardado; corrompido → None (força sync)."""
+    path = STATE / SYNC_FINGERPRINT_FILE
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return str(data.get("scripts_hash") or "") or None
+    except (OSError, json.JSONDecodeError, ValueError, TypeError):
+        return None
+
+
+def write_stored_fingerprint(fingerprint: str) -> None:
+    """Persiste o fingerprint em disco para a próxima sessão."""
+    path = STATE / SYNC_FINGERPRINT_FILE
+    try:
+        ensure_storage()
+        atomic_write(path, {"scripts_hash": fingerprint, "computed_at": time.time()})
+    except OSError:
+        pass  # falha de escrita não pode quebrar o render
+
+
+def clear_stored_fingerprint() -> None:
+    """Remove o fingerprint (botão 'Forçar sincronização')."""
+    path = STATE / SYNC_FINGERPRINT_FILE
+    try:
+        path.unlink()
+    except OSError:
+        pass
 
 
 def ensure_storage() -> None:

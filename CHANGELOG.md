@@ -1,4 +1,13 @@
 # Changelog
+## 0.9.98 — 2026-10-15
+- **Fingerprint persistente do sync de roteiros em disco** (`hermes_ui/storage.py` + `app/main.py`): o sync de roteiros custava ~4,1s (até 11,5s a frio) na primeira abertura de cada sessão nova — cada reload/aba/restart pagava de novo. Agora o fingerprint de (path, mtime_ns, size) dos 62 `.md` + `scripts.json` é guardado em `state/.sync_fingerprint.json` (~8 ms para computar). Se o fingerprint bater, o sync inteiro é pulado — **inclusive entre sessões**. **Medido: 11,5s → 0,01s na 2ª abertura.**
+  - `compute_scripts_fingerprint()`: SHA-256 de (path relativo, mtime_ns, size) de cada `.md` + índice — determinístico, read-only.
+  - `read_stored_fingerprint()` / `write_stored_fingerprint()` / `clear_stored_fingerprint()`: leitura/escrita/remoção atómica do `.sync_fingerprint.json` em `state/`; corrompido → `None` (força sync, nunca crasha).
+  - `_sync_saved_scripts_to_youtube_automation()` (`app/main.py:6033`): 3 camadas — (1) `session_state` intra-sessão (nem o fingerprint computa); (2) fingerprint em disco entre sessões; (3) sync completo quando o fingerprint difere. A checagem antiga por `sync_signature` (IDs de registo) foi substituída — o fingerprint de ficheiros é estritamente mais sensível.
+  - Botão discreto **"Forçar sincronização de roteiros"** no rodapé da aba (para OneDrive/Dropbox que preservam mtime): limpa o fingerprint + `session_state` e corre o sync no rerun seguinte.
+- `.gitignore` já cobre `storage/state/*.json` — nenhum ajuste necessário.
+- **Suíte: 1309 passados + 2 skipped**, zero falhas.
+
 ## 0.9.97 — 2026-10-15
 - **Removido o botão "Aplicar legenda"** dos cards de vídeo (`app/main.py`) — consolidado no "Refazer Vídeo". O `remake_video_task` (`hermes_ui/domain.py:906-966`) já relê a config actual do canal via `_refresh_task_channel_video_settings` (linha 927), incluindo o bloco de legendas completo (`enable_subtitles`, fonte, posição, cor, fundo, contorno, tamanho). O botão separado era redundante — dava falsa sensação de regeneração parcial quando as legendas são queimadas no render e qualquer reaplicação exige re-renderização.
 - **Removida a função `apply_subtitles_to_task`** (`hermes_ui/domain.py`) e a flag `subtitles_regeneration_requested` (código morto — nunca consumida pelo worker). Removidos os 3 testes associados (`tests/test_domain.py`) e a entrada `subtitles_reapplied` do catálogo de notificações (`hermes_ui/notifications.py`). `audio_regeneration_requested` intocada (faz parte do fluxo do remake).

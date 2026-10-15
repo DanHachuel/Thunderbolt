@@ -6032,14 +6032,29 @@ def _saved_script_task_matches(task: dict[str, Any], record: dict[str, Any], cha
 
 def _sync_saved_scripts_to_youtube_automation() -> None:
     """Expose every saved video script as one manual YouTube task, without duplicates."""
+    from hermes_ui.storage import clear_stored_fingerprint, compute_scripts_fingerprint, read_stored_fingerprint, write_stored_fingerprint
+
+    # 0.9.98: fingerprint persistente em DISCO — o sync só corre quando o
+    # conteúdo de storage/scripts/ ou state/scripts.json muda, inclusive
+    # entre sessões de navegador (~4,1s poupados por sessão nova).
+    current_fp = compute_scripts_fingerprint()
+    if st.session_state.get("youtube_script_sync_fp") == current_fp:
+        return  # mesma sessão, já validado — nem o sync_signature precisa
+    stored_fp = read_stored_fingerprint()
+    if stored_fp == current_fp:
+        # Disco confirma: nada mudou desde a última sessão → pula o sync.
+        st.session_state["youtube_script_sync_fp"] = current_fp
+        return
+
     source_records = list_script_documents()
     sync_signature = "|".join(
         f"{record.get('id', '')}:{record.get('created_at', '')}:{record.get('blueprint_id', '')}:{record.get('blueprint_name', '')}"
         for record in source_records
         if str(record.get("document_type") or "video_script").strip() == "video_script"
     )
-    if st.session_state.get("youtube_script_sync_signature") == sync_signature:
-        return
+    # 0.9.98: a checagem antiga por session_state/sync_signature foi substituída
+    # pelo fingerprint em disco (estritamente mais sensível: cobre mtime/size
+    # de cada .md, não só IDs de registo).
     records = _backfill_saved_script_blueprints(source_records)
     channels = [item for item in read_json("channels.json", []) if isinstance(item, dict)]
     existing_tasks = load_video_tasks_for_catalog()
@@ -6100,7 +6115,9 @@ def _sync_saved_scripts_to_youtube_automation() -> None:
             continue
         created = _create_video_task_from_saved_script(record, channel, {})
         existing_tasks.extend(created)
+    st.session_state["youtube_script_sync_fp"] = current_fp
     st.session_state["youtube_script_sync_signature"] = sync_signature
+    write_stored_fingerprint(current_fp)
 
 
 def _automation_created_at(task: dict[str, Any]) -> tuple[datetime, str]:
@@ -7664,6 +7681,14 @@ def render_automation():
     _log("channel cards")
     _render_youtube_automation_cards(yt_tasks)
     _log("task cards")
+    # 0.9.98: botão discreto para forçar o sync quando o utilizador edita
+    # roteiros fora do Thunderbolt e o mtime não muda (OneDrive/Dropbox).
+    if st.button("Forçar sincronização de roteiros", help="Use se editou roteiros fora do Thunderbolt e o sync não detectou."):
+        from hermes_ui.storage import clear_stored_fingerprint
+        clear_stored_fingerprint()
+        st.session_state.pop("youtube_script_sync_fp", None)
+        st.session_state.pop("youtube_script_sync_signature", None)
+        st.rerun()
     _log("TOTAL render_automation")
 
 def render_upload_direct():
