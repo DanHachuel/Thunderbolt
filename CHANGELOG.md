@@ -1,4 +1,16 @@
 # Changelog
+## 0.9.96 — 2026-10-15
+- **RECUPERAÇÃO DA UI — Automação YouTube restaurada por inteiro** (`app/main.py`): a 0.9.95 escondeu os cards atrás de botões "Detalhes"/"Editar" — tudo o que o utilizador construiu volta a estar **sempre visível**, sem cliques intermédios:
+  - **Cards de canal**: layout original de 8 colunas restaurado — nome, handle, país, avatar (st.image URL remota), Abrir canal, Criar Vídeo, Thumbnail Blueprint, Idioma, Nicho, Fonte + Proporção, Horário, Tempo Médio, Blueprint Padrão, Narrador/Voz, Automação ligada, Guardar. Botão "Editar" removido.
+  - **Cards de vídeo**: layout original de 4 colunas restaurado — thumbnail (width="stretch"), player (Reproduzir vídeo → link estático), ID, estado + progresso, fonte, Start, Stop, Baixar Thumbnail, Baixar Thumbnail Prompt, Baixar Roteiro, Baixar Vídeo, Upload, Upload ok, **Refazer Vídeo**, **Aplicar legenda** (Task 3, lado a lado), Apagar + confirmação. Botão "Detalhes" removido; downloads sempre visíveis (o botão "Preparar downloads" saiu).
+  - **Sub-abas**: `st.tabs(["Pipeline", "Videos Postados"])` RESTAURADO com a aparência original (`st.segmented_control` removido). O catálogo continua a carregar **1× por rerun** (carregado em `render_automation` e passado às duas sub-abas — zero leituras duplas).
+  - **KPIs mantidos** no topo (Task 2): Tarefas / A Fazer / Em Execução (com "● rodando") / Concluídos / Falhas.
+- **Otimizações internas mantidas (zero impacto visual)**:
+  - `hermes_ui/storage.py`: `ensure_storage()` 1× por processo; cache de leitura por arquivo sem `deepcopy` (read_json ×100 = 26 ms).
+  - `app/main.py`: índice de blueprints em processo (TTL 60 s; `_channel_average_video_time` ×6 = 0,5 ms); sync de roteiros O(1) por hash maps; telemetria `[YT-AUTOM]` permanente.
+- **AUDIT_UI.md** criado na raiz (fora do commit — checklist de preservação, prova de que todos os elementos visíveis foram restaurados).
+- **Suíte: 1312 passados + 2 skipped**, zero falhas.
+
 ## 0.9.95 — 2026-10-14
 - **[Task 1] Performance da aba "Automação YouTube"** (auditoria prévia: ~430 widgets, ~500 leituras/parse por abertura, aba do Chrome a ~3 GB):
   - **`ensure_storage()` corre 1× por processo** (`hermes_ui/storage.py`): corria a CADA `read_json`/`write_json` e re-parseava `tasks.json` (1,77 MB) + `batches.json` (1,58 MB) + `channels.json` via `migrate_finance_thumbnail_blueprint` — 27-68 ms por leitura × centenas por render. Chave inclui `STORAGE|STATE` (tests com raízes tmp continuam garantidas).
