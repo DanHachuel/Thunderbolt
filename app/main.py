@@ -7624,6 +7624,27 @@ def _render_youtube_automation_channel_cards():
 
 
 
+def _render_youtube_automation_kpis(tasks: list[dict[str, Any]], worker_status: dict[str, Any]) -> None:
+    """0.9.95 (Task 2): blocos de KPI no topo da aba — mesmo visual da aba
+    Início (card), 1 passada de Counter sobre o catálogo já carregado,
+    zero imagens. Indicador '● rodando' quando o worker está vivo."""
+    from collections import Counter
+
+    counts = Counter(_catalog_task_state(task) for task in tasks)
+    running_note = '<span style="color:#22c55e">● rodando</span>' if worker_status.get("alive") else ""
+    kpi_cols = st.columns(5)
+    with kpi_cols[0]:
+        card("Tarefas", len(tasks), "total registrado")
+    with kpi_cols[1]:
+        card("A Fazer", counts.get("to_do", 0), "")
+    with kpi_cols[2]:
+        card("Em Execução", counts.get("doing", 0), running_note)
+    with kpi_cols[3]:
+        card("Concluídos", counts.get("done", 0), "")
+    with kpi_cols[4]:
+        card("Falhas", counts.get("failed", 0), "")
+
+
 def render_automation():
     # 0.9.95: telemetria de performance da aba — cada bloco loga o custo
     # acumulado no servidor (console do launcher) para diagnóstico de lentidão.
@@ -7654,6 +7675,8 @@ def render_automation():
     # alimenta os KPIs e a lista de tarefas (antes: 2× pelas sub-abas st.tabs).
     yt_tasks = load_automation_tasks_for_platform("youtube")
     _log("catálogo tarefas YT")
+    _render_youtube_automation_kpis(yt_tasks, worker_status)
+    _log("KPIs")
     _render_youtube_automation_channel_cards()
     _log("channel cards")
     _render_youtube_automation_cards(yt_tasks)
