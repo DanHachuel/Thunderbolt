@@ -7192,125 +7192,149 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False, tasks: li
             task_title = str(task.get("topic") or task.get("title") or "Vídeo sem nome").strip()
             task_channel = str(task.get("channel_name") or "Canal sem nome").strip()
             task_id = str(task.get("id") or "")
-            state = str(task.get("state") or "")
-            details_key = f"automation_details_{task_id}"
-            script_path = _task_artifact_path(task, "script")
-            video_path = _task_artifact_path(task, "video")
-            thumbnail_path = _task_thumbnail_path(task)
-            # 0.9.95: linha compacta por defeito — sem imagens, sem payloads de
-            # download, sem ~20 widgets por card. Os detalhes pesados (thumb,
-            # leitor, downloads, upload, remake) só renderizam a pedido.
-            with st.container(border=True):
-                row_cols = st.columns([2.6, 1.3, 0.75, 0.75, 0.75], gap="small")
-                with row_cols[0]:
-                    st.write(f"**{task_title}**")
-                    st.caption(f"{task_channel} · {task_id}")
-                with row_cols[1]:
-                    _render_video_task_state(task)
-                with row_cols[2]:
-                    if st.button("Start", key=f"automation_start_{task_id}", width="stretch", disabled=not _can_start_video_task(task, state)):
-                        if _start_pipeline_task(task_id, state):
-                            st.rerun()
-                with row_cols[3]:
-                    if st.button("Stop", key=f"automation_stop_{task_id}", width="stretch", disabled=state != "doing"):
-                        stop_task_by_user(task_id)
-                        st.rerun()
-                with row_cols[4]:
-                    if st.button("Detalhes", key=details_key, width="stretch"):
-                        st.session_state[details_key] = not bool(st.session_state.get(details_key))
-                        st.rerun(scope="fragment")
-                if not st.session_state.get(details_key):
-                    continue
-                with st.expander("Opções do vídeo", expanded=True):
-                    task_cols = st.columns([2.25, 1.55, 1.05, 2.15], gap="small")
-                    thumbnail_prompt_path = _task_artifact_path(task, "thumbnail_prompt_json")
-                    thumbnail_prompt = str(task.get("thumbnail_prompt") or "").strip()
-                    with task_cols[0]:
-                        media_cols = st.columns(2, gap="small")
-                        with media_cols[0]:
-                            if thumbnail_path is not None:
-                                # 0.9.95: width=160 — sem full-res a queimar GPU;
-                                # st.image(path) faz stream do ficheiro, sem bytes
-                                # carregados em Python (regra anti-"aba de 3 GB").
-                                st.image(str(thumbnail_path), width=160, caption="Thumbnail")
-                            else:
-                                st.caption("Thumbnail ainda não pronta")
-                        with media_cols[1]:
-                            if video_path is not None and _catalog_task_state(task) == "done":
-                                player_state_key = "youtube_automation_player_task_id"
-                                if st.session_state.get(player_state_key) == task_id:
-                                    _render_local_video_player(video_path, width="stretch")
-                                    if st.button("Fechar leitor", key=f"automation_close_player_{task_id}", width="stretch"):
-                                        st.session_state.pop(player_state_key, None)
-                                        st.rerun(scope="fragment")
-                                elif st.button("Reproduzir vídeo", key=f"automation_play_video_{task_id}", width="stretch"):
-                                    st.session_state[player_state_key] = task_id
+            # 0.9.96 (recuperação): card ORIGINAL restaurado por inteiro —
+            # thumbnail, player, downloads, upload, Refazer e Aplicar legenda
+            # sempre visíveis, sem botões intermédios. Só as optimizações
+            # internas (catálogo 1×, storage) permanecem da 0.9.95.
+            with st.expander(f"{task_title} · {task_channel}", expanded=False):
+                task_cols = st.columns([2.25, 1.55, 1.05, 2.15], gap="small")
+                script_path = _task_artifact_path(task, "script")
+                video_path = _task_artifact_path(task, "video")
+                thumbnail_path = _task_thumbnail_path(task)
+                thumbnail_prompt_path = _task_artifact_path(task, "thumbnail_prompt_json")
+                thumbnail_prompt = str(task.get("thumbnail_prompt") or "").strip()
+                with task_cols[0]:
+                    media_cols = st.columns(2, gap="small")
+                    with media_cols[0]:
+                        if thumbnail_path is not None:
+                            st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")
+                        else:
+                            st.caption("Thumbnail ainda não pronta")
+                    with media_cols[1]:
+                        if video_path is not None and _catalog_task_state(task) == "done":
+                            player_state_key = "youtube_automation_player_task_id"
+                            if st.session_state.get(player_state_key) == task_id:
+                                _render_local_video_player(video_path, width="stretch")
+                                if st.button("Fechar leitor", key=f"automation_close_player_{task_id}", width="stretch"):
+                                    st.session_state.pop(player_state_key, None)
                                     st.rerun(scope="fragment")
-                            elif video_path is not None:
-                                st.caption("O vídeo estará disponível para reprodução quando estiver concluído.")
-                            else:
-                                st.caption("Vídeo ainda não pronto")
-                        st.caption(f"ID da tarefa: {task_id}")
-                        # 0.9.95 (Task 1.4): downloads LAZY — zero bytes de
-                        # roteiros/thumbnails no payload da abertura; só depois
-                        # de "Preparar downloads" é que os ficheiros são lidos.
-                        downloads_key = f"automation_downloads_{task_id}"
-                        if st.button("Preparar downloads", key=downloads_key, width="stretch"):
-                            st.session_state[downloads_key] = not bool(st.session_state.get(downloads_key))
-                            st.rerun(scope="fragment")
-                        if st.session_state.get(downloads_key):
-                            thumbnail_download_col, prompt_download_col = st.columns(2, gap="small")
-                            with thumbnail_download_col:
-                                st.download_button(
-                                    "Baixar Thumbnail",
-                                    data=_file_bytes(thumbnail_path),
-                                    file_name=_automation_download_name("Thumbnail", task, thumbnail_path, ".png"),
-                                    mime="image/png",
-                                    key=f"automation_download_thumbnail_{task['id']}",
-                                    width="stretch",
-                                    disabled=thumbnail_path is None,
-                                )
-                            with prompt_download_col:
-                                prompt_data = thumbnail_prompt_path.read_bytes() if thumbnail_prompt_path else thumbnail_prompt.encode("utf-8")
-                                st.download_button(
-                                    "Baixar Thumbnail Prompt",
-                                    data=prompt_data,
-                                    file_name=_automation_download_name("Thumbnail-Prompt", task, thumbnail_prompt_path, ".txt"),
-                                    mime="application/json" if thumbnail_prompt_path else "text/plain",
-                                    key=f"automation_download_thumbnail_prompt_{task['id']}",
-                                    width="stretch",
-                                    disabled=thumbnail_prompt_path is None and not thumbnail_prompt,
-                                )
-                    with task_cols[1]:
-                        st.caption("Fonte do vídeo")
-                        st.write(_video_task_source(task))
-                    with task_cols[2]:
-                        st.caption("Upload")
-                        upload_ready = _upload_ready_for_task(task, video_path, thumbnail_path)
-                        upload_ok = bool(task.get("upload_ok") or isinstance((task.get("artifacts") or {}).get("upload"), dict))
-                        if st.button(
-                            "Upload",
-                            key=f"automation_upload_{task['id']}",
-                            type="primary",
+                            elif st.button("Reproduzir vídeo", key=f"automation_play_video_{task_id}", width="stretch"):
+                                st.session_state[player_state_key] = task_id
+                                st.rerun(scope="fragment")
+                        elif video_path is not None:
+                            st.caption("O vídeo estará disponível para reprodução quando estiver concluído.")
+                        else:
+                            st.caption("Vídeo ainda não pronto")
+                    st.caption(f"ID da tarefa: {task_id}")
+                    thumbnail_download_col, prompt_download_col = st.columns(2, gap="small")
+                    with thumbnail_download_col:
+                        st.download_button(
+                            "Baixar Thumbnail",
+                            data=_file_bytes(thumbnail_path),
+                            file_name=_automation_download_name("Thumbnail", task, thumbnail_path, ".png"),
+                            mime="image/png",
+                            key=f"automation_download_thumbnail_{task['id']}",
                             width="stretch",
-                            disabled=not upload_ready or upload_ok,
-                            help="Disponível quando o vídeo e a thumbnail estiverem prontos." if not upload_ready else None,
-                        ):
-                            with st.spinner("A enviar vídeo..."):
-                                result = _upload_automation_task(task, video_path, thumbnail_path)
-                            (st.success if result.ok else st.error)(result.message)
-                            st.rerun()
-                        checked_upload_ok = st.checkbox(
-                            "Upload ok",
-                            value=upload_ok,
-                            key=f"automation_upload_ok_{task['id']}",
-                            disabled=not upload_ready,
-                            help="Marque depois de concluir manualmente o upload do vídeo.",
+                            disabled=thumbnail_path is None,
                         )
-                        if checked_upload_ok != upload_ok:
-                            update_task(str(task["id"]), {"upload_ok": bool(checked_upload_ok), "upload_status": "manual" if checked_upload_ok else "pending"})
+                    with prompt_download_col:
+                        prompt_data = thumbnail_prompt_path.read_bytes() if thumbnail_prompt_path else thumbnail_prompt.encode("utf-8")
+                        st.download_button(
+                            "Baixar Thumbnail Prompt",
+                            data=prompt_data,
+                            file_name=_automation_download_name("Thumbnail-Prompt", task, thumbnail_prompt_path, ".txt"),
+                            mime="application/json" if thumbnail_prompt_path else "text/plain",
+                            key=f"automation_download_thumbnail_prompt_{task['id']}",
+                            width="stretch",
+                            disabled=thumbnail_prompt_path is None and not thumbnail_prompt,
+                        )
+                with task_cols[1]:
+                    _render_video_task_state(task)
+                with task_cols[2]:
+                    st.caption("Fonte do vídeo")
+                    st.write(_video_task_source(task))
+                with task_cols[3]:
+                    state = str(task.get("state") or "")
+                    upload_ready = _upload_ready_for_task(task, video_path, thumbnail_path)
+                    upload_ok = bool(task.get("upload_ok") or isinstance((task.get("artifacts") or {}).get("upload"), dict))
+                    start_col, stop_col, delete_col = st.columns(3)
+                    with start_col:
+                        if st.button("Start", key=f"automation_start_{task_id}", width="stretch", disabled=not _can_start_video_task(task, state)):
+                            if _start_pipeline_task(task_id, state):
+                                st.rerun()
+                    with stop_col:
+                        if st.button("Stop", key=f"automation_stop_{task_id}", width="stretch", disabled=state != "doing"):
+                            stop_task_by_user(task_id)
                             st.rerun()
-                    with task_cols[3]:
+                    script_download_col, video_download_col = st.columns(2, gap="small")
+                    with script_download_col:
+                        st.download_button(
+                            "Baixar Roteiro",
+                            data=_file_bytes(script_path),
+                            file_name=_automation_download_name("Script", task, script_path, ".md"),
+                            mime="text/markdown",
+                            key=f"automation_download_script_{task['id']}",
+                            width="stretch",
+                            disabled=script_path is None,
+                        )
+                    with video_download_col:
+                        if video_path is not None:
+                            download_name = _automation_download_name("Vídeo", task, video_path, ".mp4")
+                            download_link = _local_video_download_link(video_path, download_name)
+                            if download_link:
+                                st.markdown(download_link, unsafe_allow_html=True)
+                            else:
+                                download_task_key = "youtube_automation_download_task_id"
+                                if st.session_state.get(download_task_key) == task_id:
+                                    with video_path.open("rb") as video_stream:
+                                        st.download_button(
+                                            "Baixar Vídeo",
+                                            data=video_stream,
+                                            file_name=download_name,
+                                            mime="video/mp4",
+                                            key=f"automation_download_video_{task_id}",
+                                            width="stretch",
+                                            on_click=_clear_youtube_automation_download_task,
+                                        )
+                                elif st.button("Preparar download", key=f"automation_prepare_video_download_{task_id}", width="stretch"):
+                                    st.session_state[download_task_key] = task_id
+                                    st.rerun(scope="fragment")
+                        else:
+                            st.download_button(
+                                "Baixar Vídeo",
+                                data=b"",
+                                file_name="video.mp4",
+                                mime="video/mp4",
+                                key=f"automation_download_video_{task['id']}",
+                                width="stretch",
+                                disabled=True,
+                            )
+                    if st.button(
+                        "Upload",
+                        key=f"automation_upload_{task['id']}",
+                        type="primary",
+                        width="stretch",
+                        disabled=not upload_ready or upload_ok,
+                        help="Disponível quando o vídeo e a thumbnail estiverem prontos." if not upload_ready else None,
+                    ):
+                        with st.spinner("A enviar vídeo..."):
+                            result = _upload_automation_task(task, video_path, thumbnail_path)
+                        (st.success if result.ok else st.error)(result.message)
+                        st.rerun()
+                    checked_upload_ok = st.checkbox(
+                        "Upload ok",
+                        value=upload_ok,
+                        key=f"automation_upload_ok_{task['id']}",
+                        disabled=not upload_ready,
+                        help="Marque depois de concluir manualmente o upload do vídeo.",
+                    )
+                    if checked_upload_ok != upload_ok:
+                        update_task(str(task["id"]), {"upload_ok": bool(checked_upload_ok), "upload_status": "manual" if checked_upload_ok else "pending"})
+                        st.rerun()
+                    # 0.9.95 (Task 3): "Aplicar legenda" ao lado de "Refazer
+                    # Vídeo" — mesmo tamanho, mesma linha, mesmo estilo.
+                    remake_cols = st.columns(2, gap="small")
+                    with remake_cols[0]:
                         if st.button(
                             "Refazer Vídeo",
                             key=f"automation_remake_video_{task['id']}",
@@ -7322,8 +7346,7 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False, tasks: li
                         ):
                             if _remake_video_from_card(task):
                                 st.rerun()
-                        # 0.9.95 (Task 3): reaplicar a config de legendas do
-                        # canal sem recriar roteiro/blueprint/tags/thumbnail.
+                    with remake_cols[1]:
                         if st.button(
                             "Aplicar legenda",
                             key=f"automation_apply_subtitles_{task_id}",
@@ -7334,40 +7357,7 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False, tasks: li
                         ):
                             if _apply_subtitles_from_card(task):
                                 st.rerun()
-                        script_download_col, video_download_col = st.columns(2, gap="small")
-                        with script_download_col:
-                            if st.session_state.get(downloads_key):
-                                st.download_button(
-                                    "Baixar Roteiro",
-                                    data=_file_bytes(script_path),
-                                    file_name=_automation_download_name("Script", task, script_path, ".md"),
-                                    mime="text/markdown",
-                                    key=f"automation_download_script_{task['id']}",
-                                    width="stretch",
-                                    disabled=script_path is None,
-                                )
-                        with video_download_col:
-                            if video_path is not None and st.session_state.get(downloads_key):
-                                download_name = _automation_download_name("Vídeo", task, video_path, ".mp4")
-                                download_link = _local_video_download_link(video_path, download_name)
-                                if download_link:
-                                    st.markdown(download_link, unsafe_allow_html=True)
-                                else:
-                                    download_task_key = "youtube_automation_download_task_id"
-                                    if st.session_state.get(download_task_key) == task_id:
-                                        with video_path.open("rb") as video_stream:
-                                            st.download_button(
-                                                "Baixar Vídeo",
-                                                data=video_stream,
-                                                file_name=download_name,
-                                                mime="video/mp4",
-                                                key=f"automation_download_video_{task_id}",
-                                                width="stretch",
-                                                on_click=_clear_youtube_automation_download_task,
-                                            )
-                                    elif st.button("Preparar download", key=f"automation_prepare_video_download_{task_id}", width="stretch"):
-                                        st.session_state[download_task_key] = task_id
-                                        st.rerun(scope="fragment")
+                    with delete_col:
                         confirm_delete_key = f"automation_confirm_delete_{task['id']}"
                         if st.button("Apagar", key=f"automation_delete_{task['id']}", width="stretch", disabled=state == "doing"):
                             st.session_state[confirm_delete_key] = True
@@ -7393,18 +7383,15 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False, tasks: li
 def _render_youtube_automation_cards(tasks: list[dict[str, Any]] | None = None):
     if not _has_script_context():
         return
-    # 0.9.95: st.tabs executa o corpo das DUAS sub-abas em cada rerun — o
-    # catálogo de tarefas era carregado e ordenado 2× por abertura. O selector
-    # só renderiza a sub-aba activa; a lista é a mesma já carregada pela aba
-    # (passada por render_automation — zero leituras extra).
-    view = st.segmented_control(
-        "Vista",
-        ["Pipeline", "Videos Postados"],
-        selection_mode="single",
-        default="Pipeline",
-        key="youtube_automation_view",
-    )
-    _render_youtube_automation_task_list(posted_only=str(view or "Pipeline") != "Pipeline", tasks=tasks)
+    # 0.9.96 (recuperação): st.tabs RESTAURADO com a aparência original. O
+    # catálogo de tarefas continua a carregar UMA vez por rerun (carregado em
+    # render_automation e passado a ambas as sub-abas) — nenhum corpo volta
+    # a disparar leitura dupla de tasks.json.
+    pipeline_tab, posted_tab = st.tabs(["Pipeline", "Videos Postados"])
+    with pipeline_tab:
+        _render_youtube_automation_task_list(posted_only=False, tasks=tasks)
+    with posted_tab:
+        _render_youtube_automation_task_list(posted_only=True, tasks=tasks)
 
 
 def _facebook_pages_for_automation() -> list[dict[str, Any]]:
@@ -7547,17 +7534,23 @@ def _render_youtube_automation_channel_cards():
         ]
         for channel in filtered_automation_channels:
             channel_id = channel["id"]
-            # 0.9.95: linha compacta por defeito (~9 widgets vs ~24) — o
-            # formulário de agendamento/blueprint/voz e os cálculos pesados
-            # (channel_default_options, _channel_average_video_time) só correm
-            # para o canal em edição. O avatar remoto (st.image de URL do
-            # YouTube = 6 fetchs de rede por abertura) saiu do render por
-            # defeito; "Abrir canal" continua ao lado do nome.
-            edit_key = f"youtube_automation_channel_edit_{channel_id}"
+            # 0.9.96 (recuperação): card de canal ORIGINAL restaurado por
+            # inteiro — todas as colunas, formulário e avatar visíveis, sem
+            # botão "Editar". Só as optimizações internas da 0.9.95 ficam
+            # (índice de blueprints: _channel_average_video_time ≈ 0,1 ms).
             with st.container(border=True):
-                header_cols = st.columns([2.6, 1.5, 1.1, 0.85, 0.85], gap="small")
+                blueprint_ids, blueprint_labels, current_blueprint, voice_options, current_voice = channel_default_options(channel)
+                automation_blueprint = current_blueprint
+                automation_voice = current_voice
+                paired_thumbnail = thumbnail_blueprint_for_blueprint(automation_blueprint)
+                automation_format = str(channel.get("format") or "wide")
+                header_cols = st.columns([0.58, 2.15, 1.4, 1.15, 1.15, 1.25, 0.82, 0.92], gap="small")
                 with header_cols[0]:
-                    st.markdown("### YT")
+                    if channel.get("thumbnail_url"):
+                        st.image(channel["thumbnail_url"], width=48)
+                    else:
+                        st.markdown("### YT")
+                with header_cols[1]:
                     st.write(f"**{channel.get('name', 'Sem nome')}**")
                     st.caption(channel.get("handle") or channel.get("url") or "sem URL")
                     st.caption(f"País: {channel.get('country') or 'Não definido'}")
@@ -7573,34 +7566,39 @@ def _render_youtube_automation_channel_cards():
                         elif channel_id_or_handle:
                             channel_url = f"https://www.youtube.com/@{channel_id_or_handle}"
                     if channel_url:
-                        st.link_button("Abrir canal", channel_url, type="primary", width="stretch")
-                with header_cols[1]:
-                    st.caption("Blueprint / Nicho")
-                    blueprint_display = str(blueprint_for_channel(channel).get("name") or "Sem Blueprint padrão")
-                    st.caption(f"{blueprint_display} · {channel_niche_label(channel)}")
+                        open_create_cols = st.columns(2, gap="small")
+                        with open_create_cols[0]:
+                            st.link_button("Abrir canal", channel_url, type="primary", width="stretch")
+                        with open_create_cols[1]:
+                            if st.button("Criar Vídeo", key=f"youtube_automation_create_video_{channel_id}", width="stretch"):
+                                if _create_video_now_from_channel(channel):
+                                    st.rerun(scope="fragment")
+                    else:
+                        if st.button("Criar Vídeo", key=f"youtube_automation_create_video_{channel_id}", width="stretch"):
+                            if _create_video_now_from_channel(channel):
+                                st.rerun(scope="fragment")
                 with header_cols[2]:
-                    st.caption("Idioma")
-                    st.caption(video_language_label(normalize_video_language(channel.get("language") or "pt")))
+                    st.markdown("**Thumbnail Blueprint**")
+                    st.caption(str(paired_thumbnail.get("name") or "Youtube_Generic_Thumbnail_Blueprint"))
                 with header_cols[3]:
-                    if st.button("Criar Vídeo", key=f"youtube_automation_create_video_{channel_id}", width="stretch"):
-                        if _create_video_now_from_channel(channel):
-                            st.rerun(scope="fragment")
+                    st.markdown("**Idioma do roteiro**")
+                    st.caption(video_language_label(normalize_video_language(channel.get("language") or "pt")))
                 with header_cols[4]:
-                    if st.button("Fechar" if st.session_state.get(edit_key) else "Editar", key=edit_key, width="stretch"):
-                        st.session_state[edit_key] = not bool(st.session_state.get(edit_key))
-                        st.rerun(scope="fragment")
-            if not st.session_state.get(edit_key):
-                continue
-            with st.expander("Agendamento e defaults do canal", expanded=True):
-                blueprint_ids, blueprint_labels, current_blueprint, voice_options, current_voice = channel_default_options(channel)
-                automation_blueprint = current_blueprint
-                automation_voice = current_voice
-                paired_thumbnail = thumbnail_blueprint_for_blueprint(automation_blueprint)
-                automation_format = str(channel.get("format") or "wide")
+                    st.markdown("**Nicho Padrão**")
+                    st.caption(channel_niche_label(channel))
+                with header_cols[5]:
+                    st.markdown("**Fonte do vídeo**")
+                    st.caption(channel_video_source_value(channel.get("style_wide")))
+                    st.markdown("**Proporção do vídeo**")
+                    st.caption(str(channel.get("video_aspect_ratio") or "Landscape 16:9"))
+                with header_cols[6]:
+                    schedule_time = st.text_input("Horário (HH:MM)", value=channel.get("automation_time", "00:00"), key=f"automation_time_{channel_id}")
+                with header_cols[7]:
+                    calculated_time, calculated_source, calculated_words = _channel_average_video_time(channel)
+                    average_video_time = st.text_input("Tempo Medio de Video", value=channel_video_time_value(channel), key=f"average_video_time_{channel_id}", help=f"Referência média: {calculated_words or 0} palavras · fonte: {calculated_source}.")
+
                 control_cols = st.columns([1.8, 1.8, 1.35, 1.2], gap="small")
                 with control_cols[0]:
-                    schedule_time = st.text_input("Horário (HH:MM)", value=channel.get("automation_time", "00:00"), key=f"automation_time_{channel_id}")
-                with control_cols[1]:
                     automation_blueprint = st.selectbox(
                         "Blueprint Padrão",
                         blueprint_ids,
@@ -7608,8 +7606,8 @@ def _render_youtube_automation_channel_cards():
                         format_func=lambda item: blueprint_labels.get(item, item or "Sem Blueprint padrão"),
                         key=f"automation_blueprint_{channel_id}",
                     )
-                    paired_thumbnail = thumbnail_blueprint_for_blueprint(automation_blueprint)
-                with control_cols[2]:
+                paired_thumbnail = thumbnail_blueprint_for_blueprint(automation_blueprint)
+                with control_cols[1]:
                     automation_voice = st.selectbox(
                         "Narrador/Voz Padrão",
                         voice_options,
@@ -7617,21 +7615,9 @@ def _render_youtube_automation_channel_cards():
                         format_func=lambda item: item or "Sem voz padrão",
                         key=f"automation_voice_{channel_id}",
                     )
-                with control_cols[3]:
+                with control_cols[2]:
                     enabled = st.toggle("Automação ligada", value=bool(channel.get("automation_on", False)), key=f"automation_on_{channel_id}")
-                average_cols = st.columns([1.8, 1.8, 1.35, 1.2], gap="small")
-                with average_cols[0]:
-                    calculated_time, calculated_source, calculated_words = _channel_average_video_time(channel)
-                    average_video_time = st.text_input("Tempo Medio de Video", value=channel_video_time_value(channel), key=f"average_video_time_{channel_id}", help=f"Referência média: {calculated_words or 0} palavras · fonte: {calculated_source}.")
-                with average_cols[1]:
-                    st.caption("Thumbnail Blueprint")
-                    st.caption(str(paired_thumbnail.get("name") or "Youtube_Generic_Thumbnail_Blueprint"))
-                with average_cols[2]:
-                    st.caption("Fonte do vídeo")
-                    st.caption(channel_video_source_value(channel.get("style_wide")))
-                    st.caption("Proporção do vídeo")
-                    st.caption(str(channel.get("video_aspect_ratio") or "Landscape 16:9"))
-                with average_cols[3]:
+                with control_cols[3]:
                     if st.button("Guardar", key=f"automation_save_{channel_id}", width="stretch", type="primary"):
                         if not valid_hhmm(schedule_time):
                             st.error("Use o formato HH:MM, por exemplo 08:30.")
@@ -7653,7 +7639,7 @@ def _render_youtube_automation_channel_cards():
                                 "default_thumbnail_blueprint_id": paired_id,
                             })
                             st.success("Agendamento guardado.")
-                            st.rerun()
+                            st.rerun(scope="fragment")
 
 
 

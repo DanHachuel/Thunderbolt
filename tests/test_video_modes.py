@@ -70,16 +70,13 @@ def test_shorts_use_tiktok_channels_and_prompt_master():
 def test_automation_card_matches_reference_layout_without_changing_control_keys():
     source = Path(__file__).parents[1].joinpath("app", "main.py").read_text(encoding="utf-8")
     block = source.split('def _render_youtube_automation_channel_cards():', 1)[1].split('def render_automation():', 1)[0]
-    # 0.9.95: card compacto (~9 widgets) + formulário de edição condicional;
-    # as chaves de controlo (automation_on_/time_/save_/blueprint_/voice_)
-    # são preservadas para não invalidar sessões gravadas.
-    assert 'header_cols = st.columns([2.6, 1.5, 1.1, 0.85, 0.85], gap="small")' in block
+    # 0.9.96 (recuperação): layout original de 8 colunas restaurado.
+    assert 'header_cols = st.columns([0.58, 2.15, 1.4, 1.15, 1.15, 1.25, 0.82, 0.92], gap="small")' in block
     assert 'enabled = st.toggle("Automação ligada"' in block
     assert 'key=f"automation_on_{channel_id}"' in block
     assert 'key=f"automation_time_{channel_id}"' in block
     assert 'key=f"automation_save_{channel_id}"' in block
     assert 'control_cols = st.columns([1.8, 1.8, 1.35, 1.2], gap="small")' in block
-    assert 'average_cols = st.columns([1.8, 1.8, 1.35, 1.2], gap="small")' in block
     assert 'type="primary"' in block
     assert 'automation_format = st.selectbox' not in block
     assert 'st.markdown("**Formato**")' not in block

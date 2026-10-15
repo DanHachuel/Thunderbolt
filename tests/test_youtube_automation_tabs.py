@@ -4,13 +4,14 @@ APP = Path("app/main.py").read_text(encoding="utf-8")
 
 
 def test_youtube_automation_has_pipeline_and_posted_views_without_double_load():
-    """0.9.95: st.tabs corria o corpo das DUAS sub-abas em cada rerun — o
-    catálogo de tarefas era carregado e ordenado 2×. O selector segmentado
-    só renderiza a vista activa: 1 leitura por rerun."""
-    assert 'st.segmented_control(' in APP
-    assert '["Pipeline", "Videos Postados"]' in APP
-    assert 'posted_only=str(view or "Pipeline") != "Pipeline", tasks=tasks' in APP
-    assert 'st.tabs(["Pipeline", "Videos Postados"])' not in APP
+    """0.9.96 (recuperação): st.tabs RESTAURADO com a aparência original — o
+    catálogo de tarefas continua a carregar UMA vez por rerun em
+    render_automation e é passado a ambas as sub-abas; nenhum corpo volta a
+    disparar a leitura dupla de tasks.json."""
+    assert 'st.tabs(["Pipeline", "Videos Postados"])' in APP
+    assert '_render_youtube_automation_task_list(posted_only=False, tasks=tasks)' in APP
+    assert '_render_youtube_automation_task_list(posted_only=True, tasks=tasks)' in APP
+    assert 'st.segmented_control(' not in APP
 
 
 def test_youtube_queue_items_are_collapsed_with_only_title_and_channel_header():

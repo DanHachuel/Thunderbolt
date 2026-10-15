@@ -77,16 +77,15 @@ class AutomationCardsTests(unittest.TestCase):
     def test_youtube_automation_cards_render_thumbnail_and_ready_video_side_by_side(self):
         block = MAIN_SOURCE.split("def _render_youtube_automation_task_list", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
         self.assertIn('media_cols = st.columns(2, gap="small")', block)
-        # 0.9.95: width=160 — sem full-res a queimar a GPU do browser.
-        self.assertIn('st.image(str(thumbnail_path), width=160, caption="Thumbnail")', block)
+        # 0.9.96 (recuperação): width="stretch" original restaurado.
+        self.assertIn('st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")', block)
         self.assertNotIn('st.button("Carregar player"', block)
         self.assertIn('_render_local_video_player(video_path, width="stretch")', block)
         self.assertIn('if video_path is not None and _catalog_task_state(task) == "done"', block)
         self.assertIn('with video_path.open("rb") as video_stream:', block)
-        # 0.9.95 (Task 1.4): downloads lazy — os payloads só carregam depois de
-        # "Preparar downloads"; zero bytes de roteiro/thumbnail na abertura.
-        self.assertIn('downloads_key = f"automation_downloads_{task_id}"', block)
-        self.assertIn('if st.session_state.get(downloads_key):', block)
+        # 0.9.96 (recuperação): downloads sempre visíveis no card, como antes.
+        self.assertIn('st.download_button(\n                            "Baixar Thumbnail",', block)
+        self.assertIn('st.download_button(\n                            "Baixar Roteiro",', block)
         # 0.9.95 (Task 3): botão "Aplicar legenda" ao lado de "Refazer Vídeo".
         self.assertIn('key=f"automation_apply_subtitles_{task_id}"', block)
         self.assertIn('_apply_subtitles_from_card(task)', block)
