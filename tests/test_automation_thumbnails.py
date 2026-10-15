@@ -24,14 +24,15 @@ def test_automation_cards_render_thumbnail_before_video_metadata():
     # Postados renderizadas por _render_youtube_automation_task_list.
     automation = source.split("def _render_youtube_automation_task_list", 1)[1].split("def _render_youtube_automation_cards", 1)[0]
     assert "thumbnail_path = _task_thumbnail_path(task)" in automation
-    assert 'st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")' in automation
+    # 0.9.95: thumbnail nos detalhes a pedido do card, com width=160 (GPU).
+    assert 'st.image(str(thumbnail_path), width=160, caption="Thumbnail")' in automation
     assert 'st.caption("Thumbnail ainda não pronta")' in automation
-    assert automation.index('st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")') < automation.index("with task_cols[1]:")
+    assert automation.index('st.image(str(thumbnail_path), width=160, caption="Thumbnail")') < automation.index("with task_cols[1]:")
 
 
 def test_thumbnail_renderers_reference_local_paths_instead_of_cached_bytes():
     source = Path(__file__).parents[1].joinpath("app", "main.py").read_text(encoding="utf-8")
     assert 'st.image(_file_bytes(thumbnail_path)' not in source
-    assert 'st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")' in source
+    assert 'st.image(str(thumbnail_path), width=160, caption="Thumbnail")' in source
     assert 'st.image(_file_bytes(image_path)' not in source
     assert 'st.image(str(image_path), use_container_width=True)' in source

@@ -35,12 +35,12 @@ def test_tiktok_cards_include_all_requested_actions_and_download_names():
 
 def test_youtube_downloads_use_the_same_requested_name_patterns():
     card_block = SOURCE.split("def _render_youtube_automation_task_list", 1)[1].split("def _render_youtube_automation_cards", 1)[0]
-    assert SOURCE.split("def _render_youtube_automation_cards():", 1)[0].rstrip().endswith("@st.fragment")
+    assert SOURCE.split("def _render_youtube_automation_cards(tasks: list[dict[str, Any]] | None = None):", 1)[0].rstrip().endswith("@st.fragment")
     assert '_automation_download_name("Thumbnail", task, thumbnail_path, ".png")' in card_block
     assert '_automation_download_name("Thumbnail-Prompt", task, thumbnail_prompt_path, ".txt")' in card_block
     assert '_automation_download_name("Script", task, script_path, ".md")' in card_block
     assert '_automation_download_name("Vídeo", task, video_path, ".mp4")' in card_block
-    assert 'st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")' in card_block
+    assert 'st.image(str(thumbnail_path), width=160, caption="Thumbnail")' in card_block
     assert 'st.image(str(thumbnail_path), width=180, caption="Thumbnail")' not in card_block
 
 
@@ -62,9 +62,9 @@ def test_tiktok_automation_start_uses_shared_pipeline_start_helper():
 
 
 def test_youtube_refresh_keeps_fragment_and_guards_script_sync():
-    assert '@st.fragment\ndef _render_youtube_automation_cards()' in SOURCE
+    assert '@st.fragment\ndef _render_youtube_automation_cards(tasks: list[dict[str, Any]] | None = None):' in SOURCE
     assert 'youtube_script_sync_signature' in SOURCE
-    card_block = SOURCE.split("def _render_youtube_automation_cards():", 1)[1].split("def render_automation():", 1)[0]
+    card_block = SOURCE.split("def _render_youtube_automation_cards(tasks: list[dict[str, Any]] | None = None):", 1)[1].split("def render_automation():", 1)[0]
     page_block = SOURCE.split("def render_automation():", 1)[1].split("def render_upload_direct():", 1)[0]
     assert "_sync_saved_scripts_to_youtube_automation()" not in card_block
     assert "_sync_saved_scripts_to_youtube_automation()" in page_block

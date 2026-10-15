@@ -104,13 +104,18 @@ def test_read_json_survives_windows_lock_permission_error(tmp_path, monkeypatch)
     assert storage.read_json("display_names.json")["prompt_masters"]["prompt.md"] == "Prompt"
 
 
-def test_read_json_cache_returns_copies_and_invalidates_after_write(tmp_path, monkeypatch):
+def test_read_json_cache_hits_share_the_cached_object_and_invalidate_after_write(tmp_path, monkeypatch):
+    """0.9.95 (perf Automação Youtube): o hit devolve o OBJECTO PARTILHADO do
+    cache (sem deepcopy — 12 ms/call só de cópia) e qualquer escrita invalida
+    a entrada desse ficheiro. Contrato: nunca mutar uma leitura sem persistir
+    — write_json/update_json invalidam e a leitura seguinte volta ao disco."""
     storage = _isolated_storage(tmp_path, monkeypatch)
     storage.write_json("tasks.json", [{"id": "one"}])
 
     first = storage.read_json("tasks.json")
-    first[0]["id"] = "mutated-only-in-memory"
-    assert storage.read_json("tasks.json")[0]["id"] == "one"
+    second = storage.read_json("tasks.json")
+    assert first is second  # hit devolve o mesmo objecto cacheado: zero re-parse
+    assert second[0]["id"] == "one"
 
     storage.write_json("tasks.json", [{"id": "two"}])
     assert storage.read_json("tasks.json")[0]["id"] == "two"

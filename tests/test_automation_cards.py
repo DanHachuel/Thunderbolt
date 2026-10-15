@@ -8,15 +8,15 @@ MAIN_SOURCE = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 
 class AutomationCardsTests(unittest.TestCase):
     def test_automation_video_cards_have_start_and_stop_controls(self):
-        self.assertIn('key=f"automation_start_{task[\'id\']}"', MAIN_SOURCE)
-        self.assertIn('key=f"automation_stop_{task[\'id\']}"', MAIN_SOURCE)
+        self.assertIn('key=f"automation_start_{task_id}"', MAIN_SOURCE)
+        self.assertIn('key=f"automation_stop_{task_id}"', MAIN_SOURCE)
         self.assertIn('key=f"automation_delete_{task[\'id\']}"', MAIN_SOURCE)
         self.assertIn('delete_task(task["id"])', MAIN_SOURCE)
         self.assertIn('st.button("Apagar"', MAIN_SOURCE)
         self.assertIn('def _start_pipeline_task(task_id: str, state: str) -> bool:', MAIN_SOURCE)
-        self.assertIn('_start_pipeline_task(str(task["id"]), state)', MAIN_SOURCE)
+        self.assertIn('_start_pipeline_task(task_id, state)', MAIN_SOURCE)
         self.assertIn('if not updated:', MAIN_SOURCE)
-        self.assertIn('stop_task_by_user(task["id"])', MAIN_SOURCE)
+        self.assertIn('stop_task_by_user(task_id)', MAIN_SOURCE)
         self.assertIn('Stoped by User', MAIN_SOURCE)
         self.assertIn("Fila de produção. Vídeos já publicados são apresentados em Videos Postados.", MAIN_SOURCE)
 
@@ -30,8 +30,8 @@ class AutomationCardsTests(unittest.TestCase):
         self.assertIn('st.text_input("Horário (HH:MM)"', MAIN_SOURCE)
 
     def test_youtube_video_cards_do_not_poll_each_browser_session(self):
-        self.assertIn('@st.fragment\ndef _render_youtube_automation_cards():', MAIN_SOURCE)
-        self.assertNotIn('@st.fragment(run_every=5.0)\ndef _render_youtube_automation_cards():', MAIN_SOURCE)
+        self.assertIn('@st.fragment\ndef _render_youtube_automation_cards(tasks: list[dict[str, Any]] | None = None):', MAIN_SOURCE)
+        self.assertNotIn('@st.fragment(run_every=5.0)\ndef _render_youtube_automation_cards(', MAIN_SOURCE)
         youtube_block = MAIN_SOURCE.split('def _render_youtube_automation_task_list', 1)[1].split('def _facebook_pages_for_automation():', 1)[0]
         self.assertIn('if not _has_script_context():', youtube_block)
 
@@ -77,11 +77,19 @@ class AutomationCardsTests(unittest.TestCase):
     def test_youtube_automation_cards_render_thumbnail_and_ready_video_side_by_side(self):
         block = MAIN_SOURCE.split("def _render_youtube_automation_task_list", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
         self.assertIn('media_cols = st.columns(2, gap="small")', block)
-        self.assertIn('st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")', block)
+        # 0.9.95: width=160 — sem full-res a queimar a GPU do browser.
+        self.assertIn('st.image(str(thumbnail_path), width=160, caption="Thumbnail")', block)
         self.assertNotIn('st.button("Carregar player"', block)
         self.assertIn('_render_local_video_player(video_path, width="stretch")', block)
         self.assertIn('if video_path is not None and _catalog_task_state(task) == "done"', block)
         self.assertIn('with video_path.open("rb") as video_stream:', block)
+        # 0.9.95 (Task 1.4): downloads lazy — os payloads só carregam depois de
+        # "Preparar downloads"; zero bytes de roteiro/thumbnail na abertura.
+        self.assertIn('downloads_key = f"automation_downloads_{task_id}"', block)
+        self.assertIn('if st.session_state.get(downloads_key):', block)
+        # 0.9.95 (Task 3): botão "Aplicar legenda" ao lado de "Refazer Vídeo".
+        self.assertIn('key=f"automation_apply_subtitles_{task_id}"', block)
+        self.assertIn('_apply_subtitles_from_card(task)', block)
         self.assertNotIn('data=_file_bytes(video_path)', block)
 
     def test_remake_operation_preserves_creative_artifacts_and_clears_only_video_upload(self):

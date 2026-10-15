@@ -651,19 +651,37 @@ def _migrate_settings(settings: Any) -> tuple[dict[str, Any], bool]:
     return migrated, changed or cards_changed or media_changed
 
 
+# 0.9.95 (perf YouTube Automation): ensure_storage() rodava a cada
+# read_json/write_json e re-parseia tasks.json (1,77 MB) + batches.json
+# (1,58 MB) + channels.json via migrate_finance_thumbnail_blueprint a CADA
+# chamada — 68 ms por leitura, × centenas por render. Corre uma vez por
+# raiz de storage por processo. A chave inclui STATE (além de STORAGE)
+# porque os testes isolam STATE em raízes tmp sem tocar STORAGE.
+_ENSURE_STORAGE_LOCK = RLock()
+_ensured_storage_root: str | None = None
+
+
 def ensure_storage() -> None:
-    for path in [STATE, BLUEPRINTS / "canais", BLUEPRINTS / "nichos", BLUEPRINTS / "importados", BLUEPRINTS / "brandings", BLUEPRINTS / "thumbnails", MUSIC_BLUEPRINTS, TIKTOK_PROMPT_MASTERS, MEDIA_DOWNLOADS, STORAGE / "brand", STORAGE / "scripts", STORAGE / "thumbnails", STORAGE / "videos", STORAGE / "artifacts", STORAGE / "python_editor", STORAGE / "influencers", STORAGE / "metadata_cleaner", STORAGE / "metadata_cleaner" / "outputs", STORAGE / "music", STORAGE / "voice_previews", STORAGE / "python_editor", NICHES_DATA]:
-        _ensure_directory(path)
-    seed_blueprints()
-    seed_prompt_masters()
-    from hermes_ui.music_blueprints import seed_music_blueprints
-    seed_music_blueprints()
-    for filename, default in DEFAULTS.items():
-        target = STATE / filename
-        if not target.exists():
-            atomic_write(target, default)
-    migrate_finance_thumbnail_blueprint()
-    migrate_tiktok_thumbnail_blueprint()
+    global _ensured_storage_root
+    root = f"{STORAGE}|{STATE}"
+    if _ensured_storage_root == root:
+        return
+    with _ENSURE_STORAGE_LOCK:
+        if _ensured_storage_root == root:
+            return
+        for path in [STATE, BLUEPRINTS / "canais", BLUEPRINTS / "nichos", BLUEPRINTS / "importados", BLUEPRINTS / "brandings", BLUEPRINTS / "thumbnails", MUSIC_BLUEPRINTS, TIKTOK_PROMPT_MASTERS, MEDIA_DOWNLOADS, STORAGE / "brand", STORAGE / "scripts", STORAGE / "thumbnails", STORAGE / "videos", STORAGE / "artifacts", STORAGE / "python_editor", STORAGE / "influencers", STORAGE / "metadata_cleaner", STORAGE / "metadata_cleaner" / "outputs", STORAGE / "music", STORAGE / "voice_previews", STORAGE / "python_editor", NICHES_DATA]:
+            _ensure_directory(path)
+        seed_blueprints()
+        seed_prompt_masters()
+        from hermes_ui.music_blueprints import seed_music_blueprints
+        seed_music_blueprints()
+        for filename, default in DEFAULTS.items():
+            target = STATE / filename
+            if not target.exists():
+                atomic_write(target, default)
+        migrate_finance_thumbnail_blueprint()
+        migrate_tiktok_thumbnail_blueprint()
+        _ensured_storage_root = root
 
 
 _LOCK_TIMEOUT_SECONDS = 30.0
@@ -889,6 +907,19 @@ def _recover_json_unlocked(name: str, path: Path, default: Any | None) -> Any:
 
 
 def read_json(name: str, default: Any | None = None) -> Any:
+    """Read one state JSON file through the per-file fingerprint read cache.
+
+    0.9.95 (perf Automação Youtube, REAL-BUG): o cache só era populado para
+    settings.json — todos os outros ficheiros (tasks.json 1,77 MB,
+    batches.json 1,58 MB, channels.json, …) re-parseavam A CADA chamada.
+    Agora TODOS os ficheiros são cacheados e o hit devolve o OBJECTO
+    PARTILHADO (sem deepcopy — 12 ms/call só de cópia).
+
+    CONTRATO DO HIT: o valor devolvido é partilhado com o cache — nunca
+    mutar estruturas aninhadas sem persistir (write_json/update_json
+    invalidam a entrada deste ficheiro). Mutações + escrita do mesmo objecto
+    são seguras (o cache é repovoado do disco na leitura seguinte).
+    """
     ensure_storage()
     path = STATE / name
     fingerprint = _read_fingerprint(path)
@@ -897,23 +928,26 @@ def read_json(name: str, default: Any | None = None) -> Any:
         with _READ_CACHE_LOCK:
             cached = _READ_CACHE.get(cache_key)
         if cached is not None and cached[0] == fingerprint:
-            return deepcopy(cached[1])
+            return cached[1]
     with _state_lock(path, read_only=True):
         try:
             data = _load_json_unlocked(path)
         except (json.JSONDecodeError, OSError):
             data = _recover_json_unlocked(name, path, default)
         if name != "settings.json":
+            current_fingerprint = _read_fingerprint(path)
+            if current_fingerprint is not None:
+                with _READ_CACHE_LOCK:
+                    _READ_CACHE[cache_key] = (current_fingerprint, data)
             return data
         migrated, changed = _migrate_settings(data)
         if changed:
             _atomic_write_unlocked(path, migrated)
-        result = migrated
         current_fingerprint = _read_fingerprint(path)
         if current_fingerprint is not None:
             with _READ_CACHE_LOCK:
-                _READ_CACHE[cache_key] = (current_fingerprint, deepcopy(result))
-        return deepcopy(result)
+                _READ_CACHE[cache_key] = (current_fingerprint, migrated)
+        return migrated
 
 
 def update_json(name: str, default: Any, mutator: Callable[[Any], Any]) -> Any:

@@ -30,7 +30,7 @@ def test_youtube_automation_loads_local_video_player_only_after_explicit_request
     assert 'if video_path is not None and _catalog_task_state(task) == "done":' in block
     assert 'st.button("Reproduzir vídeo"' in block
     assert 'player_state_key = "youtube_automation_player_task_id"' in block
-    player_block = block.split('if st.session_state.get(player_state_key) == player_task_id:', 1)[1].split('elif st.button("Reproduzir vídeo"', 1)[0]
+    player_block = block.split('if st.session_state.get(player_state_key) == task_id:', 1)[1].split('elif st.button("Reproduzir vídeo"', 1)[0]
     assert '_render_local_video_player(video_path, width="stretch")' in player_block
 
 
@@ -74,11 +74,13 @@ def test_backlog_player_uses_resolved_video_artifact_path():
 
 
 def test_youtube_automation_cards_do_not_poll_each_browser_session():
-    block = MAIN_SOURCE.split("@st.fragment\ndef _render_youtube_automation_cards():", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
-    assert '@st.fragment\ndef _render_youtube_automation_cards():' in MAIN_SOURCE
-    assert '@st.fragment(run_every=5.0)\ndef _render_youtube_automation_cards():' not in MAIN_SOURCE
-    assert 'tasks = load_automation_tasks_for_platform("youtube")' in MAIN_SOURCE
-    assert 'st.rerun()' not in block
+    block = MAIN_SOURCE.split("@st.fragment\ndef _render_youtube_automation_cards(tasks: list[dict[str, Any]] | None = None):", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
+    assert '@st.fragment\ndef _render_youtube_automation_cards(tasks: list[dict[str, Any]] | None = None):' in MAIN_SOURCE
+    assert '@st.fragment(run_every=5.0)\ndef _render_youtube_automation_cards(' not in MAIN_SOURCE
+    assert 'yt_tasks = load_automation_tasks_for_platform("youtube")' in MAIN_SOURCE
+    # 0.9.95: rerun completo SÓ nas acções que mutam estado (Start/Stop/Upload/
+    # Refazer/Legenda/Apagar — precisam de dados frescos); os toggles de vista,
+    # leitor e downloads continuam scope="fragment" (na task list).
     assert 'st.rerun(scope="fragment")' in MAIN_SOURCE
 
 
