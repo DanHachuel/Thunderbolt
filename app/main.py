@@ -172,7 +172,7 @@ def display_version(version: str) -> str:
 
 APP_VERSION_LABEL = display_version(APP_VERSION)
 
-from hermes_ui.domain import STAGES, apply_subtitles_to_task, create_batch, create_channel, create_tasks_for_batch, delete_channel, delete_task, pipeline_summary, remake_video_task, repair_task_queue, retry_task_with_current_settings, set_channel_defaults, stop_task_by_user, transition_task, update_channel, update_channel_video
+from hermes_ui.domain import STAGES, create_batch, create_channel, create_tasks_for_batch, delete_channel, delete_task, pipeline_summary, remake_video_task, repair_task_queue, retry_task_with_current_settings, set_channel_defaults, stop_task_by_user, transition_task, update_channel, update_channel_video
 from hermes_ui.channel_import import build_channel_template_xlsx, channel_is_duplicate, find_duplicate_channel, parse_channel_workbook, resolve_blueprint, resolve_google_account, resolve_voice
 from hermes_ui.drafts import list_drafts, save_draft
 from hermes_ui.automation_worker import create_video_now_for_channel, load_worker_status
@@ -6365,27 +6365,6 @@ def _remake_video_from_card(task: dict[str, Any]) -> bool:
     return True
 
 
-def _apply_subtitles_from_card(task: dict[str, Any]) -> bool:
-    """0.9.95 (Task 3): reaplica a config de legendas actual do canal.
-
-    As legendas são queimadas no render (pipeline_worker), por isso a acção
-    revalida só o bloco de legendas e recoloca o vídeo na fila — sem tocar em
-    roteiro, blueprint, tags, thumbnail, voz nem artefactos baixados. Nunca
-    carrega o .mp4: trabalha apenas sobre o JSON de configuração da tarefa.
-    """
-    task_id = str(task.get("id") or "")
-    try:
-        updated = apply_subtitles_to_task(task_id)
-    except ValueError as exc:
-        st.error(str(exc))
-        return False
-    if not updated:
-        st.error("Não foi possível aplicar a legenda: a tarefa já não existe na fila.")
-        return False
-    st.toast("Legenda reaplicada — o vídeo voltou à fila para remontagem.")
-    return True
-
-
 def _catalog_task_state(task: dict[str, Any]) -> str:
     raw_state = str(task.get("state") or task.get("status") or task.get("task_status") or "").strip().casefold()
     video_path = _task_artifact_path(task, "video")
@@ -7193,8 +7172,8 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False, tasks: li
             task_channel = str(task.get("channel_name") or "Canal sem nome").strip()
             task_id = str(task.get("id") or "")
             # 0.9.96 (recuperação): card ORIGINAL restaurado por inteiro —
-            # thumbnail, player, downloads, upload, Refazer e Aplicar legenda
-            # sempre visíveis, sem botões intermédios. Só as optimizações
+            # thumbnail, player, downloads, upload, Refazer e todos os
+            # botões sempre visíveis, sem intermediários. Só as optimizações
             # internas (catálogo 1×, storage) permanecem da 0.9.95.
             with st.expander(f"{task_title} · {task_channel}", expanded=False):
                 task_cols = st.columns([2.25, 1.55, 1.05, 2.15], gap="small")
@@ -7331,32 +7310,17 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False, tasks: li
                     if checked_upload_ok != upload_ok:
                         update_task(str(task["id"]), {"upload_ok": bool(checked_upload_ok), "upload_status": "manual" if checked_upload_ok else "pending"})
                         st.rerun()
-                    # 0.9.95 (Task 3): "Aplicar legenda" ao lado de "Refazer
-                    # Vídeo" — mesmo tamanho, mesma linha, mesmo estilo.
-                    remake_cols = st.columns(2, gap="small")
-                    with remake_cols[0]:
-                        if st.button(
-                            "Refazer Vídeo",
-                            key=f"automation_remake_video_{task['id']}",
-                            icon=":material/refresh:",
-                            type="primary",
-                            width="stretch",
-                            disabled=state == "doing",
-                            help="Remonta apenas o vídeo, mantendo o mesmo roteiro, Blueprint/Prompt Master, tags, thumbnail, voz e artefactos já baixados. Revalida legendas, duração máxima do clip, fonte de vídeo e restantes definições actuais do canal (novas chamadas à fonte configurada).",
-                        ):
-                            if _remake_video_from_card(task):
-                                st.rerun()
-                    with remake_cols[1]:
-                        if st.button(
-                            "Aplicar legenda",
-                            key=f"automation_apply_subtitles_{task_id}",
-                            icon=":material/subtitles:",
-                            width="stretch",
-                            disabled=video_path is None or state == "doing",
-                            help="Reaplica a configuração de legendas actual do canal e recoloca o vídeo na fila para remontagem (as legendas são queimadas no render)." if video_path is not None else "O vídeo ainda não existe — finalize a geração antes de aplicar legendas.",
-                        ):
-                            if _apply_subtitles_from_card(task):
-                                st.rerun()
+                    if st.button(
+                        "Refazer Vídeo",
+                        key=f"automation_remake_video_{task['id']}",
+                        icon=":material/refresh:",
+                        type="primary",
+                        width="stretch",
+                        disabled=state == "doing",
+                        help="Reaplica as configurações atuais do canal (legendas, música, voz, duração, proporção, transição) e regenera o vídeo do zero. Use quando a config do canal mudou ou quando o vídeo foi gerado sem legenda por engano.",
+                    ):
+                        if _remake_video_from_card(task):
+                            st.rerun()
                     with delete_col:
                         confirm_delete_key = f"automation_confirm_delete_{task['id']}"
                         if st.button("Apagar", key=f"automation_delete_{task['id']}", width="stretch", disabled=state == "doing"):

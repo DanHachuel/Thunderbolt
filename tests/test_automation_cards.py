@@ -86,9 +86,6 @@ class AutomationCardsTests(unittest.TestCase):
         # 0.9.96 (recuperação): downloads sempre visíveis no card, como antes.
         self.assertIn('st.download_button(\n                            "Baixar Thumbnail",', block)
         self.assertIn('st.download_button(\n                            "Baixar Roteiro",', block)
-        # 0.9.95 (Task 3): botão "Aplicar legenda" ao lado de "Refazer Vídeo".
-        self.assertIn('key=f"automation_apply_subtitles_{task_id}"', block)
-        self.assertIn('_apply_subtitles_from_card(task)', block)
         self.assertNotIn('data=_file_bytes(video_path)', block)
 
     def test_remake_operation_preserves_creative_artifacts_and_clears_only_video_upload(self):

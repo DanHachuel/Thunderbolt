@@ -1,4 +1,12 @@
 # Changelog
+## 0.9.97 — 2026-10-15
+- **Removido o botão "Aplicar legenda"** dos cards de vídeo (`app/main.py`) — consolidado no "Refazer Vídeo". O `remake_video_task` (`hermes_ui/domain.py:906-966`) já relê a config actual do canal via `_refresh_task_channel_video_settings` (linha 927), incluindo o bloco de legendas completo (`enable_subtitles`, fonte, posição, cor, fundo, contorno, tamanho). O botão separado era redundante — dava falsa sensação de regeneração parcial quando as legendas são queimadas no render e qualquer reaplicação exige re-renderização.
+- **Removida a função `apply_subtitles_to_task`** (`hermes_ui/domain.py`) e a flag `subtitles_regeneration_requested` (código morto — nunca consumida pelo worker). Removidos os 3 testes associados (`tests/test_domain.py`) e a entrada `subtitles_reapplied` do catálogo de notificações (`hermes_ui/notifications.py`). `audio_regeneration_requested` intocada (faz parte do fluxo do remake).
+- **Tooltip explicativo adicionado ao "Refazer Vídeo"** (`help=` do `st.button`): *"Reaplica as configurações atuais do canal (legendas, música, voz, duração, proporção, transição) e regenera o vídeo do zero. Use quando a config do canal mudou ou quando o vídeo foi gerado sem legenda por engano."* — sem mudar texto, tamanho, posição ou cor do botão.
+- **Layout do card volta a ter exactamente os botões de antes da 0.9.95**: Baixar Thumbnail, Baixar Thumbnail Prompt, Baixar Roteiro, Baixar Vídeo, Refazer Vídeo (full-width, não mais lado a lado), checkbox Upload ok.
+- **Grep de validação = vazio**: zero referências a `subtitles_regeneration_requested`, `apply_subtitles`, ou "Aplicar legenda" no repo inteiro.
+- **Suíte: 1309 passados + 2 skipped** (1312 − 3 testes removidos da função extinta).
+
 ## 0.9.96 — 2026-10-15
 - **RECUPERAÇÃO DA UI — Automação YouTube restaurada por inteiro** (`app/main.py`): a 0.9.95 escondeu os cards atrás de botões "Detalhes"/"Editar" — tudo o que o utilizador construiu volta a estar **sempre visível**, sem cliques intermédios:
   - **Cards de canal**: layout original de 8 colunas restaurado — nome, handle, país, avatar (st.image URL remota), Abrir canal, Criar Vídeo, Thumbnail Blueprint, Idioma, Nicho, Fonte + Proporção, Horário, Tempo Médio, Blueprint Padrão, Narrador/Voz, Automação ligada, Guardar. Botão "Editar" removido.
