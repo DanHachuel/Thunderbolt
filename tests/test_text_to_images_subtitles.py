@@ -101,12 +101,17 @@ def test_pipelines_pass_subtitle_config_to_assembly():
     assert "subtitle_config=_subtitle_config_for_task(task, settings)" in web_block
 
 
-def test_assembly_burns_captions_with_moviepy_textclip():
+def test_assembly_burns_captions_with_pil_hug_text_boxes():
     assert "def _subtitle_clips_for_scenes" in ASSEMBLY_SOURCE
-    assert "TextClip" in ASSEMBLY_SOURCE
+    assert "ImageClip" in ASSEMBLY_SOURCE
     assert "CompositeVideoClip" in ASSEMBLY_SOURCE
-    assert "stroke_color" in ASSEMBLY_SOURCE
-    assert "bg_color" in ASSEMBLY_SOURCE
+    # render determinístico: métricas reais da fonte + wrap medido em pixels
+    assert "getmetrics" in ASSEMBLY_SOURCE
+    assert "def _wrap_text_pixels" in ASSEMBLY_SOURCE
+    assert "stroke_fill" in ASSEMBLY_SOURCE
+    # a barra full-width do modo caption com fundo no TextClip não volta
+    assert '"caption"' not in ASSEMBLY_SOURCE
+    assert "bg_color" not in ASSEMBLY_SOURCE
 
 
 @pytest.mark.skipif(
@@ -403,3 +408,175 @@ def test_burn_captions_on_real_video_replaces_in_place(tmp_path):
     assert result == video_path
     assert video_path.stat().st_size > size_before, "a queima tem de acrescentar conteudo"
     assert not list(tmp_path.glob("*.legendas-tmp.mp4")), "o temporario foi substituido, nao deixado para tras"
+
+
+# ── 0.10.00: fundo hug-text, sem clip e wrap medido em pixels ────────────────
+
+
+_SUBTITLE_RENDER_CONFIG = {
+    "position": "bottom",
+    "color": "#FFFFFF",
+    "background": True,
+    "background_color": "#000000",
+    "outline": "#000000",
+    "outline_width": 1.5,
+}
+
+
+def _subtitle_test_font():
+    for candidate in ("C:/Windows/Fonts/arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
+        if Path(candidate).is_file():
+            return candidate
+    return None
+
+
+def _yahei_font():
+    import os
+
+    candidates = [
+        Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts" / "MicrosoftYaHeiBold.ttc",
+        Path(os.environ.get("LOCALAPPDATA", ""))
+        / "THUNDERBOLT"
+        / "MoneyPrinterTurbo"
+        / "resource"
+        / "fonts"
+        / "MicrosoftYaHeiBold.ttc",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def _render_subtitle_frame(text, font_size, video_size=(960, 540), config_extra=None):
+    import numpy as np
+
+    from hermes_ui.text_to_images import _subtitle_clips_for_scenes
+
+    config = {**_SUBTITLE_RENDER_CONFIG, "font_path": _subtitle_test_font(), "font_size": font_size}
+    config.update(config_extra or {})
+    clips = _subtitle_clips_for_scenes(
+        [{"index": 1, "text": text, "duration": 1.0}],
+        video_size[0],
+        video_size[1],
+        config,
+    )
+    assert len(clips) == 1
+    return np.asarray(clips[0].get_frame(0)).astype(int)
+
+
+def _ink_gaps(frame):
+    """Distância (px) entre a tinta visível e cada borda da caixa."""
+    import numpy as np
+
+    luminance = frame.mean(axis=2)
+    ys, xs = np.where(luminance > 100)
+    height, width = frame.shape[:2]
+    return {
+        "left": int(xs.min()),
+        "right": int(width - 1 - xs.max()),
+        "top": int(ys.min()),
+        "bottom": int(height - 1 - ys.max()),
+    }
+
+
+@pytest.mark.skipif(_subtitle_test_font() is None, reason="sem fonte do sistema")
+def test_subtitle_box_hugs_short_text_with_uniform_padding():
+    from PIL import Image, ImageDraw, ImageFont
+
+    text = "Legenda curta"
+    frame = _render_subtitle_frame(text, 40, config_extra={"outline_width": 0})
+    # a barra full-width (86% do vídeo) deixou de existir para texto curto
+    assert frame.shape[1] < int(960 * 0.86)
+    # a caixa é hug-text: largura da tinta + padding nas duas pontas
+    # (o tamanho da fonte escala com a altura do vídeo: 40 * 540 // 1080 = 20)
+    scaled = max(12, 40 * 540 // 1080)
+    font = ImageFont.truetype(_subtitle_test_font(), scaled)
+    ink = ImageDraw.Draw(Image.new("RGBA", (8, 8))).textbbox((0, 0), text, font=font)
+    expected_width = (ink[2] - ink[0]) + 2 * 10
+    assert abs(frame.shape[1] - expected_width) <= 3
+    gaps = _ink_gaps(frame)
+    for side in ("left", "right", "top", "bottom"):
+        assert gaps[side] == pytest.approx(10, abs=3), f"padding {side} = {gaps[side]}"
+
+
+@pytest.mark.skipif(_subtitle_test_font() is None, reason="sem fonte do sistema")
+def test_subtitle_ascenders_and_descenders_fully_visible():
+    # g/p/q/y (descendentes) e Ã/ç/Q (altos) têm de ficar dentro da caixa —
+    # no renderer antigo a base das letras era cortada pela altura do TextClip
+    frame = _render_subtitle_frame("gaguejar pelo quilo? pique já çã Qy", 40, config_extra={"outline_width": 0})
+    gaps = _ink_gaps(frame)
+    assert min(gaps.values()) >= 6, f"tinta encostada à borda: {gaps}"
+
+
+@pytest.mark.skipif(_subtitle_test_font() is None, reason="sem fonte do sistema")
+def test_subtitle_wraps_long_text_into_lines_within_max_width():
+    long_text = (
+        "Your mind has gone quiet but your heart is still racing and you have turned "
+        "the page on a long and heavy day full of worries"
+    )
+    frame = _render_subtitle_frame(long_text, 40, config_extra={"outline_width": 0})
+    assert frame.shape[1] <= int(960 * 0.86) + 2, "a caixa ultrapassa a largura máxima"
+    row_has_ink = (frame.mean(axis=2) > 100).any(axis=1)
+    bands = 0
+    previous = False
+    for has_ink in row_has_ink:
+        if has_ink and not previous:
+            bands += 1
+        previous = has_ink
+    assert bands >= 2, "a frase longa devia partir em 2+ linhas"
+
+
+@pytest.mark.skipif(_subtitle_test_font() is None, reason="sem fonte do sistema")
+def test_subtitle_background_is_opaque_box_behind_text():
+    import numpy as np
+
+    from hermes_ui.text_to_images import _subtitle_clips_for_scenes
+
+    text = "Legenda curta"
+    with_bg = _render_subtitle_frame(text, 40, config_extra={"outline_width": 0})
+    # o fundo opaco preenche a caixa inteira (canto incluído)
+    assert tuple(with_bg[0, 0]) == (0, 0, 0)
+    clips = _subtitle_clips_for_scenes(
+        [{"index": 1, "text": text, "duration": 1.0}],
+        960,
+        540,
+        {**_SUBTITLE_RENDER_CONFIG, "font_path": _subtitle_test_font(), "font_size": 40, "background": False, "outline_width": 0},
+    )
+    mask = np.asarray(clips[0].mask.get_frame(0))
+    # sem fundo, só a tinta é opaca — os cantos da caixa são transparentes
+    assert mask[0, 0] == 0.0 and mask.max() > 0.9
+
+
+@pytest.mark.skipif(_subtitle_test_font() is None, reason="sem fonte do sistema")
+def test_wrap_text_pixels_respects_width_and_splits_huge_words():
+    from PIL import ImageFont
+
+    from hermes_ui.text_to_images import _wrap_text_pixels
+
+    font = ImageFont.truetype(_subtitle_test_font(), 40)
+    lines = _wrap_text_pixels("uma frase relativamente longa para testar o wrap", font, 200)
+    assert len(lines) >= 2
+    assert all(font.getlength(line) <= 200 for line in lines)
+    huge = "Palavramuitoexecessivamentelongademesmo"
+    lines = _wrap_text_pixels(huge, font, 150)
+    assert lines, "palavra gigante tem de gerar linhas"
+    assert all(font.getlength(line) <= 150 for line in lines)
+    assert "".join(lines) == huge
+
+
+@pytest.mark.skipif(_yahei_font() is None, reason="MicrosoftYaHeiBold.ttc indisponivel")
+def test_subtitle_yahei_regression_no_full_width_bar_and_no_clipped_descenders():
+    """Regressão do frame 150 (0.9.99): barra preta de 1651px (86% de 1920) com
+    a base das letras cortada no segmento real do canal."""
+    import numpy as np
+
+    from hermes_ui.text_to_images import _subtitle_clips_for_scenes
+
+    text = "has gone quiet, but your mind is still racing. You have turned"
+    config = {**_SUBTITLE_RENDER_CONFIG, "font_path": _yahei_font(), "font_size": 35}
+    clips = _subtitle_clips_for_scenes([{"index": 1, "text": text, "duration": 1.0}], 1920, 1080, config)
+    frame = np.asarray(clips[0].get_frame(0)).astype(int)
+    assert frame.shape[1] < int(1920 * 0.86), "a barra full-width de 86% voltou"
+    gaps = _ink_gaps(frame)
+    assert min(gaps.values()) >= 6, f"descendentes cortados (g/q/y): {gaps}"

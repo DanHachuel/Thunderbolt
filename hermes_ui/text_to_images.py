@@ -112,27 +112,103 @@ def generate_image_prompts_for_scenes(
     return output
 
 
+def _subtitle_rgba(value: Any, fallback: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+    """Converte '#RGB'/'#RRGGBB'/'#RRGGBBAA' numa tupla RGBA; inválido devolve o fallback."""
+    raw = str(value or "").strip()
+    hex_part = raw[1:] if raw.startswith("#") else ""
+    if len(hex_part) == 3:
+        hex_part = "".join(ch * 2 for ch in hex_part)
+    if len(hex_part) in (6, 8):
+        try:
+            channels = [int(hex_part[i : i + 2], 16) for i in range(0, len(hex_part), 2)]
+        except ValueError:
+            channels = []
+        if len(channels) in (6, 8):
+            return tuple(channels + [255] * (8 - len(channels)))
+    return fallback
+
+
+def _wrap_text_pixels(text: str, font: Any, max_width: int) -> list[str]:
+    """Quebra o texto em linhas que cabem em max_width, medidas em pixels com a própria fonte.
+
+    O wrap não pode ficar a cargo do TextClip: além de a caixa final passar a
+    ser hug-text (largura da maior linha + padding), palavras isoladas maiores
+    que a largura (URLs, palavras longas) são divididas por caracteres em vez
+    de transbordarem a caixa.
+    """
+    words = str(text or "").split()
+    if not words:
+        return []
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        candidate = f"{current} {word}" if current else word
+        if not current or font.getlength(candidate) <= max_width:
+            current = candidate
+            continue
+        lines.append(current)
+        current = word
+    if current:
+        lines.append(current)
+    fitted: list[str] = []
+    for line in lines:
+        if len(line) <= 1 or font.getlength(line) <= max_width:
+            fitted.append(line)
+            continue
+        chunk = ""
+        for char in line:
+            if chunk and font.getlength(chunk + char) > max_width:
+                fitted.append(chunk)
+                chunk = char
+            else:
+                chunk += char
+        if chunk:
+            fitted.append(chunk)
+    return fitted
+
+
 def _subtitle_clips_for_scenes(scenes: list[dict], video_width: int, video_height: int, config: dict) -> list:
-    """TextClips de legenda por cena, queimados na timeline da montagem.
+    """Clips de legenda por cena, queimados na timeline da montagem.
 
     0.9.63: as Configurações de legendas existiam na UI e nos defaults por
     canal, mas a montagem por cenas nunca as aplicava — nenhum vídeo
     text_to_images/web_images saía com legendas.
+
+    0.10.00: o TextClip em modo caption com cor de fundo desenhava uma barra
+    preta full-width (o fundo pinta a canvas inteira, cuja largura é forçada
+    por size[0]) e cortava a base das letras: a Pillow 11 removeu
+    draw._multiline_spacing e o MoviePy passou a calcular a altura pelo bbox
+    de tinta do texto enquanto desenhava a baseline pela métrica da fonte —
+    a MicrosoftYaHeiBold.ttc tem ascent interno ~1.4x a altura visível das
+    maiúsculas, e a tinta descia abaixo da canvas. Cada cena passa a ser
+    desenhada com PIL: wrap medido em pixels, layout de baseline pelas
+    métricas reais da fonte (ascendentes/descendentes nunca cortados) e caixa
+    hug-text recortada sobre a tinta real com padding uniforme.
     """
-    from moviepy import TextClip
+    import numpy as np
+    from PIL import Image, ImageDraw, ImageFont
+
+    from moviepy import ImageClip
 
     font_path = str(config.get("font_path") or "")
     if not font_path:
         return []
     # O tamanho é definido para 1080p e escala com a altura real do vídeo.
     font_size = max(12, int(config.get("font_size") or 60) * max(1, int(video_height)) // 1080)
+    font = ImageFont.truetype(font_path, font_size)
+    ascent, descent = font.getmetrics()
+
     position = str(config.get("position") or "bottom").strip().casefold()
-    color = str(config.get("color") or "#FFFFFF")
-    outline = str(config.get("outline") or "#000000")
-    outline_width = int(round(float(config.get("outline_width") or 0)))
+    color = _subtitle_rgba(config.get("color"), (255, 255, 255, 255))
+    stroke_color = _subtitle_rgba(config.get("outline"), (0, 0, 0, 255))
+    stroke_width = max(0, int(round(float(config.get("outline_width") or 0))))
     background = bool(config.get("background"))
-    background_color = str(config.get("background_color") or "#000000")
+    background_color = _subtitle_rgba(config.get("background_color"), (0, 0, 0, 255))
+    # Padding uniforme entre a tinta do texto e a borda do fundo (10-15 px em 1080p).
+    padding = max(10, min(15, round(font_size * 0.25)))
+    interline = max(4, round(font_size * 0.25))
     wrap_width = max(120, int(video_width * 0.86))
+    max_text_width = max(40, wrap_width - 2 * padding)
     position_pair = {"top": ("center", "top"), "center": ("center", "center")}.get(position, ("center", "bottom"))
     offset = 0.0
     clips = []
@@ -140,21 +216,44 @@ def _subtitle_clips_for_scenes(scenes: list[dict], video_width: int, video_heigh
         text = " ".join(str(scene.get("text") or "").split()).strip()
         duration = max(0.1, float(scene.get("duration") or 5.0))
         if text:
-            kwargs: dict = {
-                "text": text,
-                "font": font_path,
-                "font_size": font_size,
-                "color": color,
-                "method": "caption",
-                "size": (wrap_width, None),
-                "text_align": "center",
-            }
-            if outline_width > 0:
-                kwargs["stroke_color"] = outline
-                kwargs["stroke_width"] = outline_width
-            if background:
-                kwargs["bg_color"] = background_color
-            clip = TextClip(**kwargs).with_duration(duration)
+            lines = _wrap_text_pixels(text, font, max_text_width)
+            text_width = max(math.ceil(font.getlength(line)) for line in lines)
+            # Canvas generoso com layout métrico: a baseline de cada linha fica
+            # a padding+stroke da borda e o avanço de linha usa ascent+descent
+            # reais da fonte — nenhum glifo (Q, g, p, y, ç, ã) sai da canvas.
+            margin = padding + stroke_width
+            line_advance = ascent + descent + interline
+            canvas_w = text_width + 2 * margin
+            canvas_h = len(lines) * (ascent + descent) + (len(lines) - 1) * interline + 2 * margin
+            img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            for index, line in enumerate(lines):
+                baseline = margin + ascent + index * line_advance
+                x = margin + (text_width - font.getlength(line)) / 2
+                draw.text(
+                    (x, baseline),
+                    line,
+                    font=font,
+                    fill=color,
+                    anchor="ls",
+                    stroke_width=stroke_width,
+                    stroke_fill=stroke_color if stroke_width else None,
+                )
+            # Caixa hug-text: mede a tinta real desenhada (inclui o contorno)
+            # e recorta o ImageClip à caixa expandida com o padding uniforme
+            # nas quatro direções. O fundo é composto numa camada própria
+            # ATRÁS da tinta — pintá-lo sobre a canvas apagava o texto.
+            alpha = np.array(img)[:, :, 3]
+            ink_rows, ink_cols = np.where(alpha > 0)
+            if ink_rows.size:
+                left = max(0, int(ink_cols.min()) - padding)
+                top = max(0, int(ink_rows.min()) - padding)
+                right = min(canvas_w, int(ink_cols.max()) + 1 + padding)
+                bottom = min(canvas_h, int(ink_rows.max()) + 1 + padding)
+                box = Image.new("RGBA", (right - left, bottom - top), background_color if background else (0, 0, 0, 0))
+                box.alpha_composite(img.crop((left, top, right, bottom)))
+                img = box
+            clip = ImageClip(np.array(img), transparent=True).with_duration(duration)
             clip = clip.with_start(offset).with_position(position_pair)
             clips.append(clip)
         offset += duration
@@ -274,6 +373,12 @@ def burn_captions_on_video(
         burned.write_videofile(str(temporary), fps=max(1, int(video.fps or 30)), codec="libx264", audio_codec="aac", logger=None)
         burned.close()
         burned = None
+        # 0.10.00: o CompositeVideoClip.close() não fecha os clips membros — o
+        # leitor do vídeo original mantinha o ficheiro aberto e o os.replace
+        # falhava no Windows (WinError 5) depois de a queima já estar feita.
+        # Fechar o leitor antes do replace garante a substituição in-place.
+        video.close()
+        video = None
         os.replace(temporary, output)
         return output
     finally:
