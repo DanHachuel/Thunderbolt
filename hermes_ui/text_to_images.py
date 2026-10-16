@@ -174,7 +174,7 @@ def _subtitle_clips_for_scenes(scenes: list[dict], video_width: int, video_heigh
     canal, mas a montagem por cenas nunca as aplicava — nenhum vídeo
     text_to_images/web_images saía com legendas.
 
-    0.10.00: o TextClip em modo caption com cor de fundo desenhava uma barra
+    1.0.00: o TextClip em modo caption com cor de fundo desenhava uma barra
     preta full-width (o fundo pinta a canvas inteira, cuja largura é forçada
     por size[0]) e cortava a base das letras: a Pillow 11 removeu
     draw._multiline_spacing e o MoviePy passou a calcular a altura pelo bbox
@@ -373,7 +373,7 @@ def burn_captions_on_video(
         burned.write_videofile(str(temporary), fps=max(1, int(video.fps or 30)), codec="libx264", audio_codec="aac", logger=None)
         burned.close()
         burned = None
-        # 0.10.00: o CompositeVideoClip.close() não fecha os clips membros — o
+        # 1.0.00: o CompositeVideoClip.close() não fecha os clips membros — o
         # leitor do vídeo original mantinha o ficheiro aberto e o os.replace
         # falhava no Windows (WinError 5) depois de a queima já estar feita.
         # Fechar o leitor antes do replace garante a substituição in-place.

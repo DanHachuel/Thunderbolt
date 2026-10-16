@@ -1,5 +1,6 @@
 # Changelog
-## 0.10.00 — 2026-10-16
+## 1.0.00 — 2026-10-16
+- **Nota de versão**: a etiqueta correcta depois de `0.9.99` é `1.0.00` (patch 99 esgota → MINOR avança; com MINOR em 9, o MAJOR avança e MINOR/PATCH reiniciam). A etiqueta `0.10.00`/`0.10.0` foi publicada por engano nesta sequência e fica órfã de dist-tags — usar `1.0.00`/`1.0.0`.
 - **CORRECÇÃO DE BUG: legenda queimada com fundo hug-text, sem clip e com wrap** (`hermes_ui/text_to_images.py`). A legenda queimada (rota Pexels/Pixabay com áudio customizado via `burn_captions_on_video`, e montagens text_to_images/web_images via `_subtitle_clips_for_scenes`) saía com três defeitos visuais:
   - **Barra preta full-width**: o `TextClip` do MoviePy em modo caption com cor de fundo pintava a canvas inteira — a largura era forçada por `size[0]` (86% do vídeo) e o fundo cobria-a por completo, em vez de envolver apenas o texto.
   - **Base das letras cortada** (descendentes g/p/q/y desapareciam): a Pillow 11 removeu `draw._multiline_spacing` e o MoviePy 2.1.2 passou a calcular a altura da caixa pelo bbox de tinta do texto enquanto desenhava a baseline pela métrica da fonte. A `MicrosoftYaHeiBold.ttc` (default do canal) tem ascent interno ~1.4× a altura visível das maiúsculas — reproduzido e medido no frame de referência da tarefa `9f2cc9e6`: canvas de 42px com a tinta a descer até ~48px (≈7px cortados).

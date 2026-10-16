@@ -410,7 +410,7 @@ def test_burn_captions_on_real_video_replaces_in_place(tmp_path):
     assert not list(tmp_path.glob("*.legendas-tmp.mp4")), "o temporario foi substituido, nao deixado para tras"
 
 
-# ── 0.10.00: fundo hug-text, sem clip e wrap medido em pixels ────────────────
+# ── 1.0.00: fundo hug-text, sem clip e wrap medido em pixels ────────────────
 
 
 _SUBTITLE_RENDER_CONFIG = {
