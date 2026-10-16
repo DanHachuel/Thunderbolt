@@ -4318,12 +4318,21 @@ def render_video_from_draft(prefix: str = "new_video") -> None:
     persisted_settings = record.get("generation_settings") if isinstance(record.get("generation_settings"), dict) else {}
     missing_sections = missing_setting_sections(persisted_settings)
     if missing_sections:
+        # 1.0.01: session_state é a fonte única da verdade deste multiselect.
+        # O `default=` combinado com a pré-escrita do seed de rascunhos
+        # (`_seed_resume_video_settings`) disparava o warning de política
+        # "created with a default value but also had its value set via the
+        # Session State API" em cada carregamento/troca de registo. O seed
+        # mantém o valor canónico por registo seleccionado; este guard só
+        # cobre o caso improvável de a key ainda não existir.
+        sections_key = f"{prefix}_resume_sections"
+        if sections_key not in st.session_state:
+            st.session_state[sections_key] = missing_sections
         selected_sections = set(
             st.multiselect(
                 "Configurações a completar",
                 list(DRAFT_SETTING_SECTIONS),
-                default=missing_sections,
-                key=f"{prefix}_resume_sections",
+                key=sections_key,
                 help="Seleccione uma ou mais áreas para completar antes de criar a tarefa.",
             )
         )

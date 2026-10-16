@@ -84,5 +84,26 @@ class DraftVideoTests(unittest.TestCase):
             self.assertIn('"Gerar apenas o vídeo"', block)
 
 
+    def test_resume_sections_multiselect_uses_session_state_only(self):
+        """1.0.01: o warning de política do Streamlit exigia default= + pré-escrita.
+
+        O multiselect `new_video_resume_sections` não pode passar `default=`
+        (a key é escrita pelo seed `_seed_resume_video_settings` antes do
+        widget); session_state é a fonte única da verdade, com guard canónico
+        para o caso de a key ainda não existir.
+        """
+        block = MAIN_SOURCE.split('sections_key = f"{prefix}_resume_sections"', 1)[1].split("st.caption(", 1)[0]
+        self.assertIn('if sections_key not in st.session_state:', block)
+        self.assertIn("st.session_state[sections_key] = missing_sections", block)
+        self.assertIn("key=sections_key", block)
+        self.assertNotIn("default=", block)
+        # o seed continua a ser o escritor canónico por registo (troca de
+        # rascunho actualiza o multiselect via session_state, sem default=)
+        self.assertIn(
+            'st.session_state[f"{state_prefix}_sections"] = missing_setting_sections(generation_settings)',
+            MAIN_SOURCE,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
