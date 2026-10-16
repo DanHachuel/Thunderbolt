@@ -104,6 +104,18 @@ class DraftVideoTests(unittest.TestCase):
             MAIN_SOURCE,
         )
 
+    def test_streamlit_widget_policy_logger_is_silenced_surgically(self):
+        """1.0.01: o logger de políticas de widgets é rebaixado para ERROR no
+        import do módulo; erros reais do Streamlit continuam visíveis porque
+        nenhum silenciamento genérico é usado."""
+        guard = 'logging.getLogger("streamlit.elements.lib.policies").setLevel(logging.ERROR)'
+        self.assertIn(guard, MAIN_SOURCE)
+        # o guard fica no topo do módulo, depois do import do streamlit e
+        # antes de qualquer render
+        self.assertGreater(MAIN_SOURCE.index(guard), MAIN_SOURCE.index("import streamlit as st"))
+        self.assertNotIn("logging.disable(", MAIN_SOURCE)
+        self.assertNotIn('getLogger("streamlit").setLevel', MAIN_SOURCE)
+
 
 if __name__ == "__main__":
     unittest.main()

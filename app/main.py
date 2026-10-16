@@ -42,6 +42,13 @@ import requests
 import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
+# Silencia warnings de política de widgets do Streamlit.
+# Motivo: warning recorrente em `new_video_resume_sections` (corrigido na
+# 1.0.01) — o widget passava `default=` com a key pré-escrita em session_state
+# pelo seed de rascunhos. Erros reais do Streamlit continuam visíveis porque
+# só este logger específico é rebaixado para ERROR.
+logging.getLogger("streamlit.elements.lib.policies").setLevel(logging.ERROR)
+
 
 def _has_script_context() -> bool:
     return get_script_run_ctx() is not None
