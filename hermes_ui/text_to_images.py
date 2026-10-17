@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .provider_routing import ProviderRoutingError, route_llm_json
-from .voice_preview import synthesize_preview
+from .voice_preview import resolve_narration_provider, synthesize_preview
 
 
 def _duration_from_words(words: list[dict[str, Any]], fallback_wpm: int) -> float:
@@ -394,8 +394,17 @@ def burn_captions_on_video(
 
 def synthesize_text_to_images_audio(text: str, settings: dict[str, Any], voice: str, output_path: Path) -> Path:
     """Synthesize narration in bounded chunks through the configured TTS provider."""
-    service = str(settings.get("voiceover_service") or "Azure TTS V1")
-    provider = {"Azure Speech SDK V2": "azure_speech", "Azure TTS V1": "azure_v1", "ElevenLabs": "elevenlabs"}.get(service, "azure_v1")
+    # 1.0.02: "Azure TTS V1" era mapeado cegamente para o edge (provider morto
+    # desde Out/2026 — 403 em speech.platform.bing.com). O provider real passa
+    # a ser resolvido por credenciais: com Azure Speech configurada usa-se o
+    # endpoint oficial; sem credenciais o edge é bloqueado com mensagem clara.
+    provider = resolve_narration_provider(settings.get("voiceover_service"), settings)
+    import sys as _sys
+
+    print(
+        f"[tts] provider={provider} service={str(settings.get('voiceover_service') or 'Azure TTS V1').strip() or 'Azure TTS V1'} voice={str(voice).strip()}",
+        file=_sys.stderr,
+    )
     clean = str(text or "").strip()
     if not clean:
         raise ValueError("O roteiro está vazio; não é possível gerar narração.")

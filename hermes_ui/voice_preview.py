@@ -14,11 +14,42 @@ from . import storage
 
 DEFAULT_SAMPLE = "Esta é uma amostra de voz do Thunderbolt. O resultado é apenas um teste e não altera nenhum vídeo ou tarefa da pipeline."
 
+EDGE_TTS_DEPRECATED_MESSAGE = (
+    "Edge TTS descontinuado: a Microsoft passou a recusar o endpoint "
+    "speech.platform.bing.com (HTTP 403 desde Out/2026). Configure Azure Speech "
+    "(chave e região em Configuração API) ou seleccione outro provider de narração."
+)
+
 
 def preview_directory() -> Path:
     directory = storage.STORAGE / "voice_previews"
     directory.mkdir(parents=True, exist_ok=True)
     return directory
+
+
+def resolve_narration_provider(service: str, settings: dict[str, Any]) -> str:
+    """1.0.02: resolve o provider REAL da narração da cadeia local.
+
+    "Azure TTS V1" é Edge TTS — o endpoint speech.platform.bing.com foi
+    descontinuado pela Microsoft em Out/2026 e o edge-tts do PyPI (<=7.2.8,
+    o fix só existe no branch principal do GitHub) recebe 403. A rota MPT já
+    promovia a narração para Azure Speech real quando existiam credenciais
+    (`pipeline_worker._uses_azure_speech_sdk_v2`); a cadeia local (Remotion,
+    text_to_images, web_images, blueprints) continuava a cair no edge morto —
+    a origem do 403 "API não identificada" nos cards. Com credenciais Azure
+    presentes usa-se sempre Azure Speech real; sem credenciais, o edge é
+    bloqueado com mensagem clara em vez do 403 críptico do aiohttp.
+    """
+    raw = str(service or "").strip().casefold()
+    if raw in {"elevenlabs", "eleven labs"}:
+        return "elevenlabs"
+    if raw in {"azure speech sdk v2", "azure speech", "azure tts v2", "azure speech sdk"}:
+        return "azure_speech"
+    key = str(settings.get("azure_speech_key") or "").strip()
+    region = str(settings.get("azure_speech_region") or "").strip()
+    if key and region:
+        return "azure_speech"
+    raise RuntimeError(EDGE_TTS_DEPRECATED_MESSAGE)
 
 
 def _edge_voice_name(value: str) -> str:
@@ -35,12 +66,20 @@ async def _save_edge_async(text: str, voice: str, output: Path, rate: str) -> No
     if "boundary" in inspect.signature(edge_tts.Communicate).parameters:
         kwargs["boundary"] = "WordBoundary"
     communicate = edge_tts.Communicate(text, _edge_voice_name(voice), **kwargs)
-    if hasattr(communicate, "save"):
+    if not hasattr(communicate, "save"):
+        raise RuntimeError("A versão instalada de edge-tts não possui save().")
+    try:
         result = communicate.save(str(output))
         if inspect.isawaitable(result):
             await result
-        return
-    raise RuntimeError("A versão instalada de edge-tts não possui save().")
+    except Exception as exc:
+        # 1.0.02: o 403 do endpoint morto chega como aiohttp.WSServerHandshakeError
+        # crua ("403, message='Invalid response status', url='wss://speech.platform.bing.com/...'").
+        # Converte-se na mensagem de deprecação clara para o utilizador.
+        message = str(exc)
+        if "speech.platform.bing.com" in message or ("403" in message and "sec-ms-gec" in message.casefold()):
+            raise RuntimeError(EDGE_TTS_DEPRECATED_MESSAGE) from exc
+        raise
 
 
 def _save_edge(text: str, voice: str, output: Path, rate: str) -> None:

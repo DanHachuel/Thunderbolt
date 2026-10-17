@@ -700,13 +700,27 @@ def _failure_attribution(
             "failure_stage": stage,
         }
 
-    if stage == "video" and any(marker in combined for marker in ("edge_tts", "edge tts", "azure_tts_v1", "azure speech")):
+    if stage == "video" and any(marker in combined for marker in ("speech.platform.bing.com", "sec-ms-gec", "edge_tts", "edge tts", "edge-tts", "azure_tts_v1", "edge tts descontinuado")):
+        # 1.0.02: o endpoint wss://speech.platform.bing.com foi descontinuado
+        # pela Microsoft em Out/2026 — o edge-tts do PyPI (<=7.2.8) recebe 403.
+        # Antes isto caía no default "API não identificada (falha anterior)"
+        # porque a mensagem do aiohttp não contém nenhum marker de provider.
         return {
-            "failure_api": "Azure Speech / edge_tts API",
-            "failure_provider": "azure_speech, edge_tts",
+            "failure_api": "Falha no provider: Edge TTS — endpoint descontinuado pela Microsoft em Out/2026. Atualize edge-tts ou use Azure V2 (configure azure_speech_key/region).",
+            "failure_provider": "edge_tts",
             "failure_service": "Narração TTS",
             "failure_route": route,
-            "failure_config_fields": "",
+            "failure_config_fields": "azure_speech_key, azure_speech_region",
+            "failure_stage": stage,
+        }
+
+    if stage == "video" and any(marker in combined for marker in ("azure speech sdk v2", "azure speech v2", "azure_tts_v2", "azure speech")):
+        return {
+            "failure_api": "Azure Speech SDK V2 API",
+            "failure_provider": "azure_speech",
+            "failure_service": "Narração TTS",
+            "failure_route": route,
+            "failure_config_fields": "azure_speech_key, azure_speech_region",
             "failure_stage": stage,
         }
 
@@ -1190,6 +1204,35 @@ def _azure_speech_v2_voice_name(value: str) -> str:
     if match:
         return f"{voice[:match.start()]}-V2{voice[match.start():]}"
     return f"{voice}-V2"
+
+
+def _mpt_edge_narration_blocked_reason(task: dict[str, Any], settings: dict[str, Any]) -> str | None:
+    """1.0.02: bloqueia a narração que cairia no Edge TTS descontinuado do MPT.
+
+    No MoneyPrinterTurbo, qualquer voz simples sem sufixo ``-V2`` e sem prefixo
+    de provider (``elevenlabs:``, ``siliconflow:``...) cai no fallback
+    ``azure_tts_v1`` — que é Edge TTS (endpoint speech.platform.bing.com morto
+    desde Out/2026, 403). Com credenciais Azure a pipeline já promove a voz a
+    ``-V2`` (``_uses_azure_speech_sdk_v2`` + ``_azure_speech_v2_voice_name``);
+    sem credenciais a geração é bloqueada com mensagem clara em vez de
+    estourar com o 403 críptico do aiohttp no meio do render.
+    """
+    generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else {}
+    voiceover_mode = str(generation_settings.get("voiceover_mode") or "").strip().casefold()
+    if voiceover_mode in {"none", "upload"}:
+        return None
+    if _uses_azure_speech_sdk_v2(generation_settings, settings):
+        return None
+    voice = str(task.get("voice") or generation_settings.get("voice") or "").strip()
+    if not voice or ":" in voice or voice.casefold() == "no-voice":
+        return None
+    if re.search(r"-v2(?:-|$)", voice, flags=re.IGNORECASE):
+        return None
+    return (
+        "Voz seleccionada usa Edge TTS (descontinuado pela Microsoft em Out/2026 — "
+        "403 no endpoint speech.platform.bing.com). Seleccione uma voz Azure V2 "
+        "(termina em -V2-) ou configure Azure Speech (chave e região) em Configuração API."
+    )
 
 
 def _mpt_uses_custom_audio(task: dict[str, Any], settings: dict[str, Any] | None = None) -> bool:
@@ -2546,6 +2589,13 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                     composition_id=composition_id,
                 )
             else:
+                # 1.0.02: o MPT cairia no Edge TTS (fallback azure_tts_v1) com
+                # uma voz simples sem -V2 e sem credenciais Azure — bloqueia
+                # antes de gastar o render com um provider morto (403).
+                blocked_reason = _mpt_edge_narration_blocked_reason({**task, "topic": topic, "title": title}, settings)
+                if blocked_reason:
+                    metadata = _failure_attribution(task, settings, "video", error=blocked_reason)
+                    raise PipelineError(_failure_message(blocked_reason, metadata), failure_metadata=metadata)
                 video_path = _run_video_helper({
                     **task,
                     "topic": topic,

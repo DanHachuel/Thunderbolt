@@ -757,15 +757,19 @@ def test_legacy_azure_tts_v1_uses_sdk_v2_when_credentials_are_configured():
     assert args[args.index("--voice-name") + 1] == "en-US-BrianMultilingualNeural-V2-Male"
 
 
-def test_edge_tts_timeout_is_attributed_to_azure_speech_api():
+def test_edge_tts_timeout_is_attributed_to_deprecated_edge_provider():
+    """1.0.02: erros do edge deixam de ser atribuídos a "Azure Speech / edge_tts"
+    genérico — o endpoint speech.platform.bing.com está descontinuado (Out/2026)
+    e o card tem de dizer exactamente isso e como resolver."""
     metadata = pipeline_worker._failure_attribution(
         {"style_wide": "pexels"},
         {},
         "video",
         error="azure_tts_v1 - failed, error: edge_tts stream timed out after 30s",
     )
-    assert metadata["failure_api"] == "Azure Speech / edge_tts API"
-    assert metadata["failure_provider"] == "azure_speech, edge_tts"
+    assert "Edge TTS" in metadata["failure_api"]
+    assert "descontinuado pela Microsoft em Out/2026" in metadata["failure_api"]
+    assert metadata["failure_provider"] == "edge_tts"
     assert metadata["failure_service"] == "Narração TTS"
 
 
