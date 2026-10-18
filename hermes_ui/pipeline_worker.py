@@ -1957,6 +1957,38 @@ def _scene_video_progress(index: int, total: int) -> int:
     return int(52 + fraction * 27)
 
 
+def _scale_scene_durations_to_audio(scenes: list[dict], audio_path: Path | None) -> None:
+    """1.0.03: iguala o total das durações das cenas à duração REAL do áudio.
+
+    As durações vindas de `split_script_into_scenes` são estimativas (wpm) —
+    o vídeo montado saía mais longo (minutos de silêncio no fim) ou mais
+    curto que a narração. A escala proporcional mantém o ritmo relativo
+    entre cenas e termina o vídeo com o áudio. Falhas de leitura deixam as
+    estimativas intactas.
+    """
+    if not scenes or audio_path is None:
+        return
+    try:
+        total = float(audio_duration_seconds(audio_path) or 0)
+    except Exception:
+        return
+    if total <= 0.2:
+        return
+    estimated = sum(max(0.1, float(scene.get("duration") or 0)) for scene in scenes)
+    if estimated <= 0:
+        return
+    scale = total / estimated
+    if 0.98 <= scale <= 1.02:
+        return
+    clock = 0.0
+    for scene in scenes:
+        duration = max(0.1, float(scene.get("duration") or 0) * scale)
+        scene["duration"] = duration
+        scene["start"] = clock
+        scene["end"] = clock + duration
+        clock += duration
+
+
 def _resolve_subtitle_font_path(font_name: str, settings: dict[str, Any]) -> str | None:
     """Resolve o ficheiro da fonte das legendas: resource/fonts do MPT → Fonts
     do sistema → genéricos (Arial/DejaVu). Devolve None se nada existir —
@@ -2490,7 +2522,15 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                 )
             elif route == "web_images":
                 target_seconds = float(generation_settings.get("text_to_images_scene_duration") or 5)
-                scenes = split_script_into_scenes(str(script.get("content") or ""), target_seconds=target_seconds, wpm=int(generation_settings.get("text_to_images_wpm") or 150))
+                # 1.0.03: cenas da NARRAÇÃO real (não do markdown cru) e
+                # durações escaladas à duração real do áudio.
+                narration_content = narration_text_from_script(str(script.get("content") or ""))
+                audio_path = _valid_audio_artifact(generation_settings.get("voiceover_file") or artifacts.get("audio") or artifacts.get("narration"))
+                if audio_path is None:
+                    audio_path = synthesize_text_to_images_audio(narration_content, {**settings, **generation_settings}, str(task.get("voice") or generation_settings.get("voice") or channel.get("default_voice") or channel.get("voice") or "pt-BR-FranciscaNeural-Female"), STORAGE / "audio" / f"{task_id}-web-images.mp3")
+                    artifacts["audio"] = str(audio_path)
+                scenes = split_script_into_scenes(narration_content, target_seconds=target_seconds, wpm=int(generation_settings.get("text_to_images_wpm") or 150))
+                _scale_scene_durations_to_audio(scenes, audio_path)
                 if not scenes:
                     scenes = [{"index": 1, "text": topic, "duration": target_seconds}]
                 image_scenes = []
@@ -2512,37 +2552,40 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                         progress=_scene_video_progress(scene_index, len(scenes)),
                         video_helper_status=f"imagem web da cena {scene_index}/{len(scenes)} descarregada",
                     )
-                audio_path = _valid_audio_artifact(generation_settings.get("voiceover_file") or artifacts.get("audio") or artifacts.get("narration"))
-                if audio_path is None:
-                    audio_path = synthesize_text_to_images_audio(narration_text_from_script(str(script.get("content") or "")), {**settings, **generation_settings}, str(task.get("voice") or generation_settings.get("voice") or channel.get("default_voice") or channel.get("voice") or "pt-BR-FranciscaNeural-Female"), STORAGE / "audio" / f"{task_id}-web-images.mp3")
-                    artifacts["audio"] = str(audio_path)
                 output_path = STORAGE / "videos" / f"{task_id}-web-images.mp4"
                 video_path = assemble_text_to_images_video(image_scenes, audio_path, output_path, str(task.get("format") or "wide"), fps=int(generation_settings.get("text_to_images_fps") or 30), subtitle_config=_subtitle_config_for_task(task, settings))
             elif route == "text_to_images":
                 target_seconds = float(generation_settings.get("text_to_images_scene_duration") or 5)
+                # 1.0.03: as cenas (imagens + subtítulos) passam a vir da
+                # NARRAÇÃO real extraída do roteiro, não do markdown cru — o
+                # crude produzia cenas/subtítulos com frontmatter YAML e
+                # directorias visuais. O áudio é sintetizado primeiro e as
+                # durações das cenas escalam para a duração real do áudio.
+                narration_content = narration_text_from_script(str(script.get("content") or ""))
+                audio_path = _valid_audio_artifact(
+                    generation_settings.get("voiceover_file") or artifacts.get("audio") or artifacts.get("narration")
+                )
+                if audio_path is None:
+                    audio_path = synthesize_text_to_images_audio(
+                        narration_content,
+                        {**settings, **generation_settings},
+                        str(task.get("voice") or generation_settings.get("voice") or channel.get("default_voice") or channel.get("voice") or "pt-BR-FranciscaNeural-Female"),
+                        STORAGE / "audio" / f"{task_id}-text-to-images.mp3",
+                    )
+                    artifacts["audio"] = str(audio_path)
                 scenes = split_script_into_scenes(
-                    str(script.get("content") or ""),
+                    narration_content,
                     words_data=script.get("words_data") if isinstance(script.get("words_data"), list) else None,
                     target_seconds=target_seconds,
                     wpm=int(generation_settings.get("text_to_images_wpm") or 150),
                 )
+                _scale_scene_durations_to_audio(scenes, audio_path)
                 scene_prompts = generate_image_prompts_for_scenes(
                     scenes,
                     str(generation_settings.get("text_to_images_style") or "cinematic"),
                     settings,
                     channel,
                 )
-                audio_path = _valid_audio_artifact(
-                    generation_settings.get("voiceover_file") or artifacts.get("audio") or artifacts.get("narration")
-                )
-                if audio_path is None:
-                    audio_path = synthesize_text_to_images_audio(
-                        narration_text_from_script(str(script.get("content") or "")),
-                        {**settings, **generation_settings},
-                        str(task.get("voice") or generation_settings.get("voice") or channel.get("default_voice") or channel.get("voice") or "pt-BR-FranciscaNeural-Female"),
-                        STORAGE / "audio" / f"{task_id}-text-to-images.mp3",
-                    )
-                    artifacts["audio"] = str(audio_path)
                 total_scenes = len(scene_prompts)
                 for scene_index, scene in enumerate(scene_prompts, start=1):
                     scene["image_path"] = str(generate_image_from_pool(settings, scene["prompt"], topic=topic, variant_index=int(scene.get("index") or 0), aspect_ratio=str(task.get("format") or "wide")))
