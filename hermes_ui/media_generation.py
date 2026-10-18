@@ -650,16 +650,23 @@ def _thumbnail_aspect_ratio(
     return infer_thumbnail_aspect_ratio(prompt, dict(thumbnail_blueprint or {}))
 
 
-def _image_request(card: dict[str, Any], prompt: str, *, topic: str = "", lettering_text: str = "", lettering_prompt: str = "", thumbnail_blueprint: Mapping[str, Any] | None = None, aspect_ratio: str = "") -> Any:
+def _image_request(card: dict[str, Any], prompt: str, *, topic: str = "", lettering_text: str = "", lettering_prompt: str = "", thumbnail_blueprint: Mapping[str, Any] | None = None, aspect_ratio: str = "", is_scene_image: bool = False) -> Any:
     provider = str(card.get("provider") or "").strip().lower()
     style = str(card.get("api_style") or media_provider_definition(provider).api_style)
     endpoint = _image_endpoint(card)
-    image_prompt, _headline = _compose_thumbnail_prompt(
-        prompt,
-        topic=topic,
-        lettering_text=lettering_text,
-        lettering_prompt=lettering_prompt,
-    )
+    if is_scene_image:
+        # 1.0.04: imagens de cena usam o prompt puro (já vem com as regras de
+        # "sem texto" da LLM de storyboard) — a MANDATORY LETTERING LAYER das
+        # thumbnails queimava as primeiras 4 palavras do título em TODAS as
+        # cenas. O topic também não entra na composição.
+        image_prompt = str(prompt or "").strip()
+    else:
+        image_prompt, _headline = _compose_thumbnail_prompt(
+            prompt,
+            topic=topic,
+            lettering_text=lettering_text,
+            lettering_prompt=lettering_prompt,
+        )
     resolved_aspect_ratio = _thumbnail_aspect_ratio(thumbnail_blueprint, prompt, aspect_ratio)
     requested_size = ("1024x1792" if resolved_aspect_ratio == "9:16" else "1792x1024") if provider == "pollinations" else ("720x1280 minimum" if resolved_aspect_ratio == "9:16" else "1280x720 minimum")
     constrained_prompt = _append_generation_constraints(
@@ -736,6 +743,7 @@ def generate_image_for_card(
     reference_image: Path | None = None,
     thumbnail_blueprint: Mapping[str, Any] | None = None,
     aspect_ratio: str = "",
+    is_scene_image: bool = False,
 ) -> Path:
     """Generate one image with the selected media card."""
     card = _hydrate_media_card(settings, card)
@@ -800,12 +808,22 @@ def generate_image_for_card(
                 lettering_prompt=lettering_prompt,
                 reference_image=reference_image,
                 aspect_ratio=aspect_ratio,
+                is_scene_image=is_scene_image,
             )
         except Exception as exc:
             raise MediaGenerationError(str(exc)) from exc
 
     ensure_storage()
-    destination = STORAGE / "thumbnails" / f"media-{provider}-{abs(hash((topic, prompt, variant_index))) & 0xffffffffffffffff:x}.jpg"
+    if is_scene_image:
+        # 1.0.04: imagens de cena vivem em storage/scenes/ (separadas das capas
+        # YouTube em storage/thumbnails/) e o hash não inclui o topic — cenas
+        # com o mesmo prompt/variante reutilizam a cache entre remakes mesmo
+        # quando o título do vídeo muda.
+        scenes_dir = STORAGE / "scenes"
+        scenes_dir.mkdir(parents=True, exist_ok=True)
+        destination = scenes_dir / f"scene-{provider}-{abs(hash((prompt, variant_index))) & 0xffffffffffffffff:x}.jpg"
+    else:
+        destination = STORAGE / "thumbnails" / f"media-{provider}-{abs(hash((topic, prompt, variant_index))) & 0xffffffffffffffff:x}.jpg"
 
     if provider == "huggingface":
         model = _model(card)
@@ -813,12 +831,15 @@ def generate_image_for_card(
         if not model:
             raise MediaGenerationError("Hugging Face requer a selecção de um modelo text-to-image.")
         try:
-            image_prompt, _headline = _compose_thumbnail_prompt(
-                prompt,
-                topic=topic,
-                lettering_text=lettering_text,
-                lettering_prompt=lettering_prompt,
-            )
+            if is_scene_image:
+                image_prompt = str(prompt or "").strip()
+            else:
+                image_prompt, _headline = _compose_thumbnail_prompt(
+                    prompt,
+                    topic=topic,
+                    lettering_text=lettering_text,
+                    lettering_prompt=lettering_prompt,
+                )
             constrained_prompt = _append_generation_constraints(
                 image_prompt,
                 kind="image",
@@ -837,7 +858,7 @@ def generate_image_for_card(
             raise MediaGenerationError(f"Hugging Face text-to-image falhou: {str(exc)[:240]}") from exc
 
     def request(current: dict[str, Any]) -> Any:
-        return _image_request(current, prompt, topic=topic, lettering_text=lettering_text, lettering_prompt=lettering_prompt, thumbnail_blueprint=thumbnail_blueprint, aspect_ratio=aspect_ratio)
+        return _image_request(current, prompt, topic=topic, lettering_text=lettering_text, lettering_prompt=lettering_prompt, thumbnail_blueprint=thumbnail_blueprint, aspect_ratio=aspect_ratio, is_scene_image=is_scene_image)
 
     try:
         routed = route_json_request(settings, pool=POOL_IMAGE, cards=[card], request=request)
@@ -895,9 +916,14 @@ def generate_image_from_pool(
     thumbnail_only: bool = False,
     thumbnail_blueprint: Mapping[str, Any] | None = None,
     aspect_ratio: str = "",
+    is_scene_image: bool = False,
 ) -> Path:
     """Try eligible image cards in priority order, without cross-pool fallback."""
     cards = media_cards_for_pool(settings, "image", thumbnail_only=True) if thumbnail_only else media_cards_for_pool(settings, "image")
+    if is_scene_image:
+        # 1.0.04: o Canva só produz thumbnails com blueprint/título (texto
+        # inerente à ferramenta) — não gera imagens de cena limpas.
+        cards = [card for card in cards if str(card.get("provider") or "").strip().lower() != "canva"]
     if not cards:
         raise MediaGenerationError("Não existem providers activos no pool de imagem.")
     errors: list[str] = []
@@ -914,6 +940,7 @@ def generate_image_from_pool(
                 reference_image=reference_image,
                 thumbnail_blueprint=thumbnail_blueprint,
                 aspect_ratio=aspect_ratio,
+                is_scene_image=is_scene_image,
             )
         except MediaGenerationError as exc:
             errors.append(f"{card.get('provider')}: {str(exc)[:180]}")

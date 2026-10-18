@@ -207,6 +207,7 @@ def generate_thumbnail_image(
     lettering_text: str = "",
     lettering_prompt: str = "",
     aspect_ratio: str | None = None,
+    is_scene_image: bool = False,
 ) -> Path:
     api_key = str(settings.get("gemini_image_api_key") or "").strip()
     if not api_key:
@@ -214,12 +215,19 @@ def generate_thumbnail_image(
     clean_prompt = str(prompt or "").strip()
     if not clean_prompt:
         raise ThumbnailGenerationError("A thumbnail não tem um prompt de imagem para gerar.")
-    effective_prompt, headline = _compose_thumbnail_prompt(
-        clean_prompt,
-        topic=topic,
-        lettering_text=lettering_text,
-        lettering_prompt=lettering_prompt,
-    )
+    if is_scene_image:
+        # 1.0.04: imagem de cena — prompt puro, sem MANDATORY LETTERING LAYER
+        # (a layer queimava as primeiras 4 palavras do título em todas as
+        # cenas) e sem headline.
+        effective_prompt = clean_prompt
+        headline = ""
+    else:
+        effective_prompt, headline = _compose_thumbnail_prompt(
+            clean_prompt,
+            topic=topic,
+            lettering_text=lettering_text,
+            lettering_prompt=lettering_prompt,
+        )
     effective_aspect_ratio = aspect_ratio if aspect_ratio in {"16:9", "9:16"} else infer_thumbnail_aspect_ratio(clean_prompt)
 
     model = str(settings.get("gemini_image_model") or DEFAULT_GEMINI_IMAGE_MODEL).strip()
@@ -266,14 +274,20 @@ def generate_thumbnail_image(
     image_bytes = normalize_thumbnail_bytes(_extract_image_bytes(payload), effective_aspect_ratio)
 
     ensure_storage()
-    output_dir = STORAGE / "thumbnails"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    destination = output_dir / _thumbnail_filename(
-        f"{effective_prompt}\nEXACT HEADLINE TO RENDER: {headline}",
-        topic,
-        variant_index,
-        model,
-    )
+    if is_scene_image:
+        # 1.0.04: imagens de cena em storage/scenes/, sem o topic no hash.
+        output_dir = STORAGE / "scenes"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        destination = output_dir / f"scene-nano_banana-{abs(hash((clean_prompt, variant_index))) & 0xffffffffffffffff:x}.jpg"
+    else:
+        output_dir = STORAGE / "thumbnails"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        destination = output_dir / _thumbnail_filename(
+            f"{effective_prompt}\nEXACT HEADLINE TO RENDER: {headline}",
+            topic,
+            variant_index,
+            model,
+        )
     fd, temp_name = tempfile.mkstemp(prefix=f".{destination.name}.", dir=output_dir)
     try:
         with os.fdopen(fd, "wb") as handle:

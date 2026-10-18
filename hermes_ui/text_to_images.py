@@ -79,21 +79,67 @@ def split_script_into_scenes(
     return result
 
 
+def _scene_text_overlay_positions(scene_count: int) -> set[int]:
+    """Índices (0-based) das cenas que podem receber texto — máx. 5%, distribuição uniforme.
+
+    1.0.04: no máximo 5% das cenas (`max(1, int(count * 0.05))`) recebem um
+    texto curto queimado na imagem; as restantes saem estritamente sem texto.
+    Com uma única cena marcada fica no meio; com várias, distribui-se do
+    início ao fim em passos uniformes (início/meio/fim).
+    """
+    if scene_count <= 0:
+        return set()
+    limit = max(1, int(scene_count * 0.05))
+    if limit >= scene_count:
+        return set(range(scene_count))
+    if limit == 1:
+        return {scene_count // 2}
+    return {round(index * (scene_count - 1) / (limit - 1)) for index in range(limit)}
+
+
+def _sanitise_text_overlay(value: Any) -> str:
+    """Mantém o overlay curto e legível: máximo 3 palavras e 32 caracteres."""
+    words = re.findall(r"[\wÀ-ÿ'’!?$%+-]+", str(value or ""), flags=re.UNICODE)
+    return " ".join(words[:3])[:32].strip()
+
+
 def generate_image_prompts_for_scenes(
     scenes: list[dict],
     style: str,
     settings: dict,
     channel: dict,
 ) -> list[dict]:
-    """Generate one concise, text-free visual prompt per scene through the active LLM."""
+    """Generate one concise, text-free visual prompt per scene through the active LLM.
+
+    1.0.04: até 5% das cenas (distribuição uniforme) podem receber um texto
+    curto (máx. 3 palavras) queimado na imagem — devolvido pela LLM no campo
+    `text_overlay` e injectado no prompt como "with the text 'X' written on
+    it.". Todas as restantes saem estritamente sem texto. Se a LLM falhar, o
+    fallback não injecta texto nenhum (0% é sempre seguro).
+    """
     if not scenes:
         return []
+    text_positions = _scene_text_overlay_positions(len(scenes))
     system = (
         "You are a cinematic storyboard artist. Return only valid JSON with a 'scenes' array. "
         "For every scene create an image prompt of no more than 240 characters. Never include words, letters, logos or watermarks. "
-        "Prioritize dynamic composition, dramatic lighting, visual storytelling, palette and mood."
+        "Prioritize dynamic composition, dramatic lighting, visual storytelling, palette and mood. "
+        "For scenes marked with \"allow_text\": true, also generate a short, punchy text overlay "
+        "(maximum 3 words) in the field 'text_overlay'. For all other scenes, strictly NO text "
+        "and 'text_overlay' must be empty."
     )
-    payload = {"style": style, "channel": channel, "scenes": [{"index": item.get("index"), "text": item.get("text", "")} for item in scenes]}
+    payload = {
+        "style": style,
+        "channel": channel,
+        "scenes": [
+            {
+                "index": item.get("index"),
+                "text": item.get("text", ""),
+                "allow_text": position in text_positions,
+            }
+            for position, item in enumerate(scenes)
+        ],
+    }
     try:
         response = route_llm_json(settings, system, json.dumps(payload, ensure_ascii=False))
         generated = response.payload.get("scenes") if isinstance(response.payload, dict) else None
@@ -102,12 +148,15 @@ def generate_image_prompts_for_scenes(
     generated = generated if isinstance(generated, list) else []
     by_index = {int(item.get("index")): item for item in generated if isinstance(item, dict) and str(item.get("index", "")).isdigit()}
     output: list[dict[str, Any]] = []
-    for scene in scenes:
+    for position, scene in enumerate(scenes):
         index = int(scene.get("index") or len(output) + 1)
         candidate = by_index.get(index, {})
         prompt = str(candidate.get("prompt") or candidate.get("Prompt") or "").strip()[:240]
+        overlay = _sanitise_text_overlay(candidate.get("text_overlay")) if position in text_positions else ""
         if not prompt:
             prompt = f"Cinematic scene, dramatic lighting, dynamic composition, visual storytelling about {str(scene.get('text') or '')[:160]}"
+        if overlay:
+            prompt = f"{prompt} with the text '{overlay}' written on it."
         output.append({**scene, "prompt": prompt})
     return output
 

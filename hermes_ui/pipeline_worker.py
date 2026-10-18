@@ -2252,7 +2252,9 @@ def _run_remotion_blueprint(
     (STORAGE / "audio").mkdir(parents=True, exist_ok=True)
 
     def image_provider(prompt: str) -> Path:
-        return generate_image_from_pool(settings, prompt, topic=topic_value, variant_index=0, aspect_ratio=image_aspect)
+        # 1.0.04: imagens de cena do blueprint — sem lettering de thumbnail,
+        # gravadas em storage/scenes/.
+        return generate_image_from_pool(settings, prompt, topic=topic_value, variant_index=0, aspect_ratio=image_aspect, is_scene_image=True)
 
     tts_counter = iter(range(100000))
 
@@ -2588,7 +2590,17 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                 )
                 total_scenes = len(scene_prompts)
                 for scene_index, scene in enumerate(scene_prompts, start=1):
-                    scene["image_path"] = str(generate_image_from_pool(settings, scene["prompt"], topic=topic, variant_index=int(scene.get("index") or 0), aspect_ratio=str(task.get("format") or "wide")))
+                    # 1.0.04: imagens de cena — sem a MANDATORY LETTERING LAYER
+                    # das thumbnails (que queimava o título em todas as cenas)
+                    # e gravadas em storage/scenes/.
+                    scene["image_path"] = str(generate_image_from_pool(
+                        settings,
+                        scene["prompt"],
+                        topic=topic,
+                        variant_index=int(scene.get("index") or 0),
+                        aspect_ratio=str(task.get("format") or "wide"),
+                        is_scene_image=True,
+                    ))
                     _update(
                         task_id,
                         progress=_scene_video_progress(scene_index, total_scenes),
