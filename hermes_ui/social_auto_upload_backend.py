@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import logging
 import hashlib
@@ -11,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -308,11 +310,103 @@ class _PlaywrightBridge:
         self.webkit = self.chromium
 
 
+def _installed_upstream_root() -> Path | None:
+    """Localiza a raiz do pacote upstream instalado SEM o importar.
+
+    O import de `uploader` executa `uploader/__init__.py`, que faz
+    `from conf import BASE_DIR` — ou seja, importar para descobrir onde está
+    instalado seria circular. `find_spec` localiza o pacote sem o executar.
+    `spec.origin` = `<raiz>/uploader/__init__.py`; o pacote `utils/` (com o
+    stealth.min.js) é IRMÃO de `uploader/`, logo a raiz é `parent.parent`.
+    """
+    try:
+        spec = importlib.util.find_spec("uploader")
+    except (ImportError, AttributeError, ValueError):
+        return None
+    if spec is None or not spec.origin:
+        return None
+    return Path(spec.origin).resolve().parent.parent
+
+
+def _ensure_upstream_stealth_asset(base: Path) -> None:
+    """Garante `utils/stealth.min.js` no base dir da CLI (Rota B).
+
+    Todos os uploaders de browser do upstream injectam
+    `BASE_DIR/utils/stealth.min.js` via `set_init_script`; o sdist pinned
+    instala o ficheiro apenas na raiz do pacote (site-packages), nunca no
+    base dir configurável. Sem esta cópia, `sau <plataforma> check|login|
+    upload-video` falham no `add_init_script` com o ficheiro em falta —
+    excepção engolida pelo upstream e reportada como "sessão inválida".
+    Nunca sobrescreve um ficheiro existente (um base dir apontado a um clone
+    real do social-auto-upload mantém a sua própria versão).
+    """
+    target = base / "utils" / "stealth.min.js"
+    if target.is_file() and target.stat().st_size > 0:
+        return
+    root = _installed_upstream_root()
+    if root is None:
+        return
+    source = root / "utils" / "stealth.min.js"
+    if not source.is_file():
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+
+
+def _ensure_upstream_runtime_conf() -> Path:
+    """1.0.06: provisiona o módulo `conf` do upstream in-process (Rota A).
+
+    Regressão crítica: o import in-process de
+    `uploader.youtube_uploader.main` (a ponte `_PlaywrightBridge`) exige um
+    módulo `conf` top-level (`from conf import DEBUG_MODE` em cada uploader),
+    mas o sdist pinned NÃO instala `conf.py` — o módulo só existia no
+    subprocesso da CLI (runtime/conf.py via PYTHONPATH). Resultado: todo o
+    upload directo YouTube falhava com `ModuleNotFoundError: No module named
+    'conf'`, traduzido na mensagem enganosa "A dependência pinned do
+    social-auto-upload não está instalada corretamente." → `upload_failed_clean`.
+
+    O provisionamento injecta em `sys.modules` um módulo `conf` com o MESMO
+    `BASE_DIR` da CLI (Rota B — `_sau_base_directory()`), garantindo `cookies/`
+    e `utils/stealth.min.js` (o upstream lê `BASE_DIR/utils/stealth.min.js` no
+    `set_init_script` e cria `BASE_DIR/logs` via loguru).
+    """
+    existing = sys.modules.get("conf")
+    if existing is not None and getattr(existing, "BASE_DIR", None):
+        return Path(existing.BASE_DIR)
+    try:
+        spec = importlib.util.find_spec("conf")
+    except (ImportError, ValueError):
+        spec = None
+    if spec is not None:
+        module = importlib.import_module("conf")
+        base_dir = getattr(module, "BASE_DIR", None)
+        if base_dir is not None:
+            return Path(base_dir)
+    if _installed_upstream_root() is None:
+        raise RuntimeError("A dependência pinned do social-auto-upload não está instalada corretamente.")
+    base = _sau_base_directory()
+    base.mkdir(parents=True, exist_ok=True)
+    (base / "cookies").mkdir(parents=True, exist_ok=True)
+    _ensure_upstream_stealth_asset(base)
+    conf_module = types.ModuleType("conf")
+    conf_module.BASE_DIR = base.resolve()
+    conf_module.XHS_SERVER = "http://127.0.0.1:11901"
+    conf_module.LOCAL_CHROME_PATH = ""
+    conf_module.LOCAL_CHROME_HEADLESS = True
+    conf_module.DEBUG_MODE = False
+    conf_module.YT_PROXY = None
+    sys.modules["conf"] = conf_module
+    return Path(conf_module.BASE_DIR)
+
+
 async def _run_upstream_upload(
     *, state_file: Path, video_path: str, title: str, description: str, tags: list[str],
     thumbnail_path: str, visibility: str, browser_type: str, proxy: Any, geoip: bool,
 ) -> _UploadTrace:
     try:
+        # 1.0.06: o provisionamento tem de acontecer ANTES do import — o
+        # pacote pinned não instala `conf.py` e o import falhava sem ele.
+        _ensure_upstream_runtime_conf()
         from uploader.youtube_uploader.main import YouTubeVideo
     except ImportError as exc:
         raise RuntimeError("A dependência pinned do social-auto-upload não está instalada corretamente.") from exc
@@ -566,6 +660,11 @@ def _write_sau_runtime_config() -> Path:
             except FileNotFoundError:
                 pass
     (base / "cookies").mkdir(parents=True, exist_ok=True)
+    # 1.0.06: a CLI upstream lê BASE_DIR/utils/stealth.min.js no
+    # set_init_script de todos os uploaders de browser — sem esta cópia o
+    # check/login/upload falhavam com "ficheiro em falta" mascarado de
+    # "sessão inválida".
+    _ensure_upstream_stealth_asset(base)
     return runtime
 
 
@@ -801,9 +900,44 @@ def login_platform(platform: str, account_name: str, *, timeout_seconds: int = 3
     return {"success": True, "status": "logged_in", "message": "Login visível concluído e sessão validada pela CLI upstream.", "cookie_path": str(cookie_path), "output": _sanitise_sau_output(result.get("stdout"))}
 
 
+def sync_direct_youtube_session_to_cli(account_name: str) -> dict[str, Any]:
+    """Herda a sessão directa YouTube (Rota A) para a conta CLI (Rota B).
+
+    Evita login duplicado: a conta CLI `youtube_<conta>` passa a usar o
+    `storage_state.json` validado pelo login visível da UI, sem exigir
+    `sau youtube login`. Só copia quando a sessão directa é válida E mais
+    recente que o cookie CLI existente — um login CLI próprio (mais fresco)
+    nunca é sobrescrito, e um cookie CLI em falta herda a sessão directa.
+    """
+    account = _validate_sau_account_name(account_name)
+    cli_cookie = get_sau_cookie_path("youtube", account)
+    direct_state = session_state_path()
+    valid, message = validate_storage_state(direct_state, "youtube.com")
+    if not valid:
+        return {"synced": False, "reason": "direct_session_unavailable", "message": message, "cookie_path": str(cli_cookie)}
+    try:
+        if cli_cookie.is_file() and cli_cookie.stat().st_size > 0 and cli_cookie.stat().st_mtime >= direct_state.stat().st_mtime:
+            return {"synced": False, "reason": "cli_cookie_current", "message": "O cookie CLI já é tão recente quanto a sessão directa; nada foi sincronizado.", "cookie_path": str(cli_cookie)}
+    except OSError:
+        pass
+    try:
+        cli_cookie.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(direct_state, cli_cookie)
+    except OSError as exc:
+        return {"synced": False, "reason": "copy_failed", "message": f"Não foi possível herdar a sessão directa para a conta CLI: {type(exc).__name__}: {exc}", "cookie_path": str(cli_cookie)}
+    logging.getLogger("thunderbolt.browser").info(
+        "[SAU-SESSION-SYNC] conta CLI youtube_%s herdou a sessão directa YouTube (cookie: %s)", account, cli_cookie
+    )
+    return {"synced": True, "reason": "synced", "message": "Sessão directa YouTube herdada pela conta CLI; não é preciso login CLI.", "cookie_path": str(cli_cookie)}
+
+
 def check_platform_session(platform: str, account_name: str, *, timeout_seconds: int = 45) -> dict[str, Any]:
     normalised = _normalise_sau_platform(platform)
     account = _validate_sau_account_name(account_name)
+    if normalised == "youtube":
+        # 1.0.06: a conta CLI youtube herda a sessão do login visível da UI
+        # (Rota A) antes de qualquer verificação/upload — sem login duplicado.
+        sync_direct_youtube_session_to_cli(account)
     cookie_path = get_sau_cookie_path(normalised, account)
     if not cookie_path.is_file() or cookie_path.stat().st_size == 0:
         return {"valid": False, "status": "missing", "message": "Cookie ausente; inicie o login visível para esta conta.", "cookie_path": str(cookie_path)}

@@ -158,3 +158,102 @@ def test_launch_browser_async_uses_playwright_for_firefox(monkeypatch):
 
     asyncio.run(run())
     assert calls == [{"headless": True}, "close", "stop"]
+
+
+def _capture_launch_logger():
+    import logging
+
+    records = []
+
+    class CaptureHandler(logging.Handler):
+        def emit(self, record):
+            records.append(record.getMessage())
+
+    handler = CaptureHandler()
+    browser_manager.browser_launch_logger.addHandler(handler)
+    return records, handler
+
+
+def test_camoufox_launch_is_humanized_and_logs_launch_kwargs(monkeypatch):
+    """1.0.06 (PARTE 1): humanize=True no Camoufox + log [BROWSER-LAUNCH]."""
+    calls = []
+
+    class Browser:
+        def close(self):
+            pass
+
+    class Manager:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+
+        def __enter__(self):
+            return Browser()
+
+        def __exit__(self, *args):
+            pass
+
+    camoufox = types.ModuleType("camoufox")
+    camoufox.__path__ = []
+    monkeypatch.setitem(sys.modules, "camoufox", camoufox)
+    sync_api = types.ModuleType("camoufox.sync_api")
+    sync_api.Camoufox = Manager
+    monkeypatch.setitem(sys.modules, "camoufox.sync_api", sync_api)
+
+    records, handler = _capture_launch_logger()
+    try:
+        session = browser_manager.launch_browser(
+            "camoufox", headless=True, proxy={"server": "http://127.0.0.1:7890"}, geoip=True
+        )
+        session.close()
+    finally:
+        browser_manager.browser_launch_logger.removeHandler(handler)
+
+    assert calls and calls[0]["humanize"] is True
+    assert calls[0]["geoip"] is True
+    launch_log = "\n".join(records)
+    assert "[BROWSER-LAUNCH]" in launch_log
+    assert "engine=camoufox" in launch_log
+    assert "headless=True" in launch_log
+    assert "humanize=True" in launch_log
+    assert "geoip=True" in launch_log
+    assert "http://127.0.0.1:7890" in launch_log
+
+
+def test_launch_browser_async_camoufox_is_humanized(monkeypatch):
+    """A Rota A (upload headless) lança o Camoufox via launch_browser_async."""
+    calls = []
+
+    class Browser:
+        async def close(self):
+            pass
+
+    class Manager:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+
+        async def __aenter__(self):
+            return Browser()
+
+        async def __aexit__(self, *args):
+            pass
+
+    camoufox = types.ModuleType("camoufox")
+    camoufox.__path__ = []
+    monkeypatch.setitem(sys.modules, "camoufox", camoufox)
+    async_api = types.ModuleType("camoufox.async_api")
+    async_api.AsyncCamoufox = Manager
+    monkeypatch.setitem(sys.modules, "camoufox.async_api", async_api)
+
+    async def run():
+        session = await browser_manager.launch_browser_async("camoufox", headless=True)
+        await session.close()
+
+    asyncio.run(run())
+    assert calls and calls[0]["humanize"] is True
+
+
+def test_launch_log_masks_proxy_credentials():
+    described = browser_manager._describe_proxy_for_log({"server": "http://user:secret@host:8080"})
+    assert "user:secret" not in described
+    assert "***:***@" in described
+    assert browser_manager._describe_proxy_for_log(None) == "sem proxy"

@@ -13,6 +13,19 @@ from hermes_ui.proxy_manager import normalize_proxy
 logger = logging.getLogger(__name__)
 CAMOUFOX_FETCH_HINT = "Execute python -m camoufox fetch para descarregar o browser Camoufox."
 
+# 1.0.06: logger dedicado de lançamento de browsers — o E2E de stealth
+# verifica engine/headless/proxy/geoip/humanize por aqui (linha
+# "[BROWSER-LAUNCH]" na consola do launcher). Handler próprio em stderr
+# estável, no padrão da telemetria 1.0.05: sem handler, INFO cairia no
+# lastResort do logging (só emite WARNING+) e seria invisível.
+browser_launch_logger = logging.getLogger("thunderbolt.browser")
+browser_launch_logger.setLevel(logging.INFO)
+browser_launch_logger.propagate = False
+if not browser_launch_logger.handlers:
+    _browser_launch_handler = logging.StreamHandler(sys.stderr)
+    _browser_launch_handler.setFormatter(logging.Formatter("%(message)s"))
+    browser_launch_logger.addHandler(_browser_launch_handler)
+
 
 class BrowserLaunchError(RuntimeError):
     """Safe, actionable error raised when a browser cannot be started."""
@@ -85,6 +98,23 @@ def _sanitize_error(exc: BaseException, proxy: Any = None) -> str:
     return message[:700]
 
 
+def _describe_proxy_for_log(proxy_config: Any) -> str:
+    """Proxy seguro para logs: servidor mascarado, credenciais nunca impressas."""
+    if not proxy_config:
+        return "sem proxy"
+    server = str(proxy_config.get("server") or "") if isinstance(proxy_config, dict) else str(proxy_config)
+    server = re.sub(r"(://)[^/@\s]+:[^/@\s]+@", r"\1***:***@", server).strip()
+    return server or "proxy configurado (detalhes ocultos)"
+
+
+def _log_browser_launch(engine: str, *, headless: bool, proxy_config: Any, **extra: Any) -> None:
+    """1.0.06: registo de lançamento para verificação E2E de stealth."""
+    parts = [f"engine={engine}", f"headless={bool(headless)}", f"proxy={_describe_proxy_for_log(proxy_config)}"]
+    for key, value in extra.items():
+        parts.append(f"{key}={value}")
+    browser_launch_logger.info("[BROWSER-LAUNCH] %s", " ".join(parts))
+
+
 def get_available_browsers() -> list[dict[str, str]]:
     return [
         {"type": "camoufox", "label": "Camoufox"},
@@ -155,12 +185,15 @@ def launch_browser(browser_type: str = "camoufox", headless: bool = True, proxy:
         except ImportError as exc:
             raise BrowserLaunchError(f"O pacote Camoufox não está instalado. {CAMOUFOX_FETCH_HINT}") from exc
         def start_camoufox(use_geoip: bool) -> BrowserSession:
-            manager = Camoufox(headless=headless, proxy=proxy_config, geoip=use_geoip)
+            # 1.0.06: humanize=True — cursor humanizado do Camoufox (movimento
+            # ~1,5 s), parte do pacote stealth do upload.
+            manager = Camoufox(headless=headless, proxy=proxy_config, geoip=use_geoip, humanize=True)
             try:
                 browser = manager.__enter__()
             except Exception:
                 manager.__exit__(*sys.exc_info())
                 raise
+            _log_browser_launch("camoufox", headless=headless, proxy_config=proxy_config, geoip=use_geoip, humanize=True)
             return BrowserSession(browser, cleanup=lambda: manager.__exit__(None, None, None))
         try:
             return start_camoufox(bool(geoip))
@@ -187,6 +220,7 @@ def launch_browser(browser_type: str = "camoufox", headless: bool = True, proxy:
         runtime = sync_playwright().start()
         browser_type_obj = runtime.chromium if name == "chromium" else runtime.firefox
         browser = browser_type_obj.launch(headless=bool(headless), **({"proxy": proxy_config} if proxy_config else {}))
+        _log_browser_launch(name, headless=headless, proxy_config=proxy_config, provider=module_name.split(".", 1)[0])
         return BrowserSession(browser, cleanup=runtime.stop)
     except Exception as exc:
         if runtime is not None:
@@ -212,12 +246,14 @@ async def launch_browser_async(browser_type: str = "camoufox", headless: bool = 
         except ImportError as exc:
             raise BrowserLaunchError(f"O pacote Camoufox não está instalado. {CAMOUFOX_FETCH_HINT}") from exc
         async def start_camoufox(use_geoip: bool) -> AsyncBrowserSession:
-            manager = AsyncCamoufox(headless=headless, proxy=proxy_config, geoip=use_geoip)
+            # 1.0.06: humanize=True — cursor humanizado do Camoufox.
+            manager = AsyncCamoufox(headless=headless, proxy=proxy_config, geoip=use_geoip, humanize=True)
             try:
                 browser = await manager.__aenter__()
             except Exception:
                 await manager.__aexit__(*sys.exc_info())
                 raise
+            _log_browser_launch("camoufox", headless=headless, proxy_config=proxy_config, geoip=use_geoip, humanize=True)
             return AsyncBrowserSession(browser, cleanup=lambda: manager.__aexit__(None, None, None))
         try:
             return await start_camoufox(bool(geoip))
@@ -245,6 +281,7 @@ async def launch_browser_async(browser_type: str = "camoufox", headless: bool = 
     try:
         browser_type_obj = runtime.chromium if name == "chromium" else runtime.firefox
         browser = await browser_type_obj.launch(headless=bool(headless), **({"proxy": proxy_config} if proxy_config else {}))
+        _log_browser_launch(name, headless=headless, proxy_config=proxy_config, provider="patchright" if use_patchright else "playwright")
         return AsyncBrowserSession(browser, cleanup=runtime.stop)
     except Exception as exc:
         try:
