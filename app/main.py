@@ -58,6 +58,25 @@ logger = logging.getLogger(__name__)
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# 1.0.05: telemetria [YT-AUTOM] da aba "Automação Youtube" migrada de
+# print(flush=True) para logging. O print crashava com
+# "ValueError: I/O operation on closed file" quando o Streamlit fechava o
+# sys.stdout do script run durante um rerun (ex.: botão "Refazer vídeo") —
+# o _log era chamado no rerun seguinte e o stdout anterior já estava
+# fechado; não era um erro da pipeline de vídeo. O logging emite num
+# handler próprio com referência estável ao stderr UTF-8 real da consola
+# (capturado no import, fora do ciclo de vida do stdout dos reruns) e
+# engole falhas de escrita internamente (Handler.handleError). Sem handler
+# dedicado, INFO cairia no lastResort (só emite WARNING+) e a telemetria
+# de diagnóstico desapareceria em silêncio.
+_automation_logger = logging.getLogger("thunderbolt.automation")
+_automation_logger.setLevel(logging.INFO)
+_automation_logger.propagate = False
+if not _automation_logger.handlers:
+    _automation_stream_handler = logging.StreamHandler(sys.stderr)
+    _automation_stream_handler.setFormatter(logging.Formatter("%(message)s"))
+    _automation_logger.addHandler(_automation_stream_handler)
+
 
 @st.cache_data(show_spinner=False, max_entries=256)
 def _cached_file_bytes(path_string: str, modified_ns: int, size: int) -> bytes:
@@ -7681,7 +7700,15 @@ def render_automation():
     _automation_t0 = _perf_time.perf_counter()
 
     def _log(msg: str) -> None:
-        print(f"[YT-AUTOM] {msg}: {_perf_time.perf_counter() - _automation_t0:.2f}s", flush=True)
+        # 1.0.05: logging em vez de print(flush=True) — o Streamlit pode
+        # fechar o sys.stdout durante um rerun e o print crashava com
+        # "ValueError: I/O operation on closed file". A guarda extra garante
+        # que a telemetria nunca interrompe o render, mesmo se até o stream
+        # do handler estiver fechado.
+        try:
+            _automation_logger.info(f"[YT-AUTOM] {msg}: {_perf_time.perf_counter() - _automation_t0:.2f}s")
+        except (ValueError, OSError):
+            pass
 
     st.title("Automação Youtube")
     st.caption("Agendamento diário da geração por canal. O worker verifica o relógio local do computador e coloca os lotes agendados na fila.")
