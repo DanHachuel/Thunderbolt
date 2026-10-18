@@ -707,6 +707,46 @@ _ensured_storage_root: str | None = None
 SYNC_FINGERPRINT_FILE = ".sync_fingerprint.json"
 
 
+def seed_remotion_skills() -> None:
+    """Copiar as skills de motion graphics (seed → storage) sem sobrescrever.
+
+    1.0.07: a fonte canónica distribuída no pacote é seed/remotion_skills/
+    (18 packs iart-ai/motion-skills, 55 skills); o runtime consulta
+    storage/remotion_skills/. Skills novas de actualizações futuras são
+    adicionadas (ficheiros individuais em falta são copiados), o conteúdo já
+    existente do utilizador nunca é sobrescrito; o index.json — índice da
+    distribuição, não dado do utilizador — é sempre actualizado. O skip pelo
+    index igual evita re-copiar a árvore em cada ensure_storage.
+    """
+    source_root = Path(__file__).resolve().parents[1] / "seed" / "remotion_skills"
+    if not source_root.is_dir():
+        return
+    target_root = STORAGE / "remotion_skills"
+    source_index = source_root / "index.json"
+    target_index = target_root / "index.json"
+    try:
+        if target_index.is_file() and source_index.is_file() and target_index.read_text(encoding="utf-8") == source_index.read_text(encoding="utf-8"):
+            return  # cópia runtime já sincronizada com a fonte distribuída
+    except OSError:
+        pass
+    for source in sorted(source_root.rglob("*")):
+        if not source.is_file() or source.name == "index.json":
+            continue
+        target = target_root / source.relative_to(source_root)
+        if not target.exists():
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+            except OSError:
+                continue
+    try:
+        if source_index.is_file():
+            target_root.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_index, target_index)
+    except OSError:
+        pass
+
+
 def compute_scripts_fingerprint() -> str:
     """Hash determinístico de (path, mtime_ns, size) dos roteiros + índice."""
     h = hashlib.sha256()
@@ -769,6 +809,7 @@ def ensure_storage() -> None:
         seed_prompt_masters()
         from hermes_ui.music_blueprints import seed_music_blueprints
         seed_music_blueprints()
+        seed_remotion_skills()
         for filename, default in DEFAULTS.items():
             target = STATE / filename
             if not target.exists():

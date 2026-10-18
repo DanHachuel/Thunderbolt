@@ -74,6 +74,61 @@ def test_remotion_style_options_start_with_free_default_and_known_skills():
     assert "Hand-drawn Canvas Animation" in remotion
 
 
+def test_remotion_style_options_match_extracted_skills_index():
+    """A lista da UI espelha o índice das skills extraídas (iart-ai/motion-skills)."""
+    import json
+
+    index_path = ROOT / "seed" / "remotion_skills" / "index.json"
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    extracted = [skill["name"] for pack in index["packs"] for skill in pack["skills"]]
+    assert len(index["packs"]) == 18
+    assert len(extracted) == 55
+    remotion = _constant("REMOTION_STYLE_OPTIONS")
+    # 3 motores internos + todas as skills extraídas, sem duplicados.
+    assert len(remotion) == 3 + len(extracted)
+    assert len(set(remotion)) == len(remotion)
+    assert remotion[:3] == ["Sem Estilo/Livre", "Vox-style Motion", "Hand-drawn Canvas Animation"]
+    assert set(remotion[3:]) == set(extracted)
+
+
+def test_extracted_skills_have_skill_md_on_disk():
+    """Cada skill extraída é autocontida: SKILL.md obrigatório em cada pasta (fonte seed)."""
+    skills_root = ROOT / "seed" / "remotion_skills"
+    packs = [item for item in skills_root.iterdir() if item.is_dir()]
+    assert len(packs) == 18
+    skills = [item for pack in packs for item in pack.iterdir() if item.is_dir()]
+    assert len(skills) == 55
+    for skill_dir in skills:
+        assert (skill_dir / "SKILL.md").is_file(), f"SKILL.md em falta: {skill_dir}"
+
+
+def test_ensure_storage_copies_remotion_skills_to_runtime_storage(tmp_path, monkeypatch):
+    """O ensure_storage materializa a cópia runtime em storage/remotion_skills/."""
+    from hermes_ui import storage
+
+    root = tmp_path / "storage"
+    monkeypatch.setenv("THUNDERBOLT_STORAGE_DIR", str(root))
+    storage.STORAGE = root
+    storage.STATE = root / "state"
+    storage.BLUEPRINTS = root / "blueprints"
+    storage._ensured_storage_root = None
+    storage.ensure_storage()
+
+    runtime = root / "remotion_skills"
+    index = runtime / "index.json"
+    assert index.is_file()
+    skills = [item for pack in runtime.iterdir() if pack.is_dir() for item in pack.iterdir() if item.is_dir()]
+    assert len(skills) == 55
+    assert (runtime / "tiktok-video-skills" / "short-form-video" / "SKILL.md").is_file()
+
+    # Ficheiro editado pelo utilizador não é sobrescrito num re-seed.
+    marker = runtime / "tiktok-video-skills" / "short-form-video" / "SKILL.md"
+    marker.write_text("# edição local do utilizador", encoding="utf-8")
+    storage._ensured_storage_root = None
+    storage.ensure_storage()
+    assert marker.read_text(encoding="utf-8") == "# edição local do utilizador"
+
+
 # ── UI do card do canal ──────────────────────────────────────────────────────
 
 

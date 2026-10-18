@@ -1,0 +1,426 @@
+{
+  "source": "https://github.com/iart-ai/motion-skills",
+  "license": "MIT",
+  "packs": [
+    {
+      "name": "ad-video-skills",
+      "skills": [
+        {
+          "id": "ad-creative-video",
+          "name": "Ad Creative Video",
+          "description": "This skill should be used when the user asks to \"make a video ad\", \"create an animated ad\", \"build a performance/UGC-style ad\", \"batch-produce ad creative variations\", \"generate ad variants for A/B testing\", \"swap headline/offer/CTA across many ad versions\", or \"export one ad in multiple aspect ratios for Meta/TikTok/Reels\". Covers ad hook structures, hook→CTA message-match, data-driven variant ge",
+          "folder": "ad-video-skills/ad-creative-video"
+        },
+        {
+          "id": "launch-video",
+          "name": "Launch Video",
+          "description": "This skill should be used when the user asks to \"make a launch video\", \"create a product hype/sizzle film\", \"build a teaser/trailer for a drop\", \"do a reveal montage with an end-card CTA\", \"cut a hero video to the beat\", or \"export a launch film in 16:9/9:16/1:1\". Covers the hook→tease→reveal→feature-montage→end-card arc and multi-aspect export.",
+          "folder": "ad-video-skills/launch-video"
+        },
+        {
+          "id": "testimonial-video",
+          "name": "Testimonial Video",
+          "description": "This skill should be used when the user asks to \"make an animated testimonial\", \"create a quote video\", \"build a review video\", \"turn a customer testimonial into a graphic\", \"animate a customer review\", \"make a social proof video\", \"add an animated star rating\", or \"turn a list of reviews into videos\". Covers quote typography, staggered line reveals, kinetic emphasis on key phrases, animated star ",
+          "folder": "ad-video-skills/testimonial-video"
+        }
+      ]
+    },
+    {
+      "name": "b-roll-skills",
+      "skills": [
+        {
+          "id": "talking-head-b-roll",
+          "name": "Talking-head B-roll",
+          "description": "Add b-roll motion graphics to a talking-head video. Transcribes the recording with word timings, decides line by line when the speaker is shown, when a graphic is laid over them and when a full-frame graphic covers them, draws each graphic from what is actually said (numbers, comparisons, steps, key words) in JavaScript on a canvas, and renders the finished MP4 with the original sound, plus the b-",
+          "folder": "b-roll-skills/talking-head-b-roll"
+        }
+      ]
+    },
+    {
+      "name": "data-animation-skills",
+      "skills": [
+        {
+          "id": "animated-infographic",
+          "name": "Animated Infographic",
+          "description": "This skill should be used when the user asks to \"make an animated infographic\", \"create an infographic video\", \"build an infographic animation\", \"animate an explainer infographic\", \"do a sequenced reveal of icons and stats\", \"animate icons with key numbers and connectors\", or \"lay out a designed infographic that animates in sequence\". Covers infographic layout & visual hierarchy, staggered element",
+          "folder": "data-animation-skills/animated-infographic"
+        },
+        {
+          "id": "chart-animation",
+          "name": "Chart Animation",
+          "description": "This skill should be used when the user asks to \"make a bar chart race\", \"turn a CSV into a video\", \"build an animated data visualization\", \"create an animated statistics video\", \"animate a chart/graph\", \"make a number counter/ticker\", \"animate a ranking over time\", or \"batch-render one chart template across many datasets\". Covers data-driven keyframing, value interpolation, rank transitions, coun",
+          "folder": "data-animation-skills/chart-animation"
+        },
+        {
+          "id": "presentation-video",
+          "name": "Presentation Video",
+          "description": "This skill should be used when the user asks to \"make an animated presentation\", \"turn a pitch deck into a video\", \"convert slides/a deck to video\", \"make a presentation video\", \"build a deck video\", \"narrate a slide deck as a video\", or \"auto-advance slides synced to a voiceover\". Covers rebuilding slides as motion graphics with staggered build reveals, slide-to-slide transitions, and timing lock",
+          "folder": "data-animation-skills/presentation-video"
+        }
+      ]
+    },
+    {
+      "name": "ecommerce-video-skills",
+      "skills": [
+        {
+          "id": "photo-slideshow",
+          "name": "Photo Slideshow",
+          "description": "This skill should be used when the user asks to \"make a photo slideshow\", \"turn photos into a video\", \"create a photo montage video\", \"make a picture slideshow with music\", \"build a memories/recap video from photos\", \"add Ken Burns pan/zoom to photos\", \"sync slide changes to the music beat\", or \"render a video from a folder of images\". Covers per-photo Ken Burns motion, transitions, beat-synced ti",
+          "folder": "ecommerce-video-skills/photo-slideshow"
+        },
+        {
+          "id": "product-demo-video",
+          "name": "Product Demo Video",
+          "description": "This skill should be used when the user asks to \"make a product demo video\", \"create an app demo video\", \"build a feature announcement video\", \"do a SaaS demo\", \"make a UI walkthrough video\", \"animate product screenshots into a demo\", \"add an animated cursor/click to a screenshot\", or \"zoom into part of a UI\". Covers turning static screenshots/designs (not screen recordings) into a clean animated ",
+          "folder": "ecommerce-video-skills/product-demo-video"
+        },
+        {
+          "id": "promo-video",
+          "name": "Promo Video",
+          "description": "This skill should be used when the user asks to \"make a sale video\", \"create a promo video\", \"build a discount/percentage-off reveal\", \"animate a was→now price with a strike-through\", \"do a Black Friday / flash-sale / clearance video\", \"make a promo-code reveal with a countdown\", or \"batch a promo template across many products\". Covers the offer-announcement arc — discount reveal, price strike-thr",
+          "folder": "ecommerce-video-skills/promo-video"
+        }
+      ]
+    },
+    {
+      "name": "explainer-video-skills",
+      "skills": [
+        {
+          "id": "diagram-animation",
+          "name": "Diagram Animation",
+          "description": "This skill should be used when the user asks to \"animate this diagram\", \"build a flowchart that reveals step by step\", \"animate an architecture/sequence diagram\", \"make a chart animate in\", \"grow the bars / draw the line / count up the number\", \"show data flowing along a connector\", or \"turn a static diagram into a guided reveal\". Covers SVG, Framer Motion, D3, and Remotion.",
+          "folder": "explainer-video-skills/diagram-animation"
+        },
+        {
+          "id": "explainer-video",
+          "name": "Explainer Video",
+          "description": "This skill should be used when the user asks to \"make an explainer video\", \"turn this into a short explainer\", \"write a script and storyboard for a product video\", \"produce a how-it-works/onboarding video\", \"sync narration and captions\", or \"build a 30–90s animated explainer\". Covers script→storyboard→scene build→narration/caption sync→edit→polish.",
+          "folder": "explainer-video-skills/explainer-video"
+        },
+        {
+          "id": "isometric-animation",
+          "name": "Isometric Animation",
+          "description": "This skill should be used when the user asks to \"make an isometric animation\", \"build a 2.5D isometric scene\", \"create an isometric infographic\", \"animate an exploded diagram\", \"do an isometric city/stack build\", \"show stacked layers in iso\", \"extrude blocks with depth\", or \"add a gentle camera drift to an iso scene\". Covers CSS 3D transforms, SVG iso planes, and Three.js OrthographicCamera for tr",
+          "folder": "explainer-video-skills/isometric-animation"
+        },
+        {
+          "id": "whiteboard-animation",
+          "name": "Whiteboard Animation",
+          "description": "This skill should be used when the user asks to \"make a whiteboard animation\", \"draw-on explainer\", \"VideoScribe style\", \"hand-drawn explainer video\", \"animate a sketch being drawn\", \"do a doodle/scribe video\", \"show a hand drawing the illustration\", or \"animate handwriting appearing on a whiteboard\". Covers SVG stroke draw-on, a marker hand that follows the path tip, staggered reveal, erase/wipe ",
+          "folder": "explainer-video-skills/whiteboard-animation"
+        },
+        {
+          "id": "wrapped-video",
+          "name": "Wrapped Video",
+          "description": "This skill should be used when the user asks to \"make a Spotify Wrapped style video\", \"build a year in review / year-in-review video\", \"create a personalized data video\", \"generate a recap video\", \"build a wrapped video generator\", \"turn a data table into shareable videos\", or \"make per-user stat videos\". Covers the data row → one shareable video pattern, the Wrapped scene grammar (big-number reve",
+          "folder": "explainer-video-skills/wrapped-video"
+        }
+      ]
+    },
+    {
+      "name": "freelance-motion-skills",
+      "skills": [
+        {
+          "id": "brand-motion-guidelines",
+          "name": "Brand Motion Guidelines",
+          "description": "This skill should be used when the user asks to \"write motion guidelines\", \"create a brand motion system\", \"define easing and timing tokens\", \"document our animation principles\", \"build a motion language like Slack/IBM/Klarna\", \"set up entrance/exit/transition rules\", or \"add a reduced-motion / accessibility section\". It outputs a fill-in-ready brand motion guidelines document.",
+          "folder": "freelance-motion-skills/brand-motion-guidelines"
+        },
+        {
+          "id": "client-revisions",
+          "name": "Client Revisions",
+          "description": "This skill should be used when the user asks to \"stop scope creep\", \"limit revision rounds\", \"write SOW revision language\", \"the client keeps asking for changes\", \"how do I say this is out of scope\", \"translate vague feedback\", \"client said make it pop\", or \"write a change-order email\". It provides revision-cap contract language, a consolidated-feedback request, a vague-feedback translator, and a ",
+          "folder": "freelance-motion-skills/client-revisions"
+        },
+        {
+          "id": "creative-brief",
+          "name": "Creative Brief",
+          "description": "This skill should be used when the user asks to \"write a creative brief\", \"build a motion brief\", \"the client doesn't know what they want\", \"turn this vague client request into a brief\", \"what questions should I ask the client\", or \"make a brief I can get sign-off on\". It turns a fuzzy client ask into a structured, sign-off-ready motion design brief and the exact clarifying questions to send back.",
+          "folder": "freelance-motion-skills/creative-brief"
+        },
+        {
+          "id": "motion-pricing",
+          "name": "Motion Pricing",
+          "description": "This skill should be used when the user asks to \"quote a motion project\", \"estimate this animation job\", \"how much should I charge for this video\", \"what's my day rate\", \"build a quote\", \"price a 30-second explainer\", or \"is this estimate fair\". It explains motion-design pricing models, the day-rate math, the cost drivers, and outputs a line-itemed quote with a worked example.",
+          "folder": "freelance-motion-skills/motion-pricing"
+        },
+        {
+          "id": "video-delivery-specs",
+          "name": "Video Delivery Specs",
+          "description": "This skill should be used when the user asks \"what are the specs for Instagram Reels / TikTok / YouTube / broadcast\", \"export settings for social\", \"what aspect ratio and bitrate\", \"how do I repurpose 16:9 to 9:16\", \"safe area / title-safe for vertical\", \"pre-delivery checklist\", or \"collect files for handover\". It outputs per-platform spec sheets, a cutdown matrix, captioning/accessibility notes,",
+          "folder": "freelance-motion-skills/video-delivery-specs"
+        }
+      ]
+    },
+    {
+      "name": "generative-illustration-skills",
+      "skills": [
+        {
+          "id": "generative-illustration",
+          "name": "Generative Illustration",
+          "description": "This skill should be used when the user asks to \"make an animated illustration\", \"animate an illustration\", \"make a generative motion piece\" / \"动态平面\", \"turn AI-generated art into something that moves\", \"make a poetic or ambient motion piece / motion poem\", \"make a visual metaphor\", or \"combine AI-generated visuals with code-driven motion\". Covers generating isolated illustration assets with AI, co",
+          "folder": "generative-illustration-skills/generative-illustration"
+        }
+      ]
+    },
+    {
+      "name": "javascript-animation-skills",
+      "skills": [
+        {
+          "id": "javascript-animation",
+          "name": "JavaScript Animation",
+          "description": "This skill should be used when the user asks to \"draw every frame in JavaScript\", \"make an animation with no image assets\", \"animate this in code / on a canvas\", \"make a hand-drawn style animated video\", \"turn this into a short animated film\", \"make an animated explainer drawn in code\", \"make an animated story / picture book of my photos\", or \"make a zero-asset animation like the Opus 5.5 ones\". P",
+          "folder": "javascript-animation-skills/javascript-animation"
+        },
+        {
+          "id": "soundtrack",
+          "name": "Code-made Soundtrack",
+          "description": "This skill should be used when the user asks to \"add music to the animation\", \"make the music in code\", \"synthesize a soundtrack\", \"compose background music that fits the cuts\", \"sync the music to the video\", \"check if the audio lines up with the picture\", or \"the music is too sudden / startling\". Covers a code-synthesized score that lives inside the animation page (Web Audio API, rendered offline",
+          "folder": "javascript-animation-skills/soundtrack"
+        }
+      ]
+    },
+    {
+      "name": "kinetic-typography-skills",
+      "skills": [
+        {
+          "id": "kinetic-typography",
+          "name": "Kinetic Typography",
+          "description": "This skill should be used when the user asks to \"animate a headline\", \"make a kinetic typography video\", \"do a split-text reveal\", \"stagger text by character/word/line\", \"make a lyric or caption video\", \"animate a variable font weight\", \"put text on a path\", or \"create an animated title card\". Covers reveal techniques in CSS, GSAP SplitText, Framer Motion, and Remotion.",
+          "folder": "kinetic-typography-skills/kinetic-typography"
+        }
+      ]
+    },
+    {
+      "name": "lower-thirds-skills",
+      "skills": [
+        {
+          "id": "lower-thirds",
+          "name": "Lower Thirds",
+          "description": "Make animated lower thirds and other broadcast overlays (name straps, corner bugs, subscribe reminders, scripture or song titles) as transparent video files, drawn frame by frame in JavaScript on a canvas and rendered to WebM with alpha for OBS and browsers, or ProRes 4444 for Premiere Pro, DaVinci Resolve and Final Cut. Use when someone wants a lower third, a name title, a chyron, a stream overla",
+          "folder": "lower-thirds-skills/lower-thirds"
+        }
+      ]
+    },
+    {
+      "name": "manim-skills",
+      "skills": [
+        {
+          "id": "manim",
+          "name": "Manim",
+          "description": "This skill should be used when the user asks to \"make a math animation\", \"animate an equation\", \"use Manim\", \"make a 3Blue1Brown-style video\", \"plot or animate a graph/function\", \"visualize a math/physics/CS concept\", \"morph one formula into another\", \"animate a geometric proof\", or \"render a math explainer\". Covers Manim Community Edition — Scenes, Mobjects, animations, LaTeX/MathTex, graphs, upd",
+          "folder": "manim-skills/manim"
+        }
+      ]
+    },
+    {
+      "name": "map-animation-skills",
+      "skills": [
+        {
+          "id": "map-animation",
+          "name": "Map Animation",
+          "description": "This skill should be used when the user asks to \"make a Vox-style map animation\", \"animate a map zoom\", \"draw a route on a map\", \"highlight a country/region\", \"use Google Earth Studio\", \"drop pins on a map and animate them\", \"pan/orbit a camera over a map\", or \"add map graphics to an explainer video\". Covers Earth Studio→After Effects camera import, GeoJSON/SVG vector map motion, pins/routes/highl",
+          "folder": "map-animation-skills/map-animation"
+        }
+      ]
+    },
+    {
+      "name": "motion-design-skills",
+      "skills": [
+        {
+          "id": "after-effects",
+          "name": "After Effects",
+          "description": "This skill should be used when the user asks anything about Adobe After Effects — to \"write an After Effects expression\", \"make a wiggle / loopOut / inertial bounce\", \"rig a control with a slider / null\", \"build a MOGRT / Essential Graphics template\", \"export AE to Lottie or Media Encoder\"; OR to \"export from After Effects\", \"export with transparency / an alpha channel\", \"fix a black background on",
+          "folder": "motion-design-skills/after-effects"
+        },
+        {
+          "id": "animation-principles",
+          "name": "Animation Principles",
+          "description": "This skill should be used when the user asks to \"make this animation feel natural\", \"fix motion that feels stiff/floaty/cheap\", \"my animation looks robotic\", \"choose an easing curve\", \"how do I use the Graph Editor\", \"add overshoot or bounce\", \"Easy Ease isn't enough\", \"make snappy motion\", \"pick a duration for this transition\", \"stagger a list animation\", \"sync animation to a beat\", or \"review mo",
+          "folder": "motion-design-skills/animation-principles"
+        },
+        {
+          "id": "beat-sync-editing",
+          "name": "Beat-sync Editing",
+          "description": "This skill should be used when the user asks to \"cut to the beat\", \"fix the pacing\", \"edit this sequence\", \"sync cuts to music/BPM\", \"add a match cut / J-cut / L-cut\", \"build a speed ramp\", or \"plan a shot sequence / edit timeline\". Covers editing rhythm, transitions, retiming, and translating an edit plan to an NLE or a code timeline (Remotion/AE frames).",
+          "folder": "motion-design-skills/beat-sync-editing"
+        },
+        {
+          "id": "color-motion",
+          "name": "Color Motion",
+          "description": "This skill should be used when the user asks to \"build a color palette for a motion piece\", \"make a gradient background\", \"animate a color transition\", \"interpolate colors smoothly\", \"fix muddy/gray gradients\", \"convert colors to OKLCH\", \"color-grade a video for mood\", \"fix washed-out After Effects renders\", \"gamma shift\", \"Rec.709 vs sRGB\", \"colors shifted after rendering\", or \"match preview to f",
+          "folder": "motion-design-skills/color-motion"
+        },
+        {
+          "id": "logo-animation",
+          "name": "Logo Animation",
+          "description": "This skill should be used when the user asks to \"animate our logo\", \"make a logo intro/stinger\", \"build a brand reveal\", \"create an app splash animation\", \"loop a loader logo\", \"draw on our SVG mark\", \"morph an icon into the wordmark\", or \"sync the logo to a sound-logo\". Covers web (SVG/Lottie), video, and app-splash delivery.",
+          "folder": "motion-design-skills/logo-animation"
+        },
+        {
+          "id": "motion-art-direction",
+          "name": "Motion Art Direction",
+          "description": "This skill should be used when the user asks to \"direct a motion graphics video\", \"do creative/art direction for a video\", \"define a motion language\", \"set the tone and pacing\", \"make the animation feel consistent\", \"decide what to animate (and what not to)\", \"turn a brief/brand into motion choices\", or needs the senior creative judgment that sits above specific techniques (gsap/lottie/shader). Co",
+          "folder": "motion-design-skills/motion-art-direction"
+        },
+        {
+          "id": "motion-background",
+          "name": "Motion Background",
+          "description": "This skill should be used when the user asks to \"add an animated background\", \"build a mesh/gradient background\", \"make an aurora/shader background\", \"add constellation/particle background\", \"animated hero background\", or \"a subtle looping background behind content\". Covers CSS mesh gradients, GLSL shader gradients (Three.js), canvas particle constellations, seamless loops, and reduced-motion/perf",
+          "folder": "motion-design-skills/motion-background"
+        },
+        {
+          "id": "remotion-video",
+          "name": "Remotion Video",
+          "description": "This skill should be used when the user asks to \"make a video with Remotion\", \"create a programmatic/data-driven video in React\", \"render an MP4/GIF from code\", \"animate with useCurrentFrame/interpolate/spring\", \"sync video to audio/beats\", or \"render a templated video per record headlessly\". Covers building React compositions and rendering them via CLI or @remotion/renderer.",
+          "folder": "motion-design-skills/remotion-video"
+        },
+        {
+          "id": "shot-composition",
+          "name": "Shot Composition",
+          "description": "This skill should be used when the user asks to \"compose a frame\", \"set up a grid\", \"plan shot composition\", \"place the focal point\", \"decide where elements enter and exit\", \"add a parallax/camera move\", \"adapt a layout for 16:9 / 9:16 / 1:1\", or \"keep content inside safe areas\". Covers grids, safe areas, focal hierarchy, and 2D/3D camera framing.",
+          "folder": "motion-design-skills/shot-composition"
+        }
+      ]
+    },
+    {
+      "name": "text-message-video-skills",
+      "skills": [
+        {
+          "id": "text-message-animation",
+          "name": "Text Message Animation",
+          "description": "This skill should be used when the user asks to \"make a fake text message video\", \"animate an iMessage conversation\", \"create a text story video\", \"do a chat reply animation\", \"WhatsApp/SMS conversation video\", \"typing indicator animation\", \"render a chat thread to a video\", or \"batch text-message videos from a script/CSV\". Covers sent/received bubble layout, staggered appear timing with typing in",
+          "folder": "text-message-video-skills/text-message-animation"
+        }
+      ]
+    },
+    {
+      "name": "tiktok-video-skills",
+      "skills": [
+        {
+          "id": "caption-animation",
+          "name": "Caption Animation",
+          "description": "This skill should be used when the user asks to \"add animated captions\", \"make TikTok captions\", \"karaoke captions\", \"word-by-word subtitles\", \"auto subtitles\", \"highlight the active word\", \"burn in captions to a video\", \"sync captions to a voiceover/narration\", or \"turn an SRT/transcript into animated text\". Covers word-level timing from Whisper, per-word pop/scale-in, active-word highlight, 9:16",
+          "folder": "tiktok-video-skills/caption-animation"
+        },
+        {
+          "id": "countdown-video",
+          "name": "Countdown Video",
+          "description": "This skill should be used when the user asks to \"make a countdown timer video\", \"create a countdown animation\", \"build a stream starting soon countdown\", \"do an event/launch/sale countdown\", \"animate a mm:ss or dd:hh:mm:ss timer\", \"add digit roll/flip transitions to a counter\", or \"loop a countdown background\". Covers frame-accurate (drift-free) timers, digit flip/roll motion, time formatting, and",
+          "folder": "tiktok-video-skills/countdown-video"
+        },
+        {
+          "id": "lower-thirds",
+          "name": "Lower Thirds — TikTok",
+          "description": "This skill should be used when the user asks to \"make an animated lower third\", \"add lower thirds\", \"create a name tag/name lower third\", \"build broadcast titles\", \"animate a title/name/role caption\", \"do a speaker name overlay\", or \"template lower thirds across a list of names\". Covers enter/exit animation (slide/wipe/mask reveal), in/out timing & dwell, safe-area & broadcast conventions, name-vs",
+          "folder": "tiktok-video-skills/lower-thirds"
+        },
+        {
+          "id": "short-form-video",
+          "name": "Short-form Video",
+          "description": "This skill should be used when the user asks to \"make a Reels/TikTok/YouTube Shorts video\", \"build a short-form video template\", \"write a hook for a short\", \"edit for retention\", \"add pattern interrupts\", \"make a video loop\", \"fix the first 3 seconds\", \"pace cuts for a vertical video\", or \"set up 9:16 safe areas\". Covers the hook→retention→loop grammar of vertical short-form (distinct from a launc",
+          "folder": "tiktok-video-skills/short-form-video"
+        }
+      ]
+    },
+    {
+      "name": "web-animation-skills",
+      "skills": [
+        {
+          "id": "60fps-animation",
+          "name": "60fps Animation",
+          "description": "This skill should be used when the user asks to \"fix janky CSS animation\", \"make animation 60fps\", \"stop layout thrashing\", \"animate width/height/top/left smoothly\", \"convert animation to transform\", \"animate box-shadow performantly\", \"animate height auto\", \"FLIP animation\", or \"why is my scroll/hover animation choppy\".",
+          "folder": "web-animation-skills/60fps-animation"
+        },
+        {
+          "id": "accessible-animation",
+          "name": "Accessible Animation",
+          "description": "This skill should be used when the user asks to \"respect prefers-reduced-motion\", \"honor reduced motion\", \"make my animations accessible\", \"fix vestibular / motion-sickness issues\", \"add a useReducedMotion hook\", \"gate GSAP / Framer Motion / Lenis for reduced motion\", or \"meet WCAG 2.3.3 / C39\". Provides tiered (not all-or-nothing) reduced-motion patterns in CSS and JS.",
+          "folder": "web-animation-skills/accessible-animation"
+        },
+        {
+          "id": "ascii-animation",
+          "name": "ASCII Animation",
+          "description": "This skill should be used when the user asks to \"make an ASCII animation\", \"build a terminal/CLI intro or loader\", \"convert an image or video to ASCII art\", \"add an ASCII shader/post-effect to a canvas or Three.js scene\", \"create retro/hacker text-character motion\", or \"animate text characters with a brightness ramp\". Covers generative ASCII fields, image/video/3D-to-ASCII, and animated character ",
+          "folder": "web-animation-skills/ascii-animation"
+        },
+        {
+          "id": "glassmorphism",
+          "name": "Glassmorphism",
+          "description": "This skill should be used when the user asks to \"add a glassmorphism effect\", \"frosted glass UI\", \"Apple liquid glass style\", \"frosted blur card\", \"translucent glass panel animation\", \"make a frosted nav bar\", \"build a glass modal/dialog\", \"animate a glass card on hover\", or \"add a refracting liquid-glass hero\". Covers frosted translucent panels with backdrop-filter blur, edge/specular highlights,",
+          "folder": "web-animation-skills/glassmorphism"
+        },
+        {
+          "id": "gsap-web",
+          "name": "GSAP Web",
+          "description": "This skill should be used when the user asks to \"build a scroll animation\", \"add ScrollTrigger\", \"pin a section while scrolling\", \"scrub an animation to scroll\", \"create a hero timeline\", \"do a horizontal scroll section\", \"split text and animate words\", \"animate a layout change with GSAP Flip\", \"sync ScrollTrigger with Lenis\", \"Lenis smooth scroll jittery\", \"ScrollTrigger markers drift\", \"ScrollTr",
+          "folder": "web-animation-skills/gsap-web"
+        },
+        {
+          "id": "lottie-animation",
+          "name": "Lottie Animation",
+          "description": "This skill should be used when the user asks to \"add a Lottie animation\", \"play a .lottie or .json animation\", \"integrate a Bodymovin/After Effects animation on web or mobile\", \"control Lottie playback / segments\", \"make a scroll-driven Lottie\", \"recolor a Lottie at runtime\", or \"export an AE animation to Lottie\". Covers dotLottie/lottie-web integration, playback control, interactivity, theming, a",
+          "folder": "web-animation-skills/lottie-animation"
+        },
+        {
+          "id": "micro-interaction",
+          "name": "Micro-interaction",
+          "description": "This skill should be used when the user asks to \"add a hover/press effect\", \"animate a toggle or switch\", \"build an animated like button\", \"make a toast/snackbar slide in\", \"animate a drawer or modal\", \"animate list reordering or add/remove\", \"do a shared-element layout transition\", or \"polish UI feedback\". Covers UI motion with Framer Motion (motion/react) and modern CSS.",
+          "folder": "web-animation-skills/micro-interaction"
+        },
+        {
+          "id": "page-transition-animation",
+          "name": "Page Transition Animation",
+          "description": "This skill should be used when the user asks to \"animate page or route transitions\", \"add a page transition or crossfade between views\", \"animate route changes in Next.js App Router\", \"use the View Transitions API\", \"AnimatePresence exit doesn't fire on navigation\", or \"Framer Motion exit animation not working / exit animation before unmount in Next.js\". Covers enter/exit page-transition animation",
+          "folder": "web-animation-skills/page-transition-animation"
+        },
+        {
+          "id": "svg-animation",
+          "name": "SVG Animation",
+          "description": "This skill should be used when the user asks to \"animate an SVG\", \"make a line draw itself on\", \"do a stroke draw-on / signature animation\", \"morph one shape into another\", \"move an element along a path\", \"animate an icon/logo\", or \"animate an SVG gradient or filter\". Covers stroke-dashoffset draw-on, path morphing, motion-along-path, and animated icons/gradients/filters via CSS, SMIL, and GSAP.",
+          "folder": "web-animation-skills/svg-animation"
+        }
+      ]
+    },
+    {
+      "name": "webgl-animation-skills",
+      "skills": [
+        {
+          "id": "particle-system",
+          "name": "Particle System",
+          "description": "This skill should be used when the user asks to \"build a particle system\", \"make confetti/snow/smoke/sparks\", \"create a connected-dot/constellation network background\", \"add a flow-field or curl-noise particle effect\", \"render thousands of GPU particles with Three.js Points\", or \"animate emitters with forces\". Covers per-particle integration, forces, flow fields, burst/continuous emission, spatial",
+          "folder": "webgl-animation-skills/particle-system"
+        },
+        {
+          "id": "shader-glsl",
+          "name": "Shader (GLSL)",
+          "description": "This skill should be used when the user asks to \"write a fragment shader\", \"make a GLSL gradient/noise/plasma background\", \"create an image transition (dissolve, displacement, glitch)\", \"add distortion or chromatic aberration\", \"build an SDF shape shader\", \"wire up a Three.js ShaderMaterial with uniforms\", or \"do GPU post-processing\". Covers GLSL fragment shaders, noise/fbm, SDFs, domain warping, ",
+          "folder": "webgl-animation-skills/shader-glsl"
+        },
+        {
+          "id": "threejs-animation",
+          "name": "Three.js Animation",
+          "description": "This skill should be used when the user asks to \"build a 3D hero section or WebGL background\", \"animate a Three.js scene\", \"play or crossfade GLTF animation clips\", \"move/lerp the camera or link it to scroll\", \"render thousands of objects with InstancedMesh\", \"set up React Three Fiber (R3F) motion\", \"add bloom/DOF post-processing\", or \"keep a Three.js/R3F animation smooth and leak-free (dispose ge",
+          "folder": "webgl-animation-skills/threejs-animation"
+        }
+      ]
+    },
+    {
+      "name": "youtube-video-skills",
+      "skills": [
+        {
+          "id": "audiogram",
+          "name": "Audiogram",
+          "description": "This skill should be used when the user asks to \"make an audiogram\", \"turn a podcast into a video\", \"create a waveform video\", \"make a podcast clip video\", \"convert audio to video\", \"animate a waveform/audio bars\", \"add a moving waveform to my voiceover\", or \"make a square/vertical clip for a podcast quote\". Covers amplitude-driven waveforms, frequency bars, synced captions, cover-art layout, a pr",
+          "folder": "youtube-video-skills/audiogram"
+        },
+        {
+          "id": "youtube-intro-outro",
+          "name": "YouTube Intro/Outro",
+          "description": "This skill should be used when the user asks to \"make a YouTube intro\", \"create a channel intro\", \"build a logo sting/bumper\", \"design an outro / end screen / end card\", \"add subscribe and next-video cards\", \"make an intro animation\", \"build a reusable intro template\", or \"sync the logo reveal to an audio sting\". Covers the 3-5s branded intro, the last-20s end-screen outro inside YouTube's element",
+          "folder": "youtube-video-skills/youtube-intro-outro"
+        }
+      ]
+    }
+  ]
+}

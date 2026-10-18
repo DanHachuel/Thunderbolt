@@ -322,15 +322,71 @@ AI_STYLE_OPTIONS = [
     "Pixar Style",
 ]
 
-# 1.0.06: skills de composição Remotion seleccionáveis como "Estilo" do canal.
-# O motor HandDrawnCanvas (hand-drawn-canvas-animation) já existe nas composições
-# (docs/remotion.md); as restantes skills da lista completa do utilizador são
-# adicionadas aqui quando fornecidas.
+# 1.0.07: skills de motion graphics do hub iart-ai/motion-skills (MIT) —
+# 18 packs, 55 skills. Fonte canónica distribuída: seed/remotion_skills/
+# (SKILL.md + README.md + references/ + scripts/, índice index.json); cópia
+# runtime criada pelo ensure_storage() em storage/remotion_skills/. Os 3
+# primeiros itens são os motores internos do Thunderbolt (livre, mapas
+# estilo Vox, canvas desenhado à mão).
 REMOTION_STYLE_OPTIONS = [
     "Sem Estilo/Livre",
     "Vox-style Motion",
     "Hand-drawn Canvas Animation",
-    # ... adicionar as restantes 15 skills quando o utilizador fornecer a lista completa
+    "Ad Creative Video",
+    "Launch Video",
+    "Testimonial Video",
+    "Talking-head B-roll",
+    "Animated Infographic",
+    "Chart Animation",
+    "Presentation Video",
+    "Photo Slideshow",
+    "Product Demo Video",
+    "Promo Video",
+    "Diagram Animation",
+    "Explainer Video",
+    "Isometric Animation",
+    "Whiteboard Animation",
+    "Wrapped Video",
+    "Brand Motion Guidelines",
+    "Client Revisions",
+    "Creative Brief",
+    "Motion Pricing",
+    "Video Delivery Specs",
+    "Generative Illustration",
+    "JavaScript Animation",
+    "Code-made Soundtrack",
+    "Kinetic Typography",
+    "Lower Thirds",
+    "Manim",
+    "Map Animation",
+    "After Effects",
+    "Animation Principles",
+    "Beat-sync Editing",
+    "Color Motion",
+    "Logo Animation",
+    "Motion Art Direction",
+    "Motion Background",
+    "Remotion Video",
+    "Shot Composition",
+    "Text Message Animation",
+    "Caption Animation",
+    "Countdown Video",
+    "Lower Thirds — TikTok",
+    "Short-form Video",
+    "60fps Animation",
+    "Accessible Animation",
+    "ASCII Animation",
+    "Glassmorphism",
+    "GSAP Web",
+    "Lottie Animation",
+    "Micro-interaction",
+    "Page Transition Animation",
+    "SVG Animation",
+    "Particle System",
+    "Shader (GLSL)",
+    "Three.js Animation",
+    "Audiogram",
+    "YouTube Intro/Outro",
 ]
 
 # 1.0.06: estilos válidos por Fonte do vídeo — o campo "Estilo" das
@@ -2040,6 +2096,7 @@ def render_channel_video_defaults(channel: dict) -> None:
                     style_options,
                     index=style_options.index(stored_style) if stored_style in style_options else 0,
                     key=style_widget_key,
+                    help="Apenas as opções válidas para a Fonte do vídeo escolhida. Fonte Remotion: 55 skills de motion graphics (iart-ai/motion-skills) + motores internos; use a busca do dropdown para filtrar.",
                 )
             else:
                 st.caption("Esta fonte de vídeo não utiliza estilos de IA.")
