@@ -12,10 +12,15 @@ def _constant(name):
 
 
 def test_ai_style_options_are_complete_and_ordered():
+    # 1.0.06: lista canónica de 14 estilos — "Natural Realista" dividido em
+    # "Natural"/"Ultra Realista" e "Cocomelon style" substituído por "Cartoon"
+    # (+ "Stickman Cartoon"). Canais antigos são migrados por
+    # storage.migrate_channel_style_values().
     assert _constant("AI_STYLE_OPTIONS") == [
-        "Natural Realista", "Cocomelon style", "Retro 90s Cartoon", "Wool sculpture miniatures",
-        "LEGO Style", "Paper cutout style", "Anime Style", "Studio Ghibli Style",
-        "Stop Motion Style (Massinha)", "Ukiyo Style", "Pixel Animation", "Pixar Style",
+        "Natural", "Ultra Realista", "Cartoon", "Stickman Cartoon", "Retro 90s Cartoon",
+        "Wool sculpture miniatures", "LEGO Style", "Paper cutout style", "Anime Style",
+        "Studio Ghibli Style", "Stop Motion Style (Massinha)", "Ukiyo Style",
+        "Pixel Animation", "Pixar Style",
     ]
 
 

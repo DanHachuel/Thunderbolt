@@ -235,6 +235,15 @@ def create_tasks_for_batch(batch: dict[str, Any]) -> list[dict[str, Any]]:
                     "maximum_clip_duration": channel.get("default_maximum_clip_duration", 5),
                     "video_aspect_ratio": channel.get("default_video_aspect_ratio", "Landscape 16:9"),
                 })
+            # 1.0.06: o "Estilo" guardado no canal (default_style_ia/style_ia)
+            # alimenta as gerações do canal — style_ia para Full IA e
+            # text_to_images_style para Text-to-Images. Só entra quando o canal
+            # define um estilo, para nunca sobrescrever escolhas explícitas
+            # com "".
+            channel_style = str(channel.get("default_style_ia") or channel.get("style_ia") or "").strip()
+            if channel_style:
+                channel_generation_defaults["style_ia"] = channel_style
+                channel_generation_defaults["text_to_images_style"] = channel_style
             configured_generation_settings = options.get("generation_settings") if isinstance(options.get("generation_settings"), dict) else {}
             payload_generation_settings = payload.get("generation_settings") if isinstance(payload.get("generation_settings"), dict) else {}
             generation_settings = {**channel_generation_defaults, **configured_generation_settings, **payload_generation_settings}
@@ -257,7 +266,7 @@ def create_tasks_for_batch(batch: dict[str, Any]) -> list[dict[str, Any]]:
                 "format": payload.get("format", options.get("format", "portrait" if channel.get("platform") == "tiktok" else "wide")),
                 "style_wide": payload.get("style_wide", options.get("style_wide", channel.get("style_wide", "pexels"))),
                 "material_source": payload.get("material_source", options.get("material_source", channel.get("material_source", ""))),
-                "style_ia": payload.get("style_ia", options.get("style_ia", "")),
+                "style_ia": payload.get("style_ia") or options.get("style_ia") or channel_style or "",
                 "music_mode": payload.get("music_mode", options.get("music_mode", False)),
                 "music_path": payload.get("music_path", options.get("music_path", "")),
                 "music_source": payload.get("music_source", options.get("music_source", "")),
@@ -775,6 +784,13 @@ def _refresh_task_channel_video_settings(task: dict[str, Any]) -> None:
     }
     for setting_name, (channel_key, default) in channel_defaults.items():
         generation_settings[setting_name] = channel.get(channel_key, default)
+    # 1.0.06: o Estilo do canal é revalidado no "Refazer Vídeo" como os restantes
+    # defaults — mas só quando o canal define um (nunca apaga a escolha da tarefa
+    # com "").
+    channel_style = str(channel.get("default_style_ia") or channel.get("style_ia") or "").strip()
+    if channel_style:
+        generation_settings["style_ia"] = channel_style
+        generation_settings["text_to_images_style"] = channel_style
     # Duração máxima do clip, proporção, concatenação, transição e
     # correspondência visual-roteiro: revalidadas para TODAS as plataformas
     # (o gate anterior só aplicava duração/proporção a canais YouTube e

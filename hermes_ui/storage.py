@@ -562,6 +562,41 @@ def migrate_finance_thumbnail_blueprint() -> None:
 _MIGRATION_DONE = False
 
 
+# 1.0.06: rótulos visuais antigos → rótulos canónicos de AI_STYLE_OPTIONS
+# (app/main.py). "Natural Realista" foi dividido em "Natural" e "Ultra Realista";
+# "Cocomelon style" passou a "Cartoon" (mapeamento confirmado pelo utilizador).
+CHANNEL_STYLE_MIGRATION = {
+    "Natural Realista": "Natural",
+    "Cocomelon style": "Cartoon",
+}
+
+
+def migrate_channel_style_values() -> None:
+    """Converte estilos visuais antigos dos canais para os rótulos canónicos.
+
+    Idempotente: só reescreve channels.json quando existe pelo menos um valor
+    antigo; canais sem estilo ou já migrados ficam intactos (não perde dados).
+    Corre uma vez por processo/raiz de storage via ensure_storage().
+    """
+    try:
+        channels = _load_json_unlocked(STATE / "channels.json")
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(channels, list):
+        return
+    changed = False
+    for channel in channels:
+        if not isinstance(channel, dict):
+            continue
+        for key in ("style_ia", "default_style_ia"):
+            value = str(channel.get(key) or "").strip()
+            if value in CHANNEL_STYLE_MIGRATION:
+                channel[key] = CHANNEL_STYLE_MIGRATION[value]
+                changed = True
+    if changed:
+        _atomic_write_unlocked(STATE / "channels.json", channels)
+
+
 def migrate_tiktok_thumbnail_blueprint() -> None:
     """Adopt the vertical generic thumbnail for legacy TikTok state."""
     global _MIGRATION_DONE
@@ -740,6 +775,7 @@ def ensure_storage() -> None:
                 atomic_write(target, default)
         migrate_finance_thumbnail_blueprint()
         migrate_tiktok_thumbnail_blueprint()
+        migrate_channel_style_values()
         _ensured_storage_root = root
 
 

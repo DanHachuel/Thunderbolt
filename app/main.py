@@ -306,8 +306,10 @@ def reconcile_persisted_notifications(*, force: bool = False) -> int:
     return int(result or 0)
 
 AI_STYLE_OPTIONS = [
-    "Natural Realista",
-    "Cocomelon style",
+    "Natural",
+    "Ultra Realista",
+    "Cartoon",
+    "Stickman Cartoon",
     "Retro 90s Cartoon",
     "Wool sculpture miniatures",
     "LEGO Style",
@@ -319,6 +321,32 @@ AI_STYLE_OPTIONS = [
     "Pixel Animation",
     "Pixar Style",
 ]
+
+# 1.0.06: skills de composição Remotion seleccionáveis como "Estilo" do canal.
+# O motor HandDrawnCanvas (hand-drawn-canvas-animation) já existe nas composições
+# (docs/remotion.md); as restantes skills da lista completa do utilizador são
+# adicionadas aqui quando fornecidas.
+REMOTION_STYLE_OPTIONS = [
+    "Sem Estilo/Livre",
+    "Vox-style Motion",
+    "Hand-drawn Canvas Animation",
+    # ... adicionar as restantes 15 skills quando o utilizador fornecer a lista completa
+]
+
+# 1.0.06: estilos válidos por Fonte do vídeo — o campo "Estilo" das
+# Configurações de vídeo do canal só mostra as opções da fonte escolhida
+# (fontes de stock/web não usam estilos de IA; o campo fica oculto).
+# Os rótulos antigos são migrados por migrate_channel_style_values()
+# (hermes_ui/storage.py, chamada pelo ensure_storage).
+VIDEO_SOURCE_STYLES = {
+    "Montage: Pexels/Pixabay": [],
+    "Montage: Text-to-Images": AI_STYLE_OPTIONS,
+    "Montage: Web Images": [],
+    "Full IA: Text-to-Video": AI_STYLE_OPTIONS,
+    "Remotion": REMOTION_STYLE_OPTIONS,
+    "Only Music": AI_STYLE_OPTIONS,
+    "Clipes de Música": AI_STYLE_OPTIONS,
+}
 
 WIDE_STYLE_OPTIONS = [
     "Montage: Pexels/Pixabay",
@@ -1990,6 +2018,31 @@ def render_channel_video_defaults(channel: dict) -> None:
                 index=WIDE_STYLE_OPTIONS.index(source) if source in WIDE_STYLE_OPTIONS else 0,
                 key=f"channel_default_video_source_{channel_id}",
             )
+            # 1.0.06: o campo "Estilo" depende da Fonte do vídeo — só as opções
+            # válidas da fonte escolhida são mostradas; fontes sem estilos
+            # ocultam o campo (Pexels/Pixabay e Web Images não usam IA de estilo).
+            stored_style = str(channel.get("default_style_ia") or channel.get("style_ia") or "").strip()
+            source_key = channel_video_source_value(selected_source)
+            style_options = VIDEO_SOURCE_STYLES.get(source_key, [])
+            selected_style = ""
+            if style_options:
+                style_widget_key = f"channel_style_{channel_id}"
+                if st.session_state.get(style_widget_key) not in style_options:
+                    # Reset determinístico: valor de sessão/ficheiro que não serve
+                    # para a fonte actual volta ao primeiro item da nova lista.
+                    st.session_state.pop(style_widget_key, None)
+                if stored_style and stored_style not in style_options:
+                    stored_source = str(channel.get("default_video_source") or channel.get("style_wide") or "").strip()
+                    if channel_video_source_storage(selected_source) != stored_source:
+                        st.info("O estilo foi redefinido porque a fonte de vídeo mudou.")
+                selected_style = st.selectbox(
+                    "Estilo",
+                    style_options,
+                    index=style_options.index(stored_style) if stored_style in style_options else 0,
+                    key=style_widget_key,
+                )
+            else:
+                st.caption("Esta fonte de vídeo não utiliza estilos de IA.")
             selected_aspect_ratio = st.selectbox(
                 "Proporção do vídeo",
                 CHANNEL_ASPECT_RATIO_OPTIONS,
@@ -2035,6 +2088,10 @@ def render_channel_video_defaults(channel: dict) -> None:
         if st.button("Guardar configurações de vídeo", type="primary", key=f"save_channel_video_defaults_{channel_id}", width="stretch"):
             update_channel(channel_id, {
                 "default_video_source": channel_video_source_storage(selected_source),
+                # 1.0.06: estilo dependente da fonte — "" quando a fonte não usa
+                # estilos (o alias style_ia é o que a automação já lê).
+                "default_style_ia": str(selected_style or ""),
+                "style_ia": str(selected_style or ""),
                 "default_video_aspect_ratio": selected_aspect_ratio,
                 "default_video_concatenation_mode": selected_concatenation,
                 "default_video_transition_mode": selected_transition,
