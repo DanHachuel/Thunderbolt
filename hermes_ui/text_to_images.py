@@ -172,8 +172,14 @@ def _subtitle_rgba(value: Any, fallback: tuple[int, int, int, int]) -> tuple[int
             channels = [int(hex_part[i : i + 2], 16) for i in range(0, len(hex_part), 2)]
         except ValueError:
             channels = []
-        if len(channels) in (6, 8):
-            return tuple(channels + [255] * (8 - len(channels)))
+        # 1.0.09: '#RRGGBB' produz 3 canais (RGB) e '#RRGGBBAA' produz 4
+        # (RGBA). A validação antiga `len(channels) in (6, 8)` rejeitava
+        # SEMPRE os canais e o padding `8 - len(channels)` devolvia uma
+        # tupla de 8 elementos — qualquer cor válida caía no fallback: as
+        # cores escolhidas nas Configurações de legendas eram silenciosamente
+        # ignoradas na queima real (texto branco, contorno e fundo pretos).
+        if len(channels) in (3, 4):
+            return tuple(channels + [255] * (4 - len(channels)))
     return fallback
 
 
@@ -307,6 +313,99 @@ def _subtitle_clips_for_scenes(scenes: list[dict], video_width: int, video_heigh
             clips.append(clip)
         offset += duration
     return clips
+
+
+SUBTITLE_PREVIEW_PHRASE = "Lorem ipsum dolor sit amet consectetur adipiscing elit"
+
+
+def render_subtitle_preview_frame(config: Mapping[str, Any], canvas_color: str = "#d3c4e3") -> "Image.Image":
+    """Frame 1920x1080 com a legenda de teste queimada sobre um fundo de teste.
+
+    1.0.09: preview das "Configurações de legendas" do card do canal. Replica a
+    matemática de `_subtitle_clips_for_scenes` (tamanho da fonte escalado pela
+    altura do vídeo, wrap medido em pixels, baseline pelas métricas reais da
+    fonte, caixa hug-text com padding uniforme e fundo composto ATRÁS da
+    tinta) num único frame, para a frase fixa `SUBTITLE_PREVIEW_PHRASE`.
+
+    `canvas_color` pinta apenas o fundo do bloco de visualização — simula o
+    fundo do vídeo e nunca afecta a legenda real. `rounded` espelha a rota
+    MPT (`--rounded-subtitle-background`): cantos arredondados só com o fundo
+    activo, como o pipeline envia ao motor.
+
+    config: font_path, font_size, position ("top"/"center"/"bottom"), color,
+    background, background_color, rounded, outline, outline_width.
+    """
+    from PIL import Image, ImageDraw, ImageFont
+
+    font_path = str(config.get("font_path") or "")
+    if not font_path:
+        raise ValueError("Não foi possível encontrar a fonte das legendas para o preview.")
+    # As métricas da montagem real: o tamanho é definido para 1080p e escala
+    # com a altura real do vídeo — no preview o frame é 1080p, logo o slider
+    # é aplicado tal qual.
+    video_width, video_height = 1920, 1080
+    font_size = max(12, int(config.get("font_size") or 60) * max(1, int(video_height)) // 1080)
+    font = ImageFont.truetype(font_path, font_size)
+    ascent, descent = font.getmetrics()
+
+    position = str(config.get("position") or "bottom").strip().casefold()
+    color = _subtitle_rgba(config.get("color"), (255, 255, 255, 255))
+    stroke_color = _subtitle_rgba(config.get("outline"), (0, 0, 0, 255))
+    stroke_width = max(0, int(round(float(config.get("outline_width") or 0))))
+    background = bool(config.get("background"))
+    background_color = _subtitle_rgba(config.get("background_color"), (0, 0, 0, 255))
+    rounded = bool(config.get("rounded"))
+    padding = max(10, min(15, round(font_size * 0.25)))
+    interline = max(4, round(font_size * 0.25))
+    wrap_width = max(120, int(video_width * 0.86))
+    max_text_width = max(40, wrap_width - 2 * padding)
+
+    lines = _wrap_text_pixels(SUBTITLE_PREVIEW_PHRASE, font, max_text_width) or [SUBTITLE_PREVIEW_PHRASE]
+    text_width = max(math.ceil(font.getlength(line)) for line in lines)
+    margin = padding + stroke_width
+    line_advance = ascent + descent + interline
+    canvas_w = text_width + 2 * margin
+    canvas_h = len(lines) * (ascent + descent) + (len(lines) - 1) * interline + 2 * margin
+    caption = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(caption)
+    for index, line in enumerate(lines):
+        baseline = margin + ascent + index * line_advance
+        x = margin + (text_width - font.getlength(line)) / 2
+        draw.text(
+            (x, baseline),
+            line,
+            font=font,
+            fill=color,
+            anchor="ls",
+            stroke_width=stroke_width,
+            stroke_fill=stroke_color if stroke_width else None,
+        )
+    # Caixa hug-text idêntica à montagem: bbox da tinta real desenhada
+    # (inclui o contorno) expandida com o padding uniforme nas quatro pontas.
+    ink = caption.getchannel("A").getbbox()
+    if ink:
+        left = max(0, ink[0] - padding)
+        top = max(0, ink[1] - padding)
+        right = min(canvas_w, ink[2] + padding)
+        bottom = min(canvas_h, ink[3] + padding)
+        box = Image.new("RGBA", (right - left, bottom - top), background_color if background else (0, 0, 0, 0))
+        if background and rounded:
+            mask = Image.new("L", box.size, 0)
+            ImageDraw.Draw(mask).rounded_rectangle([0, 0, box.width - 1, box.height - 1], radius=max(4, padding), fill=255)
+            box.putalpha(mask)
+        box.alpha_composite(caption.crop((left, top, right, bottom)))
+        caption = box
+    frame = Image.new("RGB", (video_width, video_height), _subtitle_rgba(canvas_color, (211, 196, 227, 255))[:3])
+    frame = frame.convert("RGBA")
+    if "top" in position:
+        paste_y = 0
+    elif "center" in position or "middle" in position:
+        paste_y = (video_height - caption.height) // 2
+    else:
+        paste_y = video_height - caption.height
+    paste_x = max(0, (video_width - caption.width) // 2)
+    frame.alpha_composite(caption, (paste_x, paste_y))
+    return frame.convert("RGB")
 
 
 def assemble_text_to_images_video(

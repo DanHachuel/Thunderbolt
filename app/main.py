@@ -2020,19 +2020,65 @@ def render_channel_audio_subtitle_defaults(channel: dict) -> None:
     music_source = str(channel.get("default_background_music_source") or "Sem música")
     music_volume = str(channel.get("default_background_music_volume") or "20%")
     with st.expander("Configurações de legendas", expanded=False):
-        subtitle_cols = st.columns(2)
-        with subtitle_cols[0]:
-            enable_subtitles = st.checkbox("Enable Subtitles", value=bool(channel.get("default_enable_subtitles", True)), key=f"channel_default_subtitles_{channel_id}")
+        # 1.0.09: layout compacto em colunas — os widgets deixam de esticar
+        # pela largura total do card. As chaves de estado (session_state) e o
+        # payload de gravação no JSON do canal permanecem EXACTAMENTE iguais.
+        enable_subtitles = st.checkbox("Enable Subtitles", value=bool(channel.get("default_enable_subtitles", True)), key=f"channel_default_subtitles_{channel_id}")
+        style_cols = st.columns([2, 1.4, 1.2, 0.8])
+        with style_cols[0]:
             selected_font = st.selectbox("Font", SUBTITLE_FONT_OPTIONS, index=SUBTITLE_FONT_OPTIONS.index(subtitle_font) if subtitle_font in SUBTITLE_FONT_OPTIONS else 0, key=f"channel_default_subtitle_font_{channel_id}")
+        with style_cols[1]:
             selected_position = st.selectbox("Position", SUBTITLE_POSITION_OPTIONS, index=SUBTITLE_POSITION_OPTIONS.index(subtitle_position) if subtitle_position in SUBTITLE_POSITION_OPTIONS else 0, key=f"channel_default_subtitle_position_{channel_id}")
-            subtitle_color = st.color_picker("Color", str(channel.get("default_subtitle_color") or "#FFFFFF"), key=f"channel_default_subtitle_color_{channel_id}")
-            subtitle_background = st.checkbox("Background", value=bool(channel.get("default_subtitle_background", True)), key=f"channel_default_subtitle_background_{channel_id}")
-            subtitle_background_color = st.color_picker("Background Color", str(channel.get("default_subtitle_background_color") or "#000000"), key=f"channel_default_subtitle_background_color_{channel_id}")
-            subtitle_rounded_background = st.checkbox("Rounded Background", value=bool(channel.get("default_subtitle_rounded_background", False)), key=f"channel_default_subtitle_rounded_background_{channel_id}")
-        with subtitle_cols[1]:
+        with style_cols[2]:
             subtitle_font_size = st.slider("Font Size", min_value=12, max_value=96, value=int(channel.get("default_subtitle_font_size") or 60), key=f"channel_default_subtitle_font_size_{channel_id}")
-            subtitle_outline = st.color_picker("Outline", str(channel.get("default_subtitle_outline") or "#000000"), key=f"channel_default_subtitle_outline_{channel_id}")
+        with style_cols[3]:
+            subtitle_color = st.color_picker("Color", str(channel.get("default_subtitle_color") or "#FFFFFF"), key=f"channel_default_subtitle_color_{channel_id}")
+        box_cols = st.columns([1.1, 0.7, 1.2, 1.1, 0.7])
+        with box_cols[0]:
+            subtitle_background = st.checkbox("Background", value=bool(channel.get("default_subtitle_background", True)), key=f"channel_default_subtitle_background_{channel_id}")
+        with box_cols[1]:
+            subtitle_background_color = st.color_picker("Background Color", str(channel.get("default_subtitle_background_color") or "#000000"), key=f"channel_default_subtitle_background_color_{channel_id}")
+        with box_cols[2]:
+            subtitle_rounded_background = st.checkbox("Rounded Background", value=bool(channel.get("default_subtitle_rounded_background", False)), key=f"channel_default_subtitle_rounded_background_{channel_id}")
+        with box_cols[3]:
             subtitle_outline_width = st.slider("Outline Width", min_value=0.0, max_value=5.0, value=float(channel.get("default_subtitle_outline_width") or 1.5), step=0.25, key=f"channel_default_subtitle_outline_width_{channel_id}")
+        with box_cols[4]:
+            subtitle_outline = st.color_picker("Outline", str(channel.get("default_subtitle_outline") or "#000000"), key=f"channel_default_subtitle_outline_{channel_id}")
+        # 1.0.09: bloco de Preview — desenha a legenda com as métricas reais da
+        # montagem (PIL, mesma matemática de _subtitle_clips_for_scenes) sobre
+        # um fundo de teste escolhido pelo utilizador. O fundo do bloco é só
+        # visual: nunca afecta a legenda gravada no canal.
+        preview_cols = st.columns([1.6, 0.7, 0.7])
+        with preview_cols[0]:
+            preview_canvas_color = st.color_picker("Cor de fundo do bloco de testes", value="#d3c4e3", key=f"channel_subtitle_preview_canvas_{channel_id}")
+        with preview_cols[1]:
+            preview_clicked = st.button("Preview", key=f"channel_subtitle_preview_{channel_id}")
+        if preview_clicked:
+            from hermes_ui.pipeline_worker import _resolve_subtitle_font_path
+            from hermes_ui.text_to_images import SUBTITLE_PREVIEW_PHRASE, render_subtitle_preview_frame
+
+            font_path = _resolve_subtitle_font_path(selected_font, read_json("settings.json", {}))
+            if not font_path:
+                st.warning("Não foi possível encontrar a fonte das legendas instalada para desenhar o preview; as configurações continuam a ser guardadas normalmente.")
+            else:
+                position_value = str(selected_position or "").strip().casefold()
+                preview_position = "top" if "top" in position_value else ("center" if "center" in position_value else "bottom")
+                frame = render_subtitle_preview_frame(
+                    {
+                        "font_path": font_path,
+                        "font_size": int(subtitle_font_size),
+                        "position": preview_position,
+                        "color": subtitle_color,
+                        "background": bool(subtitle_background),
+                        "background_color": subtitle_background_color,
+                        "rounded": bool(subtitle_rounded_background),
+                        "outline": subtitle_outline,
+                        "outline_width": float(subtitle_outline_width),
+                    },
+                    canvas_color=str(preview_canvas_color or "#d3c4e3"),
+                )
+                st.caption(f"Frase de teste fixa: {SUBTITLE_PREVIEW_PHRASE}")
+                st.image(frame, width="stretch")
         if st.button("Guardar configurações de legendas", type="primary", key=f"save_channel_subtitle_defaults_{channel_id}", width="stretch"):
             update_channel(channel_id, {
                 "default_enable_subtitles": bool(enable_subtitles), "default_subtitle_font": selected_font, "default_subtitle_position": selected_position,
