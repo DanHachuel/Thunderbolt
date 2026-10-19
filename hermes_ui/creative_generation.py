@@ -10,6 +10,14 @@ from typing import Any
 
 from .languages import LANGUAGE_BY_CODE, language_code
 from .llm_providers import active_llm_card, provider_definition
+from .blueprint_governance import (
+    MAX_TITLE_GENERATION_ATTEMPTS,
+    TITLE_REFERENCE_KEYS,
+    has_blueprint_title_rules,
+    title_governance,
+    title_rules_prompt_section,
+    validate_title_with_governance,
+)
 from .provider_routing import ProviderRoutingError, route_llm_json
 
 
@@ -70,10 +78,15 @@ def _provider_config(settings: dict[str, Any]) -> tuple[str, str, str, str]:
     return provider, key, base_url.rstrip("/"), model
 
 
-@lru_cache(maxsize=1)
-def reference_bundle() -> str:
+@lru_cache(maxsize=2)
+def _reference_bundle_cached(skip_title_references: bool) -> str:
     sections: list[str] = []
     for label, filename in REFERENCE_FILES.items():
+        # 1.1.x — prompt bleed: um blueprint com mecânicas de título próprias
+        # substitui as fórmulas virais genéricas (title-formulas/viral-titles);
+        # as referências de thumbnail/humanização continuam a aplicar-se.
+        if skip_title_references and label in TITLE_REFERENCE_KEYS:
+            continue
         path = REFERENCES_DIR / filename
         try:
             content = path.read_text(encoding="utf-8")
@@ -82,6 +95,12 @@ def reference_bundle() -> str:
         # Keep prompts bounded while preserving the concrete rules from the attachments.
         sections.append(f"[{label}]\n{content[:4200]}")
     return "\n\n".join(sections)
+
+
+def reference_bundle(blueprint: dict[str, Any] | None = None) -> str:
+    """Bundle de referências genéricas, EXCEPTO fórmulas de título quando o
+    blueprint activo define as suas próprias regras de título."""
+    return _reference_bundle_cached(has_blueprint_title_rules(blueprint))
 
 
 def _json_content(payload: dict[str, Any]) -> dict[str, Any]:
@@ -205,7 +224,7 @@ def generate_topic_for_channel(
             "channel": context,
             "output_language": language_instruction,
             "user_context": user_context.strip(),
-            "reference_rules": reference_bundle(),
+            "reference_rules": reference_bundle(blueprint),
             "requirements": [
                 "topic em uma frase clara",
                 "angle contrarian ou inesperado quando fizer sentido",
@@ -258,7 +277,7 @@ def generate_video_keywords(
             "language": language or context["language"],
             "video_subject": topic,
             "video_script": script,
-            "reference_rules": reference_bundle(),
+            "reference_rules": reference_bundle(blueprint),
             "requirements": {
                 "count": "8 to 15",
                 "language": "English",
@@ -308,6 +327,82 @@ def _keywords_from_text(*values: str) -> list[str]:
     return result[:15]
 
 
+def _validated_title_candidates(
+    result: dict[str, Any], governance: dict[str, Any]
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """Valida cada candidato contra a governança do blueprint.
+
+    Devolve (válidos, rejeitados com o motivo exacto). Os rejeitados nunca
+    chegam ao utilizador: alimentam o feedback do loop de auto-correcção.
+    """
+    raw_titles = result.get("title_candidates")
+    valid: list[dict[str, Any]] = []
+    rejected: list[tuple[str, str]] = []
+    for item in (raw_titles if isinstance(raw_titles, list) else [])[:40]:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        is_valid, reason = validate_title_with_governance(title, governance)
+        if not is_valid:
+            rejected.append((title, reason))
+            continue
+        valid.append(
+            {
+                "title": title,
+                "formula": str(item.get("formula") or "custom").strip(),
+                "curiosity_score": _score(item.get("curiosity_score")),
+                "specificity_score": _score(item.get("specificity_score")),
+                "emotional_score": _score(item.get("emotional_score")),
+            }
+        )
+    return valid, rejected
+
+
+def _title_generation_loop(
+    settings: dict[str, Any],
+    system_prompt: str,
+    user_payload: dict[str, Any],
+    governance: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Loop de auto-correcção: LLM → validação em código → feedback → LLM.
+
+    O LLM falha em seguir regras negativas por prompt sozinho; este loop
+    valida cada título contra o blueprint e devolve ao modelo os rejeitados
+    com o motivo exacto, até obter >= 20 títulos válidos (máx. 3 tentativas).
+    """
+    feedback = ""
+    candidates: list[dict[str, Any]] = []
+    rejected: list[tuple[str, str]] = []
+    attempts = max(1, MAX_TITLE_GENERATION_ATTEMPTS)
+    for attempt in range(1, attempts + 1):
+        payload = dict(user_payload)
+        if feedback:
+            payload["system_feedback"] = feedback
+        result = _chat_json(settings, system_prompt, json.dumps(payload, ensure_ascii=False))
+        candidates, rejected = _validated_title_candidates(result, governance)
+        if len(candidates) >= 20:
+            return result, candidates
+        if attempt < attempts:
+            if rejected:
+                sample = "; ".join(f"«{title}» ({reason})" for title, reason in rejected[:4])
+                feedback = (
+                    f"AVISO DO SISTEMA: {len(rejected)} dos títulos devolvidos foram REJEITADOS pelo validador do blueprint. "
+                    f"Exemplos rejeitados: {sample}. "
+                    "Gera uma NOVA lista com pelo menos 20 títulos que cumpram TODAS as regras; não repitas nenhum rejeitado."
+                )
+            else:
+                feedback = (
+                    "AVISO DO SISTEMA: A resposta veio com menos de 20 títulos candidatos válidos. "
+                    "Devolve pelo menos 20 títulos que cumpram TODAS as regras do blueprint."
+                )
+    raise CreativeGenerationError(
+        f"Após {attempts} tentativas, o provider não devolveu 20 títulos candidatos válidos "
+        f"(última tentativa: {len(candidates)} válidos, {len(rejected)} rejeitados pelo blueprint)."
+    )
+
+
 def generate_thumbnail_prompt(
     settings: dict[str, Any],
     channel: dict[str, Any],
@@ -339,7 +434,7 @@ def generate_thumbnail_prompt(
             "language_name": target_language(requested_language)[1],
             "topic": topic,
             "current_prompt": str(current_prompt or "").strip(),
-            "reference_rules": reference_bundle(),
+            "reference_rules": reference_bundle(blueprint),
             "requirements": {
                 "image_prompt": "cinematic visual direction, no words, letters, logos or watermarks rendered in the image",
                 "overlay_text": "required, 3 to 4 words, emotionally strong, not the full title",
@@ -383,52 +478,42 @@ def generate_title_and_keywords(
     context = channel_context(channel, blueprint)
     requested_language = language or channel.get("language") or context["language"]
     language_instruction = _language_instruction(requested_language)
+    # System prompt DINÂMICO: as regras críticas do canal saem do Blueprint
+    # activo (override, regras de título, blacklist, exemplos correctos),
+    # nunca de um prompt genérico "YouTube Viral".
+    governance = title_governance(blueprint)
     system = (
         "És um director editorial para YouTube. Cria apenas o pacote editorial do vídeo: títulos candidatos e keywords SEO. "
         f"Todos os títulos, fórmulas e campos editoriais textuais devem estar em {language_instruction}; as keywords podem permanecer em inglês para SEO. "
         "Não cries prompts, conceitos ou variantes de thumbnail. Gera exactamente pelo menos 20 títulos candidatos, "
         "um título seleccionado e entre 8 e 15 keywords curtas. O título deve carregar keywords no início, ter curiosidade, "
-        "especificidade e emoção, sem clickbait falso. Responde apenas com JSON válido nas chaves selected_title, "
-        "title_candidates e keywords."
+        "especificidade e emoção, sem clickbait falso."
     )
-    user = json.dumps(
-        {
-            "channel": context,
-            "language": target_language(requested_language)[0],
-            "language_name": target_language(requested_language)[1],
-            "topic": topic.strip(),
-            "reference_rules": reference_bundle(),
-            "keywords_schema": ["lista de 8 a 15 keywords SEO curtas, sem hashtags"],
-            "title_candidates_schema": {
-                "title": "string",
-                "formula": "string",
-                "curiosity_score": "integer 0-3",
-                "specificity_score": "integer 0-3",
-                "emotional_score": "integer 0-3",
-            },
-        },
-        ensure_ascii=False,
-    )
-    result = _chat_json(settings, system, user)
-    raw_titles = result.get("title_candidates")
-    if not isinstance(raw_titles, list) or len(raw_titles) < 20:
-        raise CreativeGenerationError("O provider deve devolver pelo menos 20 títulos candidatos.")
-    titles: list[dict[str, Any]] = []
-    for item in raw_titles[:30]:
-        if not isinstance(item, dict) or not str(item.get("title") or "").strip():
-            continue
-        titles.append(
-            {
-                "title": str(item["title"]).strip(),
-                "formula": str(item.get("formula") or "custom").strip(),
-                "curiosity_score": _score(item.get("curiosity_score")),
-                "specificity_score": _score(item.get("specificity_score")),
-                "emotional_score": _score(item.get("emotional_score")),
-            }
+    governance_section = title_rules_prompt_section(governance)
+    if governance_section:
+        system += (
+            "\n\n" + governance_section
+            + "\n\nGera exactamente pelo menos 20 títulos candidatos que sigam ESTRITAMENTE estas regras — "
+            "qualquer título que viole uma única regra é eliminado pelo validador."
         )
-    if len(titles) < 20:
-        raise CreativeGenerationError("Os títulos devolvidos pelo provider não têm conteúdo suficiente.")
-    selected_title = str(result.get("selected_title") or titles[0]["title"]).strip()
+    system += " Responde apenas com JSON válido nas chaves selected_title, title_candidates e keywords."
+    user_payload = {
+        "channel": context,
+        "language": target_language(requested_language)[0],
+        "language_name": target_language(requested_language)[1],
+        "topic": topic.strip(),
+        "reference_rules": reference_bundle(blueprint),
+        "keywords_schema": ["lista de 8 a 15 keywords SEO curtas, sem hashtags"],
+        "title_candidates_schema": {
+            "title": "string",
+            "formula": "string",
+            "curiosity_score": "integer 0-3",
+            "specificity_score": "integer 0-3",
+            "emotional_score": "integer 0-3",
+        },
+    }
+    result, titles = _title_generation_loop(settings, system, user_payload, governance)
+    selected_title = str(result.get("selected_title") or "").strip()
     if selected_title not in {item["title"] for item in titles}:
         selected_title = titles[0]["title"]
     raw_keywords = result.get("keywords")
@@ -456,66 +541,54 @@ def generate_creative_package(
     context = channel_context(channel, blueprint)
     requested_language = language or channel.get("language") or context["language"]
     language_instruction = _language_instruction(requested_language)
+    # System prompt DINÂMICO: as regras críticas do canal saem do Blueprint
+    # activo (override, regras de título, blacklist, exemplos correctos).
+    governance = title_governance(blueprint)
     system = (
         "És director editorial e de thumbnails para YouTube. Cria um pacote coerente de título e thumbnail "
         f"Todos os títulos e textos visíveis da thumbnail devem estar em {language_instruction}; o image_prompt pode permanecer em inglês. "
         "para o tópico fornecido. Gera exactamente pelo menos 20 títulos candidatos e entre 3 e 5 variantes de thumbnail. "
         "O título deve carregar keywords no início, ter curiosidade, especificidade e emoção, sem clickbait falso. "
         "A thumbnail deve ter no máximo três elementos, alto contraste, uma composição clara e lettering obrigatório de 3 a 4 palavras, "
-        "safe zones e leitura em 120px. O texto da thumbnail não pode repetir o título integralmente. Remove AI tells. "
-        "Responde apenas com JSON válido nas chaves selected_title, title_candidates, keywords e thumbnail_variants."
+        "safe zones e leitura em 120px. O texto da thumbnail não pode repetir o título integralmente. Remove AI tells."
     )
-    user = json.dumps(
-        {
-            "channel": context,
-            "language": target_language(requested_language)[0],
-            "language_name": target_language(requested_language)[1],
-            "topic": topic.strip(),
-            "reference_rules": reference_bundle(),
-            "keywords_schema": ["lista de 8 a 15 keywords SEO curtas, sem hashtags"],
-            "title_candidates_schema": {
-                "title": "string",
-                "formula": "string",
-                "curiosity_score": "integer 0-3",
-                "specificity_score": "integer 0-3",
-                "emotional_score": "integer 0-3",
-            },
-            "thumbnail_variant_schema": {
-                "concept": "string",
-                "overlay_text": "required string, 3 to 4 words",
-                "composition": "string",
-                "color_palette": "string",
-                "subject": "string",
-                "image_prompt": "string describing the clean image base, without rendered text; lettering is specified separately",
-                "title_synergy": "string",
-                "lettering_prompt": "string describing how to render the exact overlay_text",
-            },
-        },
-        ensure_ascii=False,
-    )
-    result = _chat_json(settings, system, user)
-    raw_titles = result.get("title_candidates")
-    if not isinstance(raw_titles, list) or len(raw_titles) < 20:
-        raise CreativeGenerationError("O provider deve devolver pelo menos 20 títulos candidatos.")
-    titles: list[dict[str, Any]] = []
-    for item in raw_titles[:30]:
-        if not isinstance(item, dict) or not str(item.get("title") or "").strip():
-            continue
-        title = str(item["title"]).strip()
-        titles.append(
-            {
-                "title": title,
-                "formula": str(item.get("formula") or "custom").strip(),
-                "curiosity_score": _score(item.get("curiosity_score")),
-                "specificity_score": _score(item.get("specificity_score")),
-                "emotional_score": _score(item.get("emotional_score")),
-            }
+    governance_section = title_rules_prompt_section(governance)
+    if governance_section:
+        system += (
+            "\n\n" + governance_section
+            + "\n\nGera exactamente pelo menos 20 títulos candidatos que sigam ESTRITAMENTE estas regras — "
+            "qualquer título que viole uma única regra é eliminado pelo validador."
         )
-    if len(titles) < 20:
-        raise CreativeGenerationError("Os títulos devolvidos pelo provider não têm conteúdo suficiente.")
+    system += " Responde apenas com JSON válido nas chaves selected_title, title_candidates, keywords e thumbnail_variants."
+    user_payload = {
+        "channel": context,
+        "language": target_language(requested_language)[0],
+        "language_name": target_language(requested_language)[1],
+        "topic": topic.strip(),
+        "reference_rules": reference_bundle(blueprint),
+        "keywords_schema": ["lista de 8 a 15 keywords SEO curtas, sem hashtags"],
+        "title_candidates_schema": {
+            "title": "string",
+            "formula": "string",
+            "curiosity_score": "integer 0-3",
+            "specificity_score": "integer 0-3",
+            "emotional_score": "integer 0-3",
+        },
+        "thumbnail_variant_schema": {
+            "concept": "string",
+            "overlay_text": "required string, 3 to 4 words",
+            "composition": "string",
+            "color_palette": "string",
+            "subject": "string",
+            "image_prompt": "string describing the clean image base, without rendered text; lettering is specified separately",
+            "title_synergy": "string",
+            "lettering_prompt": "string describing how to render the exact overlay_text",
+        },
+    }
+    result, titles = _title_generation_loop(settings, system, user_payload, governance)
     raw_keywords = result.get("keywords")
     keywords = [str(item).strip() for item in raw_keywords if str(item).strip()] if isinstance(raw_keywords, list) else []
-    selected_title = str(result.get("selected_title") or titles[0]["title"]).strip()
+    selected_title = str(result.get("selected_title") or "").strip()
     if selected_title not in {item["title"] for item in titles}:
         selected_title = titles[0]["title"]
     if not keywords:
@@ -614,20 +687,52 @@ def generate_video_update_metadata(
     context = channel_context(channel, blueprint)
     language_instruction = _language_instruction(video.get("default_language") or channel.get("language") or context["language"])
     fields = {"title": "title", "description": "description"} if mode == "both" else {mode: mode}
+    governance = title_governance(blueprint)
     system = (
         "És um editor de metadados de YouTube. Gera apenas os campos solicitados em JSON válido. "
         f"Escreve todos os campos em {language_instruction}. Mantém o tema, o roteiro e o nicho do canal, "
         "evita clickbait falso, alegações não verificadas e menções a IA. O título deve ser claro e ter no máximo 100 caracteres; "
         "a descrição deve ser natural, informativa e preservar factos fornecidos no roteiro."
     )
-    user = json.dumps({
+    if "title" in fields:
+        governance_section = title_rules_prompt_section(governance)
+        if governance_section:
+            system += (
+                "\n\n" + governance_section
+                + "\n\nO título regenerado tem de cumprir ESTRITAMENTE estas regras do blueprint."
+            )
+    base_user_payload = {
         "requested_fields": list(fields.values()),
         "channel": context,
         "video": {"id": video.get("id"), "title": video.get("title", ""), "description": video.get("description", ""), "language": video.get("default_language", "")},
         "script": str(script or "")[:12000],
         "requirements": {"title_max_characters": 100, "description_max_characters": 1800},
-    }, ensure_ascii=False)
-    result = _chat_json(settings, system, user)
+    }
+    feedback = ""
+    reason = ""
+    title_is_valid = "title" not in fields
+    result: dict[str, Any] = {}
+    attempts = max(1, MAX_TITLE_GENERATION_ATTEMPTS)
+    for attempt in range(1, attempts + 1):
+        payload = dict(base_user_payload)
+        if feedback:
+            payload["system_feedback"] = feedback
+        result = _chat_json(settings, system, json.dumps(payload, ensure_ascii=False))
+        if "title" not in fields:
+            break
+        candidate = str(result.get("title") or "").strip()
+        title_is_valid, reason = validate_title_with_governance(candidate, governance)
+        if title_is_valid:
+            break
+        if attempt < attempts:
+            feedback = (
+                f"AVISO DO SISTEMA: O título «{candidate}» foi REJEITADO pelo validador do blueprint. "
+                f"Motivo: {reason}. Gera um novo título que cumpra TODAS as regras."
+            )
+    if not title_is_valid:
+        raise CreativeGenerationError(
+            f"Após {attempts} tentativas, o título regenerado não cumpre as regras do blueprint. Último motivo: {reason}"
+        )
     output: dict[str, str] = {}
     if "title" in fields:
         title = str(result.get("title") or "").strip()[:100]
