@@ -90,13 +90,50 @@ def test_preview_canvas_colour_changes_only_the_viewing_background():
 
 @pytest.mark.skipif(_test_font() is None, reason="sem fonte do sistema")
 def test_preview_position_top_center_and_bottom():
+    """1.0.10: "top" desce e "bottom" sobe exactamente a altura do bloco — o
+    respiro em cada borda equivale à altura da própria legenda; "center"
+    continua centrado."""
     bottom = text_to_images.render_subtitle_preview_frame(_config(position="bottom"))
     top = text_to_images.render_subtitle_preview_frame(_config(position="top"))
     center = text_to_images.render_subtitle_preview_frame(_config(position="center"))
-    assert _red_bbox(bottom)[3] == 1079  # caixa colada ao fundo
-    assert _red_bbox(top)[1] == 0  # caixa colada ao topo
-    center_rows = _red_bbox(center)
-    assert 300 < center_rows[1] < 700  # caixa ao centro do frame
+    # bottom: o bloco TERMINA a box_h pixels do fundo (sobe)
+    _, top_b, _, bottom_b = _red_bbox(bottom)
+    box_h = bottom_b - top_b + 1
+    assert bottom_b + 1 + box_h == 1080  # gap inferior == altura do bloco
+    assert top_b + 2 * box_h == 1080  # consistência: paste_y = video_h - 2*box_h
+    # top: o bloco COMEÇA em box_h (desce) — gap superior == altura do bloco
+    _, top_t, _, bottom_t = _red_bbox(top)
+    box_h_top = bottom_t - top_t + 1
+    assert top_t == box_h_top
+    # center: mantém-se centrado
+    _, top_c, _, _ = _red_bbox(center)
+    assert 300 < top_c < 700
+
+
+@pytest.mark.skipif(_test_font() is None, reason="sem fonte do sistema")
+def test_montage_clips_use_the_same_dynamic_margin_as_the_preview():
+    """WYSIWYG: a margem vertical dos clipes do vídeo real (MoviePy) segue a
+    mesma matemática do Preview — ("center", y) com y = bloco (top) e
+    y = video_h - 2*bloco (bottom); center inalterado."""
+    from hermes_ui.text_to_images import _subtitle_clips_for_scenes
+
+    scenes = [{"text": "Legenda de uma linha", "duration": 2.0}]
+    bottom_clips = _subtitle_clips_for_scenes(scenes, 1920, 1080, _config(position="bottom"))
+    assert len(bottom_clips) == 1
+    block_h = int(bottom_clips[0].size[1])
+    assert bottom_clips[0].pos(0) == ("center", 1080 - 2 * block_h)
+
+    top_clips = _subtitle_clips_for_scenes(scenes, 1920, 1080, _config(position="top"))
+    assert top_clips[0].pos(0) == ("center", int(top_clips[0].size[1]))
+
+    center_clips = _subtitle_clips_for_scenes(scenes, 1920, 1080, _config(position="center"))
+    assert center_clips[0].pos(0) == ("center", "center")
+
+    # A margem acompanha a altura real do bloco: fontes maiores sobem/descem mais.
+    big_clips = _subtitle_clips_for_scenes(scenes, 1920, 1080, _config(position="bottom", font_size=96))
+    big_h = int(big_clips[0].size[1])
+    assert big_h > block_h
+    assert big_clips[0].pos(0) == ("center", 1080 - 2 * big_h)
 
 
 @pytest.mark.skipif(_test_font() is None, reason="sem fonte do sistema")

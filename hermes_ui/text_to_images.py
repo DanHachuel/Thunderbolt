@@ -264,7 +264,6 @@ def _subtitle_clips_for_scenes(scenes: list[dict], video_width: int, video_heigh
     interline = max(4, round(font_size * 0.25))
     wrap_width = max(120, int(video_width * 0.86))
     max_text_width = max(40, wrap_width - 2 * padding)
-    position_pair = {"top": ("center", "top"), "center": ("center", "center")}.get(position, ("center", "bottom"))
     offset = 0.0
     clips = []
     for scene in scenes:
@@ -308,8 +307,19 @@ def _subtitle_clips_for_scenes(scenes: list[dict], video_width: int, video_heigh
                 box = Image.new("RGBA", (right - left, bottom - top), background_color if background else (0, 0, 0, 0))
                 box.alpha_composite(img.crop((left, top, right, bottom)))
                 img = box
+            # 1.0.10: margem vertical dinâmica em "top"/"bottom" — a legenda
+            # afasta-se da borda exactamente a altura do próprio bloco
+            # (caixa de fundo quando activa; tinta+contorno+padding sem fundo),
+            # a mesma matemática do Preview (WYSIWYG). "center" fica centrado.
+            block_height = int(img.size[1])
+            if position == "top":
+                clip_position: tuple[Any, Any] = ("center", block_height)
+            elif position == "center":
+                clip_position = ("center", "center")
+            else:
+                clip_position = ("center", max(0, int(video_height) - 2 * block_height))
             clip = ImageClip(np.array(img), transparent=True).with_duration(duration)
-            clip = clip.with_start(offset).with_position(position_pair)
+            clip = clip.with_start(offset).with_position(clip_position)
             clips.append(clip)
         offset += duration
     return clips
@@ -397,12 +407,16 @@ def render_subtitle_preview_frame(config: Mapping[str, Any], canvas_color: str =
         caption = box
     frame = Image.new("RGB", (video_width, video_height), _subtitle_rgba(canvas_color, (211, 196, 227, 255))[:3])
     frame = frame.convert("RGBA")
+    # 1.0.10: margem vertical dinâmica idêntica à montagem real (WYSIWYG) —
+    # "top" desce e "bottom" sobe exactamente a altura do próprio bloco;
+    # "center" mantém-se centrado.
+    block_height = int(caption.height)
     if "top" in position:
-        paste_y = 0
+        paste_y = block_height
     elif "center" in position or "middle" in position:
-        paste_y = (video_height - caption.height) // 2
+        paste_y = (video_height - block_height) // 2
     else:
-        paste_y = video_height - caption.height
+        paste_y = max(0, video_height - 2 * block_height)
     paste_x = max(0, (video_width - caption.width) // 2)
     frame.alpha_composite(caption, (paste_x, paste_y))
     return frame.convert("RGB")
