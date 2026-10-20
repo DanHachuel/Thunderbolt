@@ -251,6 +251,7 @@ from hermes_ui.elevenlabs_voices import ElevenLabsVoicesError, cached_personal_v
 from hermes_ui.thumbnail_generation import ThumbnailGenerationError, generate_thumbnail_image
 from hermes_ui.thumbnails import (
     generate_thumbnail_for_task,
+    get_thumbnail_task_record,
     list_thumbnail_tasks,
     regenerate_thumbnail,
     regenerate_thumbnail_lettering,
@@ -6947,42 +6948,23 @@ def render_thumbnails():
     for record in visible_records:
         task_id = record["task_id"]
         with st.container(border=True):
-            image_col, details_col, action_col = st.columns([1.25, 2.35, 1.7])
+            # 1.0.12: pesos proporcionais (imagem | texto central | botões) —
+            # a coluna de acções deixa de esticar e amassar a imagem; os
+            # botões ficam agrupados no topo, alinhados com a imagem.
+            image_col, details_col, action_col = st.columns([1, 2, 1.5], gap="small")
             with image_col:
-                image_path = record.get("image_path")
-                if image_path and image_path.is_file():
-                    # Pass bytes to Streamlit and avoid the deprecated
-                    # legacy full-width argument.  On Windows the
-                    # deprecation warning can be emitted after the bootstrap
-                    # stream has been closed, which masks the real page with
-                    # ``ValueError: I/O operation on closed file``.
-                    image_bytes = _file_bytes(image_path)
-                    st.image(image_bytes)
-                    st.download_button(
-                        "Descarregar thumbnail",
-                        data=image_bytes,
-                        file_name=image_path.name,
-                        mime="image/jpeg" if image_path.suffix.lower() in {".jpg", ".jpeg"} else "image/png",
-                        key=f"thumbnail_download_{task_id}_{record['variant_index']}",
-                        width="stretch",
-                    )
+                # 1.0.12: polling da fila — o fragment relê o JSON da tarefa
+                # a cada 2s enquanto está na fila (thumbnail_queued/generating);
+                # estados terminais renderizam com run_every=None (sem loop de
+                # rede), pelo que o card actualiza sozinho quando o Motor
+                # termina, sem precisar de F5.
+                if record["status"] in _THUMBNAIL_POLLING_STATES:
+                    _thumbnail_status_fragment_live(task_id, record)
                 else:
-                    st.markdown("### Sem imagem")
-                    st.caption("Imagem ainda não gerada")
+                    _thumbnail_status_fragment_idle(task_id, record)
             with details_col:
                 st.write(f"**{record['title']}**")
                 st.caption(f"Canal: {record['channel_name']} · Tarefa: {task_id}")
-                # 1.0.11: estados da fila de thumbnails em texto legível.
-                _thumbnail_status_text = {
-                    "thumbnail_queued": "Na fila de thumbnails",
-                    "generating": "A gerar na fila",
-                    "failed": "Falhou na geração (veja o erro na tarefa)",
-                    "generated": "Gerada",
-                    "prompt_ready": "Prompt pronto",
-                    "pending_prompt": "Prompt pendente",
-                    "pending_provider": "Sem provider de imagem",
-                }.get(str(record["status"]), str(record["status"]))
-                st.caption(f"Estado: {_thumbnail_status_text} · Variante: {record['variant_index'] + 1}")
                 if record["prompt"]:
                     with st.expander("Ver prompt da thumbnail", expanded=False):
                         st.code(record["prompt"], language="text")
@@ -7098,6 +7080,87 @@ def render_thumbnails():
                         st.rerun()
                     except ThumbnailGenerationError as exc:
                         st.error(str(exc))
+
+
+# ---------------------------------------------------------------------------
+# 1.0.12: polling da fila de thumbnails — o bloco de imagem+estado da card
+# vive num fragment que RELÊ o JSON da tarefa em cada execução. A regra de
+# ouro do run_every: 2s apenas em thumbnail_queued/generating (fila activa);
+# estados terminais (generated/failed/prompt_ready/...) renderizam SEM
+# polling (run_every=None) para não criar loops infinitos de rede.
+# ---------------------------------------------------------------------------
+
+_THUMBNAIL_POLLING_STATES = {"thumbnail_queued", "generating"}
+
+_THUMBNAIL_STATUS_LABELS = {
+    "thumbnail_queued": "Na fila de thumbnails",
+    "generating": "A gerar na fila",
+    "failed": "Falhou na geração (veja o erro na tarefa)",
+    "generated": "Gerada",
+    "prompt_ready": "Prompt pronto",
+    "pending_prompt": "Prompt pendente",
+    "pending_provider": "Sem provider de imagem",
+}
+
+
+def _thumbnail_status_label(status: str) -> str:
+    return _THUMBNAIL_STATUS_LABELS.get(str(status or "").strip(), str(status or "not_generated"))
+
+
+def _thumbnail_status_block(task_id: str, fallback_record: dict[str, Any]) -> str:
+    """Bloco de status da thumbnail: imagem + «Estado: ...» com dados FRESCOS.
+
+    Lê sempre o estado actual da tarefa (``get_thumbnail_task_record``) para
+    que o trabalho do background worker apareça aqui sem F5; devolve o estado
+    actual para o wrapper de polling decidir se continua.
+    """
+    record = get_thumbnail_task_record(task_id) or fallback_record
+    status = str(record.get("status") or "not_generated")
+    image_path = record.get("image_path")
+    if image_path and image_path.is_file():
+        # Pass bytes to Streamlit and avoid the deprecated
+        # legacy full-width argument.  On Windows the
+        # deprecation warning can be emitted after the bootstrap
+        # stream has been closed, which masks the real page with
+        # ``ValueError: I/O operation on closed file``.
+        image_bytes = _file_bytes(image_path)
+        st.image(image_bytes)
+        st.download_button(
+            "Descarregar thumbnail",
+            data=image_bytes,
+            file_name=image_path.name,
+            mime="image/jpeg" if image_path.suffix.lower() in {".jpg", ".jpeg"} else "image/png",
+            key=f"thumbnail_download_{task_id}_{record['variant_index']}",
+            width="stretch",
+        )
+    elif status in _THUMBNAIL_POLLING_STATES:
+        st.markdown("### Na fila")
+        st.caption("A imagem aparece aqui automaticamente quando o Motor terminar a geração.")
+    else:
+        st.markdown("### Sem imagem")
+        st.caption("Imagem ainda não gerada")
+    st.caption(f"Estado: {_thumbnail_status_label(status)} · Variante: {record['variant_index'] + 1}")
+    return status
+
+
+@st.fragment(run_every=2)
+def _thumbnail_status_fragment_live(task_id: str, fallback_record: dict[str, Any]) -> None:
+    """Fila activa: relê o estado da tarefa a cada 2s (run_every=2).
+
+    Quando o worker chega a um estado terminal (generated/failed/...), força
+    um rerun completo — o card passa a ser renderizado pela variante idle
+    (run_every=None) e o Streamlit cancela o timer deste fragmento, acabando
+    com o loop de rede.
+    """
+    status = _thumbnail_status_block(task_id, fallback_record)
+    if status not in _THUMBNAIL_POLLING_STATES:
+        st.rerun(scope="app")
+
+
+@st.fragment(run_every=None)
+def _thumbnail_status_fragment_idle(task_id: str, fallback_record: dict[str, Any]) -> None:
+    """Estados terminais/parados: render único, sem loop de rede (run_every=None)."""
+    _thumbnail_status_block(task_id, fallback_record)
 
 
 def _render_tiktok_automation_task_list(*, posted_only: bool = False):

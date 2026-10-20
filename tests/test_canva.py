@@ -150,7 +150,10 @@ def test_canva_test_does_not_require_model_or_generic_api_key():
 def test_thumbnail_gallery_does_not_use_deprecated_container_width_image_argument():
     source = Path("app/main.py").read_text(encoding="utf-8")
     start = source.index("def render_thumbnails")
-    end = source.index("def ", start + len("def render_thumbnails"))
+    # 1.0.14: o carregamento dos bytes saiu de render_thumbnails para o bloco
+    # de imagem+estado isolado (_thumbnail_status_block, entre render_thumbnails
+    # e render_automation); a fatia cobre a card completa + fragment.
+    end = source.index("def render_automation", start)
     block = source[start:end]
     assert 'st.image(str(image_path), width="stretch")' not in block
     # Commit 6f1219b passou a carregar os bytes pela cache _file_bytes em vez de

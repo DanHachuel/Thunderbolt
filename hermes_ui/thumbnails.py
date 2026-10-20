@@ -139,6 +139,24 @@ def list_thumbnail_tasks() -> list[dict[str, Any]]:
     return records
 
 
+def get_thumbnail_task_record(task_id: str) -> dict[str, Any] | None:
+    """Re-reads the CURRENT state of ONE task for the thumbnail queue polling.
+
+    The gallery card fragment calls this on every poll so the UI reflects the
+    moment the background worker finishes, without a full page reload.
+    """
+    wanted = str(task_id or "").strip()
+    if not wanted:
+        return None
+    tasks = load_tasks()
+    if not isinstance(tasks, list):
+        return None
+    for task in tasks:
+        if isinstance(task, dict) and str(task.get("id") or "") == wanted:
+            return normalize_thumbnail_task(task)
+    return None
+
+
 def _archive_image(task_id: str, image_path: Path | None) -> Path | None:
     if not image_path or not image_path.is_file():
         return None
