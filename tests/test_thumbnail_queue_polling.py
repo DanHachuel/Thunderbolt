@@ -56,10 +56,12 @@ def test_idle_fragment_disables_the_network_loop_for_terminal_states():
 def test_live_fragment_stops_polling_when_worker_reaches_a_terminal_state():
     block = _thumbnails_slice()
     live = block.split("def _thumbnail_status_fragment_live(", 1)[1].split("def _thumbnail_status_fragment_idle(", 1)[0]
-    # Ao chegar a terminal (generated/failed/...) o fragment força UM rerun
-    # completo; o card re-renderiza pela variante idle e o timer morre.
+    # 1.0.16: ao chegar a terminal (generated/failed/...) o fragment cancela o
+    # PRÓPRIO timer (stop_auto_rerun) — sem rerun da página, sem avisos
+    # "fragment does not exist anymore" e sem destruir as outras cards.
     assert "if status not in _THUMBNAIL_POLLING_STATES:" in live
-    assert "st.rerun(scope=\"app\")" in live
+    assert "_stop_own_fragment_auto_rerun()" in live
+    assert "st.rerun(" not in live
 
 
 def test_card_dispatches_the_fragment_variant_by_current_status():

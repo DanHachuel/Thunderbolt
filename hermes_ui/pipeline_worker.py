@@ -2063,13 +2063,13 @@ def _subtitle_config_for_task(task: dict[str, Any], settings: dict[str, Any]) ->
 
     return {
         "font_path": font_path,
-        "font_size": int(generation_settings.get("subtitle_font_size") or 60),
+        "font_size": int(generation_settings.get("subtitle_font_size") or 40),
         "position": position,
         "color": _hex_color(generation_settings.get("subtitle_color"), "#FFFFFF"),
-        "background": bool(generation_settings.get("subtitle_background", True)),
-        "background_color": _hex_color(generation_settings.get("subtitle_background_color"), "#000000"),
-        "outline": _hex_color(generation_settings.get("subtitle_outline"), "#000000"),
-        "outline_width": float(generation_settings.get("subtitle_outline_width") or 1.5),
+        "background": bool(generation_settings.get("subtitle_background", False)),
+        "background_color": _hex_color(generation_settings.get("subtitle_background_color"), "#FFFFFF"),
+        "outline": _hex_color(generation_settings.get("subtitle_outline"), "#FFFFFF"),
+        "outline_width": float(generation_settings.get("subtitle_outline_width") or 2.75),
     }
 
 

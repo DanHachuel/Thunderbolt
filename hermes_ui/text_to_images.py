@@ -249,7 +249,7 @@ def _subtitle_clips_for_scenes(scenes: list[dict], video_width: int, video_heigh
     if not font_path:
         return []
     # O tamanho é definido para 1080p e escala com a altura real do vídeo.
-    font_size = max(12, int(config.get("font_size") or 60) * max(1, int(video_height)) // 1080)
+    font_size = max(12, int(config.get("font_size") or 40) * max(1, int(video_height)) // 1080)
     font = ImageFont.truetype(font_path, font_size)
     ascent, descent = font.getmetrics()
 
@@ -354,7 +354,7 @@ def render_subtitle_preview_frame(config: Mapping[str, Any], canvas_color: str =
     # com a altura real do vídeo — no preview o frame é 1080p, logo o slider
     # é aplicado tal qual.
     video_width, video_height = 1920, 1080
-    font_size = max(12, int(config.get("font_size") or 60) * max(1, int(video_height)) // 1080)
+    font_size = max(12, int(config.get("font_size") or 40) * max(1, int(video_height)) // 1080)
     font = ImageFont.truetype(font_path, font_size)
     ascent, descent = font.getmetrics()
 

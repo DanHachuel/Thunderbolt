@@ -6,11 +6,14 @@ no seu próprio fragment e RELÊ o tasks.json em cada execução. Regra de ouro 
 (``@st.fragment(run_every=_VIDEO_TASK_POLL_SECONDS)``) só existe em
 ``to_do``/``standby``/``doing``; estados terminais renderizam pela variante
 idle (``@st.fragment`` sem ``run_every`` → zero polling de rede em repouso).
-Quando o live detecta um estado terminal, força ``st.rerun(scope="app")`` UMA
-única vez e o Streamlit cancela o timer do fragment. O memo de 2s partilhado
-garante que N cards a pollar custem 1 leitura do catálogo por janela, e as
-acções da UI (Start/Stop/Refazer/Apagar) invalidam-no para responderem no
-instante. Zero alterações ao worker de background (restrição da tarefa).
+Quando o live detecta um estado terminal, CANCELA o próprio timer via
+``_stop_own_fragment_auto_rerun()`` (1.0.16: a mensagem ``stop_auto_rerun``
+que o runtime usa internamente) — zero reruns completos a partir do polling,
+sem os avisos "The fragment ... does not exist anymore" que o antigo
+``st.rerun(scope="app")`` inundava no terminal e sem destruir os outros cards.
+O memo de 2s partilhado garante que N cards a pollar custem 1 leitura do
+catálogo por janela, e as acções da UI (Start/Stop/Refazer/Apagar) invalidam-no
+para responderem no instante. Zero alterações ao worker de background.
 """
 from __future__ import annotations
 
@@ -53,12 +56,15 @@ def test_live_cards_stop_polling_when_the_task_reaches_a_terminal_state():
     backlog_live = MAIN_SOURCE.split("def _video_backlog_card_live(", 1)[1].split("@st.fragment\ndef _video_backlog_card_idle(", 1)[0]
     assert "state = _video_backlog_card_body(task_id)" in backlog_live
     assert "if state not in _VIDEO_TASK_LIVE_STATES:" in backlog_live
-    assert 'st.rerun(scope="app")' in backlog_live
+    # 1.0.16: paragem sem rerun — o fragment cancela o PRÓPRIO timer.
+    assert "_stop_own_fragment_auto_rerun()" in backlog_live
+    assert "st.rerun(" not in backlog_live
 
     youtube_live = MAIN_SOURCE.split("def _youtube_task_card_live(", 1)[1].split("@st.fragment\ndef _youtube_task_card_idle(", 1)[0]
     assert "state = _youtube_task_card_body(task_id)" in youtube_live
     assert "if state not in _VIDEO_TASK_LIVE_STATES:" in youtube_live
-    assert 'st.rerun(scope="app")' in youtube_live
+    assert "_stop_own_fragment_auto_rerun()" in youtube_live
+    assert "st.rerun(" not in youtube_live
 
 
 def test_card_bodies_always_re_read_the_current_task_from_disk():
@@ -124,11 +130,44 @@ def test_progress_panel_keeps_the_static_fragment_contract():
 def test_progress_panel_live_variant_polls_and_stops_outside_the_guarded_slice():
     live = MAIN_SOURCE.split("@st.fragment(run_every=_VIDEO_TASK_POLL_SECONDS)\ndef _render_pipeline_progress_panel_live()", 1)[1].split("def load_video_tasks_for_catalog", 1)[0]
     assert "if not _pipeline_progress_panel_body():" in live
-    assert 'st.rerun(scope="app")' in live
+    # 1.0.16: o painel também pára cancelando o próprio timer, sem rerun.
+    assert "_stop_own_fragment_auto_rerun()" in live
+    assert "st.rerun(" not in live
     # O guard anti-rerun do painel (test_pipeline_worker) continua a cumprir-se:
-    # o one-shot do live vive DEPOIS de VIDEO_TASK_STATE_LABELS, fora da fatia.
+    # o mecanismo de paragem vive DEPOIS de VIDEO_TASK_STATE_LABELS, fora da fatia.
     panel_slice = MAIN_SOURCE.split("@st.fragment\ndef _render_pipeline_progress_panel()", 1)[1].split("VIDEO_TASK_STATE_LABELS", 1)[0]
     assert 'st.rerun(scope="app")' not in panel_slice
+
+
+def test_thumbnail_live_fragment_stops_the_same_way_without_rerun():
+    live = MAIN_SOURCE.split("def _thumbnail_status_fragment_live(", 1)[1].split("@st.fragment(run_every=None)\ndef _thumbnail_status_fragment_idle(", 1)[0]
+    assert "if status not in _THUMBNAIL_POLLING_STATES:" in live
+    assert "_stop_own_fragment_auto_rerun()" in live
+    assert "st.rerun(" not in live
+
+
+def test_stop_own_fragment_auto_rerun_degrades_silently_without_script_context():
+    # Fora de um script run (bare mode, testes): False silencioso, sem excepções.
+    assert main._stop_own_fragment_auto_rerun() is False
+
+
+def test_fragment_gone_noise_filter_drops_only_the_race_line():
+    import logging
+
+    noise_filter = main._FragmentGoneNoiseFilter()
+    race_line = logging.LogRecord(
+        "streamlit.runtime.app_session", 20, "app_session.py", 1,
+        "The fragment with id abc123 does not exist anymore - it might have been removed during a preceding full-app rerun.",
+        (), None,
+    )
+    normal_line = logging.LogRecord(
+        "streamlit.runtime.app_session", 20, "app_session.py", 1,
+        "Session started for the app", (), None,
+    )
+    assert noise_filter.filter(race_line) is False
+    assert noise_filter.filter(normal_line) is True
+    # O filtro fica instalado no logger exacto que emite a linha (app_session.py).
+    assert any(isinstance(item, main._FragmentGoneNoiseFilter) for item in logging.getLogger("streamlit.runtime.app_session").filters)
 
 
 # ---------------------------------------------------------------------------

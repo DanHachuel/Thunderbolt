@@ -61,9 +61,9 @@ def test_subtitle_config_defaults_when_keys_absent(monkeypatch, tmp_path):
     )
     config = _subtitle_config_for_task({"generation_settings": {}}, {})
     assert config is not None
-    assert config["font_size"] == 60
+    assert config["font_size"] == 40
     assert config["color"] == "#FFFFFF"
-    assert config["background"] is True
+    assert config["background"] is False
     assert config["position"] == "bottom"
 
 
@@ -226,7 +226,7 @@ def test_manual_batch_carries_subtitle_settings_into_tasks(monkeypatch, tmp_path
     assert gs.get("enable_subtitles") is True
     assert gs.get("subtitle_font_size") == 55
     assert gs.get("subtitle_position") == "Bottom (Recommended)"
-    assert gs.get("subtitle_outline_width") == 1.5
+    assert gs.get("subtitle_outline_width") == 2.75
 
 
 def test_automation_batch_keeps_channel_subtitles_as_source_of_truth(monkeypatch, tmp_path):

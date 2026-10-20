@@ -464,11 +464,12 @@ def test_backlog_has_live_progress_and_stale_recovery_ui():
     assert "Worker de vídeo sem heartbeat recente" in source
     assert "Worker de vídeo pausado por segurança" in source
     assert "resume_pipeline_worker()" in source
-    # 1.0.14: o painel de progresso continua proibido de reconstruir a página
-    # inteira (o guard fica scoped ao bloco do painel). O st.rerun(scope="app")
-    # one-shot do fragment da fila de thumbnails (_thumbnail_status_fragment_live,
-    # estado terminal) é o mecanismo canónico do Streamlit para PARAR um
-    # run_every — não é uma regressão deste painel.
+    # 1.0.16: o painel de progresso continua proibido de reconstruir a página
+    # inteira (o guard fica scoped ao bloco do painel). Nenhum fragment de
+    # polling (painel, cards de tarefa, fila de thumbnails) dispara reruns
+    # completos: a paragem é feita cancelando o próprio timer via
+    # _stop_own_fragment_auto_rerun (stop_auto_rerun, o mecanismo interno do
+    # runtime) — sem os avisos "fragment does not exist anymore".
     panel = source.split("@st.fragment\ndef _render_pipeline_progress_panel()", 1)[1].split("VIDEO_TASK_STATE_LABELS", 1)[0]
     assert 'st.rerun(scope="app")' not in panel
 

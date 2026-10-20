@@ -50,6 +50,30 @@ from streamlit.runtime.scriptrunner import get_script_run_ctx
 logging.getLogger("streamlit.elements.lib.policies").setLevel(logging.ERROR)
 
 
+class _FragmentGoneNoiseFilter(logging.Filter):
+    """Drop apenas a linha de race dos timers ``run_every`` (1.0.16).
+
+    Durante um rerun completo legítimo (clique em Start/Stop/Apagar, …) o
+    storage de fragments do servidor é limpo antes de os timers do navegador
+    saberem da nova sessão; um tick que caia nessa janela fazia o runtime
+    registar INFO "The fragment with id ... does not exist anymore ..." em
+    ``streamlit.runtime.app_session`` (race reconhecida em streamlit#9080) —
+    comportamento interno esperado, sem impacto para o utilizador, que
+    inundava o terminal do launcher. O polling dos cards já cancela o próprio
+    timer via ``_stop_own_fragment_auto_rerun()``; este filtro só remove o
+    ruído que os cliques continuam a poder causar. Todas as outras mensagens
+    do logger passam intactas.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "does not exist anymore" not in record.getMessage()
+
+
+_app_session_logger = logging.getLogger("streamlit.runtime.app_session")
+if not any(isinstance(item, _FragmentGoneNoiseFilter) for item in _app_session_logger.filters):
+    _app_session_logger.addFilter(_FragmentGoneNoiseFilter())
+
+
 def _has_script_context() -> bool:
     return get_script_run_ctx() is not None
 
@@ -2031,20 +2055,20 @@ def render_channel_audio_subtitle_defaults(channel: dict) -> None:
         with style_cols[1]:
             selected_position = st.selectbox("Position", SUBTITLE_POSITION_OPTIONS, index=SUBTITLE_POSITION_OPTIONS.index(subtitle_position) if subtitle_position in SUBTITLE_POSITION_OPTIONS else 0, key=f"channel_default_subtitle_position_{channel_id}")
         with style_cols[2]:
-            subtitle_font_size = st.slider("Font Size", min_value=12, max_value=96, value=int(channel.get("default_subtitle_font_size") or 60), key=f"channel_default_subtitle_font_size_{channel_id}")
+            subtitle_font_size = st.slider("Font Size", min_value=12, max_value=96, value=int(channel.get("default_subtitle_font_size") or 40), key=f"channel_default_subtitle_font_size_{channel_id}")
         with style_cols[3]:
             subtitle_color = st.color_picker("Color", str(channel.get("default_subtitle_color") or "#FFFFFF"), key=f"channel_default_subtitle_color_{channel_id}")
         box_cols = st.columns([1.1, 0.7, 1.2, 1.1, 0.7])
         with box_cols[0]:
-            subtitle_background = st.checkbox("Background", value=bool(channel.get("default_subtitle_background", True)), key=f"channel_default_subtitle_background_{channel_id}")
+            subtitle_background = st.checkbox("Background", value=bool(channel.get("default_subtitle_background", False)), key=f"channel_default_subtitle_background_{channel_id}")
         with box_cols[1]:
-            subtitle_background_color = st.color_picker("Background Color", str(channel.get("default_subtitle_background_color") or "#000000"), key=f"channel_default_subtitle_background_color_{channel_id}")
+            subtitle_background_color = st.color_picker("Background Color", str(channel.get("default_subtitle_background_color") or "#FFFFFF"), key=f"channel_default_subtitle_background_color_{channel_id}")
         with box_cols[2]:
-            subtitle_rounded_background = st.checkbox("Rounded Background", value=bool(channel.get("default_subtitle_rounded_background", False)), key=f"channel_default_subtitle_rounded_background_{channel_id}")
+            subtitle_rounded_background = st.checkbox("Rounded Background", value=bool(channel.get("default_subtitle_rounded_background", True)), key=f"channel_default_subtitle_rounded_background_{channel_id}")
         with box_cols[3]:
-            subtitle_outline_width = st.slider("Outline Width", min_value=0.0, max_value=5.0, value=float(channel.get("default_subtitle_outline_width") or 1.5), step=0.25, key=f"channel_default_subtitle_outline_width_{channel_id}")
+            subtitle_outline_width = st.slider("Outline Width", min_value=0.0, max_value=5.0, value=float(channel.get("default_subtitle_outline_width") or 2.75), step=0.25, key=f"channel_default_subtitle_outline_width_{channel_id}")
         with box_cols[4]:
-            subtitle_outline = st.color_picker("Outline", str(channel.get("default_subtitle_outline") or "#000000"), key=f"channel_default_subtitle_outline_{channel_id}")
+            subtitle_outline = st.color_picker("Outline", str(channel.get("default_subtitle_outline") or "#FFFFFF"), key=f"channel_default_subtitle_outline_{channel_id}")
         # 1.0.09: bloco de Preview — desenha a legenda com as métricas reais da
         # montagem (PIL, mesma matemática de _subtitle_clips_for_scenes) sobre
         # um fundo de teste escolhido pelo utilizador. O fundo do bloco é só
@@ -6190,6 +6214,45 @@ def _video_task_is_live(task: dict[str, Any]) -> bool:
     return _catalog_task_state(task) in _VIDEO_TASK_LIVE_STATES
 
 
+def _stop_own_fragment_auto_rerun() -> bool:
+    """Cancela o timer ``run_every`` do PRÓPRIO fragment, sem qualquer rerun (1.0.16).
+
+    Usado pelos fragments live (cards de tarefa do Backlog e da Automação
+    Youtube, painel da pipeline e fila de thumbnails) ao detectar um estado
+    terminal. Em vez de forçar ``st.rerun(scope="app")`` — que limpa o storage
+    de TODOS os fragments, faz os timers do navegador dispararem pedidos para
+    fragments já inexistentes (INFO "The fragment with id ... does not exist
+    anymore", que inundava o terminal) e re-renderiza a página inteira —
+    enviamos a MESMA mensagem ``stop_auto_rerun`` que o runtime usa para
+    cancelar os timers de fragments aninhados evictos (script_runner.py): o
+    browser cancela o ``setInterval`` do card e o polling morre no instante
+    seguinte, sem flicker e sem tocar nos restantes cards.
+
+    Devolve True se o cancelamento foi enviado; False (silencioso) quando não
+    há contexto de script — nesse caso o fragment limita-se a continuar a
+    renderizar o estado terminal até ao próximo rerun completo natural.
+    """
+    try:
+        from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
+        from streamlit.runtime.scriptrunner_utils.script_run_context import ThreadState
+
+        try:
+            fragment_id = ThreadState.get().fragment_id
+        except RuntimeError:
+            return False
+        ctx = get_script_run_ctx(suppress_warning=True)
+        if ctx is None or not fragment_id:
+            return False
+        message = ForwardMsg()
+        message.stop_auto_rerun.fragment_ids.append(fragment_id)
+        ctx.enqueue(message)
+        return True
+    except Exception:
+        # API interna do Streamlit mudou (versão futura): degrada em silêncio —
+        # o polling pára no próximo rerun completo, sem avisos nem loops.
+        return False
+
+
 @st.fragment
 def _render_pipeline_progress_panel() -> None:
     """Actualizar apenas o painel da pipeline quando o utilizador interage."""
@@ -6247,13 +6310,15 @@ def _render_pipeline_progress_panel_live() -> None:
     """Painel ao vivo: heartbeat, estágio e progressos sobem sozinhos (1.0.15).
 
     Polla a cada 3s enquanto existir tarefa viva; quando a última termina, o
-    corpo devolve False e o fragment força UM rerun completo — a página volta
-    a renderizar o painel pela variante estática e o Streamlit cancela o
-    timer deste fragment (o ``st.rerun(scope="app")`` one-shot é o mecanismo
-    canónico de paragem de um ``run_every``).
+    corpo devolve False e o fragment CANCELA o próprio timer via
+    ``_stop_own_fragment_auto_rerun()`` (1.0.16) — a mesma mensagem
+    ``stop_auto_rerun`` que o runtime usa internamente. Zero reruns completos
+    a partir do polling: sem "fragment does not exist anymore" no terminal,
+    sem flicker e sem destruir os restantes cards da página. O dispatch
+    live/estático renova-se no próximo rerun natural (qualquer clique).
     """
     if not _pipeline_progress_panel_body():
-        st.rerun(scope="app")
+        _stop_own_fragment_auto_rerun()
 
 
 def load_video_tasks_for_catalog() -> list[dict[str, Any]]:
@@ -6783,10 +6848,12 @@ def render_videos():
 
 # ---------------------------------------------------------------------------
 # 1.0.15: card do Backlog Vídeos em fragment — polling por card. O corpo relê
-# SEMPRE o estado actual da tarefa (tasks.json via memo partilhado de 2s); a
-# variante live só polla em to_do/standby/doing e pára no primeiro estado
-# terminal com um st.rerun(scope="app") one-shot (o mecanismo canónico de
-# paragem do run_every). Estados terminais usam a variante idle SEM polling.
+# SEMPRE o estado actual da tarefa (tasks.json via memo partilhado de 2s).
+# 1.0.16: a variante live só polla em to_do/standby/doing e, ao detectar o
+# estado terminal, CANCELA o próprio timer via stop_auto_rerun (ver
+# _stop_own_fragment_auto_rerun) — zero reruns completos a partir do polling,
+# sem avisos "fragment does not exist anymore" e sem mexer nos outros cards.
+# Estados terminais usam a variante idle SEM polling.
 # ---------------------------------------------------------------------------
 
 
@@ -6865,13 +6932,15 @@ def _video_backlog_card_body(task_id: str) -> str:
 def _video_backlog_card_live(task_id: str) -> None:
     """Estado vivo (to_do/standby/doing): relê a tarefa a cada 3s (run_every).
 
-    Ao detectar um estado terminal (done/failed/cancelled/…) força UM rerun
-    completo — a página volta a renderizar o card pela variante idle e o
-    Streamlit cancela o timer deste fragment, acabando com o loop de rede.
+    1.0.16: ao detectar um estado terminal (done/failed/cancelled/…) cancela o
+    PRÓPRIO timer via ``_stop_own_fragment_auto_rerun()`` — o card congela no
+    estado final já renderizado, sem rerun da página, sem destruir os outros
+    cards e sem a chuva de avisos "fragment does not exist anymore" que o
+    antigo rerun completo de página causava no terminal do launcher.
     """
     state = _video_backlog_card_body(task_id)
     if state not in _VIDEO_TASK_LIVE_STATES:
-        st.rerun(scope="app")
+        _stop_own_fragment_auto_rerun()
 
 
 @st.fragment
@@ -7304,14 +7373,16 @@ def _thumbnail_status_block(task_id: str, fallback_record: dict[str, Any]) -> st
 def _thumbnail_status_fragment_live(task_id: str, fallback_record: dict[str, Any]) -> None:
     """Fila activa: relê o estado da tarefa a cada 2s (run_every=2).
 
-    Quando o worker chega a um estado terminal (generated/failed/...), força
-    um rerun completo — o card passa a ser renderizado pela variante idle
-    (run_every=None) e o Streamlit cancela o timer deste fragmento, acabando
-    com o loop de rede.
+    1.0.16: quando o worker chega a um estado terminal (generated/failed/…),
+    o fragmento CANCELA o próprio timer via ``_stop_own_fragment_auto_rerun()``
+    — a card congela no estado final já renderizado (a imagem aparece no
+    instante em que o Motor termina), sem rerun da página, sem destruir as
+    outras cards e sem a chuva de avisos "fragment does not exist anymore"
+    que o antigo rerun completo de página causava no terminal do launcher.
     """
     status = _thumbnail_status_block(task_id, fallback_record)
     if status not in _THUMBNAIL_POLLING_STATES:
-        st.rerun(scope="app")
+        _stop_own_fragment_auto_rerun()
 
 
 @st.fragment(run_every=None)
@@ -7620,8 +7691,9 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False, tasks: li
 # ---------------------------------------------------------------------------
 # 1.0.15: card da Automação Youtube em fragment — polling por card, mesmo
 # padrão do Backlog (1.0.15) e da fila de thumbnails (1.0.14). O corpo relê
-# SEMPRE a tarefa pelo id; a variante live polla em to_do/standby/doing e
-# pára no primeiro estado terminal com um st.rerun(scope="app") one-shot.
+# SEMPRE a tarefa pelo id.
+# 1.0.16: ao detectar o estado terminal, a variante live cancela o próprio
+# timer via stop_auto_rerun — zero reruns completos a partir do polling.
 # ---------------------------------------------------------------------------
 
 
@@ -7819,13 +7891,15 @@ def _youtube_task_card_body(task_id: str) -> str:
 def _youtube_task_card_live(task_id: str) -> None:
     """Estado vivo (to_do/standby/doing): relê a tarefa a cada 3s (run_every).
 
-    Ao detectar um estado terminal (done/failed/cancelled/…) força UM rerun
-    completo — a página volta a renderizar o card pela variante idle e o
-    Streamlit cancela o timer deste fragment, acabando com o loop de rede.
+    1.0.16: ao detectar um estado terminal (done/failed/cancelled/…) cancela o
+    PRÓPRIO timer via ``_stop_own_fragment_auto_rerun()`` — o card congela no
+    estado final já renderizado, sem rerun da página, sem destruir os outros
+    cards e sem a chuva de avisos "fragment does not exist anymore" que o
+    antigo rerun completo de página causava no terminal do launcher.
     """
     state = _youtube_task_card_body(task_id)
     if state not in _VIDEO_TASK_LIVE_STATES:
-        st.rerun(scope="app")
+        _stop_own_fragment_auto_rerun()
 
 
 @st.fragment
