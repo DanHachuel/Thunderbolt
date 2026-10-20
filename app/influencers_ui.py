@@ -38,6 +38,7 @@ from hermes_ui.storage import STORAGE, ensure_storage
 
 CONTENT_STATES = {
     "queued": "Na fila",
+    "image_queued": "Na fila de imagens",
     "running": "Em execução",
     "completed": "Concluído",
     "failed": "Falha",
@@ -557,29 +558,48 @@ def render_ugc_products(settings: dict[str, Any]) -> None:
                         character_name = str(selected_character.get("name") or selected_influencer)
                         enriched_prompts = [f"Personagem: {character_name}. Produto: {product_name.strip()}. Informação: {product_info.strip()}. {item} Formato vertical 9:16, enquadramento para telemóvel, TikTok e Instagram." for item in prompts]
                         owner_id = selected_influencer or _workflow_owner(repository)
-                        record = repository.create_content({
-                            "influencer_id": owner_id,
-                            "content_type": "image" if generation_mode == "Gerar Foto" else "video",
-                            "prompt": script,
-                            "caption": f"{product_name.strip()} + {character_name}",
-                            "provider": card.get("provider") if card else "",
-                            "model": str(card.get("model") or "") if card else "",
-                            "platform": "TikTok, Instagram",
-                            "state": "running",
-                            "metadata": {"workflow": "ugc_products", "product_name": product_name.strip(), "product_info": product_info.strip(), "character_name": character_name, "character_asset_path": str(character_path or ""), "product_image_path": str(product_path), "generation_mode": generation_mode, "duration_seconds": int(duration), "aspect_ratio": "9:16", "segment_prompts": enriched_prompts, "telegram": False, "social_publish": False},
-                        })
-                        with st.spinner("A gerar a mídia UGC em formato vertical 9:16…"):
-                            if generation_mode == "Gerar Foto":
-                                image_card = {**card, "aspect_ratio": "9:16"}
-                                output = generate_image_for_card(settings, image_card, enriched_prompts[0], topic=product_name.strip(), reference_image=product_path)
-                                task_ids = []
-                            else:
+                        ugc_metadata = {"workflow": "ugc_products", "product_name": product_name.strip(), "product_info": product_info.strip(), "character_name": character_name, "character_asset_path": str(character_path or ""), "product_image_path": str(product_path), "generation_mode": generation_mode, "duration_seconds": int(duration), "aspect_ratio": "9:16", "segment_prompts": enriched_prompts, "telegram": False, "social_publish": False, "provider_card_id": str((card or {}).get("id") or "")}
+                        if generation_mode == "Gerar Foto":
+                            # 1.0.11: fotos UGC vão para a FILA DE IMAGENS de
+                            # produção — a UI responde instantâneo e o
+                            # image_worker gera em background (backoff em 429).
+                            repository.create_content({
+                                "influencer_id": owner_id,
+                                "content_type": "image",
+                                "prompt": script,
+                                "caption": f"{product_name.strip()} + {character_name}",
+                                "provider": card.get("provider") if card else "",
+                                "model": str(card.get("model") or "") if card else "",
+                                "platform": "TikTok, Instagram",
+                                "state": "image_queued",
+                                "metadata": ugc_metadata,
+                            })
+                            st.success("Foto UGC na fila de produção do Motor — a geração corre em background; consulte Midias Prontas.")
+                        else:
+                            record = repository.create_content({
+                                "influencer_id": owner_id,
+                                "content_type": "video",
+                                "prompt": script,
+                                "caption": f"{product_name.strip()} + {character_name}",
+                                "provider": card.get("provider") if card else "",
+                                "model": str(card.get("model") or "") if card else "",
+                                "platform": "TikTok, Instagram",
+                                "state": "running",
+                                "metadata": ugc_metadata,
+                            })
+                            with st.spinner("A gerar a mídia UGC em formato vertical 9:16…"):
                                 output = generate_ugc_product_video(settings, card, image_url=_image_input({"stored_path": str(product_path), "mime_type": mimetypes.guess_type(product_path.name)[0] or "image/jpeg"}), prompts=enriched_prompts, duration=int(duration))[0]
                                 task_ids = []
-                        repository.update_content(record["id"], {"state": "completed", "artifact_path": str(output), "provider_request_id": ",".join(task_ids)})
-                        st.success("Mídia UGC criada e guardada em Midias Prontas.")
+                            repository.update_content(record["id"], {"state": "completed", "artifact_path": str(output), "provider_request_id": ",".join(task_ids)})
+                            st.success("Mídia UGC criada e guardada em Midias Prontas.")
                     except Exception as exc:
-                        repository.update_content(record["id"], {"state": "failed", "error": str(exc)[:1000]})
+                        record_id = None
+                        try:
+                            record_id = record["id"]
+                        except NameError:
+                            record_id = None
+                        if record_id:
+                            repository.update_content(record_id, {"state": "failed", "error": str(exc)[:1000]})
                         st.error(f"Não foi possível gerar a mídia UGC: {exc}")
         if not image_cards and not video_cards:
             st.warning("Configure pelo menos um provider de imagem ou vídeo em Configuração API > API Keys > Imagem e Video IA.")
@@ -667,17 +687,33 @@ def render_ai_influencer_content(settings: dict[str, Any]) -> None:
                     card = next(card for card in cards if str(card.get("id")) == provider_id)
                     reference = next((item for item in image_assets if str(item.get("id")) == reference_id), None)
                     reference_path = _local_asset_path(reference) if reference else None
-                    record = repository.create_content({"influencer_id": influencer_id, "content_type": "image", "prompt": prompt, "caption": caption, "provider": card.get("provider"), "model": card.get("model"), "platform": ", ".join(platforms), "state": "running", "metadata": {"reference_asset_id": reference_id}})
-                    with st.spinner("A gerar a imagem…"):
-                        try:
-                            output = generate_image_for_card(settings, card, prompt, topic=_influencer_label(influencers, influencer_id), reference_image=reference_path)
-                            repository.update_content(record["id"], {"state": "completed", "artifact_path": str(output)})
-                            record_notification("influencer_content_completed", "Conteúdo de Influencer concluído", f"A imagem de {_influencer_label(influencers, influencer_id)} foi gerada e guardada.", metadata={"content_id": record["id"], "content_type": "image", "provider": card.get("provider")}, dedupe_key=f"influencer-content:{record['id']}:completed")
-                            st.success(f"Imagem gerada por {media_provider_definition(card.get('provider')).label}.")
-                        except Exception as exc:
-                            repository.update_content(record["id"], {"state": "failed", "error": str(exc)[:1000]})
-                            record_notification("influencer_content_failed", "Conteúdo de Influencer falhou", f"A imagem de {_influencer_label(influencers, influencer_id)} falhou. Consulte o histórico para ver o erro.", metadata={"content_id": record["id"], "content_type": "image", "provider": card.get("provider")}, dedupe_key=f"influencer-content:{record['id']}:failed")
-                            st.error(f"Não foi possível gerar a imagem: {exc}")
+                    # 1.0.11: fila de imagens de produção — a UI marca e responde
+                    # instantâneo; o image_worker gera em background (mesmo pool
+                    # de imagem), com backoff em Rate Limit 429.
+                    record = repository.create_content({
+                        "influencer_id": influencer_id,
+                        "content_type": "image",
+                        "prompt": prompt,
+                        "caption": caption,
+                        "provider": card.get("provider"),
+                        "model": card.get("model"),
+                        "platform": ", ".join(platforms),
+                        "state": "image_queued",
+                        "metadata": {
+                            "reference_asset_id": reference_id,
+                            "provider_card_id": str(card.get("id") or ""),
+                            "reference_path": str(reference_path or ""),
+                            "queued_by": "motor_image_queue",
+                        },
+                    })
+                    record_notification(
+                        "influencer_content_queued",
+                        "Imagem na fila de produção",
+                        f"A imagem de {_influencer_label(influencers, influencer_id)} entrou na fila do Motor e será gerada em background.",
+                        metadata={"content_id": record["id"], "content_type": "image", "provider": card.get("provider")},
+                        dedupe_key=f"influencer-content:{record['id']}:queued",
+                    )
+                    st.success("Imagem na fila de produção do Motor — a geração corre em background; consulte o histórico abaixo.")
                     _render_content_history(repository, influencer_id)
             else:
                 selected_id = str(st.session_state.get("content_image_influencer") or options[0])

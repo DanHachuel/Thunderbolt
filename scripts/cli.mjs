@@ -295,6 +295,16 @@ if (args[0] === "pipeline-worker" || args.includes("--pipeline-worker")) {
   run(python, ["-m", "hermes_ui.pipeline_worker", ...args.filter((arg) => arg !== "pipeline-worker" && arg !== "--pipeline-worker")], "worker do pipeline de vídeos", runtimeEnv);
 }
 
+if (args[0] === "thumbnail-worker" || args.includes("--thumbnail-worker")) {
+  if (!checkWorkerDependencies("o worker de thumbnails")) process.exit(1);
+  run(python, ["-m", "hermes_ui.thumbnail_worker", ...args.filter((arg) => arg !== "thumbnail-worker" && arg !== "--thumbnail-worker")], "worker de thumbnails", runtimeEnv);
+}
+
+if (args[0] === "image-worker" || args.includes("--image-worker")) {
+  if (!checkWorkerDependencies("o worker de imagens de produção")) process.exit(1);
+  run(python, ["-m", "hermes_ui.image_worker", ...args.filter((arg) => arg !== "image-worker" && arg !== "--image-worker")], "worker de imagens de produção", runtimeEnv);
+}
+
 const port = process.env.THUNDERBOLT_PORT || process.env.HERMES_PORT || "3030";
 const publicPort = Number.parseInt(String(port), 10);
 const backendPort = await new Promise((resolve, reject) => {
@@ -490,6 +500,8 @@ proxy.listen(publicPort, "127.0.0.1", () => {
 // Cada worker só existe enquanto a respectiva fila tiver trabalho pendente.
 let worker = null;
 let pipelineWorker = null;
+let thumbnailWorker = null;
+let imageWorker = null;
 const restartExitCode = 75;
 let shuttingDown = false;
 let child;
@@ -641,10 +653,55 @@ function startPipelineWorker() {
   });
 }
 
+function startQueueWorkers() {
+  // 1.0.11: filas paralelas do Motor — thumbnails e imagens de produção são
+  // workers independentes com pools próprios (motor.max_parallel_*).
+  if (shuttingDown || thumbnailWorker || imageWorker) return;
+  if (!checkWorkerDependencies("os workers de filas do Motor")) return;
+  thumbnailWorker = spawn(python, ["-m", "hermes_ui.thumbnail_worker"], {
+    cwd: root,
+    stdio: "inherit",
+    env: runtimeEnv,
+    windowsHide: false,
+  });
+  thumbnailWorker.on("error", (error) => console.error(`Thunderbolt thumbnail worker: ${error.message}`));
+  thumbnailWorker.on("exit", (code, signal) => {
+    thumbnailWorker = null;
+    if (shuttingDown) return;
+    console.error(`Thunderbolt thumbnail worker: terminou (código ${code ?? "-"}, sinal ${signal ?? "-"}); a reiniciar em 5s.`);
+    setTimeout(() => {
+      if (!shuttingDown) startQueueWorkers();
+    }, 5000).unref?.();
+  });
+  imageWorker = spawn(python, ["-m", "hermes_ui.image_worker"], {
+    cwd: root,
+    stdio: "inherit",
+    env: runtimeEnv,
+    windowsHide: false,
+  });
+  imageWorker.on("error", (error) => console.error(`Thunderbolt image worker: ${error.message}`));
+  imageWorker.on("exit", (code, signal) => {
+    imageWorker = null;
+    if (shuttingDown) return;
+    console.error(`Thunderbolt image worker: terminou (código ${code ?? "-"}, sinal ${signal ?? "-"}); a reiniciar em 5s.`);
+    setTimeout(() => {
+      if (!shuttingDown) startQueueWorkers();
+    }, 5000).unref?.();
+  });
+}
+
+function stopQueueWorkers() {
+  if (thumbnailWorker && !thumbnailWorker.killed) thumbnailWorker.kill();
+  thumbnailWorker = null;
+  if (imageWorker && !imageWorker.killed) imageWorker.kill();
+  imageWorker = null;
+}
+
 function monitorWorkers() {
   if (shuttingDown) return;
   startPipelineWorker();
   startAutomationWorker();
+  startQueueWorkers();
 }
 
 function startStreamlit() {
@@ -741,6 +798,7 @@ function stopStackComponents() {
   if (child && !child.killed) child.kill();
   if (worker && !worker.killed) worker.kill();
   stopPipelineWorker();
+  stopQueueWorkers();
 }
 
 const stopWorker = (reason = "unknown") => {

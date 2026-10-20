@@ -68,7 +68,7 @@ def test_api_settings_keep_api_keys_and_voice_test_tabs():
     # "Fix API settings tabs and read-only engine path"): a lista de tabs de
     # render_settings cresceu e "Teste de vozes" passou a "Teste de Voz"; as duas
     # tabs verificadas (API Keys e teste de voz) continuam presentes.
-    expected = 'render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz", "Navegador e Proxies"])'
+    expected = 'render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "Motor", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz", "Navegador e Proxies"])'
     assert expected in MAIN_SOURCE
     assert 'st.subheader("API Keys")' in MAIN_SOURCE
     assert 'st.subheader("Execução local")' not in MAIN_SOURCE

@@ -23,6 +23,7 @@ import time
 import psutil
 import requests
 from collections import deque
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -521,22 +522,35 @@ def _upload_with_heartbeat(task_id: str, upload_call: Any) -> Any:
     return result[0]
 
 
+def _task_eligible(task: Any) -> bool:
+    """1.0.11: predicate partilhado — `doing` (retomar interrompidas), `standby`
+    (Na fila de vídeo, novo estado do botão Start) e `to_do` sem Start manual."""
+    return isinstance(task, dict) and (
+        str(task.get("state") or "") in {"doing", "standby"}
+        or (str(task.get("state") or "") == "to_do" and not bool(task.get("manual_start_required", False)))
+    )
+
+
 def _next_runnable_task(tasks: Any) -> dict[str, Any] | None:
     """Return the first active task, excluding saved scripts awaiting Start."""
     if not isinstance(tasks, list):
         return None
-    return next(
-        (
-            task
-            for task in tasks
-            if isinstance(task, dict)
-            and (
-                task.get("state") == "doing"
-                or (task.get("state") == "to_do" and not bool(task.get("manual_start_required", False)))
-            )
-        ),
-        None,
-    )
+    return next((task for task in tasks if _task_eligible(task)), None)
+
+
+def _runnable_tasks(tasks: Any, *, exclude: set[str] | None = None) -> list[dict[str, Any]]:
+    """1.0.11: TODAS as tarefas elegíveis (fila de vídeo) para o pool paralelo.
+
+    Exclui as que já estão em voo neste processo (`exclude` = ids in-flight).
+    """
+    if not isinstance(tasks, list):
+        return []
+    excluded = exclude or set()
+    return [
+        task
+        for task in tasks
+        if _task_eligible(task) and str(task.get("id") or "") not in excluded
+    ]
 
 
 def _channel_for_task(task: dict[str, Any]) -> dict[str, Any]:
@@ -2452,6 +2466,10 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
             )
         script_record = save_script_document(script)
         artifacts["script"] = script_record.get("path", "")
+        # 1.0.08: carimbar o id do documento no artefacto — o sync de roteiros
+        # (app/main.py) reconhece esta tarefa como dona do roteiro e deixa de
+        # criar uma to_do falsa para um documento que já foi trabalhado aqui.
+        artifacts["script_document_id"] = str(script_record.get("id") or "")
         _update(task_id, artifacts=artifacts, progress=max(30, int(task.get("progress") or 0)))
     else:
         _update(task_id, artifacts=artifacts, error=None, progress=max(30, int(task.get("progress") or 0)))
@@ -2859,59 +2877,208 @@ def run_once() -> dict[str, Any]:
         if not candidate:
             _worker_heartbeat(last_task_id=None, last_error="", status="idle", stage="idle", progress=0, recovered_task_ids=recovered)
             return {"ok": True, "status": "idle", "recovered_task_ids": recovered}
-        task_id = str(candidate.get("id") or "")
-        _worker_heartbeat(last_task_id=task_id, status="running", stage=str(candidate.get("stage") or "pipeline"), progress=int(candidate.get("progress") or 0), last_error="", recovered_task_ids=recovered)
-        heartbeat_stop = threading.Event()
-        heartbeat_thread = threading.Thread(
-            target=_task_heartbeat_loop,
-            args=(task_id, heartbeat_stop),
-            name=f"task-heartbeat-{task_id}",
-            daemon=True,
-        )
-        heartbeat_thread.start()
-        try:
-            result = _run_task(candidate)
-            result_state = str(result.get("state") or "")
-            result_status = "blocked" if result_state == "blocked" and result.get("stop_reason") == "upload_uncertain" else "completed"
-            result_error = str(result.get("error") or "") if result_status == "blocked" else ""
-            _worker_heartbeat(status=result_status, last_error=result_error, stage=str(result.get("stage") or "upload"), progress=int(result.get("progress") or 100), task_id=task_id)
-            return {"ok": True, "task_id": task_id, "task": result, "status": result_status, "recovered_task_ids": recovered}
-        except PipelineStopped as exc:
-            current_task = _task_by_id(task_id) or candidate
-            current_state = str(current_task.get("state") or "")
-            if current_state not in {"blocked", "cancelled"}:
-                from hermes_ui.domain import update_task
-                update_task(task_id, {"state": "blocked", "error": str(exc), "failed_stage": current_task.get("stage") or "pipeline"})
-            _worker_heartbeat(status="stopped", last_error=str(exc), stage=str(current_task.get("stage") or "pipeline"), progress=int(current_task.get("progress") or 0), task_id=task_id)
-            return {"ok": True, "task_id": task_id, "status": "stopped", "recovered_task_ids": recovered}
-        except Exception as exc:
-            message = str(exc)[:2000]
-            from hermes_ui.domain import update_task
-            current_task = _task_by_id(task_id) or candidate
-            failed_stage = str(current_task.get("stage") or "pipeline")
-            settings = _settings()
-            failure_metadata = dict(getattr(exc, "failure_metadata", {}) or {})
-            if not failure_metadata:
-                failure_metadata = _failure_attribution(current_task, settings, failed_stage, error=message)
-            if "API/provider:" not in message:
-                message = _failure_message(message, failure_metadata)[:2000]
-            failure_updates = {
-                "state": "failed",
-                "error": message,
-                "failed_stage": failed_stage,
-                **failure_metadata,
-            }
-            update_task(task_id, failure_updates)
-            _worker_heartbeat(status="failed", last_error=message, stage=failed_stage, progress=int(current_task.get("progress") or 0), task_id=task_id)
-            return {"ok": False, "task_id": task_id, "error": message, "failure_metadata": failure_metadata, "recovered_task_ids": recovered}
-        finally:
-            heartbeat_stop.set()
-            heartbeat_thread.join(timeout=2)
+        # 1.0.11: execução extraída para helper partilhado com o pool paralelo.
+        result = _execute_task_safely(candidate)
+        result["recovered_task_ids"] = recovered
+        return result
     finally:
         try:
             lock.unlink()
         except FileNotFoundError:
             pass
+
+
+def _execute_task_safely(candidate: dict[str, Any]) -> dict[str, Any]:
+    """Executa UMA tarefa com heartbeat próprio e tratamento de erro persistido.
+
+    1.0.11: extraída do run_once para poder ser submetida ao pool paralelo —
+    cada tarefa corre no seu thread com o seu heartbeat; os erros são
+    atribuídos e persistidos na própria tarefa.
+    """
+    task_id = str(candidate.get("id") or "")
+    _worker_heartbeat(last_task_id=task_id, status="running", stage=str(candidate.get("stage") or "pipeline"), progress=int(candidate.get("progress") or 0), last_error="")
+    heartbeat_stop = threading.Event()
+    heartbeat_thread = threading.Thread(
+        target=_task_heartbeat_loop,
+        args=(task_id, heartbeat_stop),
+        name=f"task-heartbeat-{task_id}",
+        daemon=True,
+    )
+    heartbeat_thread.start()
+    try:
+        result = _run_task(candidate)
+        result_state = str(result.get("state") or "")
+        result_status = "blocked" if result_state == "blocked" and result.get("stop_reason") == "upload_uncertain" else "completed"
+        result_error = str(result.get("error") or "") if result_status == "blocked" else ""
+        _worker_heartbeat(status=result_status, last_error=result_error, stage=str(result.get("stage") or "upload"), progress=int(result.get("progress") or 100), task_id=task_id)
+        return {"ok": True, "task_id": task_id, "task": result, "status": result_status}
+    except PipelineStopped as exc:
+        current_task = _task_by_id(task_id) or candidate
+        current_state = str(current_task.get("state") or "")
+        if current_state not in {"blocked", "cancelled"}:
+            from hermes_ui.domain import update_task
+            update_task(task_id, {"state": "blocked", "error": str(exc), "failed_stage": current_task.get("stage") or "pipeline"})
+        _worker_heartbeat(status="stopped", last_error=str(exc), stage=str(current_task.get("stage") or "pipeline"), progress=int(current_task.get("progress") or 0), task_id=task_id)
+        return {"ok": True, "task_id": task_id, "status": "stopped"}
+    except Exception as exc:
+        message = str(exc)[:2000]
+        from hermes_ui.domain import update_task
+        current_task = _task_by_id(task_id) or candidate
+        failed_stage = str(current_task.get("stage") or "pipeline")
+        settings = _settings()
+        failure_metadata = dict(getattr(exc, "failure_metadata", {}) or {})
+        if not failure_metadata:
+            failure_metadata = _failure_attribution(current_task, settings, failed_stage, error=message)
+        if "API/provider:" not in message:
+            message = _failure_message(message, failure_metadata)[:2000]
+        failure_updates = {
+            "state": "failed",
+            "error": message,
+            "failed_stage": failed_stage,
+            **failure_metadata,
+        }
+        update_task(task_id, failure_updates)
+        _worker_heartbeat(status="failed", last_error=message, stage=failed_stage, progress=int(current_task.get("progress") or 0), task_id=task_id)
+        return {"ok": False, "task_id": task_id, "error": message, "failure_metadata": failure_metadata}
+    finally:
+        heartbeat_stop.set()
+        heartbeat_thread.join(timeout=2)
+
+
+# 1.0.11 — Motor de filas: pool paralelo da fila de VÍDEOS.
+# O limite vem de motor.max_parallel_videos (settings.json, lido a cada tick —
+# muda sem restart); o pool só é recriado quando o valor muda E está idle.
+_parallel_state_lock = threading.Lock()
+_parallel_executor: ThreadPoolExecutor | None = None
+_parallel_executor_workers = 0
+_inflight_futures: dict[Future, str] = {}
+_worker_lock_path: Path | None = None
+
+
+def _inflight_snapshot() -> tuple[set[str], int]:
+    with _parallel_state_lock:
+        return set(_inflight_futures.values()), len(_inflight_futures)
+
+
+def _release_worker_lock_if_idle() -> None:
+    """O lock do worker é mantido enquanto houver tarefas em voo (1.0.11)."""
+    global _worker_lock_path
+    with _parallel_state_lock:
+        if _worker_lock_path is not None and not _inflight_futures:
+            try:
+                _worker_lock_path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
+            _worker_lock_path = None
+
+
+def _task_future_done(future: Future) -> None:
+    with _parallel_state_lock:
+        _inflight_futures.pop(future, None)
+        remaining = len(_inflight_futures)
+    if remaining == 0:
+        _release_worker_lock_if_idle()
+    try:
+        future.result()
+    except Exception:
+        # _execute_task_safely já persistiu o erro na própria tarefa.
+        pass
+
+
+def _ensure_parallel_executor(max_workers: int) -> ThreadPoolExecutor:
+    global _parallel_executor, _parallel_executor_workers
+    with _parallel_state_lock:
+        if _parallel_executor is not None and _parallel_executor_workers != max_workers and _inflight_futures:
+            # Valor mudou com tarefas em voo: o novo limite aplica-se às
+            # submissões seguintes; o pool recria-se no próximo idle.
+            return _parallel_executor
+        if _parallel_executor is None or _parallel_executor_workers != max_workers:
+            if _parallel_executor is not None:
+                _parallel_executor.shutdown(wait=False)
+            _parallel_executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="pipeline-task")
+            _parallel_executor_workers = max_workers
+        return _parallel_executor
+
+
+def _pump_once() -> dict[str, Any]:
+    """1.0.11: tick do worker com POOL PARALELO da fila de vídeos.
+
+    Submete até `motor.max_parallel_videos` tarefas em simultâneo; cada uma
+    corre `_execute_task_safely` no seu thread. O lock do worker é mantido
+    enquanto houver tarefas em voo. `run_once()` mantém-se serial para
+    `--once`/diagnóstico.
+    """
+    global _worker_lock_path
+    ensure_storage()
+    if _worker_lock_path is None:
+        lock = _acquire_lock()
+        if lock is None:
+            return {"ok": True, "busy": True}
+        with _parallel_state_lock:
+            _worker_lock_path = lock
+    try:
+        if _recover_interrupted_pipeline_worker():
+            _release_worker_lock_if_idle()
+            worker_state = read_json(PIPELINE_LOG_FILENAME, {})
+            pause_reason = str(worker_state.get("pause_reason") or "Fila pausada por segurança após interrupção do worker.")
+            return {"ok": True, "status": "paused", "pause_reason": pause_reason}
+        worker_state = read_json(PIPELINE_LOG_FILENAME, {})
+        if isinstance(worker_state, dict) and worker_state.get("auto_paused"):
+            pause_reason = str(worker_state.get("pause_reason") or "Fila pausada por segurança após interrupção do worker.")
+            _worker_heartbeat(status="paused", stage="paused", progress=0, last_error=pause_reason)
+            _release_worker_lock_if_idle()
+            return {"ok": True, "status": "paused", "pause_reason": pause_reason}
+        _worker_heartbeat(status="running", stage="pipeline", progress=0, last_error="")
+        try:
+            session_health = check_all_accounts_session_info_health(STORAGE, _settings())
+            session_alerts = emit_session_info_health_alerts(session_health)
+            _worker_heartbeat(
+                session_info_health=[item.as_dict() for item in session_health],
+                session_info_alerts=len(session_alerts),
+                session_info_health_error="",
+            )
+        except Exception as exc:
+            _worker_heartbeat(session_info_health_error=type(exc).__name__)
+        try:
+            from hermes_ui.social_auto_upload_backend import reconcile_uncertain_uploads
+            uncertain_recovered = reconcile_uncertain_uploads()
+        except Exception as exc:
+            uncertain_recovered = []
+            _worker_heartbeat(social_auto_upload_recovery_error=type(exc).__name__)
+        recovered = list(dict.fromkeys([*uncertain_recovered, *_recover_stale_tasks()]))
+        from hermes_ui.render_capacity import motor_limits
+
+        limit = max(1, int(motor_limits(_settings())["videos"]))
+        inflight_ids, inflight_count = _inflight_snapshot()
+        from hermes_ui.domain import load_tasks
+
+        tasks = load_tasks()
+        candidates = _runnable_tasks(tasks, exclude=inflight_ids)
+        submitted: list[str] = []
+        executor = _ensure_parallel_executor(limit)
+        for candidate in candidates:
+            if inflight_count >= limit:
+                break
+            task_id = str(candidate.get("id") or "")
+            future = executor.submit(_execute_task_safely, dict(candidate))
+            with _parallel_state_lock:
+                _inflight_futures[future] = task_id
+            future.add_done_callback(_task_future_done)
+            submitted.append(task_id)
+            inflight_count += 1
+        _, running = _inflight_snapshot()
+        if submitted or running:
+            _worker_heartbeat(status="running", stage="pipeline", active_tasks=running, submitted_task_ids=submitted, last_error="", recovered_task_ids=recovered)
+            return {"ok": True, "status": "running", "submitted": submitted, "inflight": running, "recovered_task_ids": recovered}
+        _release_worker_lock_if_idle()
+        _worker_heartbeat(last_task_id=None, last_error="", status="idle", stage="idle", progress=0, active_tasks=0, recovered_task_ids=recovered)
+        return {"ok": True, "status": "idle", "recovered_task_ids": recovered}
+    except Exception as exc:
+        _release_worker_lock_if_idle()
+        _worker_heartbeat(status="error", last_error=str(exc)[:1000])
+        return {"ok": False, "status": "error", "error": str(exc)[:1000]}
 
 
 ACTIVE_INTERVAL_SECONDS = 5
@@ -2922,7 +3089,9 @@ def run_worker(interval_seconds: int = ACTIVE_INTERVAL_SECONDS) -> None:
     try:
         ensure_storage()
         while True:
-            result = run_once()
+            # 1.0.11: o loop usa o pump paralelo — até motor.max_parallel_videos
+            # tarefas de vídeo em simultâneo; run_once fica para --once.
+            result = _pump_once()
             requested_interval = max(2, int(interval_seconds))
             idle = bool(result.get("ok")) and result.get("status") == "idle"
             sleep_seconds = max(requested_interval, IDLE_INTERVAL_SECONDS) if idle else requested_interval

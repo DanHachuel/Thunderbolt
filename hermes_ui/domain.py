@@ -17,7 +17,7 @@ STAGES = ["niche", "blueprint", "brand", "topic", "script", "title", "keywords",
 # ainda não existe; os artefactos persistidos tornam a cascata retomável.
 CASCADE_STAGE_ORDER = ("topic", "script", "title", "keywords", "video", "thumbnail_prompt", "thumbnail", "upload")
 LEGACY_STAGES = {"edit"}
-VALID_STATES = {"to_do", "doing", "blocked", "done", "failed", "cancelled"}
+VALID_STATES = {"to_do", "standby", "doing", "blocked", "done", "failed", "cancelled"}
 # Versão do schema das tarefas. Tarefas sem este campo (ou criadas antes dele)
 # são normalizadas por migrate_task no "Refazer vídeo"/retry e nas leituras do
 # pipeline — nunca na escrita. As migrações vivem em SCHEMA_MIGRATIONS (junto

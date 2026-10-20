@@ -6158,6 +6158,7 @@ def _render_pipeline_progress_panel() -> None:
             st.error(str(task.get("error")))
 VIDEO_TASK_STATE_LABELS = {
     "to_do": "Pendente",
+    "standby": "Aguardando na fila",
     "doing": "Em execução",
     "blocked": "Bloqueado",
     "done": "Concluído",
@@ -6237,6 +6238,20 @@ def _saved_script_task_matches(task: dict[str, Any], record: dict[str, Any], cha
     return bool(title and str(task.get("title") or task.get("topic") or "").strip() == title)
 
 
+_SCRIPT_ID_FROM_FILENAME = re.compile(r"-([0-9a-f]{6,32})$", re.IGNORECASE)
+
+
+def _script_document_id_from_artifact(script_path: str) -> str:
+    """Extrai o id do documento do path de um artefacto de roteiro.
+
+    save_script_document grava ``roteiro-<slug>-<id>.md`` (script_documents.py:104),
+    pelo que o último segmento após o hífen final do stem é o id do documento.
+    """
+    stem = Path(str(script_path or "").strip()).stem
+    match = _SCRIPT_ID_FROM_FILENAME.search(stem)
+    return match.group(1).lower() if match else ""
+
+
 def _sync_saved_scripts_to_youtube_automation() -> None:
     """Expose every saved video script as one manual YouTube task, without duplicates."""
     from hermes_ui.storage import clear_stored_fingerprint, compute_scripts_fingerprint, read_stored_fingerprint, write_stored_fingerprint
@@ -6275,6 +6290,15 @@ def _sync_saved_scripts_to_youtube_automation() -> None:
         if not isinstance(existing, dict):
             continue
         document_id = str(existing.get("script_document_id") or "").strip()
+        if not document_id:
+            # 1.0.08: as tarefas do pipeline são as verdadeiras donas dos
+            # roteiros que geram — as recentes carimbam o id no artefacto
+            # (pipeline_worker:2467+); as antigas só deixam o path, cujo nome
+            # de ficheiro termina em -<id>.md. Sem este fallback, o sync
+            # tratava o documento como órfão e criava uma to_do duplicada
+            # mesmo quando a tarefa original terminou done/failed.
+            artifacts = existing.get("artifacts") if isinstance(existing.get("artifacts"), dict) else {}
+            document_id = _script_document_id_from_artifact(str(artifacts.get("script") or existing.get("script_path") or ""))
         if document_id:
             tasks_by_script_id[document_id] = existing
         if str(existing.get("topic_source") or "").strip() != "saved_script":
@@ -6555,7 +6579,13 @@ def _can_start_video_task(task: dict[str, Any], state: str) -> bool:
 
 
 def _start_pipeline_task(task_id: str, state: str) -> bool:
-    """Start or retry a video task from any platform automation card."""
+    """Start or retry a video task from any platform automation card.
+
+    1.0.11: o Start coloca a tarefa em `standby` (Na fila de vídeo) — o pool
+    paralelo do pipeline_worker puxa até `motor.max_parallel_videos` em
+    simultâneo e passa cada uma para `doing` ao arrancar. A UI responde
+    instantâneo em vez de marcar `doing` ela própria.
+    """
     if state in {"blocked", "failed"}:
         confirm_uncertain = bool(st.session_state.get(f"upload_uncertain_ack_{task_id}", False))
         try:
@@ -6564,9 +6594,9 @@ def _start_pipeline_task(task_id: str, state: str) -> bool:
             st.error(str(exc))
             return False
         if updated and bool(updated.get("manual_start_required", False)):
-            updated = transition_task(task_id, "doing")
+            updated = transition_task(task_id, "standby")
     else:
-        updated = transition_task(task_id, "doing")
+        updated = transition_task(task_id, "standby")
     if not updated:
         st.error("Não foi possível iniciar este vídeo: a tarefa já não existe na fila.")
         return False
@@ -6942,7 +6972,17 @@ def render_thumbnails():
             with details_col:
                 st.write(f"**{record['title']}**")
                 st.caption(f"Canal: {record['channel_name']} · Tarefa: {task_id}")
-                st.caption(f"Estado: {record['status']} · Variante: {record['variant_index'] + 1}")
+                # 1.0.11: estados da fila de thumbnails em texto legível.
+                _thumbnail_status_text = {
+                    "thumbnail_queued": "Na fila de thumbnails",
+                    "generating": "A gerar na fila",
+                    "failed": "Falhou na geração (veja o erro na tarefa)",
+                    "generated": "Gerada",
+                    "prompt_ready": "Prompt pronto",
+                    "pending_prompt": "Prompt pendente",
+                    "pending_provider": "Sem provider de imagem",
+                }.get(str(record["status"]), str(record["status"]))
+                st.caption(f"Estado: {_thumbnail_status_text} · Variante: {record['variant_index'] + 1}")
                 if record["prompt"]:
                     with st.expander("Ver prompt da thumbnail", expanded=False):
                         st.code(record["prompt"], language="text")
@@ -6992,24 +7032,15 @@ def render_thumbnails():
                     width="stretch",
                     disabled=not bool(record["prompt"]),
                 ):
-                    try:
-                        with st.spinner("A gerar a imagem com Nano Banana…"):
-                            channel, _blueprint = _thumbnail_editor_context(record)
-                            thumbnail_blueprint = thumbnail_blueprint_for_channel({**channel, "thumbnail_blueprint_id": record.get("thumbnail_blueprint_id") or channel.get("thumbnail_blueprint_id", "")})
-                            _task, generated_path = generate_thumbnail_for_task(task_id, settings, thumbnail_blueprint=thumbnail_blueprint)
-                        record_notification(
-                            "thumbnail_generation_completed",
-                            f"Thumbnail gerada: {record['title']}",
-                            "Thumbnail gerada com sucesso.",
-                            metadata={"task_id": task_id, "channel_name": record["channel_name"], "image_path": str(generated_path)},
-                            dedupe_key=f"thumbnail:generated:{task_id}:{generated_path}",
-                        )
-                        st.success("Thumbnail gerada com sucesso.")
+                    # 1.0.11: fila de thumbnails — a UI marca e responde
+                    # instantâneo; o thumbnail_worker gera em background
+                    # (mesmo LLM + pool de imagem), com backoff em 429.
+                    if record.get("status") == "thumbnail_queued" or record.get("status") == "generating":
+                        st.info("Esta thumbnail já está na fila de geração.")
+                    else:
+                        update_task(task_id, {"thumbnail_status": "thumbnail_queued", "thumbnail_queue_action": None, "thumbnail_queued_at": now()})
+                        st.success("Thumbnail na fila de geração — o Motor processa em background e a imagem aparece aqui.")
                         st.rerun()
-                    except MediaGenerationError as exc:
-                        st.error(format_media_generation_error(exc, operation="gerar a imagem da thumbnail"))
-                    except ThumbnailGenerationError as exc:
-                        st.error(str(exc))
 
                 if st.button(
                     "Refazer Prompt e Gerar Imagem",
@@ -7018,31 +7049,11 @@ def render_thumbnails():
                     width="stretch",
                     disabled=not bool(record["title"] or record["topic"]),
                 ):
-                    try:
-                        with st.spinner("A refazer o prompt e a imagem…"):
-                            channel, blueprint = _thumbnail_editor_context(record)
-                            variant = generate_thumbnail_prompt(
-                                settings,
-                                channel,
-                                record["title"] or record["topic"],
-                                current_prompt=record["prompt"],
-                                blueprint=blueprint,
-                                language=str(record.get("language") or current_ui_language()),
-                            )
-                            _task, generated_path = regenerate_thumbnail_prompt_and_image(task_id, settings, variant)
-                        record_notification(
-                            "thumbnail_generation_completed",
-                            f"Thumbnail renovada: {record['title']}",
-                            "Prompt da thumbnail e imagem actualizados.",
-                            metadata={"task_id": task_id, "channel_name": record["channel_name"], "image_path": str(generated_path), "prompt_regenerated": True},
-                            dedupe_key=f"thumbnail:prompt-regenerated:{task_id}:{generated_path}",
-                        )
-                        st.success("Prompt da thumbnail e imagem actualizados.")
-                        st.rerun()
-                    except MediaGenerationError as exc:
-                        st.error(format_media_generation_error(exc, operation="refazer o prompt e gerar a imagem da thumbnail"))
-                    except (CreativeGenerationError, ThumbnailGenerationError) as exc:
-                        st.error(str(exc))
+                    # 1.0.11: fila de thumbnails — refazer prompt + gerar
+                    # imagem agora corre no thumbnail_worker.
+                    update_task(task_id, {"thumbnail_status": "thumbnail_queued", "thumbnail_queue_action": "regenerate_prompt", "thumbnail_queued_at": now()})
+                    st.success("Refazer prompt + imagem na fila de thumbnails — o Motor processa em background.")
+                    st.rerun()
 
                 if st.button(
                     "Refazer Lettering",
@@ -7051,29 +7062,10 @@ def render_thumbnails():
                     width="stretch",
                     disabled=not bool(record.get("image_path") and record["image_path"].is_file()),
                 ):
-                    try:
-                        with st.spinner("A refazer apenas o lettering…"):
-                            channel, _blueprint = _thumbnail_editor_context(record)
-                            _task, generated_path = regenerate_thumbnail_lettering(
-                                task_id,
-                                settings,
-                                lettering_prompt=record.get("lettering_prompt") or "",
-                                language=str(record.get("language") or channel.get("language") or current_ui_language()),
-                                channel=channel,
-                            )
-                        record_notification(
-                            "thumbnail_generation_completed",
-                            f"Lettering refeito: {record['title']}",
-                            "Lettering refeito; a imagem original foi usada como base.",
-                            metadata={"task_id": task_id, "channel_name": record["channel_name"], "image_path": str(generated_path), "lettering_only": True},
-                            dedupe_key=f"thumbnail:lettering:{task_id}:{generated_path}",
-                        )
-                        st.success("Lettering refeito; a imagem original foi usada como base.")
-                        st.rerun()
-                    except MediaGenerationError as exc:
-                        st.error(format_media_generation_error(exc, operation="refazer o lettering da thumbnail"))
-                    except ThumbnailGenerationError as exc:
-                        st.error(str(exc))
+                    # 1.0.11: fila de thumbnails — só o lettering, em background.
+                    update_task(task_id, {"thumbnail_status": "thumbnail_queued", "thumbnail_queue_action": "regenerate_lettering", "thumbnail_queued_at": now()})
+                    st.success("Lettering na fila de thumbnails — o Motor refaz sobre a imagem existente em background.")
+                    st.rerun()
 
             uploaded = st.file_uploader(
                 "Upload Image",
@@ -7646,12 +7638,12 @@ def _render_facebook_automation_cards() -> None:
                         st.error(str(exc))
                 source = st.selectbox("Fonte das imagens", ["Scrapt de Imagens na Web", "Imagem e Video IA"], index=0 if str(settings.get("facebook_default_image_source", "web")) == "web" else 1, key=f"facebook_story_source_{post_id}")
                 if st.button("Buscar/Gerar Imagens", key=f"facebook_story_collect_{post_id}", disabled=current_status != "artigo_pronto", width="stretch"):
-                    try:
-                        collect_storytelling_images(settings, post, source="web" if source.startswith("Scrapt") else "ai")
-                        st.success("Imagens processadas com fallback dentro do pool seleccionado.")
-                        st.rerun(scope="fragment")
-                    except Exception as exc:
-                        st.error(str(exc))
+                    # 1.0.11: fila de imagens de produção — a UI marca
+                    # 'imagens_na_fila' e responde instantâneo; o image_worker
+                    # processa (web scrap ou pool IA) em background.
+                    save_facebook_post({**post, "status": "imagens_na_fila", "image_source": "web" if source.startswith("Scrapt") else "ai"})
+                    st.success("Imagens na fila de produção — o Motor processa em background e o post avança sozinho.")
+                    st.rerun(scope="fragment")
                 if st.button("Aplicar overlay", key=f"facebook_story_overlay_{post_id}", disabled=current_status != "artigo_pronto", width="stretch"):
                     try:
                         caption_storytelling_images(settings, post)
@@ -7839,16 +7831,19 @@ def _render_youtube_automation_kpis(tasks: list[dict[str, Any]], worker_status: 
 
     counts = Counter(_catalog_task_state(task) for task in tasks)
     running_note = '<span style="color:#22c55e">● rodando</span>' if worker_status.get("alive") else ""
-    kpi_cols = st.columns(5)
+    # 1.0.11: "Em Fila" (standby) — tarefas à espera de slot do pool paralelo.
+    kpi_cols = st.columns(6)
     with kpi_cols[0]:
         card("Tarefas", len(tasks), "total registrado")
     with kpi_cols[1]:
         card("A Fazer", counts.get("to_do", 0), "")
     with kpi_cols[2]:
-        card("Em Execução", counts.get("doing", 0), running_note)
+        card("Em Fila", counts.get("standby", 0), "aguardando slot")
     with kpi_cols[3]:
-        card("Concluídos", counts.get("done", 0), "")
+        card("Em Execução", counts.get("doing", 0), running_note)
     with kpi_cols[4]:
+        card("Concluídos", counts.get("done", 0), "")
+    with kpi_cols[5]:
         card("Falhas", counts.get("failed", 0), "")
 
 
@@ -10627,7 +10622,7 @@ def render_settings():
             key=f"settings_{key}",
         )
 
-    api_keys_tab, upload_api_keys_tab, subtitles_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab, browser_proxy_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz", "Navegador e Proxies"])
+    api_keys_tab, upload_api_keys_tab, subtitles_tab, motor_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab, browser_proxy_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "Motor", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz", "Navegador e Proxies"])
 
     with api_keys_tab:
         with st.container(border=True):
@@ -11133,6 +11128,62 @@ def render_settings():
                     st.warning(f"Configuração de legendas guardada localmente, mas não foi possível sincronizar config.toml: {exc}")
             else:
                 st.success("Configuração de legendas guardada localmente.")
+
+    with motor_tab:
+        # 1.0.11 — Motor de filas: 3 limites independentes. Vazio/0 = automático
+        # (auto-detecção para vídeos; 5/3 para thumbnails/imagens). Guarda em
+        # settings.json → motor.max_parallel_*; workers relêem a cada tick.
+        from hermes_ui.render_capacity import detect_render_capacity
+
+        with st.container(border=True):
+            st.subheader("Motor de filas")
+            st.caption("Limites de paralelismo das três filas independentes: Vídeos, Thumbnails e Imagens de produção. Deixe em 0 para usar o valor automático — a mudança aplica-se sem reiniciar.")
+            detected = detect_render_capacity()
+            st.caption(f"Capacidade detectada (`detect_render_capacity()`, GPU NVIDIA + encoder FFmpeg HW = {detect_render_capacity.__globals__['GPU_VIDEO_CAPACITY']}, CPU = {detect_render_capacity.__globals__['CPU_VIDEO_CAPACITY']}): **{detected} vídeos em paralelo**.")
+            motor_settings = settings.get("motor") if isinstance(settings.get("motor"), dict) else {}
+            motor_cols = st.columns(3)
+            with motor_cols[0]:
+                max_parallel_videos = st.number_input(
+                    "Vídeos em paralelo",
+                    min_value=0,
+                    max_value=32,
+                    value=int(motor_settings.get("max_parallel_videos") or 0),
+                    key="motor_max_parallel_videos",
+                    help=f"0 = automático ({detected} pela detecção de hardware). Máximo de tarefas de vídeo simultâneas na fila.",
+                )
+            with motor_cols[1]:
+                max_parallel_thumbnails = st.number_input(
+                    "Thumbnails em paralelo",
+                    min_value=0,
+                    max_value=32,
+                    value=int(motor_settings.get("max_parallel_thumbnails") or 0),
+                    key="motor_max_parallel_thumbnails",
+                    help=f"0 = automático (5). Fila DEDICADA a capas de vídeo.",
+                )
+            with motor_cols[2]:
+                max_parallel_images = st.number_input(
+                    "Imagens de produção em paralelo",
+                    min_value=0,
+                    max_value=32,
+                    value=int(motor_settings.get("max_parallel_images") or 0),
+                    key="motor_max_parallel_images",
+                    help="0 = automático (3). Posts estáticos: Influencer, UGC fotos e Facebook. Não geram vídeo.",
+                )
+            if int(max_parallel_videos) > detected:
+                st.warning(f"Atenção: {int(max_parallel_videos)} vídeos em paralelo excede a capacidade detectada ({detected}). O valor é respeitado, mas pode saturar a máquina.")
+            if st.button("Guardar configuração do Motor", type="primary", key="save_motor_settings", width="stretch"):
+                def _persist_motor(current: Any) -> None:
+                    if not isinstance(current, dict):
+                        return
+                    current["motor"] = {
+                        "max_parallel_videos": int(max_parallel_videos),
+                        "max_parallel_thumbnails": int(max_parallel_thumbnails),
+                        "max_parallel_images": int(max_parallel_images),
+                    }
+
+                update_json("settings.json", {}, _persist_motor)
+                st.success("Configuração do Motor guardada. Os workers aplicam os novos limites no próximo tick (sem reiniciar).")
+                st.rerun()
 
     with ffmpeg_tab:
         st.subheader("FFmpeg")
