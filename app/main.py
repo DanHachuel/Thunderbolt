@@ -3223,6 +3223,7 @@ def _render_bilibili_automation_task_card(task: dict[str, Any]) -> None:
             with stop_col:
                 if st.button("Stop", key=f"bilibili_automation_stop_{task_id}", width="stretch", disabled=state != "doing"):
                     stop_task_by_user(task_id)
+                    _invalidate_live_tasks_snapshot()
                     st.rerun(scope="fragment")
             script_download_col, video_download_col = st.columns(2, gap="small")
             with script_download_col:
@@ -3235,6 +3236,7 @@ def _render_bilibili_automation_task_card(task: dict[str, Any]) -> None:
             with delete_col:
                 if st.button("Apagar", key=f"bilibili_automation_delete_{task_id}", width="stretch", disabled=state == "doing"):
                     delete_task(task_id)
+                    _invalidate_live_tasks_snapshot()
                     st.rerun(scope="fragment")
 
 
@@ -6131,9 +6133,78 @@ def _render_pipeline_worker_banner(worker_status: dict[str, Any], active_count: 
         st.error(f"Último erro do worker: {worker_status['last_error']}")
 
 
+# ── 1.0.15: POLLING DOS CARDS DE TAREFA (Backlog Vídeos, Automação Youtube ────
+#    e painel da pipeline) ────────────────────────────────────────────────────
+# Cada card de tarefa vive no seu próprio fragment: os estados vivos
+# (to_do/standby/doing) relêm o tasks.json a cada 3s (barra de progresso,
+# estado, thumbnail e botões actualizam sozinhos, sem F5) e os terminais
+# (done/failed/cancelled/…) renderizam SEM loop de rede. O memo de curto
+# prazo partilhado garante que N cards a pollar custem NO MÁXIMO uma leitura
+# do catálogo por janela de 2s — o read_json já cacheia o parse por
+# fingerprint (mtime+size); o memo evita re-normalizar o catálogo inteiro em
+# cada poll de cada card.
+
+_VIDEO_TASK_POLL_SECONDS = 3
+_VIDEO_TASK_LIVE_STATES = frozenset({"to_do", "standby", "doing"})
+_live_tasks_snapshot_memo: tuple[float, list[dict[str, Any]]] = (0.0, [])
+
+
+def _live_tasks_snapshot(max_age_seconds: float = 2.0) -> list[dict[str, Any]]:
+    """Catálogo de tarefas fresco com memo de curto prazo partilhado por todos os fragments.
+
+    Os cards live pollam a cada 3s e todos partilham a MESMA leitura enquanto
+    o memo for mais recente do que ``max_age_seconds`` — 20 cards em execução
+    continuam a custar 1 leitura/janela de 2s, não 20 leituras por poll. As
+    acções da UI que mutam a fila (Start/Stop/Refazer/Apagar) invalidam o
+    memo via ``_invalidate_live_tasks_snapshot()`` para responderem no
+    instante em vez de esperarem pela expiração.
+    """
+    global _live_tasks_snapshot_memo
+    stamp, cached = _live_tasks_snapshot_memo
+    if cached and (time.monotonic() - stamp) < max_age_seconds:
+        return cached
+    fresh = load_video_tasks_for_catalog()
+    _live_tasks_snapshot_memo = (time.monotonic(), fresh)
+    return fresh
+
+
+def _invalidate_live_tasks_snapshot() -> None:
+    """Força a próxima leitura fresca do catálogo (usada após acções que mutam a fila)."""
+    global _live_tasks_snapshot_memo
+    _live_tasks_snapshot_memo = (0.0, [])
+
+
+def _live_task_by_id(task_id: str) -> dict[str, Any] | None:
+    """Estado ACTUAL de UMA tarefa (leitura fresca do tasks.json) para o polling dos cards."""
+    wanted = str(task_id or "").strip()
+    if not wanted:
+        return None
+    for task in _live_tasks_snapshot():
+        if isinstance(task, dict) and str(task.get("id") or "") == wanted:
+            return task
+    return None
+
+
+def _video_task_is_live(task: dict[str, Any]) -> bool:
+    """True enquanto a tarefa pode progredir sozinha (worker de vídeo ou fila do Motor)."""
+    return _catalog_task_state(task) in _VIDEO_TASK_LIVE_STATES
+
+
 @st.fragment
 def _render_pipeline_progress_panel() -> None:
-    """Actualizar apenas o painel da pipeline enquanto existirem tarefas activas."""
+    """Actualizar apenas o painel da pipeline quando o utilizador interage."""
+    _pipeline_progress_panel_body()
+
+
+def _pipeline_progress_panel_body() -> bool:
+    """Corpo partilhado do painel; devolve True enquanto houver tarefas em execução.
+
+    1.0.15: extraído do fragment para existirem duas variantes — esta estática
+    (comandada pelas interacções do utilizador) e a
+    ``_render_pipeline_progress_panel_live`` (``run_every``, abaixo). O
+    conteúdo é o histórico; o ``recover_stale_tasks()`` mantém-se idempotente
+    (só age sobre heartbeats vencidos), pelo que é seguro chamá-lo a cada poll.
+    """
     worker_status = load_pipeline_worker_status()
     tasks = read_json("tasks.json", [])
     active = [task for task in tasks if isinstance(task, dict) and str(task.get("state") or "") == "doing"]
@@ -6148,7 +6219,7 @@ def _render_pipeline_progress_panel() -> None:
             _render_pipeline_worker_banner(worker_status, 0)
         # O fragmento pode executar mais uma vez após o worker terminar.
         # Retornar mantém a actualização local e não reconstrói a página inteira.
-        return
+        return False
     _render_pipeline_worker_banner(worker_status, len(active))
     for task in active:
         progress = _pipeline_progress_value(task)
@@ -6157,6 +6228,9 @@ def _render_pipeline_progress_panel() -> None:
         st.caption(f"{task.get('channel_name') or 'Canal'} · {_pipeline_time_age(task.get('updated_at'))}")
         if task.get("error"):
             st.error(str(task.get("error")))
+    return True
+
+
 VIDEO_TASK_STATE_LABELS = {
     "to_do": "Pendente",
     "standby": "Aguardando na fila",
@@ -6166,6 +6240,20 @@ VIDEO_TASK_STATE_LABELS = {
     "failed": "Falha",
     "cancelled": "Cancelado",
 }
+
+
+@st.fragment(run_every=_VIDEO_TASK_POLL_SECONDS)
+def _render_pipeline_progress_panel_live() -> None:
+    """Painel ao vivo: heartbeat, estágio e progressos sobem sozinhos (1.0.15).
+
+    Polla a cada 3s enquanto existir tarefa viva; quando a última termina, o
+    corpo devolve False e o fragment força UM rerun completo — a página volta
+    a renderizar o painel pela variante estática e o Streamlit cancela o
+    timer deste fragment (o ``st.rerun(scope="app")`` one-shot é o mecanismo
+    canónico de paragem de um ``run_every``).
+    """
+    if not _pipeline_progress_panel_body():
+        st.rerun(scope="app")
 
 
 def load_video_tasks_for_catalog() -> list[dict[str, Any]]:
@@ -6602,6 +6690,9 @@ def _start_pipeline_task(task_id: str, state: str) -> bool:
         st.error("Não foi possível iniciar este vídeo: a tarefa já não existe na fila.")
         return False
     resume_pipeline_worker()
+    # 1.0.15: responde no instante — o card live relê o estado novo (standby)
+    # logo no rerun seguinte, sem esperar pelo TTL do memo de leitura.
+    _invalidate_live_tasks_snapshot()
     return True
 
 
@@ -6617,6 +6708,9 @@ def _remake_video_from_card(task: dict[str, Any]) -> bool:
         st.error("Não foi possível refazer este vídeo: a tarefa já não existe na fila.")
         return False
     st.success("Vídeo colocado na fila para remontagem. Roteiro, tags, voz, thumbnail e artefactos existentes foram preservados; legendas, duração máxima do clip, fonte de vídeo e restantes definições do canal foram revalidadas para a nova renderização.")
+    # 1.0.15: invalida o memo de leitura para o card mostrar o estado novo
+    # (to_do na fila de remontagem) logo no rerun seguinte.
+    _invalidate_live_tasks_snapshot()
     return True
 
 
@@ -6636,8 +6730,14 @@ def render_videos():
     st.subheader("Backlog Videos")
     st.caption("Acompanhamento dos vídeos criados, estados da pipeline e controlos de execução.")
     st.caption(f"Os vídeos são guardados em `{STORAGE / 'videos'}`.")
-    _render_pipeline_progress_panel()
     tasks = load_video_tasks_for_catalog()
+    # 1.0.15: o painel da pipeline polla sozinho (heartbeat, estágio e
+    # progressos) enquanto existir alguma tarefa viva; sem trabalho activo
+    # renderiza a variante estática, sem loop de rede.
+    if any(_video_task_is_live(task) for task in tasks):
+        _render_pipeline_progress_panel_live()
+    else:
+        _render_pipeline_progress_panel()
     if not tasks:
         st.info("Nenhum vídeo criado.")
         return
@@ -6655,6 +6755,9 @@ def render_videos():
         repair_cols = st.columns(2)
         if repair_cols[0].button("Reparar agora", icon=":material/build:", type="primary", key="repair_queue_execute"):
             report = repair_task_queue()
+            # 1.0.15: a reparação pode reencadear tarefas terminais; sem esta
+            # invalidação os cards live discordariam do memo até ao TTL.
+            _invalidate_live_tasks_snapshot()
             st.session_state["repair_queue_armed"] = False
             st.toast(f"{report['migrated']} tarefa(s) migrada(s), {report['unchanged']} já estavam no formato atual, {report['dropped']} descartada(s) (formato inválido).")
             st.rerun()
@@ -6669,58 +6772,112 @@ def render_videos():
         task_state = _catalog_task_state(task)
         if state_filter != "Todos" and task_state != str(state_filter).strip().casefold():
             continue
-        with st.container(border=True):
-            cols = st.columns([2.2, 1, 1, 1.2, 1.8])
-            with cols[0]:
-                artifacts = task.get('artifacts') or {}
-                thumbnail_file = _task_thumbnail_path(task)
-                video_path = str(artifacts.get('video') or '').strip()
-                video_file = _task_artifact_path(task, "video")
-                media_cols = st.columns(2, gap="small")
-                with media_cols[0]:
-                    if thumbnail_file is not None:
-                        st.image(str(thumbnail_file), width=180, caption="Thumbnail")
-                    else:
-                        status = task.get('thumbnail_status', 'not_generated')
-                        prompt_note = ' · prompt pronto' if task.get('thumbnail_prompt') else ''
-                        st.caption(f"Thumbnail: {status}{prompt_note}")
-                with media_cols[1]:
-                    if video_file is not None and task_state == "done":
-                        _render_local_video_player(video_file, width="stretch")
-                        with video_file.open("rb") as video_stream:
-                            st.download_button(
-                                'Descarregar vídeo pronto',
-                                data=video_stream,
-                                file_name=video_file.name,
-                                mime='video/mp4',
-                                key=f"pipeline_video_download_{task['id']}",
-                                width="stretch",
-                            )
-                    elif video_path:
-                        st.caption(f'Vídeo registado: {video_path}')
-                st.write(f"**{task.get('title') or task.get('topic', 'Sem título')}**")
-                st.caption(f"Tópico: {task.get('topic', 'Sem tópico')}")
-                st.caption(f"{task.get('channel_name')} · {task.get('id')}")
-            with cols[1]:
-                st.caption("Formato")
-                st.write(_video_task_format(task))
-            with cols[2]:
-                stage_task = {**task, "stage": "video"} if task_state == "done" and str(task.get("stage") or "").strip().casefold() == "upload" else task
-                st.write(_pipeline_stage_label(stage_task))
-            with cols[3]:
-                _render_video_task_state(task, state_override=task_state)
+        # 1.0.15: cada card vive no seu próprio fragment — os estados vivos
+        # relêm o tasks.json a cada 3s (barra, estado, stage, thumbnail e
+        # botões actualizam sozinhos, sem F5); os terminais não pollam.
+        if task_state in _VIDEO_TASK_LIVE_STATES:
+            _video_backlog_card_live(str(task["id"]))
+        else:
+            _video_backlog_card_idle(str(task["id"]))
 
-            with cols[4]:
-                state = task_state
-                start_col, stop_col = st.columns(2)
-                with start_col:
-                    if st.button("Start", key=f"automation_start_{task['id']}", width="stretch", disabled=not _can_start_video_task(task, state)):
-                        _start_pipeline_task(str(task["id"]), state)
-                        st.rerun()
-                with stop_col:
-                    if st.button("Stop", key=f"automation_stop_{task['id']}", width="stretch", disabled=state != "doing"):
-                        transition_task(task["id"], "blocked")
-                        st.rerun()
+
+# ---------------------------------------------------------------------------
+# 1.0.15: card do Backlog Vídeos em fragment — polling por card. O corpo relê
+# SEMPRE o estado actual da tarefa (tasks.json via memo partilhado de 2s); a
+# variante live só polla em to_do/standby/doing e pára no primeiro estado
+# terminal com um st.rerun(scope="app") one-shot (o mecanismo canónico de
+# paragem do run_every). Estados terminais usam a variante idle SEM polling.
+# ---------------------------------------------------------------------------
+
+
+def _video_backlog_card_body(task_id: str) -> str:
+    """Renderiza o card do Backlog com dados FRESCOS; devolve o estado actual.
+
+    Lê sempre a tarefa pelo id (nunca o snapshot da página) para que o
+    trabalho do worker apareça no card sem F5. Tarefa ausente → devolve ""
+    (o wrapper live força o rerun da página e a lista reconstrói sem ela).
+    """
+    task = _live_task_by_id(task_id)
+    if task is None:
+        # A tarefa saiu da fila (ex.: Apagar noutra aba/sessão): não
+        # renderizamos um card fantasma; invalida o memo para o rerun
+        # seguinte ler o catálogo fresco.
+        _invalidate_live_tasks_snapshot()
+        return ""
+    task_state = _catalog_task_state(task)
+    with st.container(border=True):
+        cols = st.columns([2.2, 1, 1, 1.2, 1.8])
+        with cols[0]:
+            artifacts = task.get('artifacts') or {}
+            thumbnail_file = _task_thumbnail_path(task)
+            video_path = str(artifacts.get('video') or '').strip()
+            video_file = _task_artifact_path(task, "video")
+            media_cols = st.columns(2, gap="small")
+            with media_cols[0]:
+                if thumbnail_file is not None:
+                    st.image(str(thumbnail_file), width=180, caption="Thumbnail")
+                else:
+                    status = task.get('thumbnail_status', 'not_generated')
+                    prompt_note = ' · prompt pronto' if task.get('thumbnail_prompt') else ''
+                    st.caption(f"Thumbnail: {status}{prompt_note}")
+            with media_cols[1]:
+                if video_file is not None and task_state == "done":
+                    _render_local_video_player(video_file, width="stretch")
+                    with video_file.open("rb") as video_stream:
+                        st.download_button(
+                            'Descarregar vídeo pronto',
+                            data=video_stream,
+                            file_name=video_file.name,
+                            mime='video/mp4',
+                            key=f"pipeline_video_download_{task['id']}",
+                            width="stretch",
+                        )
+                elif video_path:
+                    st.caption(f'Vídeo registado: {video_path}')
+            st.write(f"**{task.get('title') or task.get('topic', 'Sem título')}**")
+            st.caption(f"Tópico: {task.get('topic', 'Sem tópico')}")
+            st.caption(f"{task.get('channel_name')} · {task.get('id')}")
+        with cols[1]:
+            st.caption("Formato")
+            st.write(_video_task_format(task))
+        with cols[2]:
+            stage_task = {**task, "stage": "video"} if task_state == "done" and str(task.get("stage") or "").strip().casefold() == "upload" else task
+            st.write(_pipeline_stage_label(stage_task))
+        with cols[3]:
+            _render_video_task_state(task, state_override=task_state)
+
+        with cols[4]:
+            state = task_state
+            start_col, stop_col = st.columns(2)
+            with start_col:
+                if st.button("Start", key=f"automation_start_{task['id']}", width="stretch", disabled=not _can_start_video_task(task, state)):
+                    _start_pipeline_task(str(task["id"]), state)
+                    st.rerun()
+            with stop_col:
+                if st.button("Stop", key=f"automation_stop_{task['id']}", width="stretch", disabled=state != "doing"):
+                    transition_task(task["id"], "blocked")
+                    _invalidate_live_tasks_snapshot()
+                    st.rerun()
+    return task_state
+
+
+@st.fragment(run_every=_VIDEO_TASK_POLL_SECONDS)
+def _video_backlog_card_live(task_id: str) -> None:
+    """Estado vivo (to_do/standby/doing): relê a tarefa a cada 3s (run_every).
+
+    Ao detectar um estado terminal (done/failed/cancelled/…) força UM rerun
+    completo — a página volta a renderizar o card pela variante idle e o
+    Streamlit cancela o timer deste fragment, acabando com o loop de rede.
+    """
+    state = _video_backlog_card_body(task_id)
+    if state not in _VIDEO_TASK_LIVE_STATES:
+        st.rerun(scope="app")
+
+
+@st.fragment
+def _video_backlog_card_idle(task_id: str) -> None:
+    """Estados terminais: render único, sem loop de rede (run_every=None implícito)."""
+    _video_backlog_card_body(task_id)
 
 
 def _music_backlog_records() -> list[dict[str, Any]]:
@@ -7243,6 +7400,7 @@ def _render_tiktok_automation_task_list(*, posted_only: bool = False):
                     with stop_col:
                         if st.button("Stop", key=f"tiktok_automation_stop_{task_id}", width="stretch", disabled=state != "doing"):
                             stop_task_by_user(task_id)
+                            _invalidate_live_tasks_snapshot()
                             st.rerun()
                     script_download_col, video_download_col = st.columns(2, gap="small")
                     with script_download_col:
@@ -7289,6 +7447,7 @@ def _render_tiktok_automation_task_list(*, posted_only: bool = False):
                                     try:
                                         delete_task(task["id"])
                                         st.session_state.pop(confirm_delete_key, None)
+                                        _invalidate_live_tasks_snapshot()
                                         st.rerun()
                                     except ValueError as exc:
                                         st.error(str(exc))
@@ -7447,179 +7606,232 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False, tasks: li
         else:
             visible_tasks = tasks
         for task in visible_tasks:
-            task_title = str(task.get("topic") or task.get("title") or "Vídeo sem nome").strip()
-            task_channel = str(task.get("channel_name") or "Canal sem nome").strip()
             task_id = str(task.get("id") or "")
-            # 0.9.96 (recuperação): card ORIGINAL restaurado por inteiro —
-            # thumbnail, player, downloads, upload, Refazer e todos os
-            # botões sempre visíveis, sem intermediários. Só as optimizações
-            # internas (catálogo 1×, storage) permanecem da 0.9.95.
-            with st.expander(f"{task_title} · {task_channel}", expanded=False):
-                task_cols = st.columns([2.25, 1.55, 1.05, 2.15], gap="small")
-                script_path = _task_artifact_path(task, "script")
-                video_path = _task_artifact_path(task, "video")
-                thumbnail_path = _task_thumbnail_path(task)
-                thumbnail_prompt_path = _task_artifact_path(task, "thumbnail_prompt_json")
-                thumbnail_prompt = str(task.get("thumbnail_prompt") or "").strip()
-                with task_cols[0]:
-                    media_cols = st.columns(2, gap="small")
-                    with media_cols[0]:
-                        if thumbnail_path is not None:
-                            st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")
-                        else:
-                            st.caption("Thumbnail ainda não pronta")
-                    with media_cols[1]:
-                        if video_path is not None and _catalog_task_state(task) == "done":
-                            player_state_key = "youtube_automation_player_task_id"
-                            if st.session_state.get(player_state_key) == task_id:
-                                _render_local_video_player(video_path, width="stretch")
-                                if st.button("Fechar leitor", key=f"automation_close_player_{task_id}", width="stretch"):
-                                    st.session_state.pop(player_state_key, None)
-                                    st.rerun(scope="fragment")
-                            elif st.button("Reproduzir vídeo", key=f"automation_play_video_{task_id}", width="stretch"):
-                                st.session_state[player_state_key] = task_id
-                                st.rerun(scope="fragment")
-                        elif video_path is not None:
-                            st.caption("O vídeo estará disponível para reprodução quando estiver concluído.")
-                        else:
-                            st.caption("Vídeo ainda não pronto")
-                    st.caption(f"ID da tarefa: {task_id}")
-                    thumbnail_download_col, prompt_download_col = st.columns(2, gap="small")
-                    with thumbnail_download_col:
-                        st.download_button(
-                            "Baixar Thumbnail",
-                            data=_file_bytes(thumbnail_path),
-                            file_name=_automation_download_name("Thumbnail", task, thumbnail_path, ".png"),
-                            mime="image/png",
-                            key=f"automation_download_thumbnail_{task['id']}",
-                            width="stretch",
-                            disabled=thumbnail_path is None,
-                        )
-                    with prompt_download_col:
-                        prompt_data = thumbnail_prompt_path.read_bytes() if thumbnail_prompt_path else thumbnail_prompt.encode("utf-8")
-                        st.download_button(
-                            "Baixar Thumbnail Prompt",
-                            data=prompt_data,
-                            file_name=_automation_download_name("Thumbnail-Prompt", task, thumbnail_prompt_path, ".txt"),
-                            mime="application/json" if thumbnail_prompt_path else "text/plain",
-                            key=f"automation_download_thumbnail_prompt_{task['id']}",
-                            width="stretch",
-                            disabled=thumbnail_prompt_path is None and not thumbnail_prompt,
-                        )
-                with task_cols[1]:
-                    _render_video_task_state(task)
-                with task_cols[2]:
-                    st.caption("Fonte do vídeo")
-                    st.write(_video_task_source(task))
-                with task_cols[3]:
-                    state = str(task.get("state") or "")
-                    upload_ready = _upload_ready_for_task(task, video_path, thumbnail_path)
-                    upload_ok = bool(task.get("upload_ok") or isinstance((task.get("artifacts") or {}).get("upload"), dict))
-                    start_col, stop_col, delete_col = st.columns(3)
-                    with start_col:
-                        if st.button("Start", key=f"automation_start_{task_id}", width="stretch", disabled=not _can_start_video_task(task, state)):
-                            if _start_pipeline_task(task_id, state):
-                                st.rerun()
-                    with stop_col:
-                        if st.button("Stop", key=f"automation_stop_{task_id}", width="stretch", disabled=state != "doing"):
-                            stop_task_by_user(task_id)
-                            st.rerun()
-                    script_download_col, video_download_col = st.columns(2, gap="small")
-                    with script_download_col:
-                        st.download_button(
-                            "Baixar Roteiro",
-                            data=_file_bytes(script_path),
-                            file_name=_automation_download_name("Script", task, script_path, ".md"),
-                            mime="text/markdown",
-                            key=f"automation_download_script_{task['id']}",
-                            width="stretch",
-                            disabled=script_path is None,
-                        )
-                    with video_download_col:
-                        if video_path is not None:
-                            download_name = _automation_download_name("Vídeo", task, video_path, ".mp4")
-                            download_link = _local_video_download_link(video_path, download_name)
-                            if download_link:
-                                st.markdown(download_link, unsafe_allow_html=True)
-                            else:
-                                download_task_key = "youtube_automation_download_task_id"
-                                if st.session_state.get(download_task_key) == task_id:
-                                    with video_path.open("rb") as video_stream:
-                                        st.download_button(
-                                            "Baixar Vídeo",
-                                            data=video_stream,
-                                            file_name=download_name,
-                                            mime="video/mp4",
-                                            key=f"automation_download_video_{task_id}",
-                                            width="stretch",
-                                            on_click=_clear_youtube_automation_download_task,
-                                        )
-                                elif st.button("Preparar download", key=f"automation_prepare_video_download_{task_id}", width="stretch"):
-                                    st.session_state[download_task_key] = task_id
-                                    st.rerun(scope="fragment")
-                        else:
-                            st.download_button(
-                                "Baixar Vídeo",
-                                data=b"",
-                                file_name="video.mp4",
-                                mime="video/mp4",
-                                key=f"automation_download_video_{task['id']}",
-                                width="stretch",
-                                disabled=True,
-                            )
-                    if st.button(
-                        "Upload",
-                        key=f"automation_upload_{task['id']}",
-                        type="primary",
-                        width="stretch",
-                        disabled=not upload_ready or upload_ok,
-                        help="Disponível quando o vídeo e a thumbnail estiverem prontos." if not upload_ready else None,
-                    ):
-                        with st.spinner("A enviar vídeo..."):
-                            result = _upload_automation_task(task, video_path, thumbnail_path)
-                        (st.success if result.ok else st.error)(result.message)
-                        st.rerun()
-                    checked_upload_ok = st.checkbox(
-                        "Upload ok",
-                        value=upload_ok,
-                        key=f"automation_upload_ok_{task['id']}",
-                        disabled=not upload_ready,
-                        help="Marque depois de concluir manualmente o upload do vídeo.",
-                    )
-                    if checked_upload_ok != upload_ok:
-                        update_task(str(task["id"]), {"upload_ok": bool(checked_upload_ok), "upload_status": "manual" if checked_upload_ok else "pending"})
-                        st.rerun()
-                    if st.button(
-                        "Refazer Vídeo",
-                        key=f"automation_remake_video_{task['id']}",
-                        icon=":material/refresh:",
-                        type="primary",
-                        width="stretch",
-                        disabled=state == "doing",
-                        help="Reaplica as configurações atuais do canal (legendas, música, voz, duração, proporção, transição) e regenera o vídeo do zero. Use quando a config do canal mudou ou quando o vídeo foi gerado sem legenda por engano.",
-                    ):
-                        if _remake_video_from_card(task):
-                            st.rerun()
-                    with delete_col:
-                        confirm_delete_key = f"automation_confirm_delete_{task['id']}"
-                        if st.button("Apagar", key=f"automation_delete_{task['id']}", width="stretch", disabled=state == "doing"):
-                            st.session_state[confirm_delete_key] = True
+            # 1.0.15: cada card vive no seu próprio fragment — os estados
+            # vivos (to_do/standby/doing) relêm o tasks.json a cada 3s
+            # (estado, barra, thumbnail, player e botões actualizam sozinhos,
+            # sem F5); os terminais não pollam.
+            if _catalog_task_state(task) in _VIDEO_TASK_LIVE_STATES:
+                _youtube_task_card_live(task_id)
+            else:
+                _youtube_task_card_idle(task_id)
+
+
+# ---------------------------------------------------------------------------
+# 1.0.15: card da Automação Youtube em fragment — polling por card, mesmo
+# padrão do Backlog (1.0.15) e da fila de thumbnails (1.0.14). O corpo relê
+# SEMPRE a tarefa pelo id; a variante live polla em to_do/standby/doing e
+# pára no primeiro estado terminal com um st.rerun(scope="app") one-shot.
+# ---------------------------------------------------------------------------
+
+
+def _youtube_task_card_body(task_id: str) -> str:
+    """Renderiza o card da tarefa YouTube com dados FRESCOS; devolve o estado.
+
+    0.9.96 (recuperação): card ORIGINAL preservado por inteiro — thumbnail,
+    player, downloads, upload, Refazer e todos os botões sempre visíveis,
+    sem intermediários. 1.0.15: o card passou a reler o tasks.json em cada
+    execução (memo partilhado), pelo que o trabalho do worker aparece aqui
+    sem F5. Tarefa ausente → devolve "" e o wrapper live força o rerun.
+    """
+    task = _live_task_by_id(task_id)
+    if task is None:
+        # A tarefa saiu da fila (ex.: Apagar noutra aba/sessão): não
+        # renderizamos um card fantasma; invalida o memo para o rerun
+        # seguinte ler o catálogo fresco.
+        _invalidate_live_tasks_snapshot()
+        return ""
+    task_title = str(task.get("topic") or task.get("title") or "Vídeo sem nome").strip()
+    task_channel = str(task.get("channel_name") or "Canal sem nome").strip()
+    with st.expander(f"{task_title} · {task_channel}", expanded=False):
+        task_cols = st.columns([2.25, 1.55, 1.05, 2.15], gap="small")
+        script_path = _task_artifact_path(task, "script")
+        video_path = _task_artifact_path(task, "video")
+        thumbnail_path = _task_thumbnail_path(task)
+        thumbnail_prompt_path = _task_artifact_path(task, "thumbnail_prompt_json")
+        thumbnail_prompt = str(task.get("thumbnail_prompt") or "").strip()
+        with task_cols[0]:
+            media_cols = st.columns(2, gap="small")
+            with media_cols[0]:
+                if thumbnail_path is not None:
+                    st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")
+                else:
+                    st.caption("Thumbnail ainda não pronta")
+            with media_cols[1]:
+                if video_path is not None and _catalog_task_state(task) == "done":
+                    player_state_key = "youtube_automation_player_task_id"
+                    if st.session_state.get(player_state_key) == task_id:
+                        _render_local_video_player(video_path, width="stretch")
+                        if st.button("Fechar leitor", key=f"automation_close_player_{task_id}", width="stretch"):
+                            st.session_state.pop(player_state_key, None)
                             st.rerun(scope="fragment")
-                        if st.session_state.get(confirm_delete_key):
-                            st.warning("Remover este vídeo da fila? Os ficheiros de artefactos serão preservados.")
-                            confirm_col, cancel_col = st.columns(2)
-                            with confirm_col:
-                                if st.button("Confirmar", key=f"automation_confirm_delete_button_{task['id']}", width="stretch", type="primary"):
-                                    try:
-                                        delete_task(task["id"])
-                                        st.session_state.pop(confirm_delete_key, None)
-                                        st.rerun()
-                                    except ValueError as exc:
-                                        st.error(str(exc))
-                            with cancel_col:
-                                if st.button("Cancelar", key=f"automation_cancel_delete_{task['id']}", width="stretch"):
-                                    st.session_state.pop(confirm_delete_key, None)
-                                    st.rerun(scope="fragment")
+                    elif st.button("Reproduzir vídeo", key=f"automation_play_video_{task_id}", width="stretch"):
+                        st.session_state[player_state_key] = task_id
+                        st.rerun(scope="fragment")
+                elif video_path is not None:
+                    st.caption("O vídeo estará disponível para reprodução quando estiver concluído.")
+                else:
+                    st.caption("Vídeo ainda não pronto")
+            st.caption(f"ID da tarefa: {task_id}")
+            thumbnail_download_col, prompt_download_col = st.columns(2, gap="small")
+            with thumbnail_download_col:
+                st.download_button(
+                    "Baixar Thumbnail",
+                    data=_file_bytes(thumbnail_path),
+                    file_name=_automation_download_name("Thumbnail", task, thumbnail_path, ".png"),
+                    mime="image/png",
+                    key=f"automation_download_thumbnail_{task['id']}",
+                    width="stretch",
+                    disabled=thumbnail_path is None,
+                )
+            with prompt_download_col:
+                prompt_data = thumbnail_prompt_path.read_bytes() if thumbnail_prompt_path else thumbnail_prompt.encode("utf-8")
+                st.download_button(
+                    "Baixar Thumbnail Prompt",
+                    data=prompt_data,
+                    file_name=_automation_download_name("Thumbnail-Prompt", task, thumbnail_prompt_path, ".txt"),
+                    mime="application/json" if thumbnail_prompt_path else "text/plain",
+                    key=f"automation_download_thumbnail_prompt_{task['id']}",
+                    width="stretch",
+                    disabled=thumbnail_prompt_path is None and not thumbnail_prompt,
+                )
+        with task_cols[1]:
+            _render_video_task_state(task)
+        with task_cols[2]:
+            st.caption("Fonte do vídeo")
+            st.write(_video_task_source(task))
+        with task_cols[3]:
+            state = str(task.get("state") or "")
+            upload_ready = _upload_ready_for_task(task, video_path, thumbnail_path)
+            upload_ok = bool(task.get("upload_ok") or isinstance((task.get("artifacts") or {}).get("upload"), dict))
+            start_col, stop_col, delete_col = st.columns(3)
+            with start_col:
+                if st.button("Start", key=f"automation_start_{task_id}", width="stretch", disabled=not _can_start_video_task(task, state)):
+                    if _start_pipeline_task(task_id, state):
+                        st.rerun()
+            with stop_col:
+                if st.button("Stop", key=f"automation_stop_{task_id}", width="stretch", disabled=state != "doing"):
+                    stop_task_by_user(task_id)
+                    _invalidate_live_tasks_snapshot()
+                    st.rerun()
+            script_download_col, video_download_col = st.columns(2, gap="small")
+            with script_download_col:
+                st.download_button(
+                    "Baixar Roteiro",
+                    data=_file_bytes(script_path),
+                    file_name=_automation_download_name("Script", task, script_path, ".md"),
+                    mime="text/markdown",
+                    key=f"automation_download_script_{task['id']}",
+                    width="stretch",
+                    disabled=script_path is None,
+                )
+            with video_download_col:
+                if video_path is not None:
+                    download_name = _automation_download_name("Vídeo", task, video_path, ".mp4")
+                    download_link = _local_video_download_link(video_path, download_name)
+                    if download_link:
+                        st.markdown(download_link, unsafe_allow_html=True)
+                    else:
+                        download_task_key = "youtube_automation_download_task_id"
+                        if st.session_state.get(download_task_key) == task_id:
+                            with video_path.open("rb") as video_stream:
+                                st.download_button(
+                                    "Baixar Vídeo",
+                                    data=video_stream,
+                                    file_name=download_name,
+                                    mime="video/mp4",
+                                    key=f"automation_download_video_{task_id}",
+                                    width="stretch",
+                                    on_click=_clear_youtube_automation_download_task,
+                                )
+                        elif st.button("Preparar download", key=f"automation_prepare_video_download_{task_id}", width="stretch"):
+                            st.session_state[download_task_key] = task_id
+                            st.rerun(scope="fragment")
+                else:
+                    st.download_button(
+                        "Baixar Vídeo",
+                        data=b"",
+                        file_name="video.mp4",
+                        mime="video/mp4",
+                        key=f"automation_download_video_{task['id']}",
+                        width="stretch",
+                        disabled=True,
+                    )
+            if st.button(
+                "Upload",
+                key=f"automation_upload_{task['id']}",
+                type="primary",
+                width="stretch",
+                disabled=not upload_ready or upload_ok,
+                help="Disponível quando o vídeo e a thumbnail estiverem prontos." if not upload_ready else None,
+            ):
+                with st.spinner("A enviar vídeo..."):
+                    result = _upload_automation_task(task, video_path, thumbnail_path)
+                (st.success if result.ok else st.error)(result.message)
+                st.rerun()
+            checked_upload_ok = st.checkbox(
+                "Upload ok",
+                value=upload_ok,
+                key=f"automation_upload_ok_{task['id']}",
+                disabled=not upload_ready,
+                help="Marque depois de concluir manualmente o upload do vídeo.",
+            )
+            if checked_upload_ok != upload_ok:
+                update_task(str(task["id"]), {"upload_ok": bool(checked_upload_ok), "upload_status": "manual" if checked_upload_ok else "pending"})
+                _invalidate_live_tasks_snapshot()
+                st.rerun()
+            if st.button(
+                "Refazer Vídeo",
+                key=f"automation_remake_video_{task['id']}",
+                icon=":material/refresh:",
+                type="primary",
+                width="stretch",
+                disabled=state == "doing",
+                help="Reaplica as configurações atuais do canal (legendas, música, voz, duração, proporção, transição) e regenera o vídeo do zero. Use quando a config do canal mudou ou quando o vídeo foi gerado sem legenda por engano.",
+            ):
+                if _remake_video_from_card(task):
+                    st.rerun()
+            with delete_col:
+                confirm_delete_key = f"automation_confirm_delete_{task['id']}"
+                if st.button("Apagar", key=f"automation_delete_{task['id']}", width="stretch", disabled=state == "doing"):
+                    st.session_state[confirm_delete_key] = True
+                    st.rerun(scope="fragment")
+                if st.session_state.get(confirm_delete_key):
+                    st.warning("Remover este vídeo da fila? Os ficheiros de artefactos serão preservados.")
+                    confirm_col, cancel_col = st.columns(2)
+                    with confirm_col:
+                        if st.button("Confirmar", key=f"automation_confirm_delete_button_{task['id']}", width="stretch", type="primary"):
+                            try:
+                                delete_task(task["id"])
+                                st.session_state.pop(confirm_delete_key, None)
+                                _invalidate_live_tasks_snapshot()
+                                st.rerun()
+                            except ValueError as exc:
+                                st.error(str(exc))
+                    with cancel_col:
+                        if st.button("Cancelar", key=f"automation_cancel_delete_{task['id']}", width="stretch"):
+                            st.session_state.pop(confirm_delete_key, None)
+                            st.rerun(scope="fragment")
+    return _catalog_task_state(task)
+
+
+@st.fragment(run_every=_VIDEO_TASK_POLL_SECONDS)
+def _youtube_task_card_live(task_id: str) -> None:
+    """Estado vivo (to_do/standby/doing): relê a tarefa a cada 3s (run_every).
+
+    Ao detectar um estado terminal (done/failed/cancelled/…) força UM rerun
+    completo — a página volta a renderizar o card pela variante idle e o
+    Streamlit cancela o timer deste fragment, acabando com o loop de rede.
+    """
+    state = _youtube_task_card_body(task_id)
+    if state not in _VIDEO_TASK_LIVE_STATES:
+        st.rerun(scope="app")
+
+
+@st.fragment
+def _youtube_task_card_idle(task_id: str) -> None:
+    """Estados terminais: render único, sem loop de rede (run_every=None implícito)."""
+    _youtube_task_card_body(task_id)
 
 
 @st.fragment

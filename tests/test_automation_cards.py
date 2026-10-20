@@ -84,8 +84,11 @@ class AutomationCardsTests(unittest.TestCase):
         self.assertIn('if video_path is not None and _catalog_task_state(task) == "done"', block)
         self.assertIn('with video_path.open("rb") as video_stream:', block)
         # 0.9.96 (recuperação): downloads sempre visíveis no card, como antes.
-        self.assertIn('st.download_button(\n                            "Baixar Thumbnail",', block)
-        self.assertIn('st.download_button(\n                            "Baixar Roteiro",', block)
+        # 1.0.15: o card saiu do loop de _render_youtube_automation_task_list
+        # para o fragment _youtube_task_card_body (polling por card); os
+        # downloads continuam SEMPRE visíveis, agora com o bloco re-indentado.
+        self.assertIn('st.download_button(\n                    "Baixar Thumbnail",', block)
+        self.assertIn('st.download_button(\n                    "Baixar Roteiro",', block)
         self.assertNotIn('data=_file_bytes(video_path)', block)
 
     def test_remake_operation_preserves_creative_artifacts_and_clears_only_video_upload(self):
