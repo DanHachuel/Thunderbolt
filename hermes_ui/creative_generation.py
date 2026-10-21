@@ -17,6 +17,7 @@ from .blueprint_governance import (
     title_governance,
     title_rules_prompt_section,
     validate_title_with_governance,
+    visual_requirements_prompt_section,
 )
 from .provider_routing import ProviderRoutingError, route_llm_json
 
@@ -427,6 +428,12 @@ def generate_thumbnail_prompt(
         "Responde apenas com JSON válido nas chaves concept, overlay_text, composition, color_palette, subject, "
         "image_prompt, title_synergy e lettering_prompt."
     )
+    # 1.0.17: a lei visual do canal (metadata.visual_requirements do
+    # Blueprint — instrução + keywords a favorecer + proibidas) entra no
+    # prompt do director de arte; o motor não faz hardcoding.
+    visual_section = visual_requirements_prompt_section(blueprint)
+    if visual_section:
+        system += "\n\n" + visual_section
     user = json.dumps(
         {
             "channel": context,
@@ -559,6 +566,10 @@ def generate_creative_package(
             + "\n\nGera exactamente pelo menos 20 títulos candidatos que sigam ESTRITAMENTE estas regras — "
             "qualquer título que viole uma única regra é eliminado pelo validador."
         )
+    # 1.0.17: requisitos visuais do Blueprint para as variantes de thumbnail.
+    visual_section = visual_requirements_prompt_section(blueprint)
+    if visual_section:
+        system += "\n\n" + visual_section
     system += " Responde apenas com JSON válido nas chaves selected_title, title_candidates, keywords e thumbnail_variants."
     user_payload = {
         "channel": context,

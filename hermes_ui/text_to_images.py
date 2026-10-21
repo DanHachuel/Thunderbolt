@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import Any, Mapping
 
+from .blueprint_governance import visual_requirements_prompt_section
 from .provider_routing import ProviderRoutingError, route_llm_json
 from .voice_preview import resolve_narration_provider, synthesize_preview
 
@@ -108,6 +109,7 @@ def generate_image_prompts_for_scenes(
     style: str,
     settings: dict,
     channel: dict,
+    blueprint: dict | None = None,
 ) -> list[dict]:
     """Generate one concise, text-free visual prompt per scene through the active LLM.
 
@@ -116,6 +118,11 @@ def generate_image_prompts_for_scenes(
     `text_overlay` e injectado no prompt como "with the text 'X' written on
     it.". Todas as restantes saem estritamente sem texto. Se a LLM falhar, o
     fallback não injecta texto nenhum (0% é sempre seguro).
+
+    1.0.17: os requisitos visuais do canal vêm do Blueprint
+    (``metadata.visual_requirements`` — instrução + keywords a favorecer +
+    keywords proibidas) e são injectados no system prompt: o motor não faz
+    hardcoding; cada nicho dita as suas regras de imagem pelo seu JSON.
     """
     if not scenes:
         return []
@@ -128,6 +135,11 @@ def generate_image_prompts_for_scenes(
         "(maximum 3 words) in the field 'text_overlay'. For all other scenes, strictly NO text "
         "and 'text_overlay' must be empty."
     )
+    # 1.0.17: a lei visual do canal (ex.: «majestic nature, ABSOLUTELY NO
+    # HUMANS») entra no system prompt quando o blueprint a define.
+    visual_section = visual_requirements_prompt_section(blueprint)
+    if visual_section:
+        system += "\n\n" + visual_section
     payload = {
         "style": style,
         "channel": channel,

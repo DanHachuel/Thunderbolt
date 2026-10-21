@@ -62,7 +62,7 @@ def generate_script_document(
         # substitui a referência média de palavras (nunca enviar as duas).
         length_is_mandatory = bool(governance.get("length_compliance_mandatory")) and governance.get("strict_character_range") is not None
         output_requirements = {
-            "content": "roteiro completo em Markdown, com título, gancho, cenas, narração e indicações visuais/sonoras",
+            "content": "roteiro completo em Markdown: título, gancho e narração integral; directivas visuais/sonoras apenas em linhas de marcação próprias ([VISUAL]/[ÁUDIO] isoladas)",
             "summary": "resumo editorial em uma frase",
         }
         system = (
@@ -71,6 +71,14 @@ def generate_script_document(
             "alinhado exclusivamente ao nicho e às regras do Blueprint fornecido — o Blueprint é a LEI do canal: "
             "cumpre a sua persona, arquitectura de roteiro, extensão, must_include e must_avoid. "
             "Não inventes factos sensíveis, não uses introduções genéricas, não escrevas comentários sobre IA e não incluas um CTA vazio. "
+            # 1.0.17: o texto falado é lido DIRECTAMENTE por um TTS e vira legendas
+            # (.srt) — tags de produção inline eram lidas em voz alta e queimadas
+            # nas legendas. A regra aplica-se a TODOS os canais; o
+            # script_format_rules do blueprint pode agravá-la (100% falado).
+            "O texto falado é lido DIRECTAMENTE por um TTS e vira legendas: NUNCA escrevas tags de produção "
+            "inline («[Visual: ...]», «[Audio: ...]», «[SFX]», «SCENE 1», «NARRATOR:») no meio das frases — "
+            "se incluíres directivas visuais/sonoras, usa linhas de marcação isoladas ([VISUAL]/[ÁUDIO]); "
+            "todo o restante é apenas narração falada. "
         )
         if target_word_count and not length_is_mandatory:
             system += f"Escreve aproximadamente {int(target_word_count)} palavras; trata este valor como uma referência média e não como um limite rígido. "

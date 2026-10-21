@@ -9,6 +9,11 @@ O motor de geração lê as regras do JSON do blueprint activo e obedece:
 
 Os testes usam os blueprints REAIS do seed (Oração, FINANCE USA) para provar
 que não há hardcoding: as regras saem do próprio JSON de cada nicho.
+
+1.0.17: o Blueprint Oração foi substituído pela versão corrigida do autor —
+blacklist EXPLÍCITA (metadata.GLOBAL_BLACKLIST_WORDS inclui «sleep»), máximo
+de 6 palavras no título, extensão obrigatória em FRASE e tom gospel explícito;
+os guardrails de TTS/legendas vivem em test_script_tts_guardrails.py.
 """
 from __future__ import annotations
 
@@ -108,13 +113,24 @@ def test_oracao_validator_accepts_canonical_titles():
         "When God Says Wait",
         "A House Built on The Rock",
         "A Hunger For His Word",
-        "He Gives His Beloved Sleep",
         "Doors That Only God Can Open",
         "Anointed By The Spirit",
+        "The Power of The Name",
+        "Release The Outcome",
     ]
     for title in canonical:
         valid, reason = validate_generated_title(title, blueprint)
         assert valid, f"«{title}» devia ser aceite ({reason})"
+
+
+def test_oracao_blacklist_now_bans_the_former_sleep_canonical():
+    """1.0.17: o blueprint corrigido bane globalmente «sleep» (o canal saiu do
+    nicho bedtime) — o antigo canónico «He Gives His Beloved Sleep» é rejeitado
+    pela blacklist EXPLÍCITA do metadata.GLOBAL_BLACKLIST_WORDS."""
+    blueprint = _blueprint("BlueprintOração.json")
+    valid, reason = validate_generated_title("He Gives His Beloved Sleep", blueprint)
+    assert not valid
+    assert "sleep" in reason
 
 
 def test_oracao_governance_derives_rules_from_the_json():
@@ -122,12 +138,18 @@ def test_oracao_governance_derives_rules_from_the_json():
     governance = title_governance(blueprint)
     assert governance["active"] is True
     assert has_blueprint_title_rules(blueprint) is True
+    # 1.0.17: blacklist EXPLÍCITA de metadata.GLOBAL_BLACKLIST_WORDS (o
+    # blueprint corrigido deixa de derivar as palavras de listas entre
+    # parênteses — as regras saem literalmente do JSON do autor).
     blacklist = " ".join(governance["blacklist_words"]).casefold()
-    for word in ("nighttime", "bedtime", "anxiety", "worry", "overthinking", "morning"):
-        assert word in blacklist, f"'{word}' devia constar da blacklist derivada"
-    assert governance["max_word_count"] == DEFAULT_MAX_TITLE_WORDS
+    for word in ("meditation", "yoga", "mindfulness", "nighttime", "bedtime", "anxiety", "sleep"):
+        assert word in blacklist, f"'{word}' devia constar da blacklist"
+    # 1.0.17: o blueprint corrigido fixa o máximo em 6 palavras (era o default 15).
+    assert governance["max_word_count"] == 6
     templates = " | ".join(template["literal"] for template in governance["forbidden_templates"])
-    assert "Night Prayer for [problem]" in templates
+    assert "A [type] Prayer for [problem]" in templates
+    assert "Why" in governance["forbidden_starts"]
+    assert "How" in governance["forbidden_starts"]
     # calibração: 'The'/'A' iniciais não podem estar banidos — os canónicos começam assim
     assert "The" not in governance["forbidden_starts"]
     assert "A" not in governance["forbidden_starts"]
@@ -277,10 +299,18 @@ def test_creative_package_retry_flow_keeps_valid_titles_and_variants(monkeypatch
 def test_oracao_script_governance_extracts_channel_law():
     blueprint = _blueprint("BlueprintOração.json")
     governance = script_governance(blueprint)
+    # 1.0.17: o intervalo vem da FRASE «STRICTLY 7,000–9,000 characters» — o
+    # blueprint corrigido já não traz a lista strict_character_range.
     assert governance["strict_character_range"] == (7000, 9000)
     assert governance["length_compliance_mandatory"] is True
-    assert "prayer leader" in governance["tone_directive"]
+    # 1.0.17: tom gospel EXPLÍCITO do metadata.GLOBAL_TONE_DIRECTIVE (não
+    # derivado da persona) e CTA do generation_instructions.cta_pattern.
+    assert "GOSPEL PRAYER" in governance["tone_directive"]
     assert "This is Daniel" in governance["mandatory_cta"]
+    # 1.0.17: formato para TTS + requisitos visuais saem do próprio JSON.
+    assert any("[Visual" in rule for rule in governance["format_rules"])
+    assert "Waves" in governance["visual_requirements"]["prompt_keywords"]
+    assert "People" in governance["visual_requirements"]["blacklist_keywords"]
 
 
 def test_script_length_guardrail_retries_until_compliant(monkeypatch):

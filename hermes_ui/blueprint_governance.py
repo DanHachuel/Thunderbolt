@@ -64,6 +64,12 @@ _QUOTED = re.compile(
 )
 _PAREN = re.compile(r"\(([^()]{2,80})\)")
 _PLACEHOLDER = re.compile(r"\[[^\]]+\]")
+# 1.0.17: split COM grupo de captura — sem ele o placeholder não entra na
+# lista devolvida por re.split e a paridade índice/texto perdia o sentido:
+# «A [type] Prayer for [problem]» virava o padrão partido «^A\s+\S+» (a
+# palavra 'Prayer' era tratada como placeholder), que a calibração rejeitava
+# contra canónicos como «A House Built on The Rock». Bug latente da 1.0.11.
+_TEMPLATE_SPLIT_PLACEHOLDER = re.compile(r"(\[[^\]]+\])")
 _ALPHA_WORD = re.compile(r"[A-Za-zÀ-ÿ']+")
 
 # Cabeças de função demasiado amplas para virar padrão contém (ex.: o literal
@@ -140,7 +146,7 @@ def _template_pattern(literal: str) -> re.Pattern[str]:
     """Converte um formato com placeholders («A [type] Prayer for [problem]»)
     num padrão ancorado no início: ^a\\s+\\S+\\s+prayer\\s+for\\s+\\S+."""
     pieces: list[str] = []
-    for index, part in enumerate(_PLACEHOLDER.split(literal)):
+    for index, part in enumerate(_TEMPLATE_SPLIT_PLACEHOLDER.split(literal)):
         if index % 2:  # slot do placeholder → uma palavra qualquer
             pieces.append(r"\S+")
         else:
@@ -325,6 +331,36 @@ def _explicit_blacklist(blueprint: dict[str, Any]) -> list[str]:
     return []
 
 
+# 1.0.17: tags de produção que NUNCA podem chegar ao TTS nem às legendas.
+_PRODUCTION_TAG = re.compile(
+    r"\[\s*(?:visual|audio|sfx|narrator|narration|voice\s*over|voiceover|"
+    r"on[\s-]*screen(?:\s*text)?|scene|cena|narra[çc][ãa]o|voz|som|[áa]udio)\b[^\]]*\]",
+    re.IGNORECASE,
+)
+_SCENE_LABEL = re.compile(r"(?i)^\s*(?:scene|cena)\s*\d+\s*[:.\-–—]?")
+
+
+def _parse_character_range(text: str) -> tuple[int, int] | None:
+    """Extrai o intervalo de caracteres de uma frase tipo «STRICTLY 7,000–9,000 characters».
+
+    1.0.17: o Blueprint Oração corrigido expressa a extensão obrigatória na
+    string ``character_length_requirement`` (sem a lista
+    ``strict_character_range``); o motor passa a ACEITAR AS DUAS FORMAS para
+    que a validação dura de extensão nunca se desligue por detalhe de schema.
+    """
+    matches = re.findall(r"\d{1,3}(?:[.,]\d{3})+|\d+", str(text or ""))
+    if len(matches) < 2:
+        return None
+    try:
+        numbers = [int(re.sub(r"[.,]", "", match)) for match in matches[:2]]
+    except ValueError:
+        return None
+    low, high = numbers[0], numbers[1]
+    if 0 < low < high:
+        return (low, high)
+    return None
+
+
 def _structural_title_guidance(tm: dict[str, Any]) -> list[str]:
     """Fallback: quando não há regras proibitivas, injecta a mecânica estrutural."""
     guidance: list[str] = []
@@ -455,6 +491,22 @@ def title_rules_prompt_section(governance: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _explicit_visual_requirements(blueprint: dict[str, Any]) -> dict[str, Any]:
+    """Normaliza ``metadata.visual_requirements`` do blueprint (1.0.17).
+
+    O motor NÃO faz hardcoding de regras visuais: lê a chave do blueprint e
+    passa-a aos geradores de imagem (prompts de thumbnail e de cenas).
+    """
+    raw = _dict(_dict(blueprint.get("metadata")).get("visual_requirements"))
+    if not raw:
+        return {}
+    return {
+        "prompt_keywords": _string_items(raw.get("image_prompt_keywords"))[:24],
+        "blacklist_keywords": _string_items(raw.get("image_blacklist_keywords"))[:24],
+        "instruction": str(raw.get("instruction") or "").strip(),
+    }
+
+
 def script_governance(blueprint: dict[str, Any] | None) -> dict[str, Any]:
     """Extrai (ou deriva) as regras de roteiro do blueprint."""
     blueprint = _dict(blueprint)
@@ -471,6 +523,14 @@ def script_governance(blueprint: dict[str, Any] | None) -> dict[str, Any]:
                 character_range = (low, high)
         except (TypeError, ValueError):
             character_range = None
+    length_rule_text = str(
+        metadata.get("character_length_requirement") or metadata.get("character_length_rule") or ""
+    ).strip()
+    if character_range is None and metadata.get("length_compliance_mandatory") is True:
+        # 1.0.17: blueprint corrigido só traz a frase («STRICTLY 7,000–9,000
+        # characters») — o intervalo é derivado dela; a validação dura
+        # continua a funcionar com qualquer uma das formas.
+        character_range = _parse_character_range(length_rule_text)
 
     tone_directive = ""
     for source in (blueprint, metadata):
@@ -492,18 +552,25 @@ def script_governance(blueprint: dict[str, Any] | None) -> dict[str, Any]:
         parts.extend(_string_items(instructions.get("role_enforcement"))[:3])
         tone_directive = "\n".join(parts)
 
+    # 1.0.17: o CTA vive em ``cta_pattern.mandatory_closing_pattern`` (formato
+    # antigo) OU em ``generation_instructions.cta_pattern`` (blueprint
+    # corrigido) — aceita os dois.
     mandatory_cta = str(_dict(blueprint.get("cta_pattern")).get("mandatory_closing_pattern") or "").strip()
+    if not mandatory_cta:
+        mandatory_cta = str(instructions.get("cta_pattern") or "").strip()
+
+    format_rules = _string_items(metadata.get("script_format_rules"))
 
     return {
-        "active": bool(character_range or tone_directive or mandatory_cta or instructions),
+        "active": bool(character_range or tone_directive or mandatory_cta or instructions or format_rules),
         "system_prompt_override": _explicit_override(blueprint),
         "tone_directive": tone_directive,
-        "character_length_rule": str(
-            metadata.get("character_length_rule") or metadata.get("character_length_requirement") or ""
-        ).strip(),
+        "character_length_rule": length_rule_text,
         "strict_character_range": character_range,
         "length_compliance_mandatory": metadata.get("length_compliance_mandatory") is True,
         "blacklist_words": _explicit_blacklist(blueprint),
+        "format_rules": format_rules,
+        "visual_requirements": _explicit_visual_requirements(blueprint),
         "must_include": _string_items(instructions.get("must_include"))[:12],
         "must_avoid": _string_items(instructions.get("must_avoid"))[:14],
         "mandatory_cta": mandatory_cta,
@@ -511,15 +578,38 @@ def script_governance(blueprint: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def validate_script_content(content: str, governance: dict[str, Any]) -> tuple[bool, str]:
-    """Valida a extensão do roteiro contra o blueprint. Só é regra DURA quando
-    o blueprint declara ``length_compliance_mandatory``; sem range (ou sem
-    obrigatoriedade) a validação passa e a extensão fica só no prompt."""
+    """Hard guardrail do roteiro contra o blueprint (1.0.17: tom + blacklist + tags + extensão).
+
+    1. O LLM falha em seguir regras negativas — cada verificação devolve um
+    motivo accionável que o loop de geração (script_generation) reenvia ao
+    LLM como ``system_feedback`` até cumprir (máx. 3 tentativas).
+    2. ``GLOBAL_BLACKLIST_WORDS`` (ex.: meditation/yoga/sleep) nunca pode
+    chegar ao texto falado — o mesmo validador protege títulos e roteiros.
+    3. Tags de produção (``[Visual: ...]``, ``[Audio: ...]``, ``[SFX]`` …)
+    poluem o TTS e as legendas — rejeitadas na origem.
+    4. A extensão continua a ser regra DURA quando o blueprint declara
+    ``length_compliance_mandatory`` (aceita lista OU frase «7,000–9,000»).
+    """
+    text = str(content or "")
+    for word in governance.get("blacklist_words") or []:
+        if _contains_pattern(str(word)).search(text):
+            return False, f"O roteiro contém a palavra ou expressão proibida pelo blueprint: '{word}'."
+    if _PRODUCTION_TAG.search(text):
+        return False, (
+            "O roteiro contém tags de produção entre colchetes (ex.: '[Visual: ...]', '[Audio: ...]', "
+            "'[SFX]') que seriam lidas em voz alta pelo TTS e apareceriam nas legendas. "
+            "Escreve apenas o texto falado."
+        )
+    if _SCENE_LABEL.match(text.splitlines()[0] if text else "") and all(
+        _SCENE_LABEL.match(line) for line in text.splitlines() if line.strip()
+    ):
+        return False, "O roteiro só contém rótulos de cena ('SCENE 1', ...), sem narração falada."
     if not governance.get("length_compliance_mandatory"):
         return True, "Válido"
     character_range = governance.get("strict_character_range")
     if not character_range:
         return True, "Válido"
-    count = len(str(content or ""))
+    count = len(text)
     low, high = character_range
     if count < low:
         return False, (
@@ -549,6 +639,11 @@ def script_rules_prompt_section(governance: dict[str, Any]) -> str:
             "DIRECÇÃO DE TOM E PERSONA (obrigatória em todo o texto):\n"
             + str(governance["tone_directive"])
         )
+    if governance.get("format_rules"):
+        sections.append(
+            "REGRAS CRÍTICAS DE FORMATO DO TEXTO (o texto será lido directamente por um TTS):\n"
+            + "\n".join(f"- {rule}" for rule in governance["format_rules"])
+        )
     if governance.get("strict_character_range"):
         low, high = governance["strict_character_range"]
         rule = governance.get("character_length_rule") or ""
@@ -560,7 +655,7 @@ def script_rules_prompt_section(governance: dict[str, Any]) -> str:
         )
     if governance.get("blacklist_words"):
         sections.append(
-            "PALAVRAS/EXPRESSÕES PROIBIDAS NO CORPO DO TEXTO:\n"
+            "PALAVRAS/EXPRESSÕES PROIBIDAS NO CORPO DO TEXTO (VIOLAÇÃO = FALHA DO SISTEMA):\n"
             + ", ".join(governance["blacklist_words"])
         )
     if governance.get("must_avoid"):
@@ -579,3 +674,29 @@ def script_rules_prompt_section(governance: dict[str, Any]) -> str:
             + governance["mandatory_cta"]
         )
     return "\n\n".join(sections)
+
+
+def visual_requirements_prompt_section(blueprint: dict[str, Any] | None) -> str:
+    """Bloco de requisitos visuais do blueprint para os geradores de imagem (1.0.17).
+
+    O motor lê ``metadata.visual_requirements`` (instrução + keywords a
+    incluir + keywords proibidas) e passa-a adiante — ZERO hardcoding: cada
+    nicho dita as suas próprias regras de imagem pelo seu blueprint.
+    """
+    requirements = script_governance(blueprint).get("visual_requirements") or {}
+    if not requirements:
+        return ""
+    sections: list[str] = []
+    if requirements.get("instruction"):
+        sections.append(str(requirements["instruction"]))
+    if requirements.get("prompt_keywords"):
+        sections.append(
+            "Visual keyword themes to favour: " + ", ".join(requirements["prompt_keywords"]) + "."
+        )
+    if requirements.get("blacklist_keywords"):
+        sections.append(
+            "NEVER depict or evoke: " + ", ".join(requirements["blacklist_keywords"]) + "."
+        )
+    if not sections:
+        return ""
+    return "CHANNEL VISUAL REQUIREMENTS (mandatory in EVERY image):\n" + "\n".join(sections)

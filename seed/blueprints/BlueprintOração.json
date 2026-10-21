@@ -2,732 +2,170 @@
   "metadata": {
     "task_type": "forensic_content_blueprint_extraction",
     "channel_analyzed": "Grace for Purpose Prayers",
-    "channel_url": "https://www.youtube.com/@GraceForPurposePrayers",
-    "sample_count": 7,
     "dominant_domain_inferred": "long-form guided Christian prayers, devotional content and declarations of faith",
-    "core_promise_of_system": "Provide a powerful, grace-filled spiritual experience that sets the tone for a blessed, peaceful and purposeful day, helping listeners feel the presence of God and receive divine guidance.",
-    "primary_content_engine": "Emotionally charged and moving prayer narration that combines scripture, personal reflection and declarations of faith to create a sense of spiritual clarity, divine protection and miracle.",
+    "core_promise_of_system": "Provide a powerful, grace-filled spiritual experience that helps listeners feel the presence of God and receive divine guidance.",
+    "primary_content_engine": "Emotionally charged prayer narration that combines scripture, personal reflection and declarations of faith.",
     "character_length_requirement": "STRICTLY 7,000–9,000 characters",
-    "character_length_rule": "The final FULL SCRIPT must be no less than 7,000 characters and no more than 9,000 characters.",
-    "strict_character_range": [7000, 9000],
     "length_compliance_mandatory": true,
-    "audience_inference": {
-      "knowledge_level": "Beginner to intermediate in the Christian faith.",
-      "psychological_state": "Seeking spiritual guidance, facing stress, confusion or life challenges.",
-      "aspirational_identity": "Someone who desires a closer walk with God, divine protection and a life of purpose."
-    },
-    "channel_persona": {
-      "role": "Spiritual guide, prayer leader and devotional encourager — NOT an academic teacher or systematic theologian.",
-      "voice": "Calm, authoritative, compassionate, with a tone of intimate reverence.",
-      "authority_basis": [
-        "Scripture-based prayers",
-        "References to God's promises and faithfulness",
-        "Connection to well-known Christian teachings",
-        "Consistent delivery of spiritually edifying content"
-      ]
+    "GLOBAL_TONE_DIRECTIVE": "This is a GOSPEL PRAYER channel. NOT a meditation, yoga, or mindfulness channel. DO NOT use terms like 'breathe in', 'breathe out', 'mindfulness', 'meditation', 'body scan', 'relax your muscles'. The narrator is INTERCEDING and PRAYING to God on behalf of the listener, not guiding a relaxation session.",
+    "GLOBAL_BLACKLIST_WORDS": [
+      "meditation", "yoga", "mindfulness", "breathe in", "breathe out", "relax", "body scan", "sleep", "anxiety", "insomnia", "nighttime", "bedtime"
+    ],
+    "script_format_rules": [
+      "DO NOT include visual or audio prompts in the script (no '[Visual: ...]', no '[Audio: ...]').",
+      "The script must be 100% spoken word, ready for Text-to-Speech (TTS).",
+      "Do not include scene numbers or formatting tags that could be read aloud by the TTS."
+    ],
+    "visual_requirements": {
+      "image_prompt_keywords": ["Waves", "Sky", "Mountains", "Waterfall", "Prayer", "Nature", "Peace", "Devotion", "Sunlight", "Forest", "Clouds", "Stars"],
+      "image_blacklist_keywords": ["People", "Person", "Man", "Woman", "Yoga", "Meditation", "Hands", "Face", "Body"],
+      "instruction": "All background visuals MUST be majestic nature scenes or symbolic representations of prayer (e.g., an open Bible in nature, sunlight breaking through clouds). ABSOLUTELY NO HUMANS in the imagery."
     }
   },
-  "cross_sample_system": {
-    "dominant_pattern": "Each video opens with a thematic declaration directed at the listener about a real human struggle, anchors that struggle in one or more scriptures, develops a brief devotional reflection with biblical examples, leads into a guided prayer in the first-person plural, reinforces God's promises with declarations of faith, and closes with a blessing, personal encouragement and a call to action.",
-    "what_is_repeated_across_samples": [
-      "The title declares a spiritual truth, biblical promise or identity in Christ — it never describes a situation, scenario or problem.",
-      "The cold open uses a thematic declaration about human struggle — not a direct prayer to God.",
-      "Immediate pivot: 'God knows your situation and has already provided an answer.'",
-      "Presenter positions himself as a vessel for God's message, not as the source.",
-      "Viewer is reminded of God's faithfulness and promises through multiple scriptures.",
-      "Concrete biblical examples (David, Abigail, Isaac, Paul, Gideon, the nobleman of John 4) are used to illustrate the truth.",
-      "Repeated contrast between human struggle and divine provision.",
-      "Frequent use of 'I declare', 'I receive', 'We believe' statements.",
-      "Prayers are delivered in a slow, deliberate and emotionally resonant tone.",
-      "Endings include a blessing, personal encouragement and an invitation to engage with more content.",
-      "Personal signature of the narrator at the end."
-    ],
-    "what_is_intentionally_avoided": [
-      "No theological debate or denominational division.",
-      "No extremes of the prosperity gospel.",
-      "No judgmental or condemning language.",
-      "No political commentary.",
-      "No overly complex theological concept without explanation.",
-      "NO academic lecture, seminar or formal expository Bible study format.",
-      "NO title or script that resembles an article, blog post, practical guide or dissertation."
-    ],
-    "exceptions_used_strategically": [
-      "When addressing grief or loss, the tone becomes more tender and comforting.",
-      "When addressing miracle or victory, the tone becomes more declarative and triumphant.",
-      "When addressing God's silence, the tone becomes more patient and pastoral."
-    ]
-  },
   "rotation_mandate": {
-    "purpose": "Force thematic diversity across prayer videos. Prevent the model from collapsing into nighttime/sleep/anxiety prayers on every generation. Without an explicit rotation rule, the model defaults to 'A Nighttime Prayer for Overthinking', 'Bedtime Prayer for Anxiety', 'Night Prayer for Racing Mind', 'A nighttime prayer for people who can't sleep because...' because they satisfy the emotional-urgency formula most easily and match the most common viewer search queries. The following recent titles are evidence of this failure mode: 'Overwhelmed at Night? This Prayer Stops Racing Thoughts Instantly', 'Bedtime Prayer to Release Anxiety & Sleep in God's Peace Tonight', 'A Nighttime Prayer for Overthinking: Find Rest in God's Presence', 'Night Prayer for a Racing Mind: Fall Asleep in God's Peace Tonight', 'Night Prayer for Anxiety: When Your Mind Won't Stop Racing at 3AM', 'A Nighttime Prayer for People Who Can't Sleep Because Their Mind Won't Stop Replaying Worries'.",
-    "principle": "Every generated prayer script must be assigned to ONE prayer-focus category. Categories rotate. Consecutive videos must never share the same category. The nighttime_rest category (sleep, rest, overnight protection, racing mind, insomnia, overthinking at night) has a hard cap.",
+    "purpose": "Force thematic diversity across prayer videos. Prevent the model from collapsing into repetitive prayers.",
+    "principle": "Every generated script must be assigned to ONE category.",
+    "hard_ban_categories": {
+      "nighttime_rest": "BANNED FOR THE NEXT 10 GENERATIONS. DO NOT USE."
+    },
     "categories": [
       {
         "id": "identity_in_christ",
         "label": "Identity in Christ",
-        "description": "Prayers focused on who the believer is in Christ — sonship, belovedness, chosenness, righteousness, victory, adoption, being more than a conqueror. Content centres on identity declarations, not on symptoms or circumstances.",
-        "example_themes": [
-          "Christ In You Is Greater",
-          "The Power of The Name of Jesus",
-          "You Are Chosen and Beloved",
-          "The Strength You Carry"
-        ],
-        "must_avoid": [
-          "Nighttime, bedtime, sleep, or insomnia framing",
-          "Anxiety, overthinking, worry as the central focus",
-          "Racing mind, 3AM, can't sleep scenarios",
-          "Descriptive scenario titles"
-        ]
+        "description": "Prayers focused on who the believer is in Christ — sonship, belovedness, chosenness, righteousness, victory.",
+        "example_themes": ["Christ In You Is Greater", "The Power of The Name", "You Are Chosen", "More Than A Conqueror"]
       },
       {
         "id": "peace_trust",
         "label": "Peace, Trust & Surrender",
-        "description": "Prayers focused on releasing outcomes to God, trusting His timing, surrendering control, resting in His sovereignty. Can include anxiety and worry but must NOT be framed as a nighttime or sleep prayer.",
-        "example_themes": [
-          "Peace Beyond Pressure",
-          "Release The Outcome",
-          "Trusting God Between Prayers",
-          "When God Says Wait"
-        ],
-        "must_avoid": [
-          "Nighttime, bedtime, sleep, or insomnia framing",
-          "Racing mind, 3AM, can't sleep scenarios",
-          "Sleep as the desired outcome",
-          "Descriptive scenario titles"
-        ]
+        "description": "Prayers focused on releasing outcomes to God, trusting His timing, surrendering control.",
+        "example_themes": ["Peace Beyond Pressure", "Release The Outcome", "Trusting God", "When God Says Wait"]
       },
       {
         "id": "strength_endurance",
         "label": "Strength, Endurance & Weariness",
-        "description": "Prayers for spiritual, emotional and physical strength. Weariness, burnout, perseverance, standing firm, mounting up with wings as eagles. Anchor scriptures: Isaiah 40:31, 2 Corinthians 12:9, Philippians 4:13.",
-        "example_themes": [
-          "Strength for the Weary",
-          "Mount Up With Wings",
-          "The Power That Works In You",
-          "Standing Firm"
-        ],
-        "must_avoid": [
-          "Nighttime, bedtime, sleep framing",
-          "Anxiety or overthinking as the central focus",
-          "Descriptive scenario titles"
-        ]
+        "description": "Prayers for spiritual, emotional and physical strength. Perseverance, standing firm.",
+        "example_themes": ["Strength for the Weary", "Mount Up With Wings", "Standing Firm", "The Power Within"]
       },
       {
         "id": "protection_warfare",
         "label": "Protection & Spiritual Warfare",
-        "description": "Prayers of protection, deliverance, binding the enemy, covering the family, the blood of Jesus, the armour of God, the sword of the Spirit. Content is assertive and declarative.",
-        "example_themes": [
-          "Covered By The Blood",
-          "The Armour You Wear",
-          "No Weapon Formed Shall Prosper",
-          "The Shield of Faith"
-        ],
-        "must_avoid": [
-          "Nighttime, bedtime, sleep framing",
-          "Anxiety or overthinking as central focus",
-          "Descriptive scenario titles",
-          "Fear-mongering or sensationalised demonology"
-        ]
+        "description": "Prayers of protection, deliverance, covering the family, the blood of Jesus, the armour of God.",
+        "example_themes": ["Covered By The Blood", "The Armour You Wear", "No Weapon Formed", "The Shield of Faith"]
       },
       {
         "id": "provision_breakthrough",
         "label": "Provision, Breakthrough & Work",
-        "description": "Prayers for provision, finances, employment, open doors, favour, breakthrough, career, business, provision for the family. Not prosperity-gospel extremes — petition framed within trust and thanksgiving.",
-        "example_themes": [
-          "The Provision of God",
-          "Favour In The Eyes of Men",
-          "Doors That Only God Can Open",
-          "The God Who Provides"
-        ],
-        "must_avoid": [
-          "Nighttime, bedtime, sleep framing",
-          "Anxiety or overthinking as central focus",
-          "Prosperity-gospel naming-and-claiming language",
-          "Descriptive scenario titles"
-        ]
+        "description": "Prayers for provision, finances, employment, open doors, favour, breakthrough.",
+        "example_themes": ["The Provision of God", "Favour In The Eyes", "Doors Only God Opens", "The God Who Provides"]
       },
       {
         "id": "healing_wholeness",
         "label": "Healing, Wholeness & Grief",
-        "description": "Prayers for physical healing, emotional healing, grief, loss, depression, broken heart, restoration, hope after pain. Tone is tender and pastoral.",
-        "example_themes": [
-          "Healer of the Brokenhearted",
-          "The God Who Restores",
-          "Comfort in the Valley",
-          "The Hope That Remains"
-        ],
-        "must_avoid": [
-          "Nighttime, bedtime, sleep framing",
-          "Anxiety or overthinking as central focus",
-          "Descriptive scenario titles",
-          "Overpromising guaranteed physical healing"
-        ]
+        "description": "Prayers for physical healing, emotional healing, grief, loss, restoration.",
+        "example_themes": ["Healer of The Brokenhearted", "The God Who Restores", "Comfort in The Valley", "The Hope That Remains"]
       },
       {
         "id": "purpose_direction",
         "label": "Purpose, Calling & Decisions",
-        "description": "Prayers for direction, wisdom, purpose, calling, major decisions, hearing God's voice, walking in His will. Anchor scriptures: Proverbs 3:5-6, Jeremiah 29:11, James 1:5.",
-        "example_themes": [
-          "The Steps He Orders",
-          "Direction For Your Next Step",
-          "Wisdom From Above",
-          "The Path He Has Prepared"
-        ],
-        "must_avoid": [
-          "Nighttime, bedtime, sleep framing",
-          "Anxiety or overthinking as central focus",
-          "Descriptive scenario titles"
-        ]
+        "description": "Prayers for direction, wisdom, purpose, calling, hearing God's voice.",
+        "example_themes": ["The Steps He Orders", "Direction For Your Step", "Wisdom From Above", "The Path He Prepared"]
       },
       {
         "id": "family_relationships",
         "label": "Family, Marriage & Relationships",
-        "description": "Prayers for family, marriage, children, parents, friendship, forgiveness, reconciliation, unity, love. Anchor scriptures: Ephesians 4:32, Colossians 3:12-14, 1 Corinthians 13.",
-        "example_themes": [
-          "Love That Never Fails",
-          "A House Built on The Rock",
-          "Grace For One Another",
-          "The Bond of Peace"
-        ],
-        "must_avoid": [
-          "Nighttime, bedtime, sleep framing",
-          "Anxiety or overthinking as central focus",
-          "Descriptive scenario titles"
-        ]
+        "description": "Prayers for family, marriage, children, forgiveness, reconciliation, unity.",
+        "example_themes": ["Love That Never Fails", "A House Built on The Rock", "Grace For One Another", "The Bond of Peace"]
       },
       {
         "id": "gratitude_praise",
         "label": "Gratitude, Praise & Worship",
-        "description": "Prayers that are pure thanksgiving, praise, worship — with little or no petition. Declaring God's goodness, faithfulness, character. Anchor scriptures: Psalm 100, Psalm 103, Philippians 4:4-7.",
-        "example_themes": [
-          "Great Is Thy Faithfulness",
-          "The God Who Hears",
-          "A Heart of Praise",
-          "Worthy of All Honour"
-        ],
-        "must_avoid": [
-          "Nighttime, bedtime, sleep framing",
-          "Anxiety or overthinking as central focus",
-          "Petition-heavy structure (this is primarily praise)",
-          "Descriptive scenario titles"
-        ]
+        "description": "Prayers that are pure thanksgiving, praise, worship.",
+        "example_themes": ["Great Is Thy Faithfulness", "The God Who Hears", "A Heart of Praise", "Worthy of All Honour"]
       },
       {
         "id": "spiritual_growth",
         "label": "Spiritual Growth & Intimacy with God",
-        "description": "Prayers for growing in faith, prayer life, reading of scripture, obedience, holiness, sanctification, intimacy with God, being filled with the Holy Spirit. Anchor scriptures: John 15, Psalm 42:1, Galatians 5:22-23.",
-        "example_themes": [
-          "Abide In Me",
-          "A Hunger For His Word",
-          "Filled With The Spirit",
-          "Deeper In His Presence"
-        ],
-        "must_avoid": [
-          "Nighttime, bedtime, sleep framing",
-          "Anxiety or overthinking as central focus",
-          "Descriptive scenario titles"
-        ]
+        "description": "Prayers for growing in faith, obedience, holiness, sanctification.",
+        "example_themes": ["Abide In Me", "A Hunger For His Word", "Filled With The Spirit", "Deeper In His Presence"]
       },
       {
         "id": "morning_consecration",
         "label": "Morning Consecration & The Day Ahead",
-        "description": "Prayers that dedicate the day to God, ask for guidance and favour through the hours ahead, set the tone for the day. This is the MORNING counterpart to nighttime rest. Title must NOT contain 'morning' or 'day' as scenario description — use spiritual truth titles instead.",
-        "example_themes": [
-          "The First Step Belongs to Him",
-          "Declare God's Word Over Your Day",
-          "Put God First",
-          "Begin With Him"
-        ],
-        "must_avoid": [
-          "Nighttime, bedtime, sleep framing",
-          "Titles that describe the time of day literally",
-          "Anxiety or overthinking as central focus",
-          "Descriptive scenario titles"
-        ]
-      },
-      {
-        "id": "nighttime_rest",
-        "label": "Nighttime Rest & Sleep",
-        "description": "Prayers specifically for sleep, rest, protection overnight, releasing the day, quieting the mind at night. THIS IS THE OVERUSED CATEGORY. Titles must still follow the spiritual-truth rule (no 'nighttime', 'bedtime', 'sleep' in the title), but content can reference sleep and rest.",
-        "example_themes": [
-          "The Peace That Guards You",
-          "Rest For The Weary",
-          "He Gives His Beloved Sleep",
-          "The Blessing of Letting Go"
-        ],
-        "restriction": "This category may appear at most once in every six consecutive videos. If any of the last two videos were in this category, skip it entirely and pick another. Do NOT default to this category because it is the most emotionally urgent."
+        "description": "Prayers that dedicate the day to God, ask for guidance and favour.",
+        "example_themes": ["The First Step Belongs", "Declare God's Word", "Put God First", "Begin With Him"]
       }
     ],
     "selection_rules": [
       "Track the last six prayer videos produced by the channel and their assigned categories.",
-      "Before generating a new script, choose the category that has been used LEAST recently. On a tie, prefer the category with fewer appearances in the last twelve videos.",
+      "Before generating a new script, choose the category that has been used LEAST recently.",
       "Never generate two consecutive videos in the same category.",
-      "The nighttime_rest category has an additional hard cap: at most one in every six videos.",
-      "If the channel has no history (first video), default to one of: identity_in_christ, peace_trust, or strength_endurance.",
-      "If the user has explicitly requested a topic, honour it, but flag the rule violation in a single sentence inside the script's internal notes (not in the script body)."
-    ],
-    "user_command_override": "The user's explicit topic request always wins, but the generation model must warn in one sentence if the request breaks the rotation rule (e.g., 'this will be your third nighttime-rest prayer in a row').",
-    "anti_patterns_to_avoid": [
-      "Do not default to nighttime_rest as the 'most emotionally compelling' or 'most urgent' category.",
-      "Do not open every prayer with 'There are nights when...' or 'It's late and you're still awake...' or 'The house is quiet, but your mind is not...'.",
-      "Do not use '3AM', 'racing mind', 'can't sleep', 'replaying worries', 'overthinking' as recurring hooks.",
-      "Do not generate titles in the pattern 'A Nighttime Prayer for [problem]', 'Bedtime Prayer for [problem]', 'Night Prayer for [problem]'.",
-      "Do not describe the scenario (night, evening, bed, pillow, alarm, dark room) in the title.",
-      "Do not use the same three anchor scriptures every time (e.g., Psalm 4:8, Proverbs 3:24, Matthew 11:28). Rotate the scripture bank along with the category.",
-      "Do not make sleep the desired outcome of every prayer.",
-      "Do not confuse 'overwhelmed at night' with a category — it is a symptom, not a theme."
-    ],
-    "category_scripture_map": {
-      "identity_in_christ": ["1 John 4:4", "Ephesians 1:4-7", "Galatians 2:20", "Romans 8:37-39"],
-      "peace_trust": ["Philippians 4:6-7", "Isaiah 26:3", "Psalm 46:10", "Proverbs 3:5-6"],
-      "strength_endurance": ["Isaiah 40:31", "2 Corinthians 12:9", "Philippians 4:13", "Psalm 29:11"],
-      "protection_warfare": ["Psalm 91", "Ephesians 6:10-18", "Isaiah 54:17", "Psalm 121"],
-      "provision_breakthrough": ["Philippians 4:19", "Psalm 23:1", "Malachi 3:10", "Matthew 6:33"],
-      "healing_wholeness": ["Psalm 147:3", "Jeremiah 30:17", "Isaiah 53:5", "Psalm 34:18"],
-      "purpose_direction": ["Jeremiah 29:11", "Proverbs 3:5-6", "James 1:5", "Psalm 37:23"],
-      "family_relationships": ["Ephesians 4:32", "Colossians 3:12-14", "1 Corinthians 13", "Joshua 24:15"],
-      "gratitude_praise": ["Psalm 100", "Psalm 103", "Philippians 4:4", "Psalm 150"],
-      "spiritual_growth": ["John 15:4-5", "Psalm 42:1", "Galatians 5:22-23", "2 Peter 3:18"],
-      "morning_consecration": ["Lamentations 3:22-23", "Psalm 5:3", "Psalm 143:8", "Mark 1:35"],
-      "nighttime_rest": ["Psalm 4:8", "Proverbs 3:24", "Matthew 11:28", "Psalm 127:2"]
-    }
+      "DO NOT USE nighttime_rest."
+    ]
   },
   "title_analysis": {
     "title_mechanics": {
-      "structure": "SPIRITUAL TRUTH / BIBLICAL PROMISE / IDENTITY IN CHRIST (declarative format).",
-      "the_title_does_not": [
-        "Describe a situation, problem, scenario, time or feeling.",
-        "Function as an article, guide, dissertation, how-to or study.",
-        "Follow the pattern 'A [type] Prayer for [problem/situation]'."
+      "structure": "SPIRITUAL TRUTH / BIBLICAL PROMISE / IDENTITY IN CHRIST.",
+      "max_word_count": 6,
+      "absolute_rules": [
+        "The title MUST be a maximum of 6 words.",
+        "The title MUST be a declarative statement, promise, or identity.",
+        "The title MUST NOT be a sentence. (e.g., No 'A prayer for when you feel...')",
+        "The title MUST NOT describe the video production (no 'soft music', 'sunrise footage', 'spoken calmly').",
+        "The title MUST NOT contain the global blacklist words."
       ],
-      "the_title_is": "A declaration of faith that stands alone, without context.",
       "correct_forms_use_these": [
-        "The Power of The Name of Jesus",
+        "The Power of The Name",
         "Christ In You Is Greater",
         "Peace Beyond Pressure",
         "Release The Outcome",
         "The Strength You Carry",
-        "Trusting God Between Prayers",
-        "The Blessing of Letting Go",
         "The Peace That Guards You",
         "When God Says Wait",
-        "Declare God's Word Over Your Day",
         "Put God First"
       ],
       "forbidden_title_patterns_critical_violation_equals_failure": [
-        "FORBIDDEN: starting with 'Why', 'How', 'The Reason', 'Understanding', 'What'. Examples: 'Why Common Daily Prayers Often Fail...', 'How to Genuinely Reconnect with God'.",
-        "FORBIDDEN: format 'A [type] Prayer for [problem/situation/scenario]'. Examples: 'A Nighttime Prayer for Overthinking', 'A Bedtime Prayer for Releasing Anxiety', 'A Night Prayer for When You Can't Sleep'.",
-        "FORBIDDEN: describing scenario, time or context. Examples: 'Nighttime', 'Bedtime', 'Morning', 'Before Sleep', 'At Night'.",
-        "FORBIDDEN: focusing on psychological, emotional or symptom-level problem. Examples: 'Overthinking', 'Anxiety', 'Worry', 'Stress', 'Depression', 'Fear'.",
-        "FORBIDDEN: how-to, practical guide or dissertation format. Examples: 'How to...', 'Why...', 'The Reason...', 'Understanding...'.",
-        "FORBIDDEN: titles that look like articles, blog posts or lessons.",
-        "FORBIDDEN: passive titles that do not invoke a truth, promise or declaration of faith.",
-        "FORBIDDEN: titles that start with 'A', 'An' or 'The' followed by scenario description."
-      ],
-      "title_psychology": "The viewer clicks because the title names a spiritual truth they want to experience — not because it describes a problem they have. The title must function as a declaration of faith, not as a situation description.",
-      "validation_check_mandatory_before_finalising_any_title": [
-        "Does the title start with 'Why', 'How', 'What' or 'The Reason'? → REJECT.",
-        "Does the title contain 'for [problem]', 'for when', 'for releasing', 'for [scenario]'? → REJECT.",
-        "Does the title describe a time of day (bedtime, nighttime, morning)? → REJECT.",
-        "Does the title contain a psychological symptom (overthinking, anxiety, worry)? → REJECT.",
-        "Does the title look like an article headline, blog post or how-to? → REJECT.",
-        "Does the title work as a standalone declaration of faith? → APPROVE.",
-        "Could the title be posted on a wall as an affirmation? → APPROVE."
-      ],
-      "title_rewrite_examples": [
-        {
-          "wrong_title_generated": "A Nighttime Prayer for Overthinking",
-          "correct_title_pattern_daniel": "Peace Beyond Pressure"
-        },
-        {
-          "wrong_title_generated": "A Bedtime Prayer for Releasing Anxiety",
-          "correct_title_pattern_daniel": "Release The Outcome"
-        },
-        {
-          "wrong_title_generated": "A Night Prayer for When You Can't Sleep",
-          "correct_title_pattern_daniel": "Trusting God Between Prayers"
-        },
-        {
-          "wrong_title_generated": "Why Common Daily Prayers Often Fail",
-          "correct_title_pattern_daniel": "REJECT COMPLETELY — do not generate"
-        },
-        {
-          "wrong_title_generated": "A Prayer for Stress and Worry",
-          "correct_title_pattern_daniel": "The Strength You Carry"
-        }
-      ]
-    },
-    "implied_enemies_and_allies": {
-      "implied_enemy": [
-        "Doubt",
-        "Fear",
-        "Confusion",
-        "Spiritual dryness",
-        "The enemy (Satan)",
-        "Pressure",
-        "Anxiety"
-      ],
-      "implied_ally": [
-        "God the Father",
-        "Jesus Christ",
-        "The Holy Spirit",
-        "The angels",
-        "The praying community"
+        "FORBIDDEN: starting with 'Why', 'How', 'The Reason', 'Understanding', 'What'.",
+        "FORBIDDEN: format 'A [type] Prayer for [problem]'.",
+        "FORBIDDEN: any word from the GLOBAL_BLACKLIST_WORDS.",
+        "FORBIDDEN: describing video elements (music, footage, lighting).",
+        "FORBIDDEN: Titles longer than 6 words."
       ]
     }
   },
   "script_architecture": {
     "macro_flow": [
-      "1. Opening with thematic declaration about the human struggle: 'There are days when...' / 'What do you do in the space between...' / 'Pressure has a way of...'",
-      "2. Scripture anchoring: introduce 1–3 Bible verses that address that struggle.",
-      "3. Brief devotional reflection with biblical example: story of David, Abigail, Isaac, Paul, Gideon, the nobleman of John 4, etc., applied to the listener's life.",
-      "4. Connection to present relevance: 'this is for you now'.",
-      "5. Presenter framing: why this prayer matters today.",
-      "6. Promise stacking: what the listener will receive through the prayer.",
-      "7. Guided prayer in the first-person plural with specific petitions, confessions and declarations.",
-      "8. Declarations of faith and trust in God ('I declare', 'We believe', 'I receive').",
-      "9. Reinforcement of God's promises with additional scriptures.",
-      "10. Final personal application: 'this is what this means for you' — with practical encouragement.",
-      "11. Closing blessing and encouragement.",
-      "12. Standard CTA: signature + invitation to subscribe, like, comment and share."
+      "1. Opening with thematic declaration about the human struggle.",
+      "2. Scripture anchoring: introduce 1–3 Bible verses.",
+      "3. Brief devotional reflection with biblical example.",
+      "4. Intercessory Prayer: direct prayer to God in the first-person plural. (The narrator MUST intercede for the listener: 'Lord, I lift up this listener to You...').",
+      "5. Declarations of faith.",
+      "6. Reinforcement of God's promises.",
+      "7. Final personal application.",
+      "8. Standard CTA."
     ],
     "opening_pattern": {
-      "method": "Start with a direct thematic declaration to the listener about a universal human struggle, followed immediately by scripture anchoring.",
-      "why_it_works": "The listener feels seen and immediately identified with the situation, before being led to the divine solution.",
-      "opening_variants": [
-        "There are days when [human struggle]...",
-        "What do you do in the space between [situation]...?",
-        "[Abstract concept] has a way of trying to [negative effect]...",
-        "There is power in [spiritual truth]..."
-      ],
+      "method": "Start with a direct thematic declaration to the listener.",
       "forbidden_opening": "Do not open with 'Heavenly Father, I come before you today...' or any direct prayer to God as the first sentence."
-    },
-    "pacing_model": {
-      "rhythm": "Slow and deliberate, with pauses for reflection and absorption.",
-      "acceleration_pattern": "Initial reflection is calm; prayer rises in intensity as it progresses; then slows down for the final blessing.",
-      "retention_devices": [
-        "Direct address to the listener",
-        "Multiple biblical references",
-        "Declarative statements",
-        "Emotional resonance through voice modulation"
-      ]
-    },
-    "information_release_timing": {
-      "front_loaded": [
-        "Thematic declaration",
-        "Opening scripture",
-        "Human context"
-      ],
-      "mid_loaded": [
-        "Biblical example",
-        "Guided prayer",
-        "Declarations"
-      ],
-      "back_loaded": [
-        "Promise reinforcement",
-        "Closing blessing",
-        "CTA"
-      ]
-    },
-    "rhetorical_devices": {
-      "most_common": [
-        "Direct address",
-        "Repetition",
-        "Declaration",
-        "Biblical quotation",
-        "Applied biblical example",
-        "Emotional appeal"
-      ],
-      "contrast_structure": [
-        "Fear vs faith",
-        "Doubt vs trust",
-        "Confusion vs clarity",
-        "Pressure vs peace"
-      ]
-    },
-    "tone_layering": {
-      "surface_tone": "Prayerful and reverent.",
-      "underlayer": "Intimate and emotionally resonant.",
-      "deeper_emotional_register": "Longing for divine connection and the comfort of God's presence."
     }
-  },
-  "micro_writing_mechanics": {
-    "sentence_design": {
-      "dominant_shapes": [
-        "Thematic declaration to the listener.",
-        "Biblical anchoring ('In [book] [chapter]:[verse], we read...').",
-        "Applied narrative biblical example.",
-        "Direct prayer to God in the first-person plural.",
-        "Declaration of faith ('I declare', 'We believe', 'We receive').",
-        "Direct encouragement to the listener.",
-        "Final blessing and affirmation."
-      ],
-      "feel": "Intimate, reverent and emotionally charged — like a pastoral conversation followed by prayer.",
-      "cadence_trick": "Uses pauses and repetitions to create a meditative rhythm; alternates between declaration, reflection and prayer."
-    },
-    "word_choice": {
-      "preferred_lexicon": [
-        "Lord",
-        "Father",
-        "Jesus",
-        "Holy Spirit",
-        "grace",
-        "mercy",
-        "favour",
-        "protection",
-        "provision",
-        "guidance",
-        "miracle",
-        "restoration",
-        "peace",
-        "joy",
-        "hope",
-        "purpose",
-        "strength",
-        "courage",
-        "surrender"
-      ],
-      "language_behavior": "Words are chosen for their emotional and spiritual weight, often drawn directly from scripture.",
-      "credibility_words": [
-        "Specific scripture references",
-        "Named biblical characters",
-        "Concrete promises of God"
-      ]
-    },
-    "rhetorical_devices": {
-      "most_common": [
-        "Repetition of key phrases",
-        "Declarative statements",
-        "Direct address to God and to the listener",
-        "Narrative biblical examples"
-      ]
-    },
-    "tone_layering": {
-      "surface_tone": "Prayerful and reverent.",
-      "underlayer": "Intimate and emotionally resonant.",
-      "deeper_emotional_register": "Longing for divine connection and the comfort of God's presence."
-    }
-  },
-  "psychological_and_persuasive_mechanisms": {
-    "core_psychology": [
-      "Uses spiritual authority to create trust and comfort.",
-      "Creates a sense of divine presence and connection.",
-      "Makes the listener feel seen, heard and valued by God.",
-      "Provides a sense of clarity and direction in the midst of confusion.",
-      "Frames prayer as a powerful tool for transformation."
-    ],
-    "emotional_sequence": [
-      "Identification",
-      "Reverence",
-      "Trust",
-      "Peace",
-      "Hope",
-      "Gratitude"
-    ],
-    "credibility_engineering": {
-      "methods": [
-        "Multiple references to scripture and God's promises",
-        "Consistent alignment with Christian doctrine",
-        "Use of familiar Christian vocabulary and concepts",
-        "Well-known biblical examples"
-      ],
-      "effect": "The narrator sounds like a trusted spiritual guide."
-    },
-    "retention_psychology": {
-      "curiosity_loops": [
-        "What does God want to say to me today?",
-        "How can I experience His presence more fully?",
-        "What miracle is waiting for me?"
-      ],
-      "tension_creation": "Tension is created by presenting a spiritual need or challenge that requires a divine response.",
-      "relief_timing": "Relief comes with the assurance of God's faithfulness and the completion of the prayer."
-    }
-  },
-  "worldview_embedded_in_scripts": {
-    "beliefs": [
-      "God is sovereign, loving and faithful.",
-      "Prayer is a powerful tool for transformation.",
-      "God has a purpose and a plan for every individual.",
-      "Faith and trust in God are essential for a blessed life."
-    ],
-    "status_framing": "High status is attributed to being a person of faith, a prayer warrior and someone who trusts in God.",
-    "fear_framing": "Fear is presented as the enemy of faith, but it is overcome through prayer and trust in God.",
-    "transformation_promise": "Move from anxiety to peace, from confusion to clarity, from lack to provision through prayer."
-  },
-  "replication_logic": {
-    "content_formula": {
-      "step_1": "Choose a spiritual need or challenge (fear, confusion, stress, grief, pressure) WITHIN the category assigned by the rotation_mandate.",
-      "step_2": "Generate a title that is a SPIRITUAL TRUTH / BIBLICAL PROMISE / IDENTITY IN CHRIST — never a description of problem, scenario or time.",
-      "step_3": "Open with a thematic declaration directly to the listener about that human struggle.",
-      "step_4": "Find 1–3 scriptures that address that need and anchor them immediately.",
-      "step_5": "Develop a brief devotional reflection with a concrete biblical example.",
-      "step_6": "Write a guided prayer in the first-person plural that applies scripture to the listener's situation.",
-      "step_7": "Add declarations of faith and trust in God.",
-      "step_8": "Reinforce God's promises with additional scriptures.",
-      "step_9": "Apply personally: 'this is what this means for you'.",
-      "step_10": "Close with a blessing, personal encouragement and the standard CTA."
-    },
-    "stylistic_rules_for_future_outputs": [
-      "Always start with a thematic declaration to the listener, not with direct prayer.",
-      "Use multiple scriptures as a foundation.",
-      "Include at least one concrete biblical example.",
-      "Address the listener directly before and after the prayer.",
-      "End with a blessing, personal encouragement and CTA.",
-      "Rotate the category as mandated — do not default to nighttime/sleep/anxiety."
-    ],
-    "title_generation_rules_critical": [
-      "The title MUST be a spiritual truth, biblical promise or identity in Christ.",
-      "The title MAY be thematic/nominal (e.g., 'The Power of The Name of Jesus', 'Peace Beyond Pressure', 'Christ In You Is Greater').",
-      "The title MAY also use an imperative verb (e.g., 'Declare God's Word', 'Put God First') — but that is not mandatory.",
-      "The title MUST NOT describe problem, scenario, time, feeling or symptom.",
-      "The title MUST NOT start with 'Why', 'How', 'What', 'The Reason', 'Understanding'.",
-      "The title MUST NOT follow the format 'A [type] Prayer for [problem/situation]'.",
-      "The title MUST NOT contain words like 'bedtime', 'nighttime', 'morning', 'overthinking', 'anxiety', 'worry', 'stress'.",
-      "The title MUST pass the validation_check in section 3 of the title_analysis."
-    ],
-    "hook_generation_rules": [
-      "Start with a thematic declaration about the human struggle.",
-      "Do NOT start with direct prayer to God.",
-      "After the opening declaration, anchor immediately in scripture."
-    ]
-  },
-  "sample_specific_context": {
-    "note": "Empty. No sample-specific blueprints were provided for this channel beyond the corrected general blueprint."
   },
   "generation_instructions_for_another_model": {
-    "objective": "Produce long-form guided prayers that provide spiritual comfort, clarity and miracle for listeners facing life challenges.",
-    "step_zero": "Before writing anything, read rotation_mandate, determine the last six prayer categories, and select the least recently used category that respects the selection_rules. State the chosen category internally before drafting. If the last two videos were nighttime_rest, you are FORBIDDEN from choosing it again.",
+    "step_zero": "Read rotation_mandate, select the least recently used category. DO NOT select nighttime_rest.",
     "must_include": [
-      "one category from rotation_mandate that respects the selection_rules",
-      "a title that is a spiritual truth, biblical promise or identity in Christ",
-      "an opening with a thematic declaration about the human struggle",
-      "multiple biblical references (minimum 2, ideally 3–5) drawn from the category_scripture_map",
-      "at least one concrete biblical example applied to the listener's life",
-      "a guided prayer in the first-person plural with specific petitions",
-      "declarations of faith ('I declare', 'We believe', 'I receive')",
-      "reinforcement of God's promises with additional scriptures",
-      "a final blessing and personal encouragement",
-      "the standard CTA with the narrator's signature"
+      "A title that is 6 words or fewer.",
+      "An opening with a thematic declaration.",
+      "Multiple biblical references (minimum 2).",
+      "At least one concrete biblical example.",
+      "An intercessory prayer where the narrator prays FOR the listener.",
+      "Declarations of faith.",
+      "The standard CTA with 'This is Daniel'."
     ],
     "must_avoid": [
-      "Theological debate.",
-      "Judgmental language.",
-      "Political commentary.",
-      "Extremes of the prosperity gospel.",
-      "Titles in the format 'A [type] Prayer for [problem/scenario]'.",
-      "Titles that start with 'Why', 'How', 'What', 'The Reason', 'Understanding'.",
-      "Titles that describe time of day (bedtime, nighttime, morning), psychological symptom (overthinking, anxiety, worry) or scenario.",
-      "Titles that look like article, blog post, how-to, practical guide or dissertation.",
-      "Scripts in the format of academic lecture or formal seminar.",
-      "Analytical or philosophical language about faith.",
-      "Opening with direct prayer to God as the first sentence.",
-      "Defaulting to nighttime_rest when the category is not nighttime_rest.",
-      "Using '3AM', 'racing mind', 'can't sleep', 'replaying worries', 'overthinking at night' as recurring hooks.",
-      "Consecutive videos in the same category."
+      "ANY word from the GLOBAL_BLACKLIST_WORDS (meditation, yoga, breathe, sleep, etc.).",
+      "ANY formatting tags like '[Visual: ...]' or '[Audio: ...]'. Output ONLY spoken words.",
+      "Describing the video format in the title.",
+      "The nighttime_rest category."
     ],
-    "role_enforcement": [
-      "You are a prayer leader and devotional encourager. Your goal is to guide the listener in prayer, but you may and should include a brief devotional reflection with biblical examples to contextualise the prayer.",
-      "You are NOT an academic teacher or systematic theologian — avoid debate, complex jargon and denominational divisions.",
-      "You ARE a pastor-prayer who briefly teaches while praying."
-    ],
-    "success_condition": "The listener should feel spiritually uplifted, comforted, seen and more connected to God — AND the script should belong to a category that has not been used recently.",
-    "output_length_requirement": "The final FULL SCRIPT must be strictly between 7,000 and 9,000 characters.",
-    "output_length_verification": "Before sending the answer, verify the FULL SCRIPT character count. If it is below 7,000 or above 9,000 characters, rewrite it until it falls within range.",
-    "hard_fail_condition": "Any FULL SCRIPT under 7,000 characters or over 9,000 characters is invalid and must be rewritten before output. Any FULL SCRIPT that violates the rotation_mandate selection_rules is also invalid and must be rewritten.",
-    "title_validation_requirement_mandatory": "Before finalising, apply the validation_check from section 3 to the generated title. If the title fails any criterion, rewrite the title until it passes all criteria."
-  },
-  "cta_pattern": {
-    "mandatory_closing_pattern": "This is Daniel. Thank you for allowing me to pray with you today. If this daily effective prayer was a blessing, please subscribe and click the bell so you don't miss a prayer that I upload. Please like, comment, and share this with someone you care about to help keep this prayer ministry going and growing. Thank you again and God bless you.",
-    "cta_rules": [
-      "Must include the narrator's personal signature.",
-      "Must include thanks for joining in prayer.",
-      "Must include an invitation to subscribe and enable the bell.",
-      "Must include an invitation to like, comment and share.",
-      "Must include a final blessing ('God bless you').",
-      "Must be positioned after the closing blessing."
-    ]
-  },
-  "corrected_script_example_structure": {
-    "title": "Christ In You Is Greater",
-    "validation": "Does not start with Why/How/What. Does not describe scenario, time or symptom. Is not 'A [type] Prayer for...' format. Is a declaration of identity in Christ. → APPROVED.",
-    "hook_paragraph": "There are days when the pressure feels louder than your faith. You look at what's in front of you and think, 'This is bigger than me.' The demands feel heavy. The situation feels intimidating. The opposition feels real — and it is real. But so is the presence of Christ in you.",
-    "script_structure": [
-      "Opening theme: pressure vs faith.",
-      "Scriptures: 1 John 4:4; Zechariah 4:6.",
-      "Biblical example: David before Goliath.",
-      "Application: the same Lord who empowered David lives in you.",
-      "Guided prayer: Father, Jesus, Holy Spirit.",
-      "Declarations: 'Christ in us is greater than pressure...'",
-      "Reinforcement: Ephesians 3:20; John 16:33; 2 Corinthians 12:9.",
-      "Final application: strength that looks like patience, self-control and obedience.",
-      "Blessing and standard CTA with 'This is Daniel'."
-    ],
-    "thumbnail_concept": "A young warrior (David) facing a blurred giant, with bold text: 'CHRIST IN YOU IS GREATER'.",
-    "suggested_tags": ["Prayer", "Christ In You", "Daily Effective Prayer", "Christian", "Spiritual Growth", "Faith", "Trust in God"],
-    "chapter_markers": [
-      "0:00 - Opening Theme: Pressure Feels Louder Than Faith",
-      "1:30 - Scripture Foundation: 1 John 4:4 & Zechariah 4:6",
-      "3:00 - Biblical Example: David Before Goliath",
-      "5:00 - Guided Prayer: Leaning Into God's Strength",
-      "10:00 - Declarations of Faith",
-      "14:00 - Application: Strength That Looks Like Patience",
-      "18:00 - Closing Blessing & CTA"
-    ]
-  },
-  "applied_corrections_summary": [
-    {
-      "item": "Titles",
-      "before": "Mandatory imperative ('Open', 'Let', 'Put')",
-      "after": "Spiritual truth / biblical promise / identity in Christ"
-    },
-    {
-      "item": "Titles — prohibition",
-      "before": "Generic",
-      "after": "Explicit: forbidden 'Why/How/What', 'A [type] Prayer for...', time of day, symptom, scenario, how-to"
-    },
-    {
-      "item": "Title validation",
-      "before": "Nonexistent",
-      "after": "Mandatory validation_check with 7 criteria"
-    },
-    {
-      "item": "Opening",
-      "before": "Direct prayer to God",
-      "after": "Thematic declaration about human struggle"
-    },
-    {
-      "item": "Role",
-      "before": "Only prayer leader; teaching forbidden",
-      "after": "Prayer leader AND devotional encourager; brief biblical reflection permitted"
-    },
-    {
-      "item": "CTA",
-      "before": "Unspecified",
-      "after": "Full pattern with signature, subscribe, like, comment, share"
-    },
-    {
-      "item": "Scriptures",
-      "before": "One reference",
-      "after": "Multiple references (minimum 2, ideally 3–5)"
-    },
-    {
-      "item": "Teaching prohibition",
-      "before": "Forbade any explanation",
-      "after": "Permits brief devotional reflection with biblical examples"
-    },
-    {
-      "item": "Biblical example",
-      "before": "Not required",
-      "after": "At least one mandatory"
-    },
-    {
-      "item": "Script example",
-      "before": "Generic in Portuguese",
-      "after": "Structure in the Daniel pattern (in English, per transcripts)"
-    },
-    {
-      "item": "Rotation",
-      "before": "Nonexistent — model defaulted to nighttime/sleep/anxiety prayers",
-      "after": "Mandatory rotation across 12 categories with hard cap on nighttime_rest"
-    }
-  ]
+    "cta_pattern": "This is Daniel. Thank you for allowing me to pray with you today. If this daily effective prayer was a blessing, please subscribe and click the bell so you don't miss a prayer that I upload. Please like, comment, and share this with someone you care about to help keep this prayer ministry going and growing. Thank you again and God bless you."
+  }
 }

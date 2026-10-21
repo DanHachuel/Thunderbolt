@@ -2605,6 +2605,9 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                     str(generation_settings.get("text_to_images_style") or "cinematic"),
                     settings,
                     channel,
+                    # 1.0.17: os requisitos visuais do Blueprint (ex.: natureza,
+                    # zero pessoas) chegam ao gerador de imagens de cena.
+                    blueprint,
                 )
                 total_scenes = len(scene_prompts)
                 for scene_index, scene in enumerate(scene_prompts, start=1):
