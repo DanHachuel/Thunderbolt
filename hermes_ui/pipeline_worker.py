@@ -12,6 +12,7 @@ if getattr(sys.stderr, "buffer", None) is not None and str(getattr(sys.stderr, "
 
 import json
 import hashlib
+import logging
 import queue
 import re
 import shutil
@@ -24,6 +25,7 @@ import psutil
 import requests
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -67,6 +69,17 @@ VIDEO_IDLE_TIMEOUT_SECONDS = 10 * 60
 # O helper do MoneyPrinterTurbo pode ficar silencioso durante downloads/API.
 # Mantemos uma janela de inactividade maior para Pixabay, sem remover o watchdog.
 STOCK_VIDEO_IDLE_TIMEOUT_SECONDS = 5 * 60
+# 1.0.17 — arranque concorrente do runtime MPT: com 3+ vídeos em paralelo o
+# processo mpt_agent.py (venv + dependências pesadas + FFmpeg) pode passar os
+# 5 minutos de silêncio do idle watchdog ANTES de produzir a primeira linha —
+# o encerramento reportava "zero output do helper" como falha de arranque.
+# Janela DEDICADA de arranque (aplicada apenas enquanto o helper ainda não
+# produziu output), configurável em motor.helper_start_timeout_seconds.
+DEFAULT_VIDEO_HELPER_START_TIMEOUT_SECONDS = 10 * 60
+# 1.0.17 — gate do runtime MPT: mesmo que a fila permita N vídeos paralelos,
+# apenas este nº de processos mpt_agent corre em simultâneo (arranque do MPT
+# satura CPU/RAM e file handles). Configurável em motor.max_parallel_mpt_runtimes.
+DEFAULT_MAX_PARALLEL_MPT_RUNTIMES = 2
 STALE_TASK_SECONDS = VIDEO_TIMEOUT_SECONDS + 5 * 60
 WORKER_HEARTBEAT_TIMEOUT_SECONDS = 15
 TASK_HEARTBEAT_INTERVAL_SECONDS = 5
@@ -946,6 +959,16 @@ def _stop_process(process: subprocess.Popen[str], *, reason: str = "unknown") ->
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait()
+    # 1.0.17 — higiene de file handles: o reader fecha o stdout no fim natural,
+    # mas num kill o thread pode ficar bloqueado na leitura do pipe; fechar
+    # aqui devolve os descritores ao SO de imediato (mitigação "too many open
+    # files" com vários runtimes MPT em paralelo a descarregar material).
+    for stream in (getattr(process, "stdout", None), getattr(process, "stderr", None)):
+        if stream is not None:
+            try:
+                stream.close()
+            except (OSError, ValueError):
+                pass
     try:
         _write_worker_state(last_stop_process={
             "at": _now(),
@@ -1059,6 +1082,28 @@ def _video_idle_timeout_seconds(task: dict[str, Any], settings: dict[str, Any] |
     if route == "pexels":
         return STOCK_VIDEO_IDLE_TIMEOUT_SECONDS
     return configured
+
+
+def _video_helper_start_timeout_seconds(settings: dict[str, Any] | None = None) -> int:
+    """Janela de arranque do runtime MPT: silêncio ADMITIDO antes da 1ª linha.
+
+    1.0.17: com vídeos em paralelo, o mpt_agent.py pode demorar mais de 5
+    minutos a arrancar (venv + dependências + FFmpeg sob carga concorrente) e
+    o idle watchdog matava-o como "zero output do helper" — antes de qualquer
+    chamada à API de material. Esta janela aplica-se APENAS enquanto o helper
+    não produziu output; depois da primeira actividade vale o idle watchdog
+    normal (5 min stock / 10 min geral). Configurável em
+    ``motor.helper_start_timeout_seconds`` (default 600 s). Valores <= 0 são
+    ignorados (desligar o watchdog continua a ser feito com
+    VIDEO_IDLE_TIMEOUT_SECONDS = 0, que desliga também esta janela).
+    """
+    effective = settings if isinstance(settings, dict) else _settings()
+    motor = effective.get("motor") if isinstance(effective.get("motor"), dict) else {}
+    try:
+        value = int(motor.get("helper_start_timeout_seconds"))
+    except (TypeError, ValueError):
+        return DEFAULT_VIDEO_HELPER_START_TIMEOUT_SECONDS
+    return value if value > 0 else DEFAULT_VIDEO_HELPER_START_TIMEOUT_SECONDS
 
 
 def _task_stale_timeout_seconds(task: dict[str, Any]) -> int:
@@ -1427,6 +1472,119 @@ def _video_helper_python_bin() -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------
+# 1.0.17 — arranque concorrente do runtime MPT: gate + telemetria de spawn.
+#
+# Com 3+ vídeos paralelos, vários processos mpt_agent.py arrancavam ao mesmo
+# tempo e competiam por CPU/RAM/file handles; o runtime não chegava a produzir
+# a primeira linha dentro da janela de 5 minutos e o idle watchdog matava a
+# etapa com "zero output do helper" — sem qualquer chamada à API de material.
+# Duas mitigações:
+#   * gate ``_mpt_runtime_slot``: apenas ``motor.max_parallel_mpt_runtimes``
+#     processos MPT correm em simultâneo (a fila pode ter mais tarefas; as
+#     restantes esperam no gate — abordagem B da tarefa);
+#   * janela de arranque dedicada (``_video_helper_start_timeout_seconds``)
+#     de 600 s configurável, aplicada apenas ao silêncio inicial.
+# ---------------------------------------------------------------------------
+
+_mpt_logger = logging.getLogger("thunderbolt.mpt")
+
+
+def _mpt_runtime_log(message: str) -> None:
+    """Loga o arranque do MPT em stderr INFO (padrão de telemetria da casa).
+
+    Sem handler configurado o logging root engoliria INFO — o padrão
+    [BROWSER-LAUNCH] (1.0.08) é um handler stderr estável por logger.
+    """
+    if not any(getattr(handler, "_thunderbolt_mpt_handler", False) for handler in _mpt_logger.handlers):
+        handler = logging.StreamHandler()
+        handler.setLevel(logging.INFO)
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+        handler._thunderbolt_mpt_handler = True  # type: ignore[attr-defined]
+        _mpt_logger.addHandler(handler)
+        _mpt_logger.setLevel(logging.INFO)
+        _mpt_logger.propagate = False
+    _mpt_logger.info(message)
+
+
+def _max_parallel_mpt_runtimes(settings: dict[str, Any] | None = None) -> int:
+    """Nº máximo de processos MPT em simultâneo.
+
+    ``motor.max_parallel_mpt_runtimes`` no settings.json (relido a cada
+    espera do gate — muda sem restart); vazio/zero/inválido → 2 (default
+    conservador: o arranque do MPT satura a máquina).
+    """
+    effective = settings if isinstance(settings, dict) else _settings()
+    motor = effective.get("motor") if isinstance(effective.get("motor"), dict) else {}
+    try:
+        value = int(motor.get("max_parallel_mpt_runtimes"))
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_PARALLEL_MPT_RUNTIMES
+    return value if value > 0 else DEFAULT_MAX_PARALLEL_MPT_RUNTIMES
+
+
+_mpt_runtime_condition = threading.Condition()
+_mpt_runtime_active = 0
+
+
+def _mpt_runtime_in_flight() -> int:
+    with _mpt_runtime_condition:
+        return _mpt_runtime_active
+
+
+@contextmanager
+def _mpt_runtime_slot(task_id: str = "", settings: dict[str, Any] | None = None):
+    """Segura um lugar no gate do runtime MPT (espera activa com re-leitura).
+
+    O pool de vídeos pode ter N tarefas em paralelo; este gate garante que
+    apenas ``motor.max_parallel_mpt_runtimes`` processos mpt_agent.py
+    existem em simultâneo. A espera relê a configuração a cada ciclo (15 s),
+    logo subir/baixar o limite no Motor aplica-se às esperas em curso.
+    """
+    global _mpt_runtime_active
+    waited = False
+    with _mpt_runtime_condition:
+        while _mpt_runtime_active >= _max_parallel_mpt_runtimes(settings):
+            if not waited:
+                waited = True
+                _mpt_runtime_log(
+                    f"[MPT-GATE] task={task_id or 'sem-id'} à espera de slot do runtime "
+                    f"({_mpt_runtime_active}/{_max_parallel_mpt_runtimes(settings)} ocupados)"
+                )
+            _mpt_runtime_condition.wait(timeout=15)
+        _mpt_runtime_active += 1
+    try:
+        if waited:
+            _mpt_runtime_log(f"[MPT-GATE] task={task_id or 'sem-id'} obteve slot ({_mpt_runtime_active}/{_max_parallel_mpt_runtimes(settings)})")
+        yield
+    finally:
+        with _mpt_runtime_condition:
+            _mpt_runtime_active -= 1
+            _mpt_runtime_condition.notify_all()
+
+
+def _mpt_spawn_command_summary(command: list[str]) -> str:
+    """Comando do helper em uma linha depurada, para telemetria de arranque.
+
+    As chaves de API viajam no ENV (nunca no argv), mas o roteiro completo
+    não faz falta num log — o valor de --video-script é resumido para
+    ``<N chars>`` e o resultado é truncado e redigido por segurança.
+    """
+    parts: list[str] = []
+    skip_value = False
+    for part in command:
+        if skip_value:
+            parts.append(f"<{len(str(part))} chars>")
+            skip_value = False
+            continue
+        if str(part) == "--video-script":
+            parts.append(str(part))
+            skip_value = True
+            continue
+        parts.append(str(part))
+    return _redact_helper_output(" ".join(parts))[:2000]
+
+
 def _run_video_helper_once(
     task: dict[str, Any],
     *,
@@ -1562,6 +1720,7 @@ def _run_video_helper_once(
     started_at = time.monotonic()
     timeout_seconds = _video_timeout_seconds(task, settings)
     idle_timeout_seconds = _video_idle_timeout_seconds(task, settings)
+    helper_start_timeout_seconds = _video_helper_start_timeout_seconds(settings)
     process: subprocess.Popen[str] | None = None
 
     def _queue_output_line(value: str | None) -> None:
@@ -1600,128 +1759,164 @@ def _run_video_helper_once(
             retained.insert(0, f"[saída limitada: {dropped_output_lines[0]} linhas omitidas]")
         return "\n".join(retained)
 
-    try:
-        process = subprocess.Popen(
-            command,
-            cwd=helper_dir,
-            env=env,
-            start_new_session=os.name != "nt",
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
+    # 1.0.17 — gate do runtime MPT: apenas motor.max_parallel_mpt_runtimes
+    # processos mpt_agent.py em simultâneo (a fila pode ter mais tarefas;
+    # as restantes esperam aqui com re-leitura da configuração).
+    with _mpt_runtime_slot(str(task.get("id") or ""), settings):
+        try:
+            process = subprocess.Popen(
+                command,
+                cwd=helper_dir,
+                env=env,
+                start_new_session=os.name != "nt",
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                close_fds=True,
+            )
+        except FileNotFoundError as exc:
+            message = "O comando uv não está instalado; não foi possível iniciar a geração de vídeo."
+            metadata = _failure_attribution(task, settings, "video", error=message)
+            metadata.update({"failure_service": "Runtime MoneyPrinterTurbo"})
+            raise PipelineError(_failure_message(message, metadata), failure_metadata=metadata) from exc
+        except OSError as exc:
+            # 1.0.17: falha de I/O no arranque (ficheiros ocupados, discos,
+            # permissões) é registada no instante — sem esperar pelo watchdog.
+            _mpt_runtime_log(f"[MPT-SPAWN] falha de I/O ao arrancar o runtime MPT: {type(exc).__name__}: {exc}")
+            message = f"Falha de arranque do runtime MoneyPrinterTurbo ({type(exc).__name__}): {exc}"
+            metadata = _failure_attribution(task, settings, "video", error=message)
+            metadata.update({
+                "failure_api": "Runtime MoneyPrinterTurbo",
+                "failure_provider": "mpt_runtime",
+                "failure_service": "Arranque do runtime MoneyPrinterTurbo",
+                "failure_config_fields": "",
+            })
+            raise PipelineError(_failure_message(message, metadata), failure_metadata=metadata) from exc
+        # 1.0.17 — telemetria de arranque: PID + gate + comando (roteiro
+        # resumido) no logger e na diagonal persistida da tarefa — o
+        # "zero output do helper" deixa de ser um mistério sem PID.
+        spawn_banner = (
+            f"[MPT-SPAWN] pid={process.pid} gate={_mpt_runtime_in_flight()}/{_max_parallel_mpt_runtimes(settings)} "
+            f"task={task.get('id') or ''} cmd={_mpt_spawn_command_summary(command)}"
         )
-    except FileNotFoundError as exc:
-        message = "O comando uv não está instalado; não foi possível iniciar a geração de vídeo."
-        metadata = _failure_attribution(task, settings, "video", error=message)
-        metadata.update({"failure_service": "Runtime MoneyPrinterTurbo"})
-        raise PipelineError(_failure_message(message, metadata), failure_metadata=metadata) from exc
+        _mpt_runtime_log(spawn_banner)
+        output_chars = _append_bounded_video_helper_output(output_lines, spawn_banner, output_chars)
 
-    reader = threading.Thread(target=_read_output, name=f"mpt-output-{task.get('id', 'video')}", daemon=True)
-    reader.start()
-    output_finished = False
-    last_heartbeat = 0.0
-    last_output_line = ""
-    last_activity_at = started_at
-    helper_log_path: Path | None = None
-    helper_log_mtime = 0.0
-    try:
-        while True:
-            try:
-                line = line_queue.get(timeout=0.5)
-                if line is None:
-                    output_finished = True
-                elif line:
-                    last_output_line = _redact_helper_output(line).strip()
-                    output_chars = _append_bounded_video_helper_output(output_lines, line, output_chars)
+        reader = threading.Thread(target=_read_output, name=f"mpt-output-{task.get('id', 'video')}", daemon=True)
+        reader.start()
+        output_finished = False
+        last_heartbeat = 0.0
+        last_output_line = ""
+        last_activity_at = started_at
+        helper_log_path: Path | None = None
+        helper_log_mtime = 0.0
+        try:
+            while True:
+                try:
+                    line = line_queue.get(timeout=0.5)
+                    if line is None:
+                        output_finished = True
+                    elif line:
+                        last_output_line = _redact_helper_output(line).strip()
+                        output_chars = _append_bounded_video_helper_output(output_lines, line, output_chars)
+                        last_activity_at = time.monotonic()
+                        match = re.search(r"full generation log:\s*(.+)$", last_output_line, flags=re.IGNORECASE)
+                        if match:
+                            candidate = Path(match.group(1).strip()).expanduser()
+                            helper_log_path = candidate if candidate.is_file() else None
+                except queue.Empty:
+                    pass
+                elapsed = time.monotonic() - started_at
+                helper_log_mtime, helper_log_advanced = _latest_helper_log_activity(helper_log_path, helper_log_mtime)
+                if helper_log_advanced:
                     last_activity_at = time.monotonic()
-                    match = re.search(r"full generation log:\s*(.+)$", last_output_line, flags=re.IGNORECASE)
-                    if match:
-                        candidate = Path(match.group(1).strip()).expanduser()
-                        helper_log_path = candidate if candidate.is_file() else None
-            except queue.Empty:
-                pass
-            elapsed = time.monotonic() - started_at
-            helper_log_mtime, helper_log_advanced = _latest_helper_log_activity(helper_log_path, helper_log_mtime)
-            if helper_log_advanced:
-                last_activity_at = time.monotonic()
-                if not last_output_line:
-                    last_output_line = "[MoneyPrinterTurbo] actividade de geração confirmada"
-            if elapsed - last_heartbeat >= 5:
-                # O helper expõe o resultado final, mas não uma percentagem estável.
-                # Mantemos uma faixa reservada para a etapa de vídeo e avançamos-a
-                # lentamente enquanto o processo responde, sem fingir conclusão.
-                video_progress = min(79, 52 + int(elapsed // 15))
-                current_task = _task_by_id(task_id)
-                if current_task and str(current_task.get("state") or "") in {"blocked", "cancelled"}:
-                    _stop_process(process, reason="cancel")
-                    raise PipelineStopped("A tarefa foi parada pelo utilizador.")
-                _update(
-                    task_id,
-                    progress=video_progress,
-                    video_helper_status=last_output_line[-500:] if last_output_line else "",
-                    video_elapsed_seconds=int(elapsed),
+                    if not last_output_line:
+                        last_output_line = "[MoneyPrinterTurbo] actividade de geração confirmada"
+                if elapsed - last_heartbeat >= 5:
+                    # O helper expõe o resultado final, mas não uma percentagem estável.
+                    # Mantemos uma faixa reservada para a etapa de vídeo e avançamos-a
+                    # lentamente enquanto o processo responde, sem fingir conclusão.
+                    video_progress = min(79, 52 + int(elapsed // 15))
+                    current_task = _task_by_id(task_id)
+                    if current_task and str(current_task.get("state") or "") in {"blocked", "cancelled"}:
+                        _stop_process(process, reason="cancel")
+                        raise PipelineStopped("A tarefa foi parada pelo utilizador.")
+                    _update(
+                        task_id,
+                        progress=video_progress,
+                        video_helper_status=last_output_line[-500:] if last_output_line else "",
+                        video_elapsed_seconds=int(elapsed),
+                    )
+                    _worker_heartbeat(
+                        task_id=str(task.get("id") or ""),
+                        status="running",
+                        stage="video",
+                        progress=video_progress,
+                        video_helper_status=last_output_line[-500:] if last_output_line else "",
+                        video_elapsed_seconds=int(elapsed),
+                    )
+                    last_heartbeat = elapsed
+                if process.poll() is not None and output_finished:
+                    break
+                if elapsed >= timeout_seconds:
+                    _stop_process(process, reason="timeout")
+                    message = f"A etapa Vídeo excedeu o limite de {timeout_seconds // 60} minutos e foi encerrada."
+                    metadata = _failure_attribution(task, settings, "video", error=message)
+                    raise PipelineError(
+                        _failure_message(message, metadata),
+                        failure_metadata=metadata,
+                        fallback_eligible=True,
+                    )
+                # 1.0.17: janela de arranque — enquanto o helper ainda não produziu
+                # NENHUM output (nem linha nem log), vale motor.helper_start_timeout_seconds
+                # (default 600 s): o arranque concorrente do MPT pode demorar mais de 5
+                # minutos em silêncio sem estar encalhado. Com a primeira actividade, volta
+                # o idle watchdog normal; <= 0 continua a desligar o watchdog por inteiro.
+                startup_pending = not last_output_line and helper_log_path is None
+                effective_idle_seconds = (
+                    helper_start_timeout_seconds if startup_pending and idle_timeout_seconds > 0 else idle_timeout_seconds
                 )
-                _worker_heartbeat(
-                    task_id=str(task.get("id") or ""),
-                    status="running",
-                    stage="video",
-                    progress=video_progress,
-                    video_helper_status=last_output_line[-500:] if last_output_line else "",
-                    video_elapsed_seconds=int(elapsed),
-                )
-                last_heartbeat = elapsed
-            if process.poll() is not None and output_finished:
-                break
-            if elapsed >= timeout_seconds:
-                _stop_process(process, reason="timeout")
-                message = f"A etapa Vídeo excedeu o limite de {timeout_seconds // 60} minutos e foi encerrada."
-                metadata = _failure_attribution(task, settings, "video", error=message)
-                raise PipelineError(
-                    _failure_message(message, metadata),
-                    failure_metadata=metadata,
-                    fallback_eligible=True,
-                )
-            if time.monotonic() - last_activity_at >= idle_timeout_seconds:
-                _stop_process(process, reason="idle")
-                message = (
-                    "A etapa Vídeo não apresentou actividade comprovada do motor durante "
-                    f"{idle_timeout_seconds // 60} minutos e foi encerrada."
-                )
-                metadata = _failure_attribution(task, settings, "video", error=message)
-                if not last_output_line and helper_log_path is None:
-                    # 0.9.92: zero output do helper e nenhum log do motor
-                    # significam que o runtime nunca arrancou — a falha é do
-                    # arranque do helper, não da API de material da rota.
+                if time.monotonic() - last_activity_at >= effective_idle_seconds:
+                    _stop_process(process, reason="idle")
                     message = (
                         "A etapa Vídeo não apresentou actividade comprovada do motor durante "
-                        f"{idle_timeout_seconds // 60} minutos e foi encerrada. O motor não "
-                        "chegou a arrancar (zero output do helper): falha no arranque do "
-                        "runtime MoneyPrinterTurbo — não na API de material (Pixabay/Pexels)."
+                        f"{effective_idle_seconds // 60} minutos e foi encerrada."
                     )
-                    metadata.update({
-                        "failure_api": "Runtime MoneyPrinterTurbo",
-                        "failure_provider": "mpt_runtime",
-                        "failure_service": "Arranque do runtime MoneyPrinterTurbo",
-                        "failure_config_fields": "",
-                    })
-                raise PipelineError(
-                    _failure_message(message, metadata),
-                    failure_metadata=metadata,
-                    fallback_eligible=True,
-                )
-    finally:
-        try:
-            reader.join(timeout=2)
-        except Exception:
-            pass
-        try:
-            _persist_video_diagnostics(task, _output_text())
-        except Exception:
-            pass
-    if process.returncode is None:
-        process.wait(timeout=5)
+                    metadata = _failure_attribution(task, settings, "video", error=message)
+                    if not last_output_line and helper_log_path is None:
+                        # 0.9.92: zero output do helper e nenhum log do motor
+                        # significam que o runtime nunca arrancou — a falha é do
+                        # arranque do helper, não da API de material da rota.
+                        message = (
+                            "A etapa Vídeo não apresentou actividade comprovada do motor durante "
+                            f"{idle_timeout_seconds // 60} minutos e foi encerrada. O motor não "
+                            "chegou a arrancar (zero output do helper): falha no arranque do "
+                            "runtime MoneyPrinterTurbo — não na API de material (Pixabay/Pexels)."
+                        )
+                        metadata.update({
+                            "failure_api": "Runtime MoneyPrinterTurbo",
+                            "failure_provider": "mpt_runtime",
+                            "failure_service": "Arranque do runtime MoneyPrinterTurbo",
+                            "failure_config_fields": "",
+                        })
+                    raise PipelineError(
+                        _failure_message(message, metadata),
+                        failure_metadata=metadata,
+                        fallback_eligible=True,
+                    )
+        finally:
+            try:
+                reader.join(timeout=2)
+            except Exception:
+                pass
+            try:
+                _persist_video_diagnostics(task, _output_text())
+            except Exception:
+                pass
+        if process.returncode is None:
+            process.wait(timeout=5)
     result_code = process.returncode
     output = _output_text()
     _persist_video_diagnostics(task, output)

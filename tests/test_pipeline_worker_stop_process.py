@@ -129,5 +129,7 @@ def test_video_stale_timeout_with_two_routes_is_at_most_25_minutes(monkeypatch):
 
 def test_cleanup_diagnostics_is_non_fatal_in_contract():
     source = open("hermes_ui/pipeline_worker.py", encoding="utf-8").read()
-    assert "try:\n            reader.join(timeout=2)" in source
-    assert "try:\n            _persist_video_diagnostics(task, _output_text())" in source
+    # 1.0.18: o bloco do watchdog ganhou +4 espaços ao passar a viver dentro do
+    # gate do runtime MPT (_mpt_runtime_slot); o contrato não-fatal mantém-se.
+    assert "try:\n                reader.join(timeout=2)" in source
+    assert "try:\n                _persist_video_diagnostics(task, _output_text())" in source

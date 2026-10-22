@@ -11518,6 +11518,26 @@ def render_settings():
                     key="motor_max_parallel_images",
                     help="0 = automático (3). Posts estáticos: Influencer, UGC fotos e Facebook. Não geram vídeo.",
                 )
+            # 1.0.17 — arranque concorrente do runtime MPT (fila de vídeos).
+            runtime_cols = st.columns(2)
+            with runtime_cols[0]:
+                max_parallel_mpt_runtimes = st.number_input(
+                    "Runtimes MPT em simultâneo",
+                    min_value=0,
+                    max_value=32,
+                    value=int(motor_settings.get("max_parallel_mpt_runtimes") or 0),
+                    key="motor_max_parallel_mpt_runtimes",
+                    help="0 = automático (2). Gate do runtime MoneyPrinterTurbo: mesmo que a fila admita mais vídeos paralelos, apenas N processos mpt_agent arrancam ao mesmo tempo — o arranque concorrente (venv + dependências + FFmpeg) satura a máquina e morre em silêncio. As restantes tarefas esperam no gate e avançam assim que um slot liberta.",
+                )
+            with runtime_cols[1]:
+                helper_start_timeout = st.number_input(
+                    "Timeout de arranque do MPT (segundos)",
+                    min_value=0,
+                    max_value=3600,
+                    value=int(motor_settings.get("helper_start_timeout_seconds") or 0),
+                    key="motor_helper_start_timeout",
+                    help="0 = automático (600 s = 10 min). Janela de silêncio admitida ANTES da primeira linha do helper MoneyPrinterTurbo; depois da primeira actividade aplica-se o watchdog de inactividade normal (5 min).",
+                )
             if int(max_parallel_videos) > detected:
                 st.warning(f"Atenção: {int(max_parallel_videos)} vídeos em paralelo excede a capacidade detectada ({detected}). O valor é respeitado, mas pode saturar a máquina.")
             if st.button("Guardar configuração do Motor", type="primary", key="save_motor_settings", width="stretch"):
@@ -11528,6 +11548,8 @@ def render_settings():
                         "max_parallel_videos": int(max_parallel_videos),
                         "max_parallel_thumbnails": int(max_parallel_thumbnails),
                         "max_parallel_images": int(max_parallel_images),
+                        "max_parallel_mpt_runtimes": int(max_parallel_mpt_runtimes),
+                        "helper_start_timeout_seconds": int(helper_start_timeout),
                     }
 
                 update_json("settings.json", {}, _persist_motor)
