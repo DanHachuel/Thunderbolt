@@ -11737,6 +11737,27 @@ def _render_telegram_notification_settings() -> None:
         st.info("Telegram está desactivado. As notificações continuam disponíveis na subaba Geral.")
 
 
+def _read_log_text(file_path: Path) -> str:
+    """Lê um ficheiro de log em Windows sem partir a página de Logs (1.0.18).
+
+    O MoneyPrinterTurbo mantém o .log aberto em escrita enquanto renderiza; no
+    Windows isso nega a leitura a outro processo (PermissionError) e a página
+    inteira de Logs morria com um único download por linha da tabela. Uma 2ª
+    leitura após 0,1s cobre a janela transitória do escritor; se continuar
+    bloqueado, devolve um aviso em texto — o download_button nunca quebra.
+    """
+    try:
+        return file_path.read_text(encoding="utf-8", errors="replace")
+    except PermissionError:
+        time.sleep(0.1)
+        try:
+            return file_path.read_text(encoding="utf-8", errors="replace")
+        except PermissionError:
+            return "O arquivo de log está a ser escrito por outro processo. Tente novamente em alguns segundos."
+    except OSError:
+        return f"Não foi possível ler o ficheiro de log `{file_path.name}` (removido ou inacessível). Tente novamente em alguns segundos."
+
+
 def render_logs():
     """Render the unified local activity log before the API configuration page."""
     st.title("Logs")
@@ -11815,7 +11836,9 @@ def render_logs():
         sections = ["# Logs do MoneyPrinterTurbo", "", f"Origem: `{source}`", ""]
         for file_path in files:
             relative_name = file_path.name if source.is_file() else file_path.relative_to(source).as_posix()
-            content = file_path.read_text(encoding="utf-8", errors="replace")
+            # 1.0.18: leitura tolerante a locks de escrita do Windows — nunca
+            # parte a página inteira de Logs por um .log aberto pelo MPT.
+            content = _read_log_text(file_path)
             sections.extend([f"## {relative_name}", "", "```text", content.rstrip("\n"), "```", ""])
         markdown = "\n".join(sections).encode("utf-8")
         return markdown, f"{files[0].stem}.md", "text/markdown"

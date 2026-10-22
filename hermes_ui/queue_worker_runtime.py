@@ -95,6 +95,39 @@ def load_queue_worker_status(state_filename: str, *, timeout_seconds: int = 90) 
     return status
 
 
+def worker_crash_log_path() -> Path:
+    """`storage/logs/worker_crash.log` — rasto persistido de crashes (1.0.18)."""
+    from hermes_ui.storage import STORAGE
+
+    return STORAGE / "logs" / "worker_crash.log"
+
+
+def record_worker_crash(worker_label: str) -> None:
+    """Grava o traceback completo do crash antes de o worker morrer (1.0.18).
+
+    Os workers de fila são reiniciados pelo launcher («a reiniciar em 5s»);
+    sem este rasto o loop não deixava NENHUM diagnóstico do motivo. O
+    traceback vai para o ficheiro partilhado e o resumo para o stderr — que
+    o launcher agora anexa ao log próprio de cada worker. Registar nunca
+    pode Crashar o Crash: qualquer falha aqui é engolida em silêncio.
+    """
+    try:
+        import sys
+        import traceback
+
+        log_path = worker_crash_log_path()
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(
+                f"\n--- Crash no worker ({worker_label}) — "
+                f"{datetime.now(timezone.utc).isoformat(timespec='seconds')} ---\n"
+            )
+            handle.write(traceback.format_exc())
+        print(f"Erro fatal no worker {worker_label}: traceback gravado em {log_path}", file=sys.stderr)
+    except Exception:
+        pass
+
+
 def is_rate_limit(exc: BaseException) -> bool:
     """429/Rate Limit detectável na mensagem (os providers o deixam no texto)."""
     text = str(exc).casefold()

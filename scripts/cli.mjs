@@ -2,7 +2,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import http from "node:http";
 import net from "node:net";
-import { existsSync, mkdirSync, readFileSync, copyFileSync, readdirSync, appendFileSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, copyFileSync, readdirSync, appendFileSync, writeFileSync, rmSync, statSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -653,6 +653,39 @@ function startPipelineWorker() {
   });
 }
 
+function attachQueueWorkerLog(child, filename, label) {
+  // 1.0.18: os workers de fila deixam de herdar a consola do launcher. O
+  // «stdio: "inherit"» crashava no Windows com «Fatal Python error:
+  // init_sys_streams: can't initialize sys standard streams» quando os
+  // handles herdados não eram válidos para dois interpretadores a arrancar
+  // em simultâneo (thumbnail + image), matando os workers no boot com o
+  // loop de «a reiniciar em 5s». Pipes são SEMPRE handles válidos; o output
+  // é espelhado na consola e anexado ao log próprio de cada worker.
+  const logsDir = join(storageDir, "logs");
+  const logPath = join(logsDir, filename);
+  try {
+    mkdirSync(logsDir, { recursive: true });
+    if (existsSync(logPath) && statSync(logPath).size > 5_000_000) writeFileSync(logPath, "");
+  } catch { /* logging nunca muda o comportamento do launcher */ }
+  const append = (chunk) => {
+    try { appendFileSync(logPath, chunk, "utf8"); } catch { /* idem */ }
+  };
+  child.stdout?.setEncoding("utf8");
+  child.stderr?.setEncoding("utf8");
+  child.stdout?.on("data", (chunk) => {
+    if (!shuttingDown) process.stdout.write(chunk);
+    append(chunk);
+  });
+  child.stderr?.on("data", (chunk) => {
+    if (!shuttingDown) process.stderr.write(chunk);
+    append(chunk);
+  });
+  child.on("exit", (code, signal) => {
+    append(`\n--- ${label}: terminou (código ${code ?? "-"}, sinal ${signal ?? "-"}) em ${new Date().toISOString()} ---\n`);
+  });
+  return logPath;
+}
+
 function startQueueWorkers() {
   // 1.0.11: filas paralelas do Motor — thumbnails e imagens de produção são
   // workers independentes com pools próprios (motor.max_parallel_*).
@@ -660,10 +693,13 @@ function startQueueWorkers() {
   if (!checkWorkerDependencies("os workers de filas do Motor")) return;
   thumbnailWorker = spawn(python, ["-m", "hermes_ui.thumbnail_worker"], {
     cwd: root,
-    stdio: "inherit",
+    // 1.0.18: pipes + log próprio (storage/logs/thumbnail_worker.log) em
+    // vez de herdar a consola — ver attachQueueWorkerLog.
+    stdio: ["ignore", "pipe", "pipe"],
     env: runtimeEnv,
     windowsHide: false,
   });
+  attachQueueWorkerLog(thumbnailWorker, "thumbnail_worker.log", "thumbnail worker");
   thumbnailWorker.on("error", (error) => console.error(`Thunderbolt thumbnail worker: ${error.message}`));
   thumbnailWorker.on("exit", (code, signal) => {
     thumbnailWorker = null;
@@ -675,10 +711,12 @@ function startQueueWorkers() {
   });
   imageWorker = spawn(python, ["-m", "hermes_ui.image_worker"], {
     cwd: root,
-    stdio: "inherit",
+    // 1.0.18: pipes + log próprio (storage/logs/image_worker.log).
+    stdio: ["ignore", "pipe", "pipe"],
     env: runtimeEnv,
     windowsHide: false,
   });
+  attachQueueWorkerLog(imageWorker, "image_worker.log", "image worker");
   imageWorker.on("error", (error) => console.error(`Thunderbolt image worker: ${error.message}`));
   imageWorker.on("exit", (code, signal) => {
     imageWorker = null;

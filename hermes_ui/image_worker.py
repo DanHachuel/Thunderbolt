@@ -22,6 +22,7 @@ from typing import Any
 from hermes_ui.queue_worker_runtime import (
     acquire_pid_lock,
     load_queue_worker_status,
+    record_worker_crash,
     run_with_rate_limit_backoff,
     write_queue_heartbeat,
 )
@@ -352,6 +353,12 @@ def run_worker(interval_seconds: int = ACTIVE_INTERVAL_SECONDS) -> None:
             time.sleep(max(sleep_seconds, IDLE_INTERVAL_SECONDS) if idle else sleep_seconds)
     except KeyboardInterrupt:
         return
+    except Exception:
+        # 1.0.18: o crash deixa rasto em storage/logs/worker_crash.log antes
+        # de sair — o launcher reinicia em 5s e sem isto não havia diagnóstico
+        # do motivo (o loop parecia infinito e mudo).
+        record_worker_crash("image_worker")
+        raise SystemExit(1) from None
 
 
 def main() -> None:
