@@ -243,10 +243,42 @@ function ensureRuntimeStorage() {
   }
 }
 
+function camoufoxInstallDir() {
+  // 1.0.22: `python -m camoufox path` imprime o DIRECTÓRIO de instalação do
+  // browser (documentado em camoufox.com/python/installation) — a peça que o
+  // pip install nunca traz.
+  const probe = spawnSync(python, ["-m", "camoufox", "path"], { encoding: "utf8", env: pythonEnvironment });
+  if (!probe || probe.status !== 0) return "";
+  return String(probe.stdout || "").split("\n").map((line) => line.trim()).find(Boolean) || "";
+}
+
+function directoryHasContent(directory, depth = 3) {
+  // 1.0.22: integridade REAL — ficheiros com bytes dentro do directório (um
+  // cache apagado à mão deixa pasta vazia que o «Installed: yes» aceitava).
+  try {
+    for (const entry of readdirSync(directory)) {
+      const entryPath = join(directory, entry);
+      let stats;
+      try { stats = statSync(entryPath); } catch { continue; }
+      if (stats.isFile()) {
+        if (stats.size > 0) return true;
+      } else if (stats.isDirectory() && depth > 0 && directoryHasContent(entryPath, depth - 1)) {
+        return true;
+      }
+    }
+  } catch { return false; }
+  return false;
+}
+
 function camoufoxBinaryDownloaded() {
-  // 1.0.21: espelha install.mjs/browser_manager — `python -m camoufox
-  // version` só reporta «Installed: yes» quando o binário Firefox já foi
-  // descarregado para o cache (o pacote pip existir não basta).
+  // 1.0.21: espelha install.mjs/browser_manager — sem o binário a automação
+  // de browsers morre no arranque com um erro genérico de driver.
+  // 1.0.22: integridade em duas camadas — directório `camoufox path` com
+  // bytes; fallback para «Installed: yes» do `camoufox version`.
+  const directory = camoufoxInstallDir();
+  if (directory) {
+    return existsSync(directory) && directoryHasContent(directory);
+  }
   const probe = spawnSync(python, ["-m", "camoufox", "version"], { encoding: "utf8", env: pythonEnvironment });
   if (!probe || probe.status !== 0) return false;
   return /^\s*Installed\s*[:=]?\s*(?:yes|true)\s*$/im.test(String(probe.stdout || ""));

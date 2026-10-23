@@ -90,7 +90,7 @@ def test_installer_installs_the_camoufox_browser_as_a_mandatory_dependency():
     source = (ROOT / "scripts" / "install.mjs").read_text(encoding="utf-8")
     assert "function installCamoufoxBrowser()" in source
     assert "function camoufoxBrowserDownloaded()" in source
-    assert "if (!skipDeps) installCamoufoxBrowser();" in source
+    assert "if (!skipDeps && !skipBrowsers) installCamoufoxBrowser();" in source
     block = source.split("function installCamoufoxBrowser()", 1)[1].split("\nfunction ", 1)[0]
     assert '"-m", "camoufox", "fetch"' in block
     assert "camoufoxBrowserDownloaded()" in block
@@ -100,10 +100,34 @@ def test_installer_installs_the_camoufox_browser_as_a_mandatory_dependency():
     # falha = AVISO claro, sem abortar o resto da instalação
     assert '"Aviso: Falha ao baixar o binário do Camoufox. A automação de browsers pode falhar."' in block
     assert "process.exit" not in block
-    # detecção espelha hermes_ui/browser_manager.py ("Installed: yes")
+    # 1.0.22: integridade REAL — o directório `camoufox path` com bytes;
+    # «Installed: yes» do version fica como FALLBACK.
     detection_block = source.split("function camoufoxBrowserDownloaded()", 1)[1].split("\nfunction ", 1)[0]
+    assert '"-m", "camoufox", "path"' in source
+    assert "directoryHasContent(directory)" in detection_block
+    assert "existsSync(directory) && directoryHasContent(directory)" in detection_block
     assert '"-m", "camoufox", "version"' in detection_block
     assert "Installed" in detection_block
+
+
+def test_installer_skip_browsers_flag_leaves_plain_install_always_downloading():
+    # 1.0.22: sem flags, `npx thunderbolt install` baixa SEMPRE os browsers;
+    # --skip-browsers é a ÚNICA forma explicita de os saltar.
+    source = (ROOT / "scripts" / "install.mjs").read_text(encoding="utf-8")
+    main_block = source.split("function main()", 1)[1]
+    assert 'const skipBrowsers = args.includes("--skip-browsers");' in main_block
+    for guard in (
+        "if (!skipDeps && !skipBrowsers) installPlaywrightBrowsers();",
+        "if (!skipDeps && !skipBrowsers) installPatchrightBrowser();",
+        "if (!skipDeps && !skipBrowsers) installCamoufoxBrowser();",
+    ):
+        assert guard in main_block, guard
+    # os browsers saíram de installThunderboltDependencies (só requirements)
+    deps_block = source.split("function installThunderboltDependencies(", 1)[1].split("\nfunction ", 1)[0]
+    assert "installPlaywrightBrowsers()" not in deps_block
+    assert "installPatchrightBrowser()" not in deps_block
+    # o resumo final avisa quando os browsers foram saltos
+    assert "SALTOU (--skip-browsers)" in main_block
 
 
 def test_doctor_check_reports_a_missing_camoufox_binary():
@@ -113,6 +137,10 @@ def test_doctor_check_reports_a_missing_camoufox_binary():
     assert "function camoufoxBinaryDownloaded()" in source
     probe = source.split("function camoufoxBinaryDownloaded()", 1)[1].split("\nfunction ", 1)[0]
     assert '"-m", "camoufox", "version"' in probe
+    # 1.0.22: integridade REAL — directório `camoufox path` com bytes,
+    # version como fallback.
+    assert '"-m", "camoufox", "path"' in source
+    assert "existsSync(directory) && directoryHasContent(directory)" in probe
     check_block = source.split("function check()", 1)[1].split('if (args[0] === "doctor"', 1)[0]
     assert "Camoufox: binário do browser ausente. Execute o instalador novamente." in check_block
     assert '"Camoufox: binário do browser OK."' in check_block

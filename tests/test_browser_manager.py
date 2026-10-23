@@ -172,6 +172,78 @@ def test_get_browser_status_translates_the_missing_binary_error(monkeypatch):
     assert result["message"] == browser_manager.CAMOUFOX_BINARY_MISSING_HINT
 
 
+def test_directory_has_bytes_requires_real_content(tmp_path):
+    # 1.0.22: integridade — cache vazio/esqueleto não conta como instalado.
+    from pathlib import Path
+
+    empty = tmp_path / "cache-vazio"
+    empty.mkdir()
+    assert browser_manager._directory_has_bytes(empty) is False
+
+    skeleton = tmp_path / "cache-esqueleto"
+    (skeleton / "logs").mkdir(parents=True)
+    assert browser_manager._directory_has_bytes(skeleton) is False
+
+    real = tmp_path / "cache-real"
+    (real / "browser").mkdir(parents=True)
+    (real / "browser" / "camoufox.exe").write_bytes(b"binario")
+    assert browser_manager._directory_has_bytes(real) is True
+
+    assert browser_manager._directory_has_bytes(tmp_path / "nao-existe") is False
+
+
+def test_camoufox_browser_downloaded_uses_the_path_integrity_probe(monkeypatch, tmp_path):
+    from pathlib import Path
+
+    real_cache = tmp_path / "camoufox"
+    (real_cache / "browser").mkdir(parents=True)
+    (real_cache / "browser" / "camoufox.exe").write_bytes(b"binario")
+    empty_cache = tmp_path / "camoufox-vazio"
+    empty_cache.mkdir()
+    calls = []
+
+    class FakeResult:
+        def __init__(self, returncode, stdout=""):
+            self.returncode = returncode
+            self.stdout = stdout
+
+    def fake_run(command, **kwargs):
+        # command == [sys.executable, "-m", "camoufox", "path"|"version"]
+        subcommand = command[-1]
+        calls.append(subcommand)
+        if subcommand == "path":
+            return FakeResult(0, str(real_cache) + "\n")
+        return FakeResult(1)
+
+    monkeypatch.setattr(browser_manager.subprocess, "run", fake_run)
+    assert browser_manager._camoufox_browser_downloaded() is True
+    assert calls == ["path"]  # integridade responde; version nem é consultado
+
+    def fake_run_empty(command, **kwargs):
+        if command[-1] == "path":
+            return FakeResult(0, str(empty_cache) + "\n")
+        return FakeResult(1)
+
+    monkeypatch.setattr(browser_manager.subprocess, "run", fake_run_empty)
+    assert browser_manager._camoufox_browser_downloaded() is False
+
+
+def test_camoufox_browser_downloaded_falls_back_to_version_probe(monkeypatch):
+    # camoufox antigo sem subcomando path → «Installed: yes» decide.
+    class FakeResult:
+        def __init__(self, returncode, stdout=""):
+            self.returncode = returncode
+            self.stdout = stdout
+
+    def fake_run(command, **kwargs):
+        if command[-1] == "path":
+            return FakeResult(1)
+        return FakeResult(0, "Camoufox v0.4.0\n  Installed                   Yes\n")
+
+    monkeypatch.setattr(browser_manager.subprocess, "run", fake_run)
+    assert browser_manager._camoufox_browser_downloaded() is True
+
+
 def test_chromium_uses_patchright_when_present_and_playwright_only_if_absent(monkeypatch):
     calls = []
 

@@ -577,9 +577,44 @@ function installPatchrightBrowser() {
   }
 }
 
+function directoryHasContent(directory, depth = 3) {
+  // 1.0.22: integridade REAL — o directório de instalação do camoufox tem de
+  // conter ficheiros com bytes (um cache apagado à mão ou um fetch abortado a
+  // meio deixam pasta vazia/esqueleto que o «Installed: yes» aceitava).
+  try {
+    for (const entry of readdirSync(directory)) {
+      const entryPath = join(directory, entry);
+      let stats;
+      try { stats = statSync(entryPath); } catch { continue; }
+      if (stats.isFile()) {
+        if (stats.size > 0) return true;
+      } else if (stats.isDirectory() && depth > 0 && directoryHasContent(entryPath, depth - 1)) {
+        return true;
+      }
+    }
+  } catch { return false; }
+  return false;
+}
+
+function camoufoxInstallDir() {
+  // 1.0.22: `python -m camoufox path` imprime o DIRECTÓRIO de instalação do
+  // browser (documentado em camoufox.com/python/installation) — a peça que o
+  // pip install nunca traz.
+  const probe = spawnSync(pythonBin, ["-m", "camoufox", "path"], { encoding: "utf8", env: pythonEnvironment });
+  if (!probe || probe.status !== 0) return "";
+  return String(probe.stdout || "").split("\n").map((line) => line.trim()).find(Boolean) || "";
+}
+
 function camoufoxBrowserDownloaded() {
-  // Espelha hermes_ui/browser_manager.py: `python -m camoufox version` só
-  // reporta "Installed: yes" quando o binário Firefox já foi descarregado.
+  // 1.0.22: integridade em duas camadas. 1) O directório reportado por
+  // `camoufox path` existe e tem ficheiros com bytes. 2) Fallback para a sonda
+  // `camoufox version` + «Installed: yes» (camoufox antigo sem subcomando
+  // path — espelha hermes_ui/browser_manager.py).
+  if (!existsSync(pythonBin)) return false;
+  const directory = camoufoxInstallDir();
+  if (directory) {
+    return existsSync(directory) && directoryHasContent(directory);
+  }
   const probe = spawnSync(pythonBin, ["-m", "camoufox", "version"], { encoding: "utf8", env: pythonEnvironment });
   if (!probe || probe.status !== 0) return false;
   return /^\s*Installed\s*[:=]?\s*(?:yes|true)\s*$/im.test(String(probe.stdout || ""));
@@ -642,10 +677,11 @@ function writeSettings(moneyprinterPath) {
 }
 
 function installThunderboltDependencies(python) {
+  // 1.0.22: apenas o Python/requirements — os BROWSERS (Playwright,
+  // Patchright, Camoufox) passam a ser geridos no main() com a flag
+  // --skip-browsers: sem flags, `npx thunderbolt install` baixa-os SEMPRE.
   if (!existsSync(pythonBin)) run(python.command, [...python.args, "-m", "venv", venvPath]);
   installRequirementIfNeeded(join(root, "requirements.txt"), "thunderbolt_requirements_sha256", ["psutil", "streamlit", "requests", "pandas", "toml", "imageio_ffmpeg", "edge_tts", "google.auth", "google_auth_oauthlib", "googleapiclient", "yt_dlp", "deno", "youtube_transcript_api", "huggingface_hub", "playwright", "patchright", "camoufox", "filelock", "uploader", "sau_cli", "serpapi"], "Thunderbolt");
-  installPlaywrightBrowsers();
-  installPatchrightBrowser();
 }
 
 function installRemotionDependencies() {
@@ -730,6 +766,11 @@ function installMoneyPrinterDependencies(moneyprinterPath) {
 function main() {
   const skipMpt = args.includes("--skip-moneyprinter");
   const skipDeps = args.includes("--skip-python-deps");
+  // 1.0.22: --skip-browsers salta SÓ os downloads de browsers (Playwright,
+  // Patchright, Camoufox). Sem flags, `npx thunderbolt install` baixa-os
+  // SEMPRE — o binário do Camoufox nunca fica à responsabilidade do
+  // utilizador (o erro «Connection closed while reading from the driver»).
+  const skipBrowsers = args.includes("--skip-browsers");
   const moneyprinterPath = process.env.MONEYPRINTER_PATH || defaultMpt;
   migrateLegacyInstallation();
   cleanInstallationRoots(moneyprinterPath);
@@ -738,8 +779,10 @@ function main() {
   const python = skipDeps ? null : ensurePython();
   if (!skipMpt) cloneMoneyPrinter(moneyprinterPath);
   if (!skipDeps) installThunderboltDependencies(python);
+  if (!skipDeps && !skipBrowsers) installPlaywrightBrowsers();
+  if (!skipDeps && !skipBrowsers) installPatchrightBrowser();
   if (!skipDeps) installRemotionDependencies();
-  if (!skipDeps) installCamoufoxBrowser();
+  if (!skipDeps && !skipBrowsers) installCamoufoxBrowser();
   if (!skipDeps && !skipMpt) installMoneyPrinterDependencies(moneyprinterPath);
   if (!skipDeps) installFfmpegSeedWindows();
   writeSettings(moneyprinterPath);
@@ -747,6 +790,9 @@ function main() {
   console.log(`Pasta Thunderbolt: ${thunderboltHome}`);
   console.log(`Ambiente Python: ${venvPath}`);
   console.log(`Motor de vídeo: ${moneyprinterPath}`);
+  if (skipBrowsers) {
+    console.log("Browsers: SALTOU (--skip-browsers) — Playwright/Patchright/Camoufox não foram verificados.");
+  }
   console.log("Execute `npx.cmd --yes @danhachuel/thunderbolt` no Windows ou `npx --yes @danhachuel/thunderbolt` noutros sistemas.");
 }
 

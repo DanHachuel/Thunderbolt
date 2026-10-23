@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 from hermes_ui.proxy_manager import normalize_proxy
@@ -154,7 +155,53 @@ def has_gui_environment() -> bool:
     return os.name == "nt" or sys.platform == "darwin" or bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
 
+def _directory_has_bytes(directory: "Path", depth: int = 3) -> bool:
+    """Directório de instalação com ficheiros reais (integridade 1.0.22).
+
+    Um cache apagado à mão ou um fetch abortado a meio deixam pasta vazia
+    ou esqueleto — «Installed: yes» aceitava; os bytes não mentem.
+    """
+    try:
+        base = Path(directory)
+        if not base.is_dir():
+            return False
+        for entry in base.iterdir():
+            try:
+                if entry.is_file():
+                    if entry.stat().st_size > 0:
+                        return True
+                elif entry.is_dir() and depth > 0 and _directory_has_bytes(entry, depth - 1):
+                    return True
+            except OSError:
+                continue
+    except OSError:
+        return False
+    return False
+
+
 def _camoufox_browser_downloaded() -> bool:
+    """1.0.22: integridade em duas camadas.
+
+    1) `python -m camoufox path` (documentado em camoufox.com) imprime o
+    directório de instalação do browser — tem de existir e ter ficheiros
+    com bytes. 2) Fallback para a sonda `camoufox version` + «Installed: yes»
+    (camoufox antigo sem subcomando path).
+    """
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "camoufox", "path"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        result = None
+    if result is not None and result.returncode == 0:
+        directory = next((line.strip() for line in (result.stdout or "").splitlines() if line.strip()), "")
+        if directory:
+            return _directory_has_bytes(Path(directory).expanduser())
     try:
         result = subprocess.run(
             [sys.executable, "-m", "camoufox", "version"],
