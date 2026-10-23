@@ -590,8 +590,10 @@ function installCamoufoxBrowser() {
   // BINÁRIO Firefox (browser anti-detect da sessão de upload directo) exige
   // `python -m camoufox fetch` — o mesmo género de passo do
   // `playwright install chromium` e do `patchright install chromium`.
-  // Obrigatório e fatal como os restantes componentes; a detecção evita
-  // repetir o download de ~150MB a cada actualização.
+  // A detecção evita repetir o download de ~150MB a cada actualização.
+  // 1.0.21: falha deixa de ser FATAL — o resto da instalação termina sempre
+  // (a automação de browsers pode falhar, mas o utilizador fica avisado no
+  // terminal e o `--check` denuncia o binário em falta).
   if (!existsSync(pythonBin)) return;
   if (camoufoxBrowserDownloaded()) {
     console.log("Camoufox: binário Firefox já descarregado.");
@@ -599,12 +601,12 @@ function installCamoufoxBrowser() {
   }
   console.log("Camoufox: a descarregar o browser (python -m camoufox fetch)...");
   const result = spawnSync(pythonBin, ["-m", "camoufox", "fetch"], { stdio: "inherit", env: pythonEnvironment });
-  if (result.status !== 0 || !camoufoxBrowserDownloaded()) {
-    console.error("Não foi possível descarregar o browser Camoufox.");
-    console.error("Confirme o acesso à Internet e execute o instalador novamente.");
-    process.exit(result.status || 1);
+  if (result.status === 0 && camoufoxBrowserDownloaded()) {
+    console.log("Camoufox: browser instalado.");
+    return;
   }
-  console.log("Camoufox: browser instalado.");
+  console.error("Aviso: Falha ao baixar o binário do Camoufox. A automação de browsers pode falhar.");
+  console.error("Confirme o acesso à Internet e execute o instalador novamente; o download é retomado de onde parou.");
 }
 
 function writeSettings(moneyprinterPath) {

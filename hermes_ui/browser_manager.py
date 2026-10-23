@@ -12,6 +12,33 @@ from hermes_ui.proxy_manager import normalize_proxy
 
 logger = logging.getLogger(__name__)
 CAMOUFOX_FETCH_HINT = "Execute python -m camoufox fetch para descarregar o browser Camoufox."
+# 1.0.21: o erro de binário em falta do Camoufox/Playwright é genérico
+# («BrowserType.launch: Connection closed while reading from the driver») —
+# traduzido para a acção que o utilizador realmente precisa: correr o
+# instalador (o fetch faz parte da instalação, sem comandos manuais).
+CAMOUFOX_BINARY_MISSING_HINT = (
+    "O binário do Camoufox não foi encontrado. Por favor, execute "
+    "'npx.cmd --yes --prefer-online @danhachuel/thunderbolt install' novamente "
+    "para baixá-lo."
+)
+
+
+def _camoufox_binary_missing_error(message: str) -> bool:
+    """True quando a mensagem é a assinatura de binário Firefox em falta.
+
+    Sem o binário descarregado, o runtime morre no launch com um erro de
+    ligação ao driver — indistinguível de um problema de rede para o
+    utilizador. A detecção do padrão dá a mensagem accionável certa.
+    """
+    combined = str(message or "").casefold()
+    return any(
+        marker in combined
+        for marker in (
+            "connection closed while reading from the driver",
+            "browsertype.launch",
+            "executable doesn't exist",
+        )
+    )
 
 # 1.0.06: logger dedicado de lançamento de browsers — o E2E de stealth
 # verifica engine/headless/proxy/geoip/humanize por aqui (linha
@@ -167,6 +194,8 @@ def get_browser_status(browser_type: str) -> dict[str, str]:
     except Exception as exc:
         message = _sanitize_error(exc)
         if name == "camoufox":
+            if _camoufox_binary_missing_error(message):
+                return {"status": "not_installed", "message": CAMOUFOX_BINARY_MISSING_HINT}
             message = f"Camoufox não iniciou: {message}. {CAMOUFOX_FETCH_HINT}"
         return {"status": "error", "message": message}
 
@@ -198,13 +227,19 @@ def launch_browser(browser_type: str = "camoufox", headless: bool = True, proxy:
         try:
             return start_camoufox(bool(geoip))
         except Exception as exc:
+            raw_message = _sanitize_error(exc, proxy_config)
+            if _camoufox_binary_missing_error(raw_message):
+                raise BrowserLaunchError(CAMOUFOX_BINARY_MISSING_HINT) from exc
             if geoip and proxy_config and _proxy_scheme(proxy_config) in {"socks5", "socks5h"}:
                 logger.warning("Camoufox GeoIP falhou com SOCKS5; a iniciar sem spoofing geográfico. Credenciais ocultas.")
                 try:
                     return start_camoufox(False)
                 except Exception as retry_exc:
-                    raise BrowserLaunchError(_sanitize_error(retry_exc, proxy_config)) from retry_exc
-            raise BrowserLaunchError(_sanitize_error(exc, proxy_config)) from exc
+                    retry_message = _sanitize_error(retry_exc, proxy_config)
+                    if _camoufox_binary_missing_error(retry_message):
+                        raise BrowserLaunchError(CAMOUFOX_BINARY_MISSING_HINT) from retry_exc
+                    raise BrowserLaunchError(retry_message) from retry_exc
+            raise BrowserLaunchError(raw_message) from exc
     if name == "firefox":
         module_name = "playwright.sync_api"
     else:
@@ -258,13 +293,19 @@ async def launch_browser_async(browser_type: str = "camoufox", headless: bool = 
         try:
             return await start_camoufox(bool(geoip))
         except Exception as exc:
+            raw_message = _sanitize_error(exc, proxy_config)
+            if _camoufox_binary_missing_error(raw_message):
+                raise BrowserLaunchError(CAMOUFOX_BINARY_MISSING_HINT) from exc
             if geoip and proxy_config and _proxy_scheme(proxy_config) in {"socks5", "socks5h"}:
                 logger.warning("Camoufox GeoIP falhou com SOCKS5; a iniciar sem spoofing geográfico. Credenciais ocultas.")
                 try:
                     return await start_camoufox(False)
                 except Exception as retry_exc:
-                    raise BrowserLaunchError(_sanitize_error(retry_exc, proxy_config)) from retry_exc
-            raise BrowserLaunchError(_sanitize_error(exc, proxy_config)) from exc
+                    retry_message = _sanitize_error(retry_exc, proxy_config)
+                    if _camoufox_binary_missing_error(retry_message):
+                        raise BrowserLaunchError(CAMOUFOX_BINARY_MISSING_HINT) from retry_exc
+                    raise BrowserLaunchError(retry_message) from retry_exc
+            raise BrowserLaunchError(raw_message) from exc
     use_patchright = name == "chromium" and _module_available("patchright")
     if name == "firefox" or not use_patchright:
         try:

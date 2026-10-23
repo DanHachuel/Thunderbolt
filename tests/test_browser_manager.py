@@ -92,6 +92,86 @@ def test_camoufox_socks5_geoip_failure_retries_without_spoof(monkeypatch):
     session.close()
 
 
+DRIVER_CLOSED_MESSAGE = (
+    "BrowserType.launch: Connection closed while reading from the driver"
+)
+
+
+def test_camoufox_binary_missing_pattern_detector():
+    # O erro exacto reportado pelo utilizador (binário em falta)…
+    assert browser_manager._camoufox_binary_missing_error(DRIVER_CLOSED_MESSAGE) is True
+    assert browser_manager._camoufox_binary_missing_error("Executable doesn't exist at …/camoufox") is True
+    # …e mensagens de outros problemas continuam a ser tratadas como tal.
+    assert browser_manager._camoufox_binary_missing_error("geoip lookup failed") is False
+    assert browser_manager._camoufox_binary_missing_error("proxy authentication failed") is False
+
+
+def test_launch_browser_translates_the_missing_binary_error(monkeypatch):
+    # 1.0.21: o erro genérico de driver (binário Firefox em falta) passa a
+    # dizer AO UTILIZADOR o que fazer: correr o instalador de novo.
+    class Manager:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            raise RuntimeError(DRIVER_CLOSED_MESSAGE)
+
+        def __exit__(self, *args):
+            pass
+
+    camoufox = types.ModuleType("camoufox")
+    camoufox.__path__ = []
+    monkeypatch.setitem(sys.modules, "camoufox", camoufox)
+    sync_api = types.ModuleType("camoufox.sync_api")
+    sync_api.Camoufox = Manager
+    monkeypatch.setitem(sys.modules, "camoufox.sync_api", sync_api)
+
+    with pytest.raises(browser_manager.BrowserLaunchError) as excinfo:
+        browser_manager.launch_browser("camoufox")
+
+    assert browser_manager.CAMOUFOX_BINARY_MISSING_HINT in str(excinfo.value)
+    assert "npx.cmd --yes --prefer-online @danhachuel/thunderbolt install" in str(excinfo.value)
+
+
+def test_launch_browser_async_translates_the_missing_binary_error(monkeypatch):
+    class Manager:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            raise RuntimeError(DRIVER_CLOSED_MESSAGE)
+
+        async def __aexit__(self, *args):
+            pass
+
+    camoufox = types.ModuleType("camoufox")
+    camoufox.__path__ = []
+    monkeypatch.setitem(sys.modules, "camoufox", camoufox)
+    async_api = types.ModuleType("camoufox.async_api")
+    async_api.AsyncCamoufox = Manager
+    monkeypatch.setitem(sys.modules, "camoufox.async_api", async_api)
+
+    with pytest.raises(browser_manager.BrowserLaunchError) as excinfo:
+        asyncio.run(browser_manager.launch_browser_async("camoufox"))
+
+    assert browser_manager.CAMOUFOX_BINARY_MISSING_HINT in str(excinfo.value)
+
+
+def test_get_browser_status_translates_the_missing_binary_error(monkeypatch):
+    monkeypatch.setattr(browser_manager, "_module_available", lambda name: True)
+    monkeypatch.setattr(browser_manager, "_camoufox_browser_downloaded", lambda: True)
+
+    def raise_driver_error(*args, **kwargs):
+        raise RuntimeError(DRIVER_CLOSED_MESSAGE)
+
+    monkeypatch.setattr(browser_manager, "launch_browser", raise_driver_error)
+
+    result = browser_manager.get_browser_status("camoufox")
+
+    assert result["status"] == "not_installed"
+    assert result["message"] == browser_manager.CAMOUFOX_BINARY_MISSING_HINT
+
+
 def test_chromium_uses_patchright_when_present_and_playwright_only_if_absent(monkeypatch):
     calls = []
 

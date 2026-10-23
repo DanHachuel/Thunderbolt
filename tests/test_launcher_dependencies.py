@@ -85,6 +85,8 @@ def test_installer_installs_the_camoufox_browser_as_a_mandatory_dependency():
     # 0.9.57: o pacote Python camoufox vinha com os requirements, mas o binário
     # Firefox (sessão de upload directo) exigia fetch manual — agora instala
     # automaticamente como o Chromium do Playwright e do Patchright.
+    # 1.0.21: falha deixa de ABORTAR a instalação (fatal → aviso): a rede pode
+    # falhar, o resto da instalação termina e o --check denuncia o binário.
     source = (ROOT / "scripts" / "install.mjs").read_text(encoding="utf-8")
     assert "function installCamoufoxBrowser()" in source
     assert "function camoufoxBrowserDownloaded()" in source
@@ -92,12 +94,28 @@ def test_installer_installs_the_camoufox_browser_as_a_mandatory_dependency():
     block = source.split("function installCamoufoxBrowser()", 1)[1].split("\nfunction ", 1)[0]
     assert '"-m", "camoufox", "fetch"' in block
     assert "camoufoxBrowserDownloaded()" in block
-    # obrigatória e fatal: falha aborta a instalação
-    assert "process.exit(result.status || 1)" in block
+    # sucesso = exit 0 do fetch E detecção pós-fetch a confirmar o binário
+    assert "if (result.status === 0 && camoufoxBrowserDownloaded())" in block
+    assert '"Camoufox: browser instalado."' in block
+    # falha = AVISO claro, sem abortar o resto da instalação
+    assert '"Aviso: Falha ao baixar o binário do Camoufox. A automação de browsers pode falhar."' in block
+    assert "process.exit" not in block
     # detecção espelha hermes_ui/browser_manager.py ("Installed: yes")
     detection_block = source.split("function camoufoxBrowserDownloaded()", 1)[1].split("\nfunction ", 1)[0]
     assert '"-m", "camoufox", "version"' in detection_block
     assert "Installed" in detection_block
+
+
+def test_doctor_check_reports_a_missing_camoufox_binary():
+    # 1.0.21: o --check valida o binário do Camoufox (o pip não o traz) e
+    # avisa em claro quando falta — sem falhar o check inteiro.
+    source = (ROOT / "scripts" / "cli.mjs").read_text(encoding="utf-8")
+    assert "function camoufoxBinaryDownloaded()" in source
+    probe = source.split("function camoufoxBinaryDownloaded()", 1)[1].split("\nfunction ", 1)[0]
+    assert '"-m", "camoufox", "version"' in probe
+    check_block = source.split("function check()", 1)[1].split('if (args[0] === "doctor"', 1)[0]
+    assert "Camoufox: binário do browser ausente. Execute o instalador novamente." in check_block
+    assert '"Camoufox: binário do browser OK."' in check_block
 
 
 def test_browser_manager_camoufox_status_still_reports_fetch_hint():

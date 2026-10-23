@@ -243,6 +243,15 @@ function ensureRuntimeStorage() {
   }
 }
 
+function camoufoxBinaryDownloaded() {
+  // 1.0.21: espelha install.mjs/browser_manager — `python -m camoufox
+  // version` só reporta «Installed: yes» quando o binário Firefox já foi
+  // descarregado para o cache (o pacote pip existir não basta).
+  const probe = spawnSync(python, ["-m", "camoufox", "version"], { encoding: "utf8", env: pythonEnvironment });
+  if (!probe || probe.status !== 0) return false;
+  return /^\s*Installed\s*[:=]?\s*(?:yes|true)\s*$/im.test(String(probe.stdout || ""));
+}
+
 function check() {
   const version = pythonVersion();
   if (version.status !== 0) {
@@ -259,6 +268,14 @@ function check() {
   console.log(`Dependências da aplicação: ${missing.length ? `em falta (${missing.join(", ")})` : "OK"}`);
   console.log(`FFmpeg: ${ffmpeg ? "OK via imageio-ffmpeg" : "em falta"}`);
   console.log(`Motor de vídeo: ${mptReady ? `OK (${mptPath})` : `não encontrado (${mptPath})`}`);
+  // 1.0.21: o binário do Camoufox é a peça que o `pip install` NÃO traz —
+  // sem ele a automação de browsers morre no arranque com um erro genérico
+  // de driver. Aviso claro, não falha o check (o resto pode estar OK).
+  if (camoufoxBinaryDownloaded()) {
+    console.log("Camoufox: binário do browser OK.");
+  } else {
+    console.error("Camoufox: binário do browser ausente. Execute o instalador novamente.");
+  }
   if (missing.length || !ffmpeg) {
     console.error("Instalação incompleta. Execute `npx.cmd --yes @danhachuel/thunderbolt install`; dependências já válidas serão reutilizadas.");
     process.exit(1);
