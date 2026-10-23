@@ -88,7 +88,11 @@ def test_resolver_discovers_the_bundled_binary_next_to_storage(isolated_storage,
     assert resolve_effective_ffmpeg_path({"ffmpeg_path": "ffmpeg"}) == str(installed)
 
 
-def test_resolver_falls_back_to_the_windows_thunderbolt_home(isolated_storage, tmp_path):
+def test_resolver_falls_back_to_the_windows_thunderbolt_home(isolated_storage, tmp_path, monkeypatch):
+    # O branch do home default do Windows só corre com os.name == "nt" — no CI
+    # Linux o teste simula a plataforma para exercitar a descoberta
+    # LOCALAPPDATA/THUNDERBOLT (é o caminho das instalações reais do pacote).
+    monkeypatch.setattr("os.name", "nt")
     home = tmp_path / "home" / "THUNDERBOLT"
     installed = _fake_ffmpeg(home / "ffmpeg" / "7.1-20240930" / "inner" / "bin")
     assert resolve_effective_ffmpeg_path({}) == str(installed)
