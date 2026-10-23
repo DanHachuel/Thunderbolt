@@ -34,15 +34,23 @@ def test_youtube_automation_loads_local_video_player_only_after_explicit_request
     assert '_render_local_video_player(video_path, width="stretch")' in player_block
 
 
-def test_youtube_automation_video_download_uses_static_link_and_defers_fallback_payload():
+def test_youtube_automation_video_download_uses_a_safe_standard_button():
+    """1.0.24: rollback do link markdown — «Baixar Vídeo» voltou a ser botão
+    standard (mesmo estilo de «Baixar Roteiro»/«Baixar Thumbnail») com leitura
+    protegida: o open("rb") nu derrubava o servidor quando o Windows mantinha
+    o ficheiro ocupado (player aberto); agora há aviso amigável."""
     assert 'def _local_video_download_link(path: Path, filename: str) -> str | None:' in MAIN_SOURCE
     assert 'def _clear_youtube_automation_download_task() -> None:' in MAIN_SOURCE
-    block = MAIN_SOURCE.split('with video_download_col:', 1)[1].split('if st.button(\n                        "Upload"', 1)[0]
-    assert '_local_video_download_link(video_path, download_name)' in block
-    assert 'download_task_key = "youtube_automation_download_task_id"' in block
-    assert 'if st.session_state.get(download_task_key) == task_id:' in block
-    assert 'data=video_stream' in block
-    assert 'on_click=_clear_youtube_automation_download_task' in block
+    block = MAIN_SOURCE.split("def _youtube_task_card_body(", 1)[1].split("return _catalog_task_state(task)", 1)[0]
+    assert '"Baixar Vídeo"' in block
+    assert "data=video_stream" in block
+    assert 'key=f"automation_download_video_{task_id}"' in block
+    # o link azul e o fluxo «Preparar download» saíram do card
+    assert "st.markdown(download_link" not in block
+    assert '"Preparar download"' not in block
+    # leitura protegida: aviso amigável quando o ficheiro está bloqueado
+    assert "except (OSError, PermissionError):" in block
+    assert "está a ser utilizado por outro processo" in block
 
 
 def test_legacy_ready_artifacts_are_displayed_as_fully_complete():

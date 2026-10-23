@@ -1271,6 +1271,15 @@ def render_tiktok_prompt_master_panel(channel: dict, *, compact: bool = False) -
 
 def creative_payload_from_result(channel: dict, topic: str, creative: dict, topic_source: str = "manual") -> dict[str, Any]:
     variant = creative.get("thumbnail_variant") or {}
+    image_prompt = str(variant.get("image_prompt") or "").strip()
+    # 1.0.23: status VERDADEIRO — «prompt_ready» exige um prompt real; o
+    # fluxo editorial (só títulos/keywords) marcava prompt_ready com o prompt
+    # vazio e a galeria mostrava «não tem um prompt de imagem» com o botão
+    # Gerar Imagem bloqueado. Sem prompt: «pending_prompt» (a card oferece
+    # «Refazer Prompt Thumb» para o gerar).
+    status = str(creative.get("thumbnail_status") or "").strip()
+    if not status:
+        status = "prompt_ready" if image_prompt else "pending_prompt"
     return {
         "topic": topic.strip(),
         "topic_source": topic_source,
@@ -1279,9 +1288,9 @@ def creative_payload_from_result(channel: dict, topic: str, creative: dict, topi
         "keywords": creative.get("keywords") or [],
         "thumbnail_variant": variant,
         "thumbnail_variants": creative.get("thumbnail_variants") or [],
-        "thumbnail_prompt": str(variant.get("image_prompt") or ""),
+        "thumbnail_prompt": image_prompt,
         "thumbnail_text": str(variant.get("overlay_text") or ""),
-        "thumbnail_status": str(creative.get("thumbnail_status") or "prompt_ready"),
+        "thumbnail_status": status,
         "blueprint_id": str(channel.get("default_blueprint_id") or channel.get("blueprint_id") or ""),
         "blueprint_name": str(channel_blueprint_summary(channel).get("name") or "SEM BLUEPRINT CONFIGURADO"),
         "thumbnail_blueprint_id": str(channel.get("default_thumbnail_blueprint_id") or channel.get("thumbnail_blueprint_id") or ""),
@@ -6890,14 +6899,22 @@ def _video_backlog_card_body(task_id: str) -> str:
             with media_cols[1]:
                 if video_file is not None and task_state == "done":
                     _render_local_video_player(video_file, width="stretch")
-                    with video_file.open("rb") as video_stream:
-                        st.download_button(
-                            'Descarregar vídeo pronto',
-                            data=video_stream,
-                            file_name=video_file.name,
-                            mime='video/mp4',
-                            key=f"pipeline_video_download_{task['id']}",
-                            width="stretch",
+                    # 1.0.24: leitura segura com aviso amigável quando o
+                    # Windows mantém o ficheiro ocupado — nunca derruba a página.
+                    try:
+                        with video_file.open("rb") as video_stream:
+                            st.download_button(
+                                'Descarregar vídeo pronto',
+                                data=video_stream,
+                                file_name=video_file.name,
+                                mime='video/mp4',
+                                key=f"pipeline_video_download_{task['id']}",
+                                width="stretch",
+                            )
+                    except (OSError, PermissionError):
+                        st.warning(
+                            "O ficheiro de vídeo está a ser utilizado por outro processo "
+                            "(por exemplo, o leitor aberto). Feche o leitor e tente novamente em alguns segundos."
                         )
                 elif video_path:
                     st.caption(f'Vídeo registado: {video_path}')
@@ -7800,25 +7817,25 @@ def _youtube_task_card_body(task_id: str) -> str:
             with video_download_col:
                 if video_path is not None:
                     download_name = _automation_download_name("Vídeo", task, video_path, ".mp4")
-                    download_link = _local_video_download_link(video_path, download_name)
-                    if download_link:
-                        st.markdown(download_link, unsafe_allow_html=True)
-                    else:
-                        download_task_key = "youtube_automation_download_task_id"
-                        if st.session_state.get(download_task_key) == task_id:
-                            with video_path.open("rb") as video_stream:
-                                st.download_button(
-                                    "Baixar Vídeo",
-                                    data=video_stream,
-                                    file_name=download_name,
-                                    mime="video/mp4",
-                                    key=f"automation_download_video_{task_id}",
-                                    width="stretch",
-                                    on_click=_clear_youtube_automation_download_task,
-                                )
-                        elif st.button("Preparar download", key=f"automation_prepare_video_download_{task_id}", width="stretch"):
-                            st.session_state[download_task_key] = task_id
-                            st.rerun(scope="fragment")
+                    # 1.0.24: botão standard de volta (o link markdown perdia o
+                    # estilo) e leitura segura — o open("rb") sem protecção
+                    # derrubava o servidor quando o Windows mantinha o ficheiro
+                    # ocupado (player/preview); agora há aviso amigável.
+                    try:
+                        with video_path.open("rb") as video_stream:
+                            st.download_button(
+                                "Baixar Vídeo",
+                                data=video_stream,
+                                file_name=download_name,
+                                mime="video/mp4",
+                                key=f"automation_download_video_{task_id}",
+                                width="stretch",
+                            )
+                    except (OSError, PermissionError):
+                        st.warning(
+                            "O ficheiro de vídeo está a ser utilizado por outro processo "
+                            "(por exemplo, o leitor aberto). Feche o leitor e tente novamente em alguns segundos."
+                        )
                 else:
                     st.download_button(
                         "Baixar Vídeo",
