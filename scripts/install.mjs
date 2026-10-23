@@ -505,8 +505,32 @@ function writeDependencyState(updates) {
 
 function importsAvailable(modules) {
   if (!existsSync(pythonBin)) return false;
-  const code = `import importlib.util,sys; missing=[m for m in ${JSON.stringify(modules)} if importlib.util.find_spec(m) is None]; sys.exit(1 if missing else 0)`;
-  return spawnSync(pythonBin, ["-c", code], { stdio: "ignore" }).status === 0;
+  // 1.0.20: IMPORT REAL em vez de importlib.util.find_spec. O find_spec apenas
+  // localiza a pasta do pacote e dava FALSOS POSITIVOS com instalações
+  // parciais/corrompidas (ex.: pasta do psutil presente, binário _psutil_windows
+  // em falta): o instalador dizia «dependências detectadas e reutilizadas»,
+  // os workers morriam no boot com ImportError e o launcher entrava no loop
+  // de «a reiniciar em 5s». O import real executa o __init__ do pacote e
+  // carrega as extensões compiladas — falhou, falhou.
+  const code = [
+    "import importlib, sys",
+    "missing = []",
+    `for name in ${JSON.stringify(modules)}:`,
+    "    try:",
+    "        importlib.import_module(name)",
+    "    except Exception:",
+    "        missing.append(name)",
+    "print(','.join(missing))",
+    "sys.exit(1 if missing else 0)",
+  ].join("\n");
+  const result = spawnSync(pythonBin, ["-c", code], { stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" });
+  if (result.status === 0) return true;
+  const broken = String(result.stdout || "").trim();
+  if (broken) {
+    console.warn(`Thunderbolt: pacotes que não importam no ambiente existente: ${broken}.`);
+    console.warn("A reinstalar o requirements.txt por causa deles.");
+  }
+  return false;
 }
 
 function installRequirementIfNeeded(requirementsPath, stateKey, modules, label) {

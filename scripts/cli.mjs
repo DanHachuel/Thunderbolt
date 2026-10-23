@@ -135,7 +135,19 @@ function pythonVersion() {
 }
 
 function moduleAvailable(moduleName) {
-  const code = `import importlib.util,sys; sys.exit(0 if importlib.util.find_spec(${JSON.stringify(moduleName)}) else 1)`;
+  // 1.0.20: IMPORT REAL em vez de importlib.util.find_spec — o find_spec dava
+  // falso positivo com pacote parcial/corrompido: o check passava, o worker
+  // morria no boot com ImportError e o launcher entrava no loop infinito de
+  // «a reiniciar em 5s». O import real executa o pacote: se falha, falha.
+  const code = [
+    "import importlib, sys",
+    `name = ${JSON.stringify(moduleName)}`,
+    "try:",
+    "    importlib.import_module(name)",
+    "    sys.exit(0)",
+    "except Exception:",
+    "    sys.exit(1)",
+  ].join("\n");
   return spawnSync(python, ["-c", code], { stdio: "ignore", env: pythonEnvironment }).status === 0;
 }
 
@@ -527,6 +539,36 @@ let streamlitStableTimer = null;
 let streamlitAutoRestartDisabled = false;
 let workerDependencyFailureReported = false;
 let pipelineDependencyFailureReported = false;
+let queueWorkersDependencyFailureReported = false;
+
+// 1.0.20: morte por dependências (ImportError/ModuleNotFoundError) NÃO volta
+// a arrancar. Antes, os workers de fila reiniciavam incondicionalmente a cada
+// 5s para sempre (o check find_spec dava falso positivo com pacote parcial/
+// corrompido: o check passava, o worker morria no boot, o launcher repetia) —
+// poluindo o terminal e travando a consola do Windows com erros fatais.
+const dependencyFailurePattern = /ImportError|ModuleNotFoundError|Fatal Python error/i;
+const workerStderrTails = new WeakMap();
+
+function rememberWorkerStderr(child, chunk) {
+  const previous = workerStderrTails.get(child) || "";
+  workerStderrTails.set(child, (previous + String(chunk)).slice(-4000));
+}
+
+function workerDiedFromDependencies(child) {
+  if (!child) return false;
+  return dependencyFailurePattern.test(workerStderrTails.get(child) || "");
+}
+
+function missingModuleFromTail(text) {
+  const match = String(text || "").match(/No module named '([^']+)'/i);
+  return match ? match[1] : "";
+}
+
+function reportFatalDependencyFailure(label, tail) {
+  const missing = missingModuleFromTail(tail);
+  const hint = missing ? ` (módulo em falta: ${missing})` : "";
+  console.error(`\x1b[31m[ERRO FATAL] ${label} falhou por falta de dependências${hint}. Rode 'npx.cmd --yes --prefer-online @danhachuel/thunderbolt install' para corrigir. Loop de reinício cancelado.\x1b[0m`);
+}
 
 function scheduleAutomationWorkerRestart() {
   const now = Date.now();
@@ -569,9 +611,16 @@ function startAutomationWorker() {
   });
   worker.on("error", (error) => console.error(`Thunderbolt worker: ${error.message}`));
   worker.on("exit", (code, signal) => {
+    const dependencyTail = lastAutomationWorkerError;
+    const diedFromDependencies = dependencyFailurePattern.test(dependencyTail);
     worker = null;
     if (shuttingDown) return;
     console.error(`Thunderbolt worker: terminou (código ${code ?? "-"}, sinal ${signal ?? "-"}).`);
+    if (diedFromDependencies) {
+      reportFatalDependencyFailure("O worker de automação", dependencyTail);
+      workerDependencyFailureReported = true;
+      return;
+    }
     if (automationStableTimer) {
       clearTimeout(automationStableTimer);
       automationStableTimer = null;
@@ -616,10 +665,15 @@ function startPipelineWorker() {
   const startedAt = Date.now();
   pipelineWorker = spawn(python, ["-m", "hermes_ui.pipeline_worker"], {
     cwd: root,
-    stdio: "inherit",
+    // 1.0.20: pipes + log próprio (storage/logs/pipeline_worker.log) — o mesmo
+    // padrão stdio-seguro da 1.0.18 para os workers de fila (o «inherit» era o
+    // gatilho documentado do «Fatal Python error: init_sys_streams» no
+    // Windows) E permite ao launcher detectar morte por ImportError.
+    stdio: ["ignore", "pipe", "pipe"],
     env: runtimeEnv,
     windowsHide: false,
   });
+  attachQueueWorkerLog(pipelineWorker, "pipeline_worker.log", "pipeline worker");
   pipelineWorker.on("error", (error) => console.error(`Thunderbolt pipeline worker: ${error.message}`));
   pipelineStableTimer = setTimeout(() => {
     pipelineFailureCount = 0;
@@ -627,12 +681,19 @@ function startPipelineWorker() {
     pipelineStableTimer = null;
   }, 60000);
   pipelineWorker.on("exit", (code, signal) => {
+    const diedFromDependencies = workerDiedFromDependencies(pipelineWorker);
+    const dependencyTail = workerStderrTails.get(pipelineWorker) || "";
     pipelineWorker = null;
     if (shuttingDown) return;
     console.error(`Thunderbolt pipeline worker: terminou (código ${code ?? "-"}, sinal ${signal ?? "-"}).`);
     if (pipelineStableTimer) {
       clearTimeout(pipelineStableTimer);
       pipelineStableTimer = null;
+    }
+    if (diedFromDependencies) {
+      reportFatalDependencyFailure("O worker do pipeline de vídeos", dependencyTail);
+      pipelineDependencyFailureReported = true;
+      return;
     }
     if (Date.now() - startedAt >= 60000) {
       pipelineFailureCount = 0;
@@ -679,6 +740,7 @@ function attachQueueWorkerLog(child, filename, label) {
   child.stderr?.on("data", (chunk) => {
     if (!shuttingDown) process.stderr.write(chunk);
     append(chunk);
+    rememberWorkerStderr(child, chunk);
   });
   child.on("exit", (code, signal) => {
     append(`\n--- ${label}: terminou (código ${code ?? "-"}, sinal ${signal ?? "-"}) em ${new Date().toISOString()} ---\n`);
@@ -689,8 +751,11 @@ function attachQueueWorkerLog(child, filename, label) {
 function startQueueWorkers() {
   // 1.0.11: filas paralelas do Motor — thumbnails e imagens de produção são
   // workers independentes com pools próprios (motor.max_parallel_*).
-  if (shuttingDown || thumbnailWorker || imageWorker) return;
-  if (!checkWorkerDependencies("os workers de filas do Motor")) return;
+  if (shuttingDown || queueWorkersDependencyFailureReported || thumbnailWorker || imageWorker) return;
+  if (!checkWorkerDependencies("os workers de filas do Motor")) {
+    queueWorkersDependencyFailureReported = true;
+    return;
+  }
   thumbnailWorker = spawn(python, ["-m", "hermes_ui.thumbnail_worker"], {
     cwd: root,
     // 1.0.18: pipes + log próprio (storage/logs/thumbnail_worker.log) em
@@ -702,8 +767,15 @@ function startQueueWorkers() {
   attachQueueWorkerLog(thumbnailWorker, "thumbnail_worker.log", "thumbnail worker");
   thumbnailWorker.on("error", (error) => console.error(`Thunderbolt thumbnail worker: ${error.message}`));
   thumbnailWorker.on("exit", (code, signal) => {
+    const diedFromDependencies = workerDiedFromDependencies(thumbnailWorker);
+    const dependencyTail = workerStderrTails.get(thumbnailWorker) || "";
     thumbnailWorker = null;
     if (shuttingDown) return;
+    if (diedFromDependencies) {
+      reportFatalDependencyFailure("O thumbnail worker", dependencyTail);
+      queueWorkersDependencyFailureReported = true;
+      return;
+    }
     console.error(`Thunderbolt thumbnail worker: terminou (código ${code ?? "-"}, sinal ${signal ?? "-"}); a reiniciar em 5s.`);
     setTimeout(() => {
       if (!shuttingDown) startQueueWorkers();
@@ -719,8 +791,15 @@ function startQueueWorkers() {
   attachQueueWorkerLog(imageWorker, "image_worker.log", "image worker");
   imageWorker.on("error", (error) => console.error(`Thunderbolt image worker: ${error.message}`));
   imageWorker.on("exit", (code, signal) => {
+    const diedFromDependencies = workerDiedFromDependencies(imageWorker);
+    const dependencyTail = workerStderrTails.get(imageWorker) || "";
     imageWorker = null;
     if (shuttingDown) return;
+    if (diedFromDependencies) {
+      reportFatalDependencyFailure("O image worker", dependencyTail);
+      queueWorkersDependencyFailureReported = true;
+      return;
+    }
     console.error(`Thunderbolt image worker: terminou (código ${code ?? "-"}, sinal ${signal ?? "-"}); a reiniciar em 5s.`);
     setTimeout(() => {
       if (!shuttingDown) startQueueWorkers();

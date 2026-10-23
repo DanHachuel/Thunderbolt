@@ -1812,6 +1812,12 @@ def _run_video_helper_once(
         last_activity_at = started_at
         helper_log_path: Path | None = None
         helper_log_mtime = 0.0
+        # 1.0.20: a janela de arranque vale até o MOTOR começar a renderizar —
+        # provado pelo log do MoneyPrinterTurbo a avançar (mtime). Linhas stdout
+        # irrelevantes (validação de chaves, sync de config) NÃO encerram a
+        # janela: o carregamento pesado do runtime vem DEPOIS delas e o idle
+        # watchdog de 5 min matava o arranque a meio (relato 1.0.19).
+        generation_started = False
         try:
             while True:
                 try:
@@ -1831,6 +1837,9 @@ def _run_video_helper_once(
                 elapsed = time.monotonic() - started_at
                 helper_log_mtime, helper_log_advanced = _latest_helper_log_activity(helper_log_path, helper_log_mtime)
                 if helper_log_advanced:
+                    # O log do motor a avançar é a prova de que a RENDERIZAÇÃO
+                    # começou: a partir daqui vale o idle watchdog normal.
+                    generation_started = True
                     last_activity_at = time.monotonic()
                     if not last_output_line:
                         last_output_line = "[MoneyPrinterTurbo] actividade de geração confirmada"
@@ -1869,12 +1878,13 @@ def _run_video_helper_once(
                         failure_metadata=metadata,
                         fallback_eligible=True,
                     )
-                # 1.0.17: janela de arranque — enquanto o helper ainda não produziu
-                # NENHUM output (nem linha nem log), vale motor.helper_start_timeout_seconds
-                # (default 600 s): o arranque concorrente do MPT pode demorar mais de 5
-                # minutos em silêncio sem estar encalhado. Com a primeira actividade, volta
-                # o idle watchdog normal; <= 0 continua a desligar o watchdog por inteiro.
-                startup_pending = not last_output_line and helper_log_path is None
+                # 1.0.17/1.0.20: janela de arranque — vale ATÉ o motor começar
+                # a renderizar (log do MoneyPrinterTurbo a avançar), não apenas
+                # até ao primeiro output: linhas irrelevantes de arranque não
+                # reactivam o idle watchdog de 5 min. Default 600 s via
+                # motor.helper_start_timeout_seconds; <= 0 continua a desligar
+                # o watchdog por inteiro (VIDEO_IDLE_TIMEOUT_SECONDS = 0).
+                startup_pending = not generation_started
                 effective_idle_seconds = (
                     helper_start_timeout_seconds if startup_pending and idle_timeout_seconds > 0 else idle_timeout_seconds
                 )
@@ -1885,16 +1895,29 @@ def _run_video_helper_once(
                         f"{effective_idle_seconds // 60} minutos e foi encerrada."
                     )
                     metadata = _failure_attribution(task, settings, "video", error=message)
-                    if not last_output_line and helper_log_path is None:
-                        # 0.9.92: zero output do helper e nenhum log do motor
-                        # significam que o runtime nunca arrancou — a falha é do
-                        # arranque do helper, não da API de material da rota.
-                        message = (
-                            "A etapa Vídeo não apresentou actividade comprovada do motor durante "
-                            f"{idle_timeout_seconds // 60} minutos e foi encerrada. O motor não "
-                            "chegou a arrancar (zero output do helper): falha no arranque do "
-                            "runtime MoneyPrinterTurbo — não na API de material (Pixabay/Pexels)."
-                        )
+                    if not generation_started:
+                        # Falha de ARRANQUE do runtime (nunca chegou a renderizar)
+                        # — a atribuição é do runtime MPT, nunca da API de
+                        # material da rota (Pixabay/Pexels).
+                        if not last_output_line and helper_log_path is None:
+                            # 0.9.92: zero output do helper e nenhum log do motor
+                            # significam que o runtime nunca arrancou.
+                            message = (
+                                "A etapa Vídeo não apresentou actividade comprovada do motor durante "
+                                f"{effective_idle_seconds // 60} minutos e foi encerrada. O motor não "
+                                "chegou a arrancar (zero output do helper): falha no arranque do "
+                                "runtime MoneyPrinterTurbo — não na API de material (Pixabay/Pexels)."
+                            )
+                        else:
+                            # 1.0.20: o helper respondeu (validação/config), mas o
+                            # log do motor nunca avançou — arranque demasiado
+                            # lento ou encalhado sob carga concorrente.
+                            message = (
+                                "A etapa Vídeo não apresentou actividade comprovada do motor durante "
+                                f"{effective_idle_seconds // 60} minutos e foi encerrada. O helper respondeu, "
+                                "mas o runtime MoneyPrinterTurbo nunca chegou a começar a renderizar "
+                                "(log do motor sem actividade): arranque demasiado lento ou encalhado."
+                            )
                         metadata.update({
                             "failure_api": "Runtime MoneyPrinterTurbo",
                             "failure_provider": "mpt_runtime",

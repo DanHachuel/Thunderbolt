@@ -232,6 +232,53 @@ def test_disabled_idle_watchdog_stays_disabled_during_startup(tmp_path, monkeypa
         pipeline_worker._run_video_helper({"id": "mpt-disabled", "topic": "Tema"})
 
 
+def test_irrelevant_early_line_does_not_close_the_startup_window(tmp_path, monkeypatch):
+    """1.0.20: linha stdout irrelevante (validação de chaves/config) NÃO encerra
+    a janela de arranque — o carregamento pesado do runtime vem DEPOIS dela e
+    o idle de 5 min matava o arranque a meio (relato 1.0.19). A janela é lida
+    do settings.json REAL (motor.helper_start_timeout_seconds=2), provando o
+    encadeamento settings → watchdog; o idle normal (1 s) não pode matar."""
+    _isolate(tmp_path, monkeypatch, task_id="mpt-early-line")
+    storage.write_json("settings.json", {"pexels_api_keys": ["pexels-test-key-1234567890123456"], "motor": {"helper_start_timeout_seconds": 2}})
+    monkeypatch.setattr(pipeline_worker, "_video_idle_timeout_seconds", lambda task, settings=None: 1)
+    monkeypatch.setattr(pipeline_worker, "_video_timeout_seconds", lambda task, settings=None: 999)
+    process = _FakePopen(["Pexels key validation completed: ok\n"], stays_alive=True)
+    monkeypatch.setattr(pipeline_worker.subprocess, "Popen", lambda *args, **kwargs: process)
+
+    with pytest.raises(pipeline_worker.PipelineError, match="nunca chegou a começar a renderizar"):
+        pipeline_worker._run_video_helper({"id": "mpt-early-line", "topic": "Tema"})
+
+    assert process.returncode == -9
+
+
+def test_generation_log_activity_starts_the_regular_idle_watchdog(tmp_path, monkeypatch):
+    """Log do MoneyPrinterTurbo a avançar (mtime) = o motor COMEÇOU a renderizar:
+    a partir daí vale o idle watchdog normal — helper mudo morre ao 1 s SEM a
+    atribuição de arranque do runtime."""
+    _isolate(tmp_path, monkeypatch, task_id="mpt-rendering")
+    engine_log = tmp_path / "moneyprinter-video.log"
+    engine_log.write_text("start\n", encoding="utf-8")
+    monkeypatch.setattr(pipeline_worker, "_video_idle_timeout_seconds", lambda task, settings=None: 1)
+    monkeypatch.setattr(pipeline_worker, "_video_timeout_seconds", lambda task, settings=None: 999)
+    calls = {"count": 0}
+
+    def fake_log_activity(path, previous_mtime):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return 1234.5, True
+        return 1234.5, False
+
+    monkeypatch.setattr(pipeline_worker, "_latest_helper_log_activity", fake_log_activity)
+    process = _FakePopen([f"full generation log: {engine_log}\n"], stays_alive=True)
+    monkeypatch.setattr(pipeline_worker.subprocess, "Popen", lambda *args, **kwargs: process)
+
+    with pytest.raises(pipeline_worker.PipelineError, match="actividade comprovada") as excinfo:
+        pipeline_worker._run_video_helper({"id": "mpt-rendering", "topic": "Tema"})
+
+    assert "nunca chegou a começar a renderizar" not in str(excinfo.value)
+    assert "zero output do helper" not in str(excinfo.value)
+
+
 # ---------------------------------------------------------------------------
 # Source-structure: gate + spawn instrumentado + higiene + aba Motor
 # ---------------------------------------------------------------------------
@@ -257,11 +304,15 @@ def test_spawn_carries_close_fds_and_immediate_io_error_logging():
 
 
 def test_watchdog_uses_the_configurable_startup_window_only_while_silent():
-    loop = PIPELINE_SOURCE.split("startup_pending = not last_output_line", 1)[1][:900]
+    loop = PIPELINE_SOURCE.split("startup_pending = not generation_started", 1)[1][:900]
     assert "helper_start_timeout_seconds if startup_pending and idle_timeout_seconds > 0 else idle_timeout_seconds" in loop
     assert "effective_idle_seconds // 60} minutos" in loop
     # declaração da janela junto dos timeouts base
     assert "helper_start_timeout_seconds = _video_helper_start_timeout_seconds(settings)" in PIPELINE_SOURCE
+    # 1.0.20: só o log do motor a avançar encerra a janela de arranque
+    assert "startup_pending = not generation_started" in PIPELINE_SOURCE
+    assert "generation_started = True" in PIPELINE_SOURCE
+    assert "nunca chegou a começar a renderizar" in PIPELINE_SOURCE
 
 
 def test_stop_process_releases_the_helper_pipes():
