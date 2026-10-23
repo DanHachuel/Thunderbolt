@@ -9,6 +9,60 @@ from hermes_ui.languages import language_code
 from hermes_ui.material_sources import all_material_api_keys, selected_material_source
 
 NVENC_VIDEO_CODEC = "h264_nvenc"
+CPU_FALLBACK_CODEC = "libx264"
+
+# Marcadores que o fork do MPT emite quando desiste do NVENC em runtime.
+MPT_CPU_FALLBACK_MARKERS = (
+    "fallback to libx264",
+    "was disabled after a runtime failure",
+)
+
+
+def _first_installed_ffmpeg(home_root: Path) -> str:
+    """Primeiro binário ffmpeg instalado sob <home>/ffmpeg/<versão>/ (do pacote)."""
+    try:
+        version_dirs = sorted(home_root.glob("ffmpeg/*/"), reverse=True)
+    except OSError:
+        return ""
+    for version_dir in version_dirs:
+        try:
+            binaries = sorted(version_dir.rglob("ffmpeg.exe")) + sorted(version_dir.rglob("ffmpeg"))
+        except OSError:
+            continue
+        for binary in binaries:
+            if binary.is_file():
+                return str(binary.resolve())
+    return ""
+
+
+def resolve_effective_ffmpeg_path(settings: dict[str, Any] | None = None) -> str:
+    """Caminho EFECTIVO do FFmpeg a usar no runtime MPT (1.0.21).
+
+    Ordem: ``settings.ffmpeg_seed_path`` (binário 7.1 instalado pelo pacote) →
+    glob do home do Thunderbolt junto ao STORAGE (layout de instalação) → home
+    default do Windows (``LOCALAPPDATA/THUNDERBOLT``) → ``settings.ffmpeg_path``
+    literal. O valor NUNCA fica no comando nu ``ffmpeg`` quando existe um
+    binário instalado: o PATH pode ter um build sem NVENC funcional (provado
+    nesta máquina: FFmpeg 9.0 winget anuncia h264_nvenc nos ``-encoders`` mas
+    falha a abrir o encoder com error -40) e o render cai silenciosamente
+    para a CPU.
+    """
+    settings = settings if isinstance(settings, dict) else {}
+    seeded = str(settings.get("ffmpeg_seed_path") or "").strip()
+    if seeded and Path(seeded).is_file():
+        return seeded
+    from hermes_ui.storage import STORAGE
+
+    found = _first_installed_ffmpeg(STORAGE.parent)
+    if found:
+        return found
+    if os.name == "nt":
+        local_home = Path(os.environ.get("LOCALAPPDATA") or "") / "THUNDERBOLT"
+        found = _first_installed_ffmpeg(local_home)
+        if found:
+            return found
+    configured = str(settings.get("ffmpeg_path") or "").strip()
+    return configured or "ffmpeg"
 
 try:
     import toml
@@ -120,6 +174,12 @@ def build_moneyprinter_config(settings: dict[str, Any], existing: dict[str, Any]
     for settings_key, config_key in app_map.items():
         if settings_key in settings:
             app[config_key] = settings[settings_key]
+    # 1.0.21: ffmpeg_path EFECTIVO — o fork do MPT resolve o binário por
+    # ENV/PATH (utils.get_ffmpeg_binary ignora esta chave), mas o mpt_agent
+    # injecta-a como IMAGEIO_FFMPEG_EXE/FFMPEG_BINARY no subprocesso de
+    # render. O comando nu "ffmpeg" deixava o render ao sabor do PATH (9.0
+    # sem NVENC funcional) ou do wheel antigo do imageio-ffmpeg.
+    app["ffmpeg_path"] = resolve_effective_ffmpeg_path(settings)
     # The bundled video pipeline is required to use NVIDIA NVENC.  The
     # MoneyPrinterTurbo runtime falls back to libx264 when this encoder is not
     # available on the host, preserving a playable output instead of failing.

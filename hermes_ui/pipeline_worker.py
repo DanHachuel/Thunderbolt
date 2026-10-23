@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from integrations.moneyprinter_config import sync_moneyprinter_config
+from integrations.moneyprinter_config import MPT_CPU_FALLBACK_MARKERS, resolve_effective_ffmpeg_path, sync_moneyprinter_config
 from integrations.session_info_health import check_all_accounts_session_info_health, emit_session_info_health_alerts
 from integrations.upload_routing import resolve_youtube_account, upload_with_default_route
 from hermes_ui.creative_generation import CreativeGenerationError, generate_creative_package, generate_title_and_keywords, generate_thumbnail_prompt, generate_topic_for_channel
@@ -1507,20 +1507,101 @@ def _mpt_runtime_log(message: str) -> None:
     _mpt_logger.info(message)
 
 
+# 1.0.21 — NVENC forçado no runtime MPT: o fork resolve o FFmpeg por
+# ENV/PATH (ignora o ffmpeg_path do config), pelo que o binário 7.1 do
+# pacote tem de ser injectado explicitamente no subprocesso de render; sem
+# isto o render caía silenciosamente para libx264 na CPU e 3 vídeos em
+# paralelo travavam a barra nos 79% (encode final de ~4 min por vídeo).
+_nvenc_probe_lock = threading.Lock()
+_nvenc_probe_state: dict[str, Any] = {"path": "", "available": None}
+_mpt_cpu_fallback = threading.Event()
+
+
+def _probe_nvenc_availability(ffmpeg_path: str) -> bool | None:
+    """Probe REAL do NVENC no binário efectivo (1.0.21, cache por processo).
+
+    A listagem ``-encoders`` NÃO basta — o FFmpeg 9.0 do PATH desta máquina
+    anuncia ``h264_nvenc`` mas falha a abrir o encoder (error -40) — por isso
+    o probe executa um encode de 1 segundo com o próprio binário. Só corre
+    com um binário EXPLÍCITO em ficheiro (o 7.1 instalado pelo pacote): com o
+    comando nu ``ffmpeg`` o alvo seria o PATH e o resultado não caracteriza
+    o runtime instalado (devolve None, sem concluir). Falha ⇒ o render cairia
+    para libx264 na CPU ⇒ o gate de runtimes cai a 1.
+    """
+    path = str(ffmpeg_path or "").strip()
+    if not path or not Path(path).is_file():
+        return None
+    with _nvenc_probe_lock:
+        if _nvenc_probe_state.get("path") == path:
+            return _nvenc_probe_state.get("available")
+    try:
+        completed = subprocess.run(
+            [path, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=black:s=256x256:d=1", "-c:v", "h264_nvenc", "-f", "null", "-"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+        available = completed.returncode == 0
+    except Exception:
+        # O probe nunca pode derrubar a etapa de vídeo — falha ⇒ indisponível.
+        available = False
+    with _nvenc_probe_lock:
+        _nvenc_probe_state.update({"path": path, "available": available})
+    if not available:
+        _mpt_cpu_fallback.set()
+        _mpt_runtime_log(
+            f"[MPT-CODEC] [AVISO] NVENC indisponível no FFmpeg efectivo ({path}): "
+            "o MPT vai codificar via CPU (libx264) e o gate do runtime cai para 1 em simultâneo."
+        )
+    return available
+
+
+def _detect_mpt_cpu_fallback(output: str, helper_log_path: Path | None = None) -> bool:
+    """Detecta o fallback silencioso do MPT para CPU e activa a mitigação (1.0.21).
+
+    O fork do MPT avisa no log do MOTOR («video codec ... was disabled after a
+    runtime failure, fallback to libx264»), que o worker já segue para o
+    watchdog — é aí (e no stdout do helper) que os marcadores são procurados.
+    Detecção ⇒ AVISO no log do worker + gate reduzido a 1 runtime.
+    """
+    haystacks = [str(output or "")]
+    if helper_log_path and helper_log_path.is_file():
+        try:
+            haystacks.append(helper_log_path.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            pass
+    combined = "\n".join(haystacks).casefold()
+    if any(marker in combined for marker in MPT_CPU_FALLBACK_MARKERS):
+        _mpt_cpu_fallback.set()
+        _mpt_runtime_log("[MPT-CODEC] [AVISO] O MPT caiu para codificação via CPU (libx264). Verifique se o NVENC está funcional.")
+        return True
+    return False
+
+
 def _max_parallel_mpt_runtimes(settings: dict[str, Any] | None = None) -> int:
     """Nº máximo de processos MPT em simultâneo.
 
     ``motor.max_parallel_mpt_runtimes`` no settings.json (relido a cada
     espera do gate — muda sem restart); vazio/zero/inválido → 2 (default
     conservador: o arranque do MPT satura a máquina).
+
+    1.0.21: com NVENC indisponível (probe falhou ou o log do motor avisou do
+    fallback para libx264) o limite cai a 1 — a CPU não aguenta 3 renders
+    simultâneos e a fila inteira parecia travada nos 79%.
     """
     effective = settings if isinstance(settings, dict) else _settings()
     motor = effective.get("motor") if isinstance(effective.get("motor"), dict) else {}
     try:
         value = int(motor.get("max_parallel_mpt_runtimes"))
     except (TypeError, ValueError):
-        return DEFAULT_MAX_PARALLEL_MPT_RUNTIMES
-    return value if value > 0 else DEFAULT_MAX_PARALLEL_MPT_RUNTIMES
+        value = DEFAULT_MAX_PARALLEL_MPT_RUNTIMES
+    if value <= 0:
+        value = DEFAULT_MAX_PARALLEL_MPT_RUNTIMES
+    if _mpt_cpu_fallback.is_set():
+        return 1
+    return value
 
 
 _mpt_runtime_condition = threading.Condition()
@@ -1601,6 +1682,12 @@ def _run_video_helper_once(
         raise PipelineError("A etapa Vídeo não recebeu um tema válido.")
     settings = settings if isinstance(settings, dict) else _settings()
     configured_root = _configured_moneyprinter_root(settings)
+    # 1.0.21: FFmpeg EFECTIVO (o 7.1 do pacote quando instalado) — injectado
+    # no ambiente do helper e no config.toml do MPT. O probe de NVENC corre
+    # ANTES do estágio: determina o banner do codec e, em falha, reduz o gate
+    # a 1 runtime (CPU não aguenta 3 renders em paralelo).
+    effective_ffmpeg = resolve_effective_ffmpeg_path(settings)
+    _probe_nvenc_availability(effective_ffmpeg)
     task_id = str(task.get("id") or "").strip()
     if not task_id:
         raise PipelineError("A tarefa de vídeo não tem um identificador válido.")
@@ -1669,6 +1756,12 @@ def _run_video_helper_once(
         "MPT_PIXABAY_API_KEYS": json.dumps(source_keys, ensure_ascii=False) if route == "pixabay" and source_keys else "",
         "MPT_AZURE_SPEECH_KEY": str(settings.get("azure_speech_key") or "").strip(),
         "MPT_AZURE_SPEECH_REGION": str(settings.get("azure_speech_region") or "").strip(),
+        # 1.0.21: o fork do MPT resolve o FFmpeg por ENV → PATH → wheel do
+        # imageio (ignora o config); sem estas chaves o probe de codec e o
+        # MoviePy usavam binários diferentes do 7.1 embutido e o NVENC caía
+        # silenciosamente para libx264 (CPU) — o travamento nos 79%.
+        "IMAGEIO_FFMPEG_EXE": effective_ffmpeg,
+        "FFMPEG_BINARY": effective_ffmpeg,
     }
     for key, value in env_values.items():
         if value:
@@ -1803,6 +1896,21 @@ def _run_video_helper_once(
         )
         _mpt_runtime_log(spawn_banner)
         output_chars = _append_bounded_video_helper_output(output_lines, spawn_banner, output_chars)
+        # 1.0.21 — telemetria de codec: qual FFmpeg entra no render e qual o
+        # estado do NVENC (probe real do binário efectivo, não a listagem
+        # ``-encoders``, que mente num build com NVENC compilado mas partido).
+        with _nvenc_probe_lock:
+            probed_nvenc = _nvenc_probe_state.get("available")
+        nvenc_note = (
+            "nvenc=ok (verificado com o binário efectivo)"
+            if probed_nvenc is True
+            else "nvenc=INDISPONÍVEL — codificação via CPU (libx264); gate do runtime reduzido a 1"
+            if probed_nvenc is False
+            else "nvenc=desconhecido (sem binário explícito do pacote)"
+        )
+        codec_banner = f"[MPT-CODEC] ffmpeg={effective_ffmpeg} codec=h264_nvenc {nvenc_note}"
+        _mpt_runtime_log(codec_banner)
+        output_chars = _append_bounded_video_helper_output(output_lines, codec_banner, output_chars)
 
         reader = threading.Thread(target=_read_output, name=f"mpt-output-{task.get('id', 'video')}", daemon=True)
         reader.start()
@@ -1936,6 +2044,13 @@ def _run_video_helper_once(
                 pass
             try:
                 _persist_video_diagnostics(task, _output_text())
+            except Exception:
+                pass
+            # 1.0.21: o log do MOTOR (run-*.log) é a via onde o fork do MPT
+            # avisa que desistiu do NVENC em runtime — varre-o (e o stdout do
+            # helper) pelos marcadores de fallback para CPU.
+            try:
+                _detect_mpt_cpu_fallback(_output_text(), helper_log_path)
             except Exception:
                 pass
         if process.returncode is None:

@@ -478,6 +478,27 @@ def _voice_rate(cli_args: list[str]) -> float:
         return 1.0
 
 
+def _ffmpeg_environment(config_path: Path, base: dict[str, str] | None = None) -> dict[str, str]:
+    """Ambiente com o FFmpeg do config.toml injectado para o runtime MPT (1.0.21).
+
+    O fork do MPT resolve o binário por ``utils.get_ffmpeg_binary`` na ordem
+    IMAGEIO_FFMPEG_EXE → PATH → wheel do imageio-ffmpeg — a chave
+    ``ffmpeg_path`` do config.toml é IGNORADA por essa via. Sem esta
+    injecção, o probe de codec e o MoviePy da renderização usavam binários
+    diferentes do 7.1 embutido (PATH com um 9.0 que anuncia NVENC nos
+    ``-encoders`` mas falha a abrir o encoder em runtime) e o render caía
+    silenciosamente para a CPU (libx264) — o travamento em 79% com 3 vídeos
+    paralelos. MoviePy 2.x honra IMAGEIO_FFMPEG_EXE; o FFMPEG_BINARY cobre
+    as vias legadas.
+    """
+    environment = dict(base if base is not None else os.environ)
+    ffmpeg_path = _toml_section_value(config_path, "app", "ffmpeg_path")
+    if ffmpeg_path:
+        environment["IMAGEIO_FFMPEG_EXE"] = ffmpeg_path
+        environment["FFMPEG_BINARY"] = ffmpeg_path
+    return environment
+
+
 def _prepare_azure_v2_chunked_audio(
     root: Path,
     config_path: Path,
@@ -515,12 +536,9 @@ def _prepare_azure_v2_chunked_audio(
         "--rate",
         str(_voice_rate(cli_args)),
     ]
-    environment = os.environ.copy()
+    environment = _ffmpeg_environment(config_path, os.environ.copy())
     environment["AZURE_SPEECH_KEY"] = speech_key
     environment["AZURE_SPEECH_REGION"] = speech_region
-    ffmpeg_path = _toml_section_value(config_path, "app", "ffmpeg_path")
-    if ffmpeg_path:
-        environment["IMAGEIO_FFMPEG_EXE"] = ffmpeg_path
     returncode, output = _run_streamed(
         command,
         cwd=root,
@@ -946,6 +964,13 @@ def generate_video(
     ]
     log(f"starting video generation, task ID: {task_id}")
     log(f"full generation log: {log_path}")
+    # 1.0.21: o subprocesso de render recebe o FFmpeg do config injectado —
+    # sem env=, o MoviePy usava o wheel antigo do imageio e o probe de codec
+    # o binário do PATH (mistura que matava o NVENC em runtime).
+    environment = _ffmpeg_environment(config_path)
+    configured_ffmpeg = environment.get("IMAGEIO_FFMPEG_EXE") or ""
+    if configured_ffmpeg:
+        log(f"using ffmpeg: {configured_ffmpeg}")
     generation_stop = threading.Event()
 
     def _generation_beat() -> None:
@@ -964,6 +989,7 @@ def generate_video(
             result = subprocess.run(
                 command,
                 cwd=root,
+                env=environment,
                 stdout=log_file,
                 creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
                 stderr=subprocess.STDOUT,
