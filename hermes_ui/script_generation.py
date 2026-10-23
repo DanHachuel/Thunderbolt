@@ -9,7 +9,9 @@ from .blueprint_governance import (
     MAX_SCRIPT_GENERATION_ATTEMPTS,
     script_governance,
     script_rules_prompt_section,
+    title_governance,
     validate_script_content,
+    validate_title_with_governance,
 )
 from .creative_generation import CreativeGenerationError, _chat_json, channel_context, target_language
 
@@ -115,6 +117,10 @@ def generate_script_document(
     result: dict[str, Any] = {}
     valid = True
     reason = ""
+    # 1.0.23: o TÍTULO do roteiro também é gerado e vira o título do vídeo
+    # (rascunhos → pipeline) — validado pela lei do blueprint como qualquer
+    # título (guardrails 1.0.11), no mesmo loop de auto-correcção.
+    title_governance_value = title_governance(blueprint_payload) if normalized_type == "video_script" else {}
     attempts = MAX_SCRIPT_GENERATION_ATTEMPTS if normalized_type == "video_script" else 1
     for attempt in range(1, attempts + 1):
         payload = dict(user_payload)
@@ -128,16 +134,23 @@ def generate_script_document(
             break
         valid, reason = validate_script_content(content, governance)
         if valid:
+            title_valid, title_reason = validate_title_with_governance(
+                str(result.get("title") or ""), title_governance_value
+            )
+            if not title_valid:
+                valid = False
+                reason = f"o título «{result.get('title')}» viola as regras de título do blueprint ({title_reason})"
+        if valid:
             break
         if attempt < attempts:
             feedback = (
                 f"AVISO DO SISTEMA: O roteiro anterior foi REJEITADO pelo validador do blueprint. "
                 f"Motivo: {reason}. Reescreve o roteiro integralmente, cumprindo a extensão obrigatória "
-                "e todas as regras do blueprint."
+                "e todas as regras do blueprint (incluindo as regras de TÍTULO)."
             )
     if normalized_type == "video_script" and not valid:
         raise CreativeGenerationError(
-            f"Após {attempts} tentativas, o roteiro não cumpre a extensão exigida pelo blueprint. Último motivo: {reason}"
+            f"Após {attempts} tentativas, o roteiro não cumpre as regras do blueprint. Último motivo: {reason}"
         )
     return {
         "document_type": normalized_type,

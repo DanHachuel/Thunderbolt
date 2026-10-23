@@ -137,9 +137,18 @@ def _paren_items(rule: str) -> list[str]:
 
 
 def _contains_pattern(phrase: str) -> re.Pattern[str]:
-    """Padrão de contenção com fronteiras de palavra (tolera plurais simples)."""
+    """Padrão de contenção com fronteiras de palavra (tolera plurais).
+
+    1.0.23: plural y→ies do inglês (worry→worries, anxiety→anxieties) —
+    antes só s/es/ed/ing e «Release Your Worries» escapava à blacklist.
+    """
     core = re.escape(str(phrase).strip())
-    return re.compile(rf"\b{core}(?:s|es|ed|ing)?\b", re.IGNORECASE)
+    alternatives = [core]
+    lowered = core.casefold()
+    if len(lowered) >= 3 and lowered.endswith("y") and lowered[-2] not in "aeiou":
+        alternatives.append(core[:-1] + "ies")
+    body = "|".join(alternatives)
+    return re.compile(rf"\b(?:{body})(?:s|es|ed|ing)?\b", re.IGNORECASE)
 
 
 def _template_pattern(literal: str) -> re.Pattern[str]:
@@ -700,3 +709,26 @@ def visual_requirements_prompt_section(blueprint: dict[str, Any] | None) -> str:
     if not sections:
         return ""
     return "CHANNEL VISUAL REQUIREMENTS (mandatory in EVERY image):\n" + "\n".join(sections)
+
+
+def visual_requirements_fallback_suffix(blueprint: dict[str, Any] | None) -> str:
+    """Sufixo compacto da lei visual do canal para FALLBACKS de prompt (1.0.23).
+
+    Quando o LLM falha e o código compõe um prompt determinístico, o fallback
+    também tem de obedecer ao blueprint (ex.: «ABSOLUTELY NO HUMANS») — sem
+    isto, as cenas geradas em fallback traziam pessoas contra a lei do canal.
+    """
+    requirements = script_governance(blueprint).get("visual_requirements") or {}
+    if not requirements:
+        return ""
+    parts: list[str] = []
+    keywords = [str(item).strip() for item in (requirements.get("prompt_keywords") or []) if str(item).strip()]
+    if keywords:
+        parts.append("Featuring " + ", ".join(keywords[:6]) + ".")
+    forbidden = [str(item).strip() for item in (requirements.get("blacklist_keywords") or []) if str(item).strip()]
+    if forbidden:
+        parts.append("Strictly no " + ", ".join(forbidden[:10]) + ".")
+    instruction = str(requirements.get("instruction") or "").strip()
+    if instruction and not parts:
+        parts.append(instruction[:240])
+    return (" " + " ".join(parts)).strip()

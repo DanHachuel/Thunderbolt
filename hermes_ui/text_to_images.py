@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any, Mapping
 
-from .blueprint_governance import visual_requirements_prompt_section
+from .blueprint_governance import visual_requirements_fallback_suffix, visual_requirements_prompt_section
 from .provider_routing import ProviderRoutingError, route_llm_json
 from .voice_preview import resolve_narration_provider, synthesize_preview
 
@@ -159,6 +159,10 @@ def generate_image_prompts_for_scenes(
         generated = None
     generated = generated if isinstance(generated, list) else []
     by_index = {int(item.get("index")): item for item in generated if isinstance(item, dict) and str(item.get("index", "")).isdigit()}
+    # 1.0.23: o FALLBACK também obedece à lei visual do blueprint — antes,
+    # cenas sem resposta do LLM saíam com um prompt genérico que podia trazer
+    # pessoas contra o «ABSOLUTELY NO HUMANS» do canal.
+    visual_fallback_suffix = visual_requirements_fallback_suffix(blueprint)
     output: list[dict[str, Any]] = []
     for position, scene in enumerate(scenes):
         index = int(scene.get("index") or len(output) + 1)
@@ -167,6 +171,8 @@ def generate_image_prompts_for_scenes(
         overlay = _sanitise_text_overlay(candidate.get("text_overlay")) if position in text_positions else ""
         if not prompt:
             prompt = f"Cinematic scene, dramatic lighting, dynamic composition, visual storytelling about {str(scene.get('text') or '')[:160]}"
+            if visual_fallback_suffix:
+                prompt = f"{prompt}. {visual_fallback_suffix}"
         if overlay:
             prompt = f"{prompt} with the text '{overlay}' written on it."
         output.append({**scene, "prompt": prompt})

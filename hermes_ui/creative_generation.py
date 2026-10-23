@@ -14,9 +14,11 @@ from .blueprint_governance import (
     MAX_TITLE_GENERATION_ATTEMPTS,
     TITLE_REFERENCE_KEYS,
     has_blueprint_title_rules,
+    script_governance,
     title_governance,
     title_rules_prompt_section,
     validate_title_with_governance,
+    visual_requirements_fallback_suffix,
     visual_requirements_prompt_section,
 )
 from .provider_routing import ProviderRoutingError, route_llm_json
@@ -220,26 +222,49 @@ def generate_topic_for_channel(
         "Escreve de forma natural, sem introduções artificiais, frases de IA, clickbait enganoso ou CTA genérico. "
         "Responde apenas com JSON válido com as chaves topic, angle, hook, niche e rationale."
     )
-    user = json.dumps(
-        {
-            "channel": context,
-            "output_language": language_instruction,
-            "user_context": user_context.strip(),
-            "reference_rules": reference_bundle(blueprint),
-            "requirements": [
-                "topic em uma frase clara",
-                "angle contrarian ou inesperado quando fizer sentido",
-                "hook para os primeiros segundos",
-                "niche coerente com o Blueprint e descrição",
-                "rationale curta e prática",
-            ],
-        },
-        ensure_ascii=False,
-    )
-    result = _chat_json(settings, system, user)
+    user_payload = {
+        "channel": context,
+        "output_language": language_instruction,
+        "user_context": user_context.strip(),
+        "reference_rules": reference_bundle(blueprint),
+        "requirements": [
+            "topic em uma frase clara",
+            "angle contrarian ou inesperado quando fizer sentido",
+            "hook para os primeiros segundos",
+            "niche coerente com o Blueprint e descrição",
+            "rationale curta e prática",
+        ],
+    }
+    # 1.0.23: o tema (topic) VIRA título em vários caminhos (assunto da UI,
+    # título do rascunho, fallback do pipeline) — é gerado, logo é validado
+    # pela lei do blueprint como qualquer título (guardrails 1.0.11).
+    governance = title_governance(blueprint)
+    rules_section = title_rules_prompt_section(governance)
+    if rules_section:
+        system += "\n\n" + rules_section
+    feedback = ""
+    result: dict[str, Any] = {}
     required = ("topic", "angle", "hook", "niche", "rationale")
-    if any(not str(result.get(key) or "").strip() for key in required):
-        raise CreativeGenerationError("O briefing gerado veio incompleto; tente novamente.")
+    attempts = max(1, MAX_TITLE_GENERATION_ATTEMPTS)
+    for attempt in range(1, attempts + 1):
+        payload = dict(user_payload)
+        if feedback:
+            payload["system_feedback"] = feedback
+        result = _chat_json(settings, system, json.dumps(payload, ensure_ascii=False))
+        if any(not str(result.get(key) or "").strip() for key in required):
+            raise CreativeGenerationError("O briefing gerado veio incompleto; tente novamente.")
+        is_valid, reason = validate_title_with_governance(str(result.get("topic") or ""), governance)
+        if is_valid:
+            break
+        if attempt < attempts:
+            feedback = (
+                f"AVISO DO SISTEMA: O tema «{result.get('topic')}» foi REJEITADO pelo validador do "
+                f"blueprint. Motivo: {reason}. Gera um NOVO tema que cumpra TODAS as regras."
+            )
+    else:
+        raise CreativeGenerationError(
+            f"Após {attempts} tentativas, o tema gerado não cumpre as regras do blueprint. Último motivo: {reason}"
+        )
     result["topic_source"] = "llm"
     result["channel_id"] = str(channel.get("id") or "")
     return result
@@ -404,6 +429,26 @@ def _title_generation_loop(
     )
 
 
+def _thumbnail_prompt_fallback(blueprint: dict[str, Any] | None) -> str:
+    """Prompt determinístico quando o LLM devolve image_prompt vazio (1.0.23).
+
+    Composto pela LEI VISUAL do canal (keywords a favorecer + proibições do
+    ``metadata.visual_requirements``) — nunca genérico contra o blueprint; sem
+    blueprint, cena natural clássica sem pessoas.
+    """
+    requirements = script_governance(blueprint).get("visual_requirements") or {}
+    keywords = [str(item).strip() for item in (requirements.get("prompt_keywords") or []) if str(item).strip()]
+    base = (
+        "Majestic " + " ".join(keywords[:3]).casefold() + " scene, cinematic lighting"
+        if keywords
+        else "Majestic sunrise over a calm ocean, cinematic lighting, no people"
+    )
+    suffix = visual_requirements_fallback_suffix(blueprint)
+    if suffix:
+        base = f"{base}. {suffix}"
+    return base
+
+
 def generate_thumbnail_prompt(
     settings: dict[str, Any],
     channel: dict[str, Any],
@@ -434,6 +479,15 @@ def generate_thumbnail_prompt(
     visual_section = visual_requirements_prompt_section(blueprint)
     if visual_section:
         system += "\n\n" + visual_section
+    # 1.0.23: o image_prompt é OBRIGATÓRIO e nunca pode ser vazio — o
+    # «não tem um prompt de imagem» vinha daqui (o LLM calava-se quando a
+    # lei visual entrava sem esta instrução explícita).
+    system += (
+        "\n\nIMPORTANTE: o campo image_prompt é OBRIGATÓRIO e NUNCA pode ser uma string vazia. "
+        "Se não tiveres a certeza, descreve uma cena majestosa da lei visual do canal "
+        "(ex.: «Majestic mountains under a sunrise sky, cinematic lighting»). Se o prompt "
+        "contiver humanos quando a lei visual os proíbe, será rejeitado."
+    )
     user = json.dumps(
         {
             "channel": context,
@@ -453,7 +507,11 @@ def generate_thumbnail_prompt(
     result = _chat_json(settings, system, user)
     image_prompt = str(result.get("image_prompt") or "").strip()
     if not image_prompt:
-        raise CreativeGenerationError("O provider não devolveu um prompt de imagem válido.")
+        # 1.0.23: NUNCA mais «A thumbnail não tem um prompt de imagem» —
+        # fallback determinístico composto pela LEI VISUAL do canal
+        # (keywords a favorecer + proibições), ou a cena natural genérica
+        # quando o blueprint não define requisitos.
+        image_prompt = _thumbnail_prompt_fallback(blueprint)
     overlay_text = _short_overlay(result.get("overlay_text")) or _short_overlay(topic) or "WATCH NOW"
     lettering_prompt = str(result.get("lettering_prompt") or "").strip() or (
         "Render the exact overlay_text as bold, readable, high-contrast sans-serif lettering with an outline or shadow, "

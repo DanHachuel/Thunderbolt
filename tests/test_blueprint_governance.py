@@ -355,7 +355,7 @@ def test_script_length_guardrail_hard_fails(monkeypatch):
         return {"title": "t", "summary": "s", "content": "x" * 500}
 
     monkeypatch.setattr(script_generation, "_chat_json", fake_chat)
-    with pytest.raises(CreativeGenerationError, match="extensão"):
+    with pytest.raises(CreativeGenerationError, match="não cumpre as regras do blueprint"):
         generate_script_document(
             _settings(),
             document_type="Roteiro de vídeo",

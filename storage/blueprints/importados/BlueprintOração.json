@@ -9,7 +9,7 @@
     "length_compliance_mandatory": true,
     "GLOBAL_TONE_DIRECTIVE": "This is a GOSPEL PRAYER channel. NOT a meditation, yoga, or mindfulness channel. DO NOT use terms like 'breathe in', 'breathe out', 'mindfulness', 'meditation', 'body scan', 'relax your muscles'. The narrator is INTERCEDING and PRAYING to God on behalf of the listener, not guiding a relaxation session.",
     "GLOBAL_BLACKLIST_WORDS": [
-      "meditation", "yoga", "mindfulness", "breathe in", "breathe out", "relax", "body scan", "sleep", "anxiety", "insomnia", "nighttime", "bedtime"
+      "meditation", "yoga", "mindfulness", "breathe in", "breathe out", "relax", "body scan", "sleep", "anxiety", "insomnia", "nighttime", "bedtime", "worry"
     ],
     "script_format_rules": [
       "DO NOT include visual or audio prompts in the script (no '[Visual: ...]', no '[Audio: ...]').",
