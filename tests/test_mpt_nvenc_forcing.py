@@ -88,14 +88,21 @@ def test_resolver_discovers_the_bundled_binary_next_to_storage(isolated_storage,
     assert resolve_effective_ffmpeg_path({"ffmpeg_path": "ffmpeg"}) == str(installed)
 
 
-def test_resolver_falls_back_to_the_windows_thunderbolt_home(isolated_storage, tmp_path, monkeypatch):
-    # O branch do home default do Windows só corre com os.name == "nt" — no CI
-    # Linux o teste simula a plataforma para exercitar a descoberta
-    # LOCALAPPDATA/THUNDERBOLT (é o caminho das instalações reais do pacote).
-    monkeypatch.setattr("os.name", "nt")
+def test_resolver_falls_back_to_the_windows_thunderbolt_home(isolated_storage, tmp_path):
+    # O branch do home default do Windows corre quando LOCALAPPDATA está
+    # definido (sempre no Windows; o fixture define-a em qualquer plataforma)
+    # — é a descoberta das instalações reais do pacote (LOCALAPPDATA/THUNDERBOLT).
     home = tmp_path / "home" / "THUNDERBOLT"
     installed = _fake_ffmpeg(home / "ffmpeg" / "7.1-20240930" / "inner" / "bin")
     assert resolve_effective_ffmpeg_path({}) == str(installed)
+
+
+def test_resolver_respects_the_explicit_system_choice_from_settings(isolated_storage, tmp_path):
+    """Configurações > FFmpeg == "system": a escolha EXPLÍCITA do utilizador
+    (binário do ambiente Python) ganha — o 7.1 do pacote NUNCA a sobrescreve."""
+    _fake_ffmpeg(tmp_path / "ffmpeg" / "7.1-20240930" / "bin")  # 7.1 instalado por aí
+    system_choice = {"ffmpeg_version": "system", "ffmpeg_path": "C:/venv/imageio/ffmpeg.exe"}
+    assert resolve_effective_ffmpeg_path(system_choice) == "C:/venv/imageio/ffmpeg.exe"
 
 
 def test_resolver_keeps_the_configured_path_when_nothing_is_installed(isolated_storage):

@@ -36,18 +36,26 @@ def _first_installed_ffmpeg(home_root: Path) -> str:
 
 
 def resolve_effective_ffmpeg_path(settings: dict[str, Any] | None = None) -> str:
-    """Caminho EFECTIVO do FFmpeg a usar no runtime MPT (1.0.21).
+    """Caminho EFECTIVO do FFmpeg a usar no runtime MPT (1.0.23).
 
-    Ordem: ``settings.ffmpeg_seed_path`` (binário 7.1 instalado pelo pacote) →
-    glob do home do Thunderbolt junto ao STORAGE (layout de instalação) → home
-    default do Windows (``LOCALAPPDATA/THUNDERBOLT``) → ``settings.ffmpeg_path``
-    literal. O valor NUNCA fica no comando nu ``ffmpeg`` quando existe um
-    binário instalado: o PATH pode ter um build sem NVENC funcional (provado
-    nesta máquina: FFmpeg 9.0 winget anuncia h264_nvenc nos ``-encoders`` mas
-    falha a abrir o encoder com error -40) e o render cai silenciosamente
-    para a CPU.
+    A escolha do utilizador em **Configurações > FFmpeg** manda:
+    ``ffmpeg_version == "system"`` devolve o binário seleccionado na UI tal
+    qual (binário do ambiente Python) — nunca é sobrescrito pelo 7.1 do
+    pacote. Com a via do pacote (default ``7.1-20240930``), a ordem é:
+    ``settings.ffmpeg_seed_path`` → binário instalado junto ao STORAGE →
+    binário do home default do Windows (``LOCALAPPDATA/THUNDERBOLT``) →
+    ``settings.ffmpeg_path`` literal. O valor NUNCA fica no comando nu
+    ``ffmpeg`` quando existe um binário instalado: o PATH pode ter um build
+    sem NVENC funcional (provado nesta máquina: FFmpeg 9.0 winget anuncia
+    ``h264_nvenc`` nos ``-encoders`` mas falha a abrir o encoder com
+    error -40) e o render cai silenciosamente para a CPU.
     """
     settings = settings if isinstance(settings, dict) else {}
+    configured = str(settings.get("ffmpeg_path") or "").strip()
+    version = str(settings.get("ffmpeg_version") or "").strip()
+    if version.casefold() == "system":
+        # Configurações > FFmpeg == system: escolha EXPLÍCITA do utilizador.
+        return configured or "ffmpeg"
     seeded = str(settings.get("ffmpeg_seed_path") or "").strip()
     if seeded and Path(seeded).is_file():
         return seeded
@@ -56,12 +64,11 @@ def resolve_effective_ffmpeg_path(settings: dict[str, Any] | None = None) -> str
     found = _first_installed_ffmpeg(STORAGE.parent)
     if found:
         return found
-    if os.name == "nt":
-        local_home = Path(os.environ.get("LOCALAPPDATA") or "") / "THUNDERBOLT"
+    if os.environ.get("LOCALAPPDATA"):
+        local_home = Path(os.environ["LOCALAPPDATA"]) / "THUNDERBOLT"
         found = _first_installed_ffmpeg(local_home)
         if found:
             return found
-    configured = str(settings.get("ffmpeg_path") or "").strip()
     return configured or "ffmpeg"
 
 try:
