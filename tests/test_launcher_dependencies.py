@@ -19,8 +19,11 @@ def test_psutil_is_declared_in_production_dependency_files():
 
 def test_installer_checks_psutil_before_reusing_dependency_state():
     source = (ROOT / "scripts" / "install.mjs").read_text(encoding="utf-8")
-    assert 'installRequirementIfNeeded(join(root, "requirements.txt")' in source
-    assert '["psutil", "streamlit"' in source
+    # 1.0.31: a chamada é multi-linha (gained as opções de gating) — o contrato
+    # é o MESMO: o requirements do Thunderbolt valida psutil com import real.
+    call = source.split("function installThunderboltDependencies(", 1)[1].split("function installRemotionDependencies", 1)[0]
+    assert 'join(root, "requirements.txt"),' in call
+    assert '["psutil", "streamlit"' in call
     assert 'run(pythonBin, ["-m", "pip", "install", "-r", requirementsPath])' in source
 
 

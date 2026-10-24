@@ -516,7 +516,15 @@ async def _run_upstream_upload(
         _ensure_upstream_runtime_conf()
         from uploader.youtube_uploader.main import YouTubeVideo
     except ImportError as exc:
-        raise RuntimeError("A dependência pinned do social-auto-upload não está instalada corretamente.") from exc
+        # 1.0.31: os uploaders são OPT-IN no instalador (pacote pesado do
+        # GitHub, fora da instalação por omissão) — a mensagem diz o comando
+        # exacto em vez de um genérico «não está instalada corretamente».
+        raise RuntimeError(
+            "A dependência do social-auto-upload não está instalada (uploaders opt-in). "
+            "Execute o instalador com --with-uploaders "
+            "(npx.cmd --yes --prefer-online @danhachuel/thunderbolt install --with-uploaders) "
+            "para activar o upload automático."
+        ) from exc
     trace = _UploadTrace()
     upload = YouTubeVideo(
         title=title,

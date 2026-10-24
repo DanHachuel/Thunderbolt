@@ -308,6 +308,17 @@ function check() {
   } else {
     console.error("Camoufox: binário do browser ausente. Execute o instalador novamente.");
   }
+  // 1.0.31: os uploaders (social-auto-upload, zip pesado do GitHub) são
+  // OPT-IN — o check INFORMA, nunca falha: o resto da stack funciona sem
+  // eles (o import é lazy na hora do upload).
+  const uploadersReady = moduleAvailable("uploader") && moduleAvailable("sau_cli");
+  console.log(
+    `Uploaders (social-auto-upload): ${
+      uploadersReady
+        ? "instalados."
+        : "não instalados (opt-in — npx.cmd --yes --prefer-online @danhachuel/thunderbolt install --with-uploaders)."
+    }`,
+  );
   if (missing.length || !ffmpeg) {
     console.error("Instalação incompleta. Execute `npx.cmd --yes @danhachuel/thunderbolt install`; dependências já válidas serão reutilizadas.");
     process.exit(1);

@@ -1,11 +1,12 @@
-"""Instalador honesto + fim do loop infinito de workers (1.0.20).
+"""Instalador honesto + fim do loop infinito de workers (1.0.20, refinado na 1.0.31).
 
-1. `importsAvailable` (`scripts/install.mjs`): o find_spec apenas localizava a
-   pasta do pacote — instalações parciais/corrompidas davam FALSO POSITIVO e o
-   instalador dizia «dependências detectadas e reutilizadas» enquanto os
-   workers morriam no boot por falta de psutil/playwright/patchright/serpapi.
-   Passa a IMPORTAR cada módulo de verdade (executa __init__ + extensões
-   compiladas) e lista os pacotes partidos quando falha.
+1. `missingModules` (`scripts/install.mjs`, era `importsAvailable`): o find_spec
+   apenas localizava a pasta do pacote — instalações parciais/corrompidas davam
+   FALSO POSITIVO e o instalador dizia «dependências detectadas e reutilizadas»
+   enquanto os workers morriam no boot por falta de psutil/playwright/patchright/
+   serpapi. Passa a IMPORTAR cada módulo de verdade (executa __init__ + extensões
+   compiladas) e a devolver a LISTA dos que falham (1.0.31: a reacção deixa de
+   ser binária — quem decide é a reparação alvo).
 2. `moduleAvailable` + exit handlers (`scripts/cli.mjs`): import REAL no check
    pré-arranque e morte por ImportError/ModuleNotFoundError NÃO volta a
    arrancar — mensagem vermelha única com o módulo em falta e o loop de
@@ -28,23 +29,32 @@ LAUNCHER_SOURCE = (ROOT / "scripts" / "cli.mjs").read_text(encoding="utf-8")
 
 
 def test_installer_imports_modules_for_real_instead_of_locating_folders():
-    block = INSTALLER_SOURCE.split("function importsAvailable(modules)", 1)[1].split("function installRequirementIfNeeded", 1)[0]
+    block = INSTALLER_SOURCE.split("function missingModules(modules)", 1)[1].split("function installRequirementIfNeeded", 1)[0]
     assert "importlib.import_module(name)" in block
     # a CHAMADA rasa (find_spec) desapareceu do código — os comentários
     # documentam o falso positivo, o código já não o comete.
     assert "importlib.util.find_spec" not in block.replace("importlib.util.find_spec. O find_spec", "doc")
     assert "missing.append(name)" in block
-    # Um pacote que não importa é listado explicitamente antes de reinstalar.
-    assert "pacotes que não importam no ambiente existente" in block
+    # 1.0.31: devolve a LISTA dos que falham — nada de binário mudo.
+    assert "return broken.split(\",\").map((name) => name.trim()).filter(Boolean);" in block
+    # sonda sem veredicto legível assume o pior caso (nunca afirma OK sem provar)
+    assert "return [...modules];" in block
 
 
-def test_installer_message_only_appears_when_every_module_imports():
+def test_installer_heavy_install_only_runs_when_requirements_really_change():
     gate = INSTALLER_SOURCE.split("function installRequirementIfNeeded(", 1)[1].split("function installPlaywrightBrowsers", 1)[0]
-    # «reutilizadas» continua a existir, mas fica ATRÁS do check de import real.
-    assert "if (!forceDeps && importsOk)" in gate
+    # «reutilizadas» exige imports OK E hash inalterado (nenhum download).
+    assert "const fastPath = !forceDeps && persistedHashMatches && missingBefore.length === 0;" in gate
     assert "dependências detectadas e reutilizadas" in gate
-    assert "dependências ausentes, incompletas ou alteradas; a instalar agora." in gate
+    # 1.0.31: a instalação PESADA fica ATRÁS do gate de hash — um import que
+    # falhou NUNCA mais despoleta o requirements inteiro.
+    assert "if (forceDeps || !persistedHashMatches) {" in gate
     assert '"-m", "pip", "install", "-r", requirementsPath' in gate
+    # a reparação é ALVO (spec exata, --force-reinstall) e NÃO fatal
+    assert '"--force-reinstall"' in gate
+    assert "a instalar APENAS os pacotes em falta" in gate
+    repair = gate.split("const missingAfter = missingModules(modules);", 1)[1]
+    assert "process.exit" not in repair
 
 
 def test_installer_checks_the_reported_missing_packages():
