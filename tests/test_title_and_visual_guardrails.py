@@ -201,32 +201,43 @@ def test_thumbnail_prompt_never_returns_empty_when_the_llm_is_silent(monkeypatch
 
     assert result["image_prompt"].strip()
     assert result["status"] == "prompt_ready"
-    # o fallback é composto pela lei visual do canal: keywords a favorecer,
-    # proibições (People/Face/Body) e NUNCA vazio.
+    # 1.0.28: o fallback da THUMBNAIL é cinematográfico e genérico — pessoas
+    # são BEM-VINDAS (rostos vendem cliques); a lei visual (natureza/zero
+    # humanos) NÃO se aplica a thumbnails, apenas às cenas do vídeo.
     prompt = result["image_prompt"]
-    assert "Waves" in prompt or "Sky" in prompt or "Nature" in prompt
-    assert "Strictly no People" in prompt
-    assert "Face" in prompt and "Body" in prompt
+    assert "Cinematic YouTube thumbnail" in prompt
+    assert "Human faces" in prompt
+    assert "Strictly no People" not in prompt
+    assert "NO HUMANS" not in prompt
+    assert "Waves" not in prompt  # keywords da lei visual não entram aqui
 
 
-def test_thumbnail_prompt_fallback_without_blueprint_is_a_clean_nature_scene(monkeypatch):
+def test_thumbnail_prompt_fallback_without_blueprint_is_thumbnail_friendly(monkeypatch):
     monkeypatch.setattr(creative_generation, "_chat_json", lambda settings, system, user: {})
     result = generate_thumbnail_prompt(_settings(), _channel(), "tema", blueprint=None)
-    assert "no people" in result["image_prompt"].casefold()
+    # sem blueprint o fallback continua útil: ancorado no tópico, sem
+    # proibições visuais — pessoas permitidas.
+    assert "tema" in result["image_prompt"]
+    assert "no people" not in result["image_prompt"].casefold()
     assert result["status"] == "prompt_ready"
 
 
-def test_thumbnail_system_prompt_forbids_empty_image_prompt(monkeypatch):
+def test_thumbnail_system_prompt_forbids_empty_image_prompt_and_allows_people(monkeypatch):
     captured = {}
 
     def fake_chat(settings, system, user):
         captured["system"] = system
-        return {"image_prompt": "Majestic mountains under a sunrise sky", "overlay_text": "GOD IS GREATER"}
+        return {"image_prompt": "A hopeful face lit by golden sunrise light", "overlay_text": "GOD IS GREATER"}
 
     monkeypatch.setattr(creative_generation, "_chat_json", fake_chat)
     generate_thumbnail_prompt(_settings(), _channel(), "peace", blueprint=ORACAO)
+    # a instrução anti-prompt-vazio permanece (a causa real do «não tem um
+    # prompt»), mas SEM a lei visual: thumbnails podem ter pessoas.
     assert "NUNCA pode ser uma string vazia" in captured["system"]
-    assert "CHANNEL VISUAL REQUIREMENTS" in captured["system"]
+    assert "rostos são BEM-VINDOS" in captured["system"]
+    # 1.0.28: a lei visual (CHANNEL VISUAL REQUIREMENTS) NÃO entra na thumbnail.
+    assert "CHANNEL VISUAL REQUIREMENTS" not in captured["system"]
+    assert "ABSOLUTELY NO HUMANS" not in captured["system"]
 
 
 def test_creative_payload_never_claims_prompt_ready_without_a_prompt():

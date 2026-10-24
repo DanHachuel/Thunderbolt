@@ -14,12 +14,9 @@ from .blueprint_governance import (
     MAX_TITLE_GENERATION_ATTEMPTS,
     TITLE_REFERENCE_KEYS,
     has_blueprint_title_rules,
-    script_governance,
     title_governance,
     title_rules_prompt_section,
     validate_title_with_governance,
-    visual_requirements_fallback_suffix,
-    visual_requirements_prompt_section,
 )
 from .provider_routing import ProviderRoutingError, route_llm_json
 
@@ -429,24 +426,20 @@ def _title_generation_loop(
     )
 
 
-def _thumbnail_prompt_fallback(blueprint: dict[str, Any] | None) -> str:
-    """Prompt determinístico quando o LLM devolve image_prompt vazio (1.0.23).
+def _thumbnail_prompt_fallback(topic: str = "") -> str:
+    """Prompt determinístico quando o LLM devolve image_prompt vazio (1.0.28).
 
-    Composto pela LEI VISUAL do canal (keywords a favorecer + proibições do
-    ``metadata.visual_requirements``) — nunca genérico contra o blueprint; sem
-    blueprint, cena natural clássica sem pessoas.
+    THUMBNAIL ≠ vídeo de fundo: a thumbnail PODE ter pessoas (rostos emotivos
+    vendem cliques) — a lei visual (natureza/zero humanos) do
+    ``visual_requirements`` aplica-se apenas às imagens de cena do vídeo. O
+    fallback é genérico de cinema publicitário, ancorado no tópico.
     """
-    requirements = script_governance(blueprint).get("visual_requirements") or {}
-    keywords = [str(item).strip() for item in (requirements.get("prompt_keywords") or []) if str(item).strip()]
-    base = (
-        "Majestic " + " ".join(keywords[:3]).casefold() + " scene, cinematic lighting"
-        if keywords
-        else "Majestic sunrise over a calm ocean, cinematic lighting, no people"
+    subject = str(topic or "").strip() or "the video's core emotion"
+    return (
+        f"Cinematic YouTube thumbnail about {subject}: a clear focal subject, "
+        "warm dramatic lighting, high contrast and rich detail, 8k resolution. "
+        "Human faces expressing genuine emotion are welcome."
     )
-    suffix = visual_requirements_fallback_suffix(blueprint)
-    if suffix:
-        base = f"{base}. {suffix}"
-    return base
 
 
 def generate_thumbnail_prompt(
@@ -473,20 +466,15 @@ def generate_thumbnail_prompt(
         "Responde apenas com JSON válido nas chaves concept, overlay_text, composition, color_palette, subject, "
         "image_prompt, title_synergy e lettering_prompt."
     )
-    # 1.0.17: a lei visual do canal (metadata.visual_requirements do
-    # Blueprint — instrução + keywords a favorecer + proibidas) entra no
-    # prompt do director de arte; o motor não faz hardcoding.
-    visual_section = visual_requirements_prompt_section(blueprint)
-    if visual_section:
-        system += "\n\n" + visual_section
-    # 1.0.23: o image_prompt é OBRIGATÓRIO e nunca pode ser vazio — o
-    # «não tem um prompt de imagem» vinha daqui (o LLM calava-se quando a
-    # lei visual entrava sem esta instrução explícita).
+    # 1.0.28: a LEI VISUAL (natureza/zero humanos) NÃO entra na thumbnail —
+    # thumbnails PODEM ter pessoas (rostos vendem cliques); a lei aplica-se
+    # apenas às imagens de cena do vídeo (text_to_images). Aqui fica apenas a
+    # instrução anti-prompt-vazio da 1.0.23, sem as proibições visuais.
     system += (
         "\n\nIMPORTANTE: o campo image_prompt é OBRIGATÓRIO e NUNCA pode ser uma string vazia. "
-        "Se não tiveres a certeza, descreve uma cena majestosa da lei visual do canal "
-        "(ex.: «Majestic mountains under a sunrise sky, cinematic lighting»). Se o prompt "
-        "contiver humanos quando a lei visual os proíbe, será rejeitado."
+        "Se não tiveres a certeza, descreve uma cena cinematográfica com um sujeito central forte, "
+        "iluminação dramática e emoção genuína — pessoas e rostos são BEM-VINDOS na thumbnail "
+        "(rostos vendem cliques); apenas nunca peças texto renderizado na imagem."
     )
     user = json.dumps(
         {
@@ -511,7 +499,7 @@ def generate_thumbnail_prompt(
         # fallback determinístico composto pela LEI VISUAL do canal
         # (keywords a favorecer + proibições), ou a cena natural genérica
         # quando o blueprint não define requisitos.
-        image_prompt = _thumbnail_prompt_fallback(blueprint)
+        image_prompt = _thumbnail_prompt_fallback(topic)
     overlay_text = _short_overlay(result.get("overlay_text")) or _short_overlay(topic) or "WATCH NOW"
     lettering_prompt = str(result.get("lettering_prompt") or "").strip() or (
         "Render the exact overlay_text as bold, readable, high-contrast sans-serif lettering with an outline or shadow, "
@@ -624,10 +612,9 @@ def generate_creative_package(
             + "\n\nGera exactamente pelo menos 20 títulos candidatos que sigam ESTRITAMENTE estas regras — "
             "qualquer título que viole uma única regra é eliminado pelo validador."
         )
-    # 1.0.17: requisitos visuais do Blueprint para as variantes de thumbnail.
-    visual_section = visual_requirements_prompt_section(blueprint)
-    if visual_section:
-        system += "\n\n" + visual_section
+    # 1.0.28: as variantes de thumbnail NÃO recebem a lei visual — a
+    # thumbnail PODE ter pessoas; a natureza/zero-humanos aplica-se apenas
+    # às cenas do vídeo (ver text_to_images.generate_image_prompts_for_scenes).
     system += " Responde apenas com JSON válido nas chaves selected_title, title_candidates, keywords e thumbnail_variants."
     user_payload = {
         "channel": context,

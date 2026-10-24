@@ -290,7 +290,10 @@ def test_scene_image_prompts_receive_the_channel_visual_law(monkeypatch):
     assert "CHANNEL VISUAL REQUIREMENTS" not in captured["system"]
 
 
-def test_thumbnail_prompt_receives_the_channel_visual_law(monkeypatch):
+def test_thumbnail_prompt_does_not_receive_the_scene_visual_law(monkeypatch):
+    """1.0.28: a lei visual (natureza/zero humanos) aplica-se apenas às cenas
+    do VÍDEO — a thumbnail PODE ter pessoas (rostos vendem cliques); a lei
+    deixa de ser injectada no gerador de thumbnails."""
     captured = {}
 
     def fake_chat(settings, system, user):
@@ -301,7 +304,7 @@ def test_thumbnail_prompt_receives_the_channel_visual_law(monkeypatch):
             "composition": "c",
             "color_palette": "p",
             "subject": "s",
-            "image_prompt": "majestic sunrise over mountains, no text",
+            "image_prompt": "a hopeful face lit by golden sunrise light",
             "title_synergy": "t",
             "lettering_prompt": "render overlay",
         }
@@ -310,8 +313,24 @@ def test_thumbnail_prompt_receives_the_channel_visual_law(monkeypatch):
     creative_generation.generate_thumbnail_prompt(
         _settings(), _channel(), "peace beyond pressure", blueprint=_blueprint()
     )
-    assert "CHANNEL VISUAL REQUIREMENTS" in captured["system"]
-    assert "NO HUMANS" in captured["system"]
+    assert "CHANNEL VISUAL REQUIREMENTS" not in captured["system"]
+    assert "NO HUMANS" not in captured["system"]
+    # a instrução anti-prompt-vazio permanece (causa real do erro antigo)
+    assert "NUNCA pode ser uma string vazia" in captured["system"]
+
+
+def test_creative_package_does_not_inject_the_scene_visual_law():
+    """As variantes de thumbnail do pacote criativo também ficam livres da lei
+    visual — só as cenas do vídeo a recebem."""
+    source = (ROOT / "hermes_ui" / "creative_generation.py").read_text(encoding="utf-8")
+    thumbnail_block = source.split("def generate_thumbnail_prompt(", 1)[1].split("def generate_creative_package(", 1)[0]
+    package_block = source.split("def generate_creative_package(", 1)[1].split("def _ugc_fallback_prompts(", 1)[0]
+    for block in (thumbnail_block, package_block):
+        assert "visual_requirements_prompt_section" not in block
+    # o gerador de cenas (vídeo de fundo) MANTÉM a lei
+    scenes = (ROOT / "hermes_ui" / "text_to_images.py").read_text(encoding="utf-8")
+    scene_block = scenes.split("def generate_image_prompts_for_scenes(", 1)[1].split("def _subtitle_rgba(", 1)[0]
+    assert "visual_requirements_prompt_section(blueprint)" in scene_block
 
 
 def test_pipeline_passes_the_blueprint_to_the_scene_image_generator():
