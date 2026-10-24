@@ -10,6 +10,18 @@ from .blueprint_governance import visual_requirements_fallback_suffix, visual_re
 from .provider_routing import ProviderRoutingError, route_llm_json
 from .voice_preview import resolve_narration_provider, synthesize_preview
 
+# 1.0.29 — MP4 pronto para o browser: o MoviePy escreve o átomo `moov` no
+# FIM do ficheiro (provado por análise de átomos: [ftyp, free, mdat, moov]),
+# pelo que o <video> do navegador fica preto — não há streaming antes do
+# download completo. `-movflags +faststart` move o moov para o início e
+# `-pix_fmt yuv420p` garante o perfil de cor que todos os decodificadores
+# HTML5 aceitam (o MoviePy 2.x pedia yuva420p com canal alfa para libx264
+# com dimensões pares, confiando na negociação do FFmpeg para cair em
+# yuv420p). Estes parâmetros viajam ANTES do nome do ficheiro no comando
+# montado pelo FFMPEG_VideoWriter do MoviePy (verificado na 2.1.2), logo
+# são opções de saída válidas.
+WEB_SAFE_MP4_FFMPEG_PARAMS = ["-movflags", "+faststart", "-pix_fmt", "yuv420p"]
+
 
 def _duration_from_words(words: list[dict[str, Any]], fallback_wpm: int) -> float:
     timestamps = []
@@ -485,6 +497,13 @@ def assemble_text_to_images_video(
                     from moviepy import CompositeVideoClip
 
                     video = CompositeVideoClip([video, *subtitle_clips]).with_duration(video.duration)
+                    # 1.0.29 — telemetria de legendas no stderr do worker
+                    # (espelhada no pipeline_worker.log pelo launcher): a
+                    # validação da tarefa passa a provar no log que as
+                    # legendas do canal foram queimadas na montagem.
+                    import sys as _sys
+
+                    print(f"[text_to_images] legendas queimadas: {len(subtitle_clips)} blocos (fonte={Path(str(subtitle_config.get('font_path') or '')).name})", file=_sys.stderr)
             except Exception as exc:
                 # A legenda nunca pode destruir o vídeo: falha de fonte/PIL cai
                 # para a montagem simples e o motivo fica no stderr do worker.
@@ -494,7 +513,14 @@ def assemble_text_to_images_video(
         audio = AudioFileClip(str(audio_path))
         video = video.with_audio(audio)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        video.write_videofile(str(output_path), fps=max(1, int(fps or 30)), codec="libx264", audio_codec="aac", logger=None)
+        video.write_videofile(
+            str(output_path),
+            fps=max(1, int(fps or 30)),
+            codec="libx264",
+            audio_codec="aac",
+            logger=None,
+            ffmpeg_params=WEB_SAFE_MP4_FFMPEG_PARAMS,
+        )
     finally:
         for clip in clips:
             close = getattr(clip, "close", None)
@@ -550,7 +576,14 @@ def burn_captions_on_video(
             return output
         burned = CompositeVideoClip([video, *subtitle_clips]).with_duration(total)
         temporary = output.with_name(f"{output.stem}.legendas-tmp.mp4")
-        burned.write_videofile(str(temporary), fps=max(1, int(video.fps or 30)), codec="libx264", audio_codec="aac", logger=None)
+        burned.write_videofile(
+            str(temporary),
+            fps=max(1, int(video.fps or 30)),
+            codec="libx264",
+            audio_codec="aac",
+            logger=None,
+            ffmpeg_params=WEB_SAFE_MP4_FFMPEG_PARAMS,
+        )
         burned.close()
         burned = None
         # 1.0.00: o CompositeVideoClip.close() não fecha os clips membros — o
@@ -560,6 +593,12 @@ def burn_captions_on_video(
         video.close()
         video = None
         os.replace(temporary, output)
+        # 1.0.29 — telemetria de sucesso no stderr do worker: sem isto a
+        # queima local era invisível (apenas as falhas deixavam rasto) e não
+        # havia como confirmar no log que as legendas do canal foram aplicadas.
+        import sys as _sys
+
+        print(f"[pexels] legendas queimadas localmente em {output.name}", file=_sys.stderr)
         return output
     finally:
         for clip in (burned, video):

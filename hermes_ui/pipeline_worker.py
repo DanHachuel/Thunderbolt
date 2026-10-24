@@ -1811,6 +1811,14 @@ def _run_video_helper_once(
         )
         _mpt_runtime_log(spawn_banner)
         output_chars = _append_bounded_video_helper_output(output_lines, spawn_banner, output_chars)
+        # 1.0.29 — telemetria de legendas: o cmd acima já transporta o
+        # contrato CLI completo (--subtitle-*/--font-name/--text-fore-color/…),
+        # mas a leitura era indireta; o banner explicita o modo (motor MPT vs
+        # queima local) e o estilo resolvido do canal — a validação das
+        # legendas da tarefa passa a ler-se directamente no log.
+        subtitles_banner = _mpt_subtitles_banner(task, settings)
+        _mpt_runtime_log(subtitles_banner)
+        output_chars = _append_bounded_video_helper_output(output_lines, subtitles_banner, output_chars)
 
         reader = threading.Thread(target=_read_output, name=f"mpt-output-{task.get('id', 'video')}", daemon=True)
         reader.start()
@@ -2299,6 +2307,40 @@ def _subtitle_config_for_task(task: dict[str, Any], settings: dict[str, Any]) ->
     }
 
 
+def _mpt_subtitles_banner(task: dict[str, Any], settings: dict[str, Any]) -> str:
+    """1.0.29 — banner de legendas do canal para o log do runtime MPT.
+
+    Validação obrigatória do fix das legendas: o log da tarefa passa a
+    mostrar EXPLICITAMENTE o que chegou ao contrato de legendas — ligado/
+    desligado, o modo (motor MPT vs queima local pós-render) e o estilo
+    resolvido (fonte, tamanho, posição, cores, contorno, fundo) — ou o
+    motivo exacto de não ser aplicado (fonte não resolvível). Sem isto a
+    cadeia de legendas era invisível: falhas de queima e opções descartadas
+    pelo filtro do cli.py não deixavam rastro legível.
+    """
+    generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else {}
+    if not bool(generation_settings.get("enable_subtitles", True)):
+        return "[MPT-SUBTITLES] enable=false | legendas desligadas nas definições do canal (default_enable_subtitles=false)"
+    custom_audio = _mpt_uses_custom_audio(task, settings)
+    config = _subtitle_config_for_task(task, settings)
+    if not config:
+        return (
+            "[MPT-SUBTITLES] enable=true | [AVISO] SEM FONTE DE LEGENDA RESOLVÍVEL "
+            "(a fonte não existe no resource/fonts do MPT nem no sistema) — o vídeo sai SEM legendas queimadas"
+        )
+    mode = (
+        "queima local pós-render (áudio customizado: o MPT não tem sub_maker)"
+        if custom_audio
+        else "motor MPT (--subtitle-enabled, word-accurate)"
+    )
+    font_name = Path(str(config.get("font_path") or "")).name
+    return (
+        f"[MPT-SUBTITLES] enable=true modo={mode} | fonte={font_name} tamanho={config.get('font_size')} "
+        f"posição={config.get('position')} cor={config.get('color')} contorno={config.get('outline')}({config.get('outline_width')}) "
+        f"fundo={'sim' if config.get('background') else 'não'} fundo_cor={config.get('background_color')}"
+    )
+
+
 def _apply_mpt_captions(
     task: dict[str, Any],
     video_path: Path,
@@ -2312,28 +2354,222 @@ def _apply_mpt_captions(
     missing" e o vídeo sai sem legendas. Nestes casos o Thunderbolt queima
     as legendas com o mesmo motor e estilo das fontes text_to_images.
     Falhas deixam o vídeo original intacto — a legenda nunca destrói o vídeo.
+
+    1.0.29: TODOS os desfechos passam pelo log `[MPT-SUBTITLES]` (logger
+    thunderbolt.mpt, espelhado no pipeline_worker.log) — a queima deixou
+    de ser invisível: sem legenda queimada, o log diz exactamente porquê.
     """
     generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else {}
     if str(generation_settings.get("voiceover_mode") or "").strip().casefold() == "none":
+        _mpt_runtime_log(f"[MPT-SUBTITLES] modo sem narração — nada a queimar em {Path(video_path).name}")
         return video_path
     if not _mpt_uses_custom_audio(task, settings):
         # MPT nativo: gerou as legendas word-accurate na própria renderização.
+        _mpt_runtime_log(f"[MPT-SUBTITLES] legendas word-accurate geradas pelo próprio motor MPT (TTS nativo) — nada a queimar em {Path(video_path).name}")
         return video_path
     config = _subtitle_config_for_task(task, settings)
     if not config:
+        _mpt_runtime_log(
+            "[MPT-SUBTITLES] [AVISO] queima local cancelada: legendas desligadas no canal ou fonte não resolvível "
+            f"(o vídeo {Path(video_path).name} mantém-se SEM legendas)"
+        )
         return video_path
     narration = narration_text_from_script(str(script.get("content") or ""))
     if not narration.strip():
+        _mpt_runtime_log(f"[MPT-SUBTITLES] [AVISO] queima local cancelada: o roteiro não tem narração (vídeo {Path(video_path).name} sem legendas)")
         return video_path
     try:
         from hermes_ui.text_to_images import burn_captions_on_video
 
-        return burn_captions_on_video(video_path, narration, config)
+        burned = burn_captions_on_video(video_path, narration, config)
+        _mpt_runtime_log(f"[MPT-SUBTITLES] queima local concluída em {Path(burned).name} (fonte={Path(str(config.get('font_path') or '')).name})")
+        return burned
     except Exception as exc:
         import sys as _sys
 
         print(f"[pexels] legendas ignoradas por falha na queima: {exc}", file=_sys.stderr)
+        _mpt_runtime_log(f"[MPT-SUBTITLES] [AVISO] falha na queima local ({exc}) — o vídeo {Path(video_path).name} mantém-se sem legendas")
         return video_path
+
+
+# ---------------------------------------------------------------------------
+# 1.0.29 — MP4 pronto para streaming no browser: faststart + yuv420p.
+#
+# O MoviePy (montagens locais e o próprio fork do MPT) escreve o átomo
+# `moov` no FIM do ficheiro — provado por análise de átomos nesta máquina:
+# [ftyp, free, mdat, moov]. O <video> do navegador não consegue começar a
+# tocar sem o moov, e o player do card fica preto (o download funciona
+# porque o ficheiro está íntegro). `_ensure_streamable_mp4` normaliza o
+# ARTEFACTO FINAL de todas as rotas no último ponto controlado pelo repo:
+# moov no início (`-movflags +faststart`) e perfil de cor `yuv420p`
+# (compatível com todos os decodificadores HTML5). Nunca destrói o vídeo:
+# qualquer falha mantém o original e deixa o aviso no log.
+# ---------------------------------------------------------------------------
+
+
+def _mp4_top_level_atoms(path: Path) -> list[str]:
+    """Átomos de topo do MP4 pela ordem real no ficheiro (puro Python).
+
+    A mesma análise do scripts/verify_video_media.py: lê os cabeçalhos
+    [size:4][type:4] e avança sem carregar o ficheiro para memória.
+    """
+    atoms: list[str] = []
+    try:
+        with path.open("rb") as handle:
+            while True:
+                header = handle.read(8)
+                if len(header) < 8:
+                    break
+                size = int.from_bytes(header[:4], "big")
+                atom = header[4:8].decode("ascii", errors="replace")
+                atoms.append(atom)
+                if size == 1:
+                    extended = handle.read(8)
+                    if len(extended) < 8:
+                        break
+                    size = int.from_bytes(extended, "big")
+                if size < 8:
+                    break
+                handle.seek(size - 8, 1)
+    except OSError:
+        return []
+    return atoms
+
+
+def _resolve_local_ffmpeg(settings: dict[str, Any] | None = None) -> str:
+    """Binário FFmpeg para a normalização local do artefacto final.
+
+    Ordem: a escolha explícita do utilizador em Configurações > FFmpeg
+    (``ffmpeg_path``) → o 7.1 instalado pelo pacote (``ffmpeg_seed_path``,
+    quando presente) → o binário do wheel imageio-ffmpeg (o MESMO que o
+    MoviePy usa nas escritas, garantindo consistência) → ``ffmpeg`` do PATH.
+    Nota 1.0.24/1.0.29: resolução LOCAL apenas — nada é injectado no
+    ambiente do runtime MPT (o rollback do NVENC mantém-se intacto).
+    """
+    effective = settings if isinstance(settings, dict) else {}
+    for key in ("ffmpeg_path", "ffmpeg_seed_path"):
+        configured = str(effective.get(key) or "").strip()
+        if configured and Path(configured).is_file():
+            return configured
+    try:
+        import imageio_ffmpeg
+
+        bundled = str(imageio_ffmpeg.get_ffmpeg_exe() or "").strip()
+        if bundled and Path(bundled).is_file():
+            return bundled
+    except Exception:
+        pass
+    return "ffmpeg"
+
+
+def _video_probe_streams_line(ffmpeg: str, path: Path) -> str:
+    """Linha `Video:` do probe do FFmpeg (sem ffprobe, só o binário base).
+
+    Diagnóstico NUNCA lança: qualquer falha (binário ausente, output sem
+    forma esperada, excepção do subprocesso) devolve "" e o chamador
+    mantém o vídeo original intacto.
+    """
+    try:
+        completed = subprocess.run(
+            [ffmpeg, "-nostdin", "-hide_banner", "-i", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+        combined = f"{getattr(completed, 'stderr', '') or ''}\n{getattr(completed, 'stdout', '') or ''}"
+    except Exception:
+        return ""
+    for line in str(combined).splitlines():
+        if "Video:" in line:
+            return line.strip()
+    return ""
+
+
+def _streamable_fix_command(ffmpeg: str, source: Path, target: Path, *, reencode: bool) -> list[str]:
+    """Comando de normalização: remux rápido ou re-encode para yuv420p.
+
+    Sem re-encode (o pix_fmt já é yuv420p): `-c copy -movflags +faststart`
+    — remux instantâneo, zero perda. Com re-encode: libx264 (CPU; o
+    NVENC continua fora por restrição do rollback 1.0.24) + `-pix_fmt
+    yuv420p` + áudio aac.
+    """
+    command = [ffmpeg, "-nostdin", "-y", "-hide_banner", "-loglevel", "error", "-i", str(source)]
+    if reencode:
+        command.extend(["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac"])
+    else:
+        command.extend(["-c", "copy"])
+    command.extend(["-movflags", "+faststart", str(target)])
+    return command
+
+
+def _ensure_streamable_mp4(video_path: Path | str, settings: dict[str, Any] | None = None) -> Path:
+    """Garante que o MP4 final toca no browser: moov no início + yuv420p.
+
+    Verifica primeiro (átomos + probe) e só mexe no ficheiro quando é
+    preciso: já stream-ready → no-op; moov no fim → remux `-c copy` com
+    `+faststart`; pix_fmt fora da família yuv420p → re-encode libx264
+    yuv420p. Falha qualquer passo → o original fica intacto (o vídeo nunca
+    é destruído pela normalização) e o aviso vai ao log do worker.
+    """
+    path = Path(video_path)
+    if path.suffix.lower() != ".mp4" or not path.is_file():
+        return path
+    atoms = _mp4_top_level_atoms(path)
+    faststart = "moov" in atoms and "mdat" in atoms and atoms.index("moov") < atoms.index("mdat")
+    ffmpeg = _resolve_local_ffmpeg(settings)
+    stream_line = _video_probe_streams_line(ffmpeg, path)
+    if not stream_line:
+        # Sem sonda confiável não se avalia nem se mexe — o original fica.
+        return path
+    web_safe_pix_fmt = "yuv420p" in stream_line
+    if faststart and web_safe_pix_fmt:
+        return path
+    reencode = not web_safe_pix_fmt
+    target = path.with_name(f"{path.stem}.streamable-tmp.mp4")
+    command = _streamable_fix_command(ffmpeg, path, target, reencode=reencode)
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=900,
+            check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        _mpt_runtime_log(f"[STREAMABLE] [AVISO] normalização de {path.name} indisponível ({type(exc).__name__}: {exc}); o vídeo mantém-se como está")
+        return path
+    if completed.returncode != 0 or not target.is_file() or target.stat().st_size == 0:
+        detail = str(completed.stderr or "").strip().splitlines()[-1:] or ["sem detalhe do FFmpeg"]
+        try:
+            if target.exists():
+                target.unlink()
+        except OSError:
+            pass
+        _mpt_runtime_log(
+            f"[STREAMABLE] [AVISO] FFmpeg não normalizou {path.name} ({'; '.join(detail)}); "
+            "o vídeo mantém-se como está — o download continua a funcionar"
+        )
+        return path
+    try:
+        os.replace(target, path)
+    except OSError as exc:
+        _mpt_runtime_log(f"[STREAMABLE] [AVISO] falha ao substituir {path.name} ({exc}); o vídeo mantém-se como está")
+        try:
+            if target.exists():
+                target.unlink()
+        except OSError:
+            pass
+        return path
+    action = (
+        "re-codificado para streaming (faststart + yuv420p)"
+        if reencode
+        else "moov movido para o início (faststart)"
+    )
+    _mpt_runtime_log(f"[STREAMABLE] {path.name}: {action} — pronto para o player do navegador")
+    return path
 
 
 def _run_remotion_video(
@@ -2914,13 +3150,21 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                 message = f"Pipeline MoneyPrinterTurbo ({route}): {exc}"
             metadata = _failure_attribution(task, settings, "video", error=str(exc))
             raise PipelineError(_failure_message(message, metadata), failure_metadata=metadata) from exc
+        # 1.0.29 — o artefacto final de vídeo sai SEMPRE pronto para o player
+        # do navegador: moov no início (faststart) + yuv420p, em TODAS as
+        # rotas (o MoviePy local, o fork MPT e o Remotion escrevem o moov no
+        # fim por omissão — a causa real do player preto, não a UI).
+        video_path = _ensure_streamable_mp4(video_path, settings)
         current_after_video = _task_by_id(task_id) or {}
         artifacts = dict(current_after_video.get("artifacts") or artifacts)
         artifacts["video"] = str(video_path)
         _update(task_id, artifacts=artifacts, video_ready=True, progress=max(80, int(task.get("progress") or 0)))
     else:
-        video_path = existing_video
-        artifacts["video"] = str(existing_video)
+        # 1.0.29: artefactos reutilizados da era pré-faststart (moov no fim,
+        # player preto) são normalizados na própria reutilização — o
+        # re-render integral deixa de ser obrigatório para tocar no browser.
+        video_path = _ensure_streamable_mp4(existing_video, settings)
+        artifacts["video"] = str(video_path)
         _update(task_id, stage="video", state="doing", artifacts=artifacts, video_ready=True, error=None, progress=max(80, int(task.get("progress") or 0)))
 
     persisted_prompt = _read_json_artifact(artifacts.get("thumbnail_prompt_json"))
