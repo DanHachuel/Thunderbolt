@@ -2333,7 +2333,11 @@ def _mpt_subtitles_banner(task: dict[str, Any], settings: dict[str, Any]) -> str
         if custom_audio
         else "motor MPT (--subtitle-enabled, word-accurate)"
     )
-    font_name = Path(str(config.get("font_path") or "")).name
+    # O caminho da fonte pode vir com separadores do Windows em qualquer SO
+    # (resource/fonts do MPT ou C:\Windows\Fonts) — o Path.name do Posix não
+    # corta em "\", pelo que o basename é extraído com split nos dois
+    # separadores (o log fica idêntico em Windows e Linux/CI).
+    font_name = re.split(r"[\\/]", str(config.get("font_path") or ""))[-1]
     return (
         f"[MPT-SUBTITLES] enable=true modo={mode} | fonte={font_name} tamanho={config.get('font_size')} "
         f"posição={config.get('position')} cor={config.get('color')} contorno={config.get('outline')}({config.get('outline_width')}) "
@@ -2382,7 +2386,8 @@ def _apply_mpt_captions(
         from hermes_ui.text_to_images import burn_captions_on_video
 
         burned = burn_captions_on_video(video_path, narration, config)
-        _mpt_runtime_log(f"[MPT-SUBTITLES] queima local concluída em {Path(burned).name} (fonte={Path(str(config.get('font_path') or '')).name})")
+        burned_font = re.split(r"[\\/]", str(config.get("font_path") or ""))[-1]
+        _mpt_runtime_log(f"[MPT-SUBTITLES] queima local concluída em {Path(burned).name} (fonte={burned_font})")
         return burned
     except Exception as exc:
         import sys as _sys

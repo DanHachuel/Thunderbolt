@@ -500,10 +500,13 @@ def assemble_text_to_images_video(
                     # 1.0.29 — telemetria de legendas no stderr do worker
                     # (espelhada no pipeline_worker.log pelo launcher): a
                     # validação da tarefa passa a provar no log que as
-                    # legendas do canal foram queimadas na montagem.
+                    # legendas do canal foram queimadas na montagem. O
+                    # basename usa split nos dois separadores (Path.name do
+                    # Posix não corta caminhos com "\").
                     import sys as _sys
 
-                    print(f"[text_to_images] legendas queimadas: {len(subtitle_clips)} blocos (fonte={Path(str(subtitle_config.get('font_path') or '')).name})", file=_sys.stderr)
+                    burned_font = re.split(r"[\\/]", str(subtitle_config.get("font_path") or ""))[-1]
+                    print(f"[text_to_images] legendas queimadas: {len(subtitle_clips)} blocos (fonte={burned_font})", file=_sys.stderr)
             except Exception as exc:
                 # A legenda nunca pode destruir o vídeo: falha de fonte/PIL cai
                 # para a montagem simples e o motivo fica no stderr do worker.
