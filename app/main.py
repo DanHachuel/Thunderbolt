@@ -165,25 +165,31 @@ def _clear_youtube_automation_download_task() -> None:
 
 
 def _render_local_video_player(path: Path, *, width: int | str = "stretch") -> None:
-    """Render a local video through the native player without Python buffering."""
+    """Render a local video directly — no custom URLs, no symlinks (1.0.32).
+
+    O mecanismo antigo construía uma URL estática via SYMLINK (app/static/videos/)
+    e passava `st.video(static_url or str(path))`. No Streamlit 1.65 isso é o
+    CAUSADOR da tela preta: quando o symlink existe, a string `/app/static/...`
+    não é ficheiro → é tratada como URL relativa → o browser pede ao Tornado,
+    que serve o symlink mas o launcher proxy desactiva caching/Range →
+    streaming quebrado. Quando o symlink FALHA (Windows sem Developer Mode),
+    cai para `str(path)` → media_file_mgr (fiável). Fix: passar SEMPRE o
+    caminho absoluto resolvido — o media_file_mgr do Streamlit serve com
+    Range requests e content-type correcto (é a rota que o próprio
+    Streamlit usa nos seus testes).
+    """
     if not path.is_file():
         st.warning(f"Vídeo não encontrado: {path.name}")
         return
-    static_url = _local_video_static_url(path)
     video_kwargs: dict[str, Any] = {"format": mimetypes.guess_type(path.name)[0] or "video/mp4"}
-    # ``width`` was added to st.video after the minimum Streamlit version used
-    # by the launcher. Omit it on older installations so the native player
-    # still renders instead of failing with an unexpected-keyword error.
     try:
         video_signature = inspect.signature(st.video)
     except (TypeError, ValueError):
         video_signature = None
     if video_signature is None or "width" in video_signature.parameters:
         video_kwargs["width"] = width
-    # Streamlit's local media handler reliably resolves a string path. Passing
-    # Path directly can leave the browser player waiting indefinitely on some
-    # supported Streamlit versions.
-    st.video(static_url or str(path), **video_kwargs)
+    # caminho absoluto resolvido → _marshall_av_media → media_file_mgr
+    st.video(str(path.resolve()), **video_kwargs)
 
 
 def _load_local_env() -> None:
@@ -7748,15 +7754,10 @@ def _youtube_task_card_body(task_id: str) -> str:
                     st.caption("Thumbnail ainda não pronta")
             with media_cols[1]:
                 if video_path is not None and _catalog_task_state(task) == "done":
-                    player_state_key = "youtube_automation_player_task_id"
-                    if st.session_state.get(player_state_key) == task_id:
-                        _render_local_video_player(video_path, width="stretch")
-                        if st.button("Fechar leitor", key=f"automation_close_player_{task_id}", width="stretch"):
-                            st.session_state.pop(player_state_key, None)
-                            st.rerun(scope="fragment")
-                    elif st.button("Reproduzir vídeo", key=f"automation_play_video_{task_id}", width="stretch"):
-                        st.session_state[player_state_key] = task_id
-                        st.rerun(scope="fragment")
+                    # 1.0.32: player DIRECTO — sem botões «Reproduzir vídeo»/
+                    # «Fechar leitor» nem session_state; o st.video renderiza
+                    # logo quando o ficheiro existe.
+                    _render_local_video_player(video_path, width="stretch")
                 elif video_path is not None:
                     st.caption("O vídeo estará disponível para reprodução quando estiver concluído.")
                 else:

@@ -31,13 +31,18 @@ def test_seed_test_videos_are_packaged_and_described():
 
 
 def test_local_video_player_uses_native_static_url_without_base64():
+    """1.0.32: o player usa o CAMINHO RESOLVIDO via media_file_mgr — nunca
+    a URL estática por symlink (causava a tela preta: o proxy desactivava
+    Range/caching para /static/), nunca bytes/base64."""
     block = SOURCE.split("def _render_local_video_player", 1)[1].split("def ", 1)[0]
     assert "if not path.is_file()" in block
     assert 'st.warning(f"Vídeo não encontrado: {path.name}")' in block
-    assert 'def _local_video_static_url(path: Path) -> str | None:' in SOURCE
-    assert 'st.video(static_url or str(path), **video_kwargs)' in block
+    # 1.0.32: caminho absoluto resolvido → media_file_mgr do Streamlit
+    assert 'st.video(str(path.resolve()), **video_kwargs)' in block
+    # a URL estática NÃO entra no player (o docstring explica o porquê;
+    # o check é o padrão EXACTO da chamada antiga com video_kwargs)
+    assert 'st.video(static_url or str(path), **video_kwargs)' not in block
     assert 'st.html(' not in block
-    assert 'enableStaticServing = true' in (ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8")
     assert "_file_bytes(path)" not in block
     assert "base64" not in block
 

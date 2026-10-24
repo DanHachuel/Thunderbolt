@@ -25,13 +25,17 @@ def test_automation_video_cards_show_state_progress_and_video_source_like_backlo
 
 
 def test_youtube_automation_loads_local_video_player_only_after_explicit_request():
+    """1.0.32: o player renderiza DIRECTO (sem botões «Reproduzir vídeo»/
+    «Fechar leitor» nem session_state) e o st.video recebe o CAMINHO
+    resolvido — nunca a URL estática por symlink que causava a tela preta."""
     block = MAIN_SOURCE.split("def _render_youtube_automation_task_list", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
     assert '_render_local_video_player(video_path, width="stretch")' in block
     assert 'if video_path is not None and _catalog_task_state(task) == "done":' in block
-    assert 'st.button("Reproduzir vídeo"' in block
-    assert 'player_state_key = "youtube_automation_player_task_id"' in block
-    player_block = block.split('if st.session_state.get(player_state_key) == task_id:', 1)[1].split('elif st.button("Reproduzir vídeo"', 1)[0]
-    assert '_render_local_video_player(video_path, width="stretch")' in player_block
+    # os botões de toggle saíram do card
+    assert 'st.button("Reproduzir vídeo"' not in block
+    assert 'player_state_key = "youtube_automation_player_task_id"' not in block
+    # o player usa o caminho resolvido, não a URL estática
+    assert 'st.video(str(path.resolve()), **video_kwargs)' in MAIN_SOURCE
 
 
 def test_youtube_automation_video_download_uses_a_safe_standard_button():
