@@ -40,7 +40,8 @@ def test_platform_matrix_lists_upstream_platforms_and_excludes_tiktok():
 def test_accounts_are_saved_as_metadata_and_cookie_path_is_confined(tmp_path, monkeypatch):
     _storage(tmp_path, monkeypatch)
     account = backend.add_sau_account("douyin", "channel_1", "Canal principal")
-    assert account == {"platform": "douyin", "account_name": "channel_1", "label": "Canal principal"}
+    # 1.0.29: o registo ganha proxy_id (binding por conta; vazio = directo)
+    assert account == {"platform": "douyin", "account_name": "channel_1", "label": "Canal principal", "proxy_id": ""}
     assert backend.list_sau_accounts("douyin") == [account]
     assert backend.get_sau_cookie_path("douyin", "channel_1") == (
         storage.STORAGE / "state" / "social_auto_upload" / "cookies" / "douyin_channel_1.json"
@@ -49,6 +50,12 @@ def test_accounts_are_saved_as_metadata_and_cookie_path_is_confined(tmp_path, mo
     assert settings["sau_accounts"] == [account]
     with pytest.raises(ValueError):
         backend.add_sau_account("douyin", "../outside")
+    # contas de plataformas de login local (tiktok) também são aceites no
+    # registo — o cookie grava no formato da CLI; o upload usa integrações
+    # existentes.
+    assert backend.add_sau_account("tiktok", "gringo", "TikTok Gringo")["platform"] == "tiktok"
+    with pytest.raises(ValueError):
+        backend.add_sau_account("plataforma_inexistente", "x")
 
 
 def test_runtime_conf_uses_base_dir_instead_of_unsupported_environment_variables(tmp_path, monkeypatch):

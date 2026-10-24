@@ -17,6 +17,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from filelock import FileLock
 
@@ -27,6 +28,38 @@ from integrations.platforms import IntegrationResult
 
 logger = logging.getLogger(__name__)
 YOUTUBE_LOGIN_URL = "https://studio.youtube.com"
+
+# 1.0.29 — multi-plataforma: alvo de login visível + cookies essenciais por
+# plataforma. Os ESSENCIAIS são a única prova real de autenticação — a
+# verificação por URL («studio.youtube.com in page.url») disparava logo após
+# o goto (falso positivo: o browser abria e fechava com cookies de visitante
+# e a UI anunciava «Login validado»). Plataformas fora do mapa validam com
+# qualquer cookie não vazio do domínio (comportamento anterior).
+PLATFORM_LOGIN_TARGETS: dict[str, dict[str, Any]] = {
+    "youtube": {"url": YOUTUBE_LOGIN_URL, "domain": "youtube.com", "essential": ("SID", "HSID", "SSID")},
+    "tiktok": {"url": "https://www.tiktok.com/login", "domain": "tiktok.com", "essential": ("sessionid",)},
+    "douyin": {"url": "https://www.douyin.com/login", "domain": "douyin.com", "essential": ("sessionid",)},
+    "bilibili": {"url": "https://passport.bilibili.com/login", "domain": "bilibili.com", "essential": ("SESSDATA",)},
+    "kuaishou": {"url": "https://www.kuaishou.com", "domain": "kuaishou.com", "essential": ("passToken",)},
+    "xiaohongshu": {"url": "https://www.xiaohongshu.com", "domain": "xiaohongshu.com", "essential": ("web_session",)},
+    "instagram": {"url": "https://www.instagram.com/accounts/login", "domain": "instagram.com", "essential": ("sessionid",)},
+    "weibo": {"url": "https://passport.weibo.com/signin/login", "domain": "weibo.com", "essential": ("SUB",)},
+    "tencent": {"url": "https://channels.weixin.qq.com", "domain": "qq.com", "essential": ()},
+    "baijiahao": {"url": "https://baijiahao.baidu.com", "domain": "baidu.com", "essential": ()},
+    "alipay": {"url": "https://member.alipay.com", "domain": "alipay.com", "essential": ()},
+    "hupu": {"url": "https://www.hupu.com", "domain": "hupu.com", "essential": ()},
+}
+
+
+def platform_login_target(platform: str) -> dict[str, Any]:
+    """Alvo de login visível da plataforma (URL, domínio, cookies essenciais)."""
+    return dict(PLATFORM_LOGIN_TARGETS.get(str(platform or "").strip().casefold(), {"url": "", "domain": "", "essential": ()}))
+
+
+def missing_essential_cookies(state: Any, domain: str, essential: tuple[str, ...] = ()) -> list[str]:
+    """Devolve os cookies essenciais em falta (lista vazia = sessão autêntica)."""
+    names = {str(cookie.get("name") or "").strip() for cookie in session_cookies_for_domain(state, domain)}
+    return [name for name in essential if name not in names]
 YOUTUBE_UPLOAD_UNCERTAIN = "upload_uncertain"
 TERMINAL_CHECKPOINTS = {"upload_confirmed", "upload_failed_clean"}
 
@@ -93,17 +126,102 @@ def session_cookies_for_domain(state: Any, domain: str = "youtube.com") -> list[
     return cookies
 
 
-def validate_storage_state(path: str | Path, domain: str = "youtube.com") -> tuple[bool, str]:
+def validate_storage_state(path: str | Path, domain: str = "youtube.com", *, essential_cookies: tuple[str, ...] | None = None) -> tuple[bool, str]:
+    """Valida o storage_state — 1.0.29: exige os COOKIES ESSENCIAIS de sessão.
+
+    Falso positivo corrigido: qualquer cookie de visitante (VISITOR_INFO1_LIVE
+    etc.) passava na validação antiga e a UI anunciava «Login validado» de um
+    browser que abriu e fechou sem login. Para o Google/YouTube os essenciais
+    são SID, HSID e SSID — só existem depois de uma autenticação real.
+    """
     payload = _read_json_file(Path(path))
     if payload is None:
         return False, "O ficheiro storage_state.json não existe ou não contém JSON válido."
-    if not session_cookies_for_domain(payload, domain):
+    suffix = str(domain or "").strip().casefold().lstrip(".")
+    # O login do YouTube/Google deixa os cookies essenciais em .google.com OU
+    # em .youtube.com — o storage_state pode guardar apenas um dos lados.
+    if not session_cookies_for_domain(payload, suffix) and suffix == "youtube.com" and session_cookies_for_domain(payload, "google.com"):
+        suffix = "google.com"
+    if not session_cookies_for_domain(payload, suffix):
         return False, f"O storage_state.json não contém cookies de sessão não vazios para {domain}."
+    essential = tuple(essential_cookies or ())
+    if not essential and suffix in ESSENTIAL_SESSION_COOKIES:
+        essential = ESSENTIAL_SESSION_COOKIES[suffix]
+    missing = missing_essential_cookies(payload, suffix, essential)
+    if missing:
+        return False, (
+            "O login falhou ou foi cancelado. Tente novamente. "
+            f"O storage_state não contém os cookies essenciais de sessão ({', '.join(essential)}) para {domain}."
+        )
     return True, "Sessão válida."
+
+
+ESSENTIAL_SESSION_COOKIES: dict[str, tuple[str, ...]] = {
+    "youtube.com": ("SID", "HSID", "SSID"),
+    "google.com": ("SID", "HSID", "SSID"),
+    "bilibili.com": ("SESSDATA",),
+    "douyin.com": ("sessionid",),
+    "kuaishou.com": ("passToken",),
+    "xiaohongshu.com": ("web_session",),
+    "weibo.com": ("SUB",),
+}
 
 
 def has_valid_youtube_session() -> bool:
     return validate_storage_state(session_state_path(), "youtube.com")[0]
+
+
+def _cookie_names_in_context(context: Any) -> set[str]:
+    """Nomes dos cookies vivos do browser (poll de autenticação real)."""
+    try:
+        cookies = context.cookies()
+    except Exception:
+        return set()
+    return {str(cookie.get("name") or "").strip() for cookie in cookies if isinstance(cookie, dict)}
+
+
+def _wait_for_essential_cookies(
+    *, page: Any, context: Any, essential: tuple[str, ...], domain: str, deadline: float,
+) -> tuple[bool, str]:
+    """Espera BLOQUEANTE pelos cookies essenciais de sessão (1.0.29).
+
+    A detecção antiga por URL («studio.youtube.com in page.url») disparava
+    logo após o goto — o alvo É studio — e um browser sem login passava por
+    autenticado com cookies de visitante. Agora só sai do loop quando os
+    cookies ESSENCIAIS existirem no contexto vivo; fecho da janela = falha
+    «O login falhou ou foi cancelado. Tente novamente.», nunca falso
+    positivo.
+    """
+    if not essential:
+        while time.monotonic() < deadline:
+            try:
+                if page.is_closed():
+                    return False, "O browser foi fechado antes de concluir o login; nenhuma sessão parcial foi guardada."
+            except Exception:
+                return False, "O browser foi fechado antes de concluir o login; nenhuma sessão parcial foi guardada."
+            if session_cookies_for_domain({"cookies": _context_cookie_dicts(context)}, domain):
+                return True, ""
+            time.sleep(0.8)
+        return False, "O login não foi concluído em 5 minutos; nenhuma sessão parcial foi guardada."
+    while time.monotonic() < deadline:
+        names = _cookie_names_in_context(context)
+        if all(name in names for name in essential):
+            return True, ""
+        try:
+            if page.is_closed():
+                return False, "O browser foi fechado antes de concluir o login; nenhuma sessão parcial foi guardada."
+        except Exception:
+            if not names:
+                return False, "O browser foi fechado antes de concluir o login; nenhuma sessão parcial foi guardada."
+        time.sleep(0.8)
+    return False, "O login não foi concluído em 5 minutos; nenhuma sessão parcial foi guardada."
+
+
+def _context_cookie_dicts(context: Any) -> list[dict[str, Any]]:
+    try:
+        return [cookie for cookie in context.cookies() if isinstance(cookie, dict)]
+    except Exception:
+        return []
 
 
 def login_youtube_session(
@@ -133,25 +251,14 @@ def login_youtube_session(
                 return {"success": False, "status": "timeout", "message": "O login não foi concluído em 5 minutos; nenhuma sessão parcial foi guardada."}
             raise
         authenticated = False
-        while time.monotonic() < deadline:
-            try:
-                if page.is_closed():
-                    return {"success": False, "status": "closed", "message": "O browser foi fechado antes de concluir o login; nenhuma sessão parcial foi guardada."}
-                current_url = str(page.url or "")
-                if "studio.youtube.com" in current_url.casefold():
-                    authenticated = True
-                    break
-                page.wait_for_timeout(500)
-            except Exception:
-                if page is not None:
-                    try:
-                        if page.is_closed():
-                            return {"success": False, "status": "closed", "message": "O browser foi fechado antes de concluir o login; nenhuma sessão parcial foi guardada."}
-                    except Exception:
-                        pass
-                time.sleep(0.5)
+        # 1.0.29: autenticação provada por COOKIES ESSENCIAIS (SID/HSID/SSID)
+        # no contexto vivo — nunca por URL (o alvo É studio.youtube.com, a
+        # checagem antiga dava falso positivo imediato pós-goto).
+        authenticated, auth_message = _wait_for_essential_cookies(
+            page=page, context=context, essential=("SID", "HSID", "SSID"), domain="youtube.com", deadline=deadline,
+        )
         if not authenticated:
-            return {"success": False, "status": "timeout", "message": "O login não foi concluído em 5 minutos; nenhuma sessão parcial foi guardada."}
+            return {"success": False, "status": "timeout", "message": auth_message}
         context.storage_state(path=str(temp_state))
         valid, message = validate_storage_state(temp_state, "youtube.com")
         if not valid:
@@ -634,11 +741,17 @@ def _sau_runtime_directory() -> Path:
     return session_directory() / "runtime"
 
 
-def _write_sau_runtime_config() -> Path:
+def _write_sau_runtime_config(proxy_url: str | None = None) -> Path:
     runtime = _sau_runtime_directory()
     runtime.mkdir(parents=True, exist_ok=True)
     base = _sau_base_directory()
     base.mkdir(parents=True, exist_ok=True)
+    # 1.0.29: proxy binding no upload — o conf da CLI recebe o proxy
+    # ASSOCIADO à conta (login e upload da mesma conta saem pelo mesmo IP).
+    proxy_literal = "None"
+    clean_proxy = str(proxy_url or "").strip()
+    if clean_proxy:
+        proxy_literal = repr(clean_proxy)
     source = (
         "from pathlib import Path\n"
         f"BASE_DIR = Path({str(base)!r}).resolve()\n"
@@ -646,7 +759,7 @@ def _write_sau_runtime_config() -> Path:
         "LOCAL_CHROME_PATH = ''\n"
         "LOCAL_CHROME_HEADLESS = True\n"
         "DEBUG_MODE = False\n"
-        "YT_PROXY = None\n"
+        f"YT_PROXY = {proxy_literal}\n"
     )
     config_path = runtime / "conf.py"
     if not config_path.exists() or config_path.read_text(encoding="utf-8") != source:
@@ -668,8 +781,18 @@ def _write_sau_runtime_config() -> Path:
     return runtime
 
 
-def _sau_environment() -> tuple[dict[str, str], Path]:
-    runtime = _write_sau_runtime_config()
+def _sau_environment(proxy_id: str | None = None) -> tuple[dict[str, str], Path]:
+    """Ambiente da CLI — com o proxy da CONTA quando associado (1.0.29)."""
+    proxy_url: str | None = None
+    if proxy_id:
+        normalized = get_proxy_for_browser(proxy_id)
+        if normalized:
+            creds = ""
+            if normalized.get("username"):
+                creds = f"{quote(str(normalized.get('username')), safe='')}:{quote(str(normalized.get('password') or ''), safe='')}@"
+            host = str(normalized.get("server") or "").rstrip("/")
+            proxy_url = f"{normalized.get('scheme') or 'http'}://{creds}{host}"
+    runtime = _write_sau_runtime_config(proxy_url=proxy_url)
     env = dict(os.environ)
     old_pythonpath = str(env.get("PYTHONPATH") or "").strip()
     env["PYTHONPATH"] = str(runtime) + (os.pathsep + old_pythonpath if old_pythonpath else "")
@@ -753,9 +876,22 @@ def get_sau_install_status() -> dict[str, Any]:
 
 
 def get_sau_cookie_path(platform: str, account_name: str) -> Path:
-    normalised = _normalise_sau_platform(platform)
+    normalised = _normalise_social_platform(platform)
     account = _validate_sau_account_name(account_name)
     return _sau_base_directory() / "cookies" / f"{normalised}_{account}.json"
+
+
+def _normalise_social_platform(platform: str) -> str:
+    """Plataforma válida para o registo de contas (login visível multi-plataforma).
+
+    Aceita as plataformas da CLI upstream E as de login local (tiktok,
+    instagram) — o cookie fica guardado no formato da CLI; o upload destas
+    últimas usa as integrações existentes do Thunderbolt.
+    """
+    value = str(platform or "").strip().casefold().replace("-", "_")
+    if value in PLATFORM_LOGIN_TARGETS:
+        return value
+    return _normalise_sau_platform(value)
 
 
 def list_sau_accounts(platform: str | None = None) -> list[dict[str, str]]:
@@ -763,26 +899,46 @@ def list_sau_accounts(platform: str | None = None) -> list[dict[str, str]]:
     raw = settings.get("sau_accounts", []) if isinstance(settings, dict) else []
     if not isinstance(raw, list):
         return []
-    selected_platform = _normalise_sau_platform(platform) if platform else None
+    selected_platform = _normalise_social_platform(platform) if platform else None
     result = []
     for item in raw:
         if not isinstance(item, dict):
             continue
         try:
-            item_platform = _normalise_sau_platform(str(item.get("platform") or ""))
+            item_platform = _normalise_social_platform(str(item.get("platform") or ""))
             account_name = _validate_sau_account_name(str(item.get("account_name") or ""))
         except ValueError:
             continue
         if selected_platform and item_platform != selected_platform:
             continue
-        result.append({"platform": item_platform, "account_name": account_name, "label": str(item.get("label") or account_name)})
+        result.append({
+            "platform": item_platform,
+            "account_name": account_name,
+            "label": str(item.get("label") or account_name),
+            "proxy_id": str(item.get("proxy_id") or ""),
+        })
     return sorted(result, key=lambda item: (item["platform"], item["label"].casefold(), item["account_name"].casefold()))
 
 
-def add_sau_account(platform: str, account_name: str, label: str = "") -> dict[str, str]:
-    normalised = _normalise_sau_platform(platform)
+def get_sau_account(platform: str, account_name: str) -> dict[str, str] | None:
+    """Uma conta do registo (com o proxy associado), se existir."""
+    wanted_platform = _normalise_social_platform(platform)
+    wanted_account = _validate_sau_account_name(account_name)
+    for item in list_sau_accounts():
+        if item["platform"] == wanted_platform and item["account_name"].casefold() == wanted_account.casefold():
+            return item
+    return None
+
+
+def add_sau_account(platform: str, account_name: str, label: str = "", proxy_id: str = "") -> dict[str, str]:
+    normalised = _normalise_social_platform(platform)
     account = _validate_sau_account_name(account_name)
-    item = {"platform": normalised, "account_name": account, "label": str(label or account).strip()[:100] or account}
+    item = {
+        "platform": normalised,
+        "account_name": account,
+        "label": str(label or account).strip()[:100] or account,
+        "proxy_id": str(proxy_id or "").strip(),
+    }
 
     def mutate(settings: Any) -> None:
         if not isinstance(settings, dict):
@@ -804,8 +960,35 @@ def add_sau_account(platform: str, account_name: str, label: str = "") -> dict[s
     return item
 
 
+def set_sau_account_proxy(platform: str, account_name: str, proxy_id: str) -> dict[str, str] | None:
+    """Associa (ou limpa) o proxy da conta — login e upload usam o MESMO proxy.
+
+    Consistência de IP: «Sem proxy» significa ligação DIRECTA explícita —
+    nunca cai no proxy activo global.
+    """
+    normalised = _normalise_social_platform(platform)
+    account = _validate_sau_account_name(account_name)
+    clean_proxy = str(proxy_id or "").strip()
+
+    def mutate(settings: Any) -> None:
+        if not isinstance(settings, dict) or not isinstance(settings.get("sau_accounts"), list):
+            return
+        for item in settings["sau_accounts"]:
+            if isinstance(item, dict) and str(item.get("platform") or "").casefold() == normalised and str(item.get("account_name") or "").casefold() == account.casefold():
+                item["proxy_id"] = clean_proxy
+
+    storage_module.update_json("settings.json", {}, mutate)
+    return get_sau_account(normalised, account)
+
+
+def sau_account_proxy_id(platform: str, account_name: str) -> str:
+    """proxy_id associado à conta (vazio = ligação directa explícita)."""
+    account = get_sau_account(platform, account_name)
+    return str((account or {}).get("proxy_id") or "")
+
+
 def remove_sau_account(platform: str, account_name: str) -> bool:
-    normalised = _normalise_sau_platform(platform)
+    normalised = _normalise_social_platform(platform)
     account = _validate_sau_account_name(account_name)
     removed = False
 
@@ -858,7 +1041,9 @@ def login_platform(platform: str, account_name: str, *, timeout_seconds: int = 3
     status = get_sau_install_status()
     if not status.get("installed"):
         return {"success": False, "status": status.get("status", "error"), "message": status.get("message", "CLI indisponível.")}
-    env, runtime = _sau_environment()
+    # 1.0.29: proxy binding — o login CLI da conta sai pelo MESMO proxy
+    # associado à conta (consistência de IP com o upload).
+    env, runtime = _sau_environment(sau_account_proxy_id(normalised, account))
     args = [normalised, "login", "--account", account]
     cookie_path = get_sau_cookie_path(normalised, account)
     cookie_path.parent.mkdir(parents=True, exist_ok=True)
@@ -898,6 +1083,85 @@ def login_platform(platform: str, account_name: str, *, timeout_seconds: int = 3
         _restore_cookie_file(cookie_path, previous)
         return {"success": False, "status": "invalid_session", "message": f"O login terminou, mas a sessão não passou na verificação do upstream: {checked.get('message')}", "cookie_path": str(cookie_path)}
     return {"success": True, "status": "logged_in", "message": "Login visível concluído e sessão validada pela CLI upstream.", "cookie_path": str(cookie_path), "output": _sanitise_sau_output(result.get("stdout"))}
+
+
+def login_social_account(
+    platform: str, account_name: str, *, browser_type: str = "camoufox", timeout_seconds: int = 300,
+) -> dict[str, Any]:
+    """Login visível POR CONTA no browser do Thunderbolt (1.0.29).
+
+    Multi-plataforma + proxy binding: abre o Camoufox/Chromium com o proxy
+    ASSOCIADO À CONTA (consistência de IP: o login e o upload da mesma conta
+    usam sempre o mesmo proxy; «Sem proxy» = ligação directa explícita),
+    espera BLOQUEANTE pelos cookies essenciais da plataforma e grava o
+    storage_state NO CAMINHO/FORMATO QUE A CLI social-auto-upload espera
+    (cookies/<plataforma>_<conta>.json). O falso positivo morre aqui: sem
+    cookies essenciais, «O login falhou ou foi cancelado. Tente novamente.»
+    """
+    normalised = _normalise_social_platform(platform)
+    account = _validate_sau_account_name(account_name)
+    target = platform_login_target(normalised)
+    if not target.get("url"):
+        return {"success": False, "status": "unsupported", "message": f"Não há fluxo de login visível para a plataforma {normalised}."}
+    if not has_gui_environment():
+        return {
+            "success": False, "status": "no_gui",
+            "message": "O login visível requer GUI. Inicie o login num ambiente com GUI ou copie o cookie validado para o caminho indicado.",
+            "cookie_path": str(get_sau_cookie_path(normalised, account)),
+        }
+    proxy_id = sau_account_proxy_id(normalised, account)
+    proxy = get_proxy_for_browser(proxy_id) if proxy_id else None
+    cookie_path = get_sau_cookie_path(normalised, account)
+    cookie_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_state = cookie_path.with_name(f".{cookie_path.name}.{uuid.uuid4().hex}.tmp.json")
+    browser = context = page = None
+    try:
+        browser = launch_browser(browser_type, headless=False, proxy=proxy, geoip=browser_type == "camoufox")
+        context = browser.new_context()
+        page = context.new_page()
+        page.goto(str(target["url"]), wait_until="domcontentloaded", timeout=min(300, max(1, int(timeout_seconds))) * 1000)
+        domain = str(target.get("domain") or "")
+        essential = tuple(target.get("essential") or ())
+        authenticated, auth_message = _wait_for_essential_cookies(
+            page=page, context=context, essential=essential, domain=domain,
+            deadline=time.monotonic() + min(300, max(1, int(timeout_seconds))),
+        )
+        if not authenticated:
+            return {"success": False, "status": "timeout", "message": auth_message, "cookie_path": str(cookie_path)}
+        context.storage_state(path=str(temp_state))
+        if essential:
+            valid, message = validate_storage_state(temp_state, domain, essential_cookies=essential)
+        else:
+            valid, message = validate_storage_state(temp_state, domain)
+        if not valid:
+            try:
+                temp_state.unlink()
+            except OSError:
+                pass
+            return {"success": False, "status": "invalid_session", "message": message, "cookie_path": str(cookie_path)}
+        os.replace(temp_state, cookie_path)
+        logging.getLogger("thunderbolt.browser").info(
+            "[SAU-LOGIN-VISIVEL] conta %s_%s autenticada via browser %s com %s (cookie: %s)",
+            normalised, account, browser_type, f"proxy {proxy_id}" if proxy_id else "ligação directa", cookie_path,
+        )
+        return {
+            "success": True, "status": "logged_in",
+            "message": f"Login de {account} validado (cookies essenciais presentes) e cookie guardado no formato da CLI.",
+            "cookie_path": str(cookie_path), "proxy_id": proxy_id, "platform": normalised,
+        }
+    except Exception as exc:
+        safe_message = str(exc)
+        for secret in (str((proxy or {}).get("username") or ""), str((proxy or {}).get("password") or "")):
+            if secret:
+                safe_message = safe_message.replace(secret, "***")
+        return {"success": False, "status": "error", "message": safe_message[:500], "cookie_path": str(cookie_path)}
+    finally:
+        for closer in (page, context, browser):
+            try:
+                if closer is not None:
+                    closer.close()
+            except Exception:
+                pass
 
 
 def sync_direct_youtube_session_to_cli(account_name: str) -> dict[str, Any]:

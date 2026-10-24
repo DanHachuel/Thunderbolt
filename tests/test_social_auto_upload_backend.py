@@ -26,9 +26,30 @@ def test_storage_state_requires_nonempty_cookie_for_platform_domain(tmp_path):
     state = tmp_path / "storage_state.json"
     state.write_text(json.dumps({"cookies": [{"name": "SID", "value": "", "domain": ".youtube.com"}]}), encoding="utf-8")
     assert backend.validate_storage_state(state, "youtube.com")[0] is False
-    state.write_text(json.dumps({"cookies": [{"name": "SID", "value": "session", "domain": ".youtube.com"}]}), encoding="utf-8")
+    # 1.0.29: cookies ESSENCIAIS de sessão (SID+HSID+SSID) são obrigatórios —
+    # cookies de visitante (VISITOR_INFO1_LIVE) já não passam (falso positivo).
+    state.write_text(json.dumps({"cookies": [
+        {"name": "VISITOR_INFO1_LIVE", "value": "visitor", "domain": ".youtube.com"},
+    ]}), encoding="utf-8")
+    assert backend.validate_storage_state(state, "youtube.com")[0] is False
+    assert "O login falhou ou foi cancelado. Tente novamente." in backend.validate_storage_state(state, "youtube.com")[1]
+    state.write_text(json.dumps({"cookies": [
+        {"name": "SID", "value": "s", "domain": ".youtube.com"},
+        {"name": "HSID", "value": "h", "domain": ".youtube.com"},
+        {"name": "SSID", "value": "ss", "domain": ".youtube.com"},
+    ]}), encoding="utf-8")
     assert backend.validate_storage_state(state, "youtube.com")[0] is True
     assert backend.validate_storage_state(state, "tiktok.com")[0] is False
+    # os essenciais em .google.com também validam o login Google/YouTube
+    state.write_text(json.dumps({"cookies": [
+        {"name": "SID", "value": "s", "domain": ".google.com"},
+        {"name": "HSID", "value": "h", "domain": ".google.com"},
+        {"name": "SSID", "value": "ss", "domain": ".google.com"},
+    ]}), encoding="utf-8")
+    assert backend.validate_storage_state(state, "youtube.com")[0] is True
+    # plataformas sem mapa de essenciais mantêm a regra antiga (não vazio)
+    state.write_text(json.dumps({"cookies": [{"name": "SESSDATA", "value": "bili", "domain": ".bilibili.com"}]}), encoding="utf-8")
+    assert backend.validate_storage_state(state, "bilibili.com")[0] is True
     assert backend.session_cookies_for_domain({"cookies": [{"name": "SID", "value": "session", "domain": "studio.youtube.com"}]})
     assert not backend.session_cookies_for_domain({"cookies": [{"name": "SID", "value": "session", "domain": "evilnotyoutube.com"}]})
 
@@ -37,7 +58,7 @@ def test_login_close_before_authentication_does_not_replace_valid_session(tmp_pa
     root = _storage(tmp_path, monkeypatch)
     target = backend.session_state_path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    prior = {"cookies": [{"name": "SID", "value": "prior", "domain": ".youtube.com"}]}
+    prior = {"cookies": [{"name": "SID", "value": "prior", "domain": ".youtube.com"}, {"name": "HSID", "value": "h", "domain": ".youtube.com"}, {"name": "SSID", "value": "s", "domain": ".youtube.com"}]}
     target.write_text(json.dumps(prior), encoding="utf-8")
 
     class Page:
@@ -100,7 +121,7 @@ def test_exception_after_file_transfer_started_is_marked_uncertain(tmp_path, mon
     _storage(tmp_path, monkeypatch)
     session = backend.session_state_path()
     session.parent.mkdir(parents=True, exist_ok=True)
-    session.write_text(json.dumps({"cookies": [{"name": "SID", "value": "session", "domain": ".youtube.com"}]}), encoding="utf-8")
+    session.write_text(json.dumps({"cookies": [{"name": "SID", "value": "session", "domain": ".youtube.com"}, {"name": "HSID", "value": "h", "domain": ".youtube.com"}, {"name": "SSID", "value": "s", "domain": ".youtube.com"}]}), encoding="utf-8")
     trace = backend._UploadTrace()
     trace.file_upload_started = True
 
@@ -148,7 +169,7 @@ def _write_direct_youtube_session(monkeypatch, tmp_path):
     session = backend.session_state_path()
     session.parent.mkdir(parents=True, exist_ok=True)
     session.write_text(
-        json.dumps({"cookies": [{"name": "SID", "value": "direct-session", "domain": ".youtube.com"}]}),
+        json.dumps({"cookies": [{"name": "SID", "value": "direct-session", "domain": ".youtube.com"}, {"name": "HSID", "value": "h", "domain": ".youtube.com"}, {"name": "SSID", "value": "s", "domain": ".youtube.com"}]}),
         encoding="utf-8",
     )
     return session
@@ -177,7 +198,7 @@ def test_check_youtube_session_preserves_fresher_cli_login(tmp_path, monkeypatch
     cookie = backend.get_sau_cookie_path("youtube", "minhaconta")
     cookie.parent.mkdir(parents=True, exist_ok=True)
     cookie.write_text(
-        json.dumps({"cookies": [{"name": "SID", "value": "cli-login", "domain": ".youtube.com"}]}),
+        json.dumps({"cookies": [{"name": "SID", "value": "cli-login", "domain": ".youtube.com"}, {"name": "HSID", "value": "h", "domain": ".youtube.com"}, {"name": "SSID", "value": "s", "domain": ".youtube.com"}]}),
         encoding="utf-8",
     )
     future = time.time() + 100

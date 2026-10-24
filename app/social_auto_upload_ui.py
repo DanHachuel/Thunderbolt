@@ -8,15 +8,17 @@ from hermes_ui.browser_manager import get_available_browsers, get_browser_status
 from hermes_ui.proxy_manager import add_proxy, list_proxies, remove_proxy, set_active_proxy, test_proxy, update_proxy
 from hermes_ui.social_auto_upload_backend import (
     add_sau_account,
-    check_platform_session,
     get_platform_uploaders,
     get_sau_cookie_path,
     get_sau_install_status,
     list_sau_accounts,
-    login_platform,
+    login_social_account,
     login_youtube_session,
+    platform_login_target,
     remove_sau_account,
+    sau_account_proxy_id,
     session_state_path,
+    set_sau_account_proxy,
     validate_storage_state,
 )
 from hermes_ui.storage import read_json, update_json
@@ -211,92 +213,131 @@ def render_social_auto_upload_settings() -> None:
 
 
 
-def render_sau_accounts() -> None:
-    """Render account/session management for the upstream social-auto-upload CLI."""
+def _platform_options() -> tuple[list[str], dict[str, str]]:
+    """Plataformas do registo: CLI upstream + login local (tiktok, instagram)."""
     rows = get_platform_uploaders()
     labels = {row["platform"]: row["label"] for row in rows}
-    matrix = [
-        {
-            "Plataforma": row["label"],
-            "Estado": "Disponível no CLI upstream",
-            "Browser": row["browser"],
-            "Login": "Terminal interactivo" if row["login_mode"] == "terminal" else "Browser visível",
-        }
-        for row in rows
-    ]
-    matrix.append({"Plataforma": "TikTok", "Estado": "Indisponível no CLI upstream", "Browser": "—", "Login": "Use a integração TikTok existente"})
-    st.caption("As plataformas CLI suportadas usam o `sau` upstream com Patchright/Chromium. Este painel não altera o upload directo YouTube, que mantém a sessão Camoufox configurada em Navegador e Proxies.")
-    st.dataframe(matrix, hide_index=True, width="stretch")
-    st.info("YouTube directo continua separado. A conta YouTube aqui é apenas para a CLI upstream opcional; não substitui cookies nem a sessão do upload directo Camoufox.")
-    st.warning("Bilibili abre um terminal interactivo para o login. Em ambiente headless, faça login num desktop/terminal com GUI e copie o cookie para o caminho local mostrado no cartão.")
+    options = [row["platform"] for row in rows]
+    for extra, extra_label in (("tiktok", "TikTok (login local; upload via integração existente)"), ("instagram", "Instagram (login local; cookie para uso manual)")):
+        if extra not in options:
+            options.append(extra)
+            labels[extra] = extra_label
+    return options, labels
 
-    if st.button("Testar instalação da CLI social-auto-upload", key="sau_cli_test_install"):
-        status = get_sau_install_status()
-        if status.get("installed"):
-            st.success(f"{status['message']} Python {status.get('python')}.")
-        else:
-            st.warning(f"{status.get('message')} Python detectado: {status.get('python')}.")
 
+def _proxy_options() -> tuple[list[str], dict[str, str], dict[str, str]]:
+    """(ids, labels por id, dados por id) — vazio = Sem proxy (ligação directa)."""
+    proxies = list_proxies()
+    ids = [""] + [str(card.get("id") or "") for card in proxies]
+    labels = {str(card.get("id") or ""): str(card.get("label") or "Proxy") for card in proxies}
+    data = {str(card.get("id") or ""): card for card in proxies}
+    return ids, labels, data
+
+
+def _account_session_badge(platform: str, account_name: str) -> tuple[str, str]:
+    """(status, message) do cookie da conta — Válido / Expirado / Sem cookie."""
+    cookie_path = get_sau_cookie_path(platform, account_name)
+    target = platform_login_target(platform)
+    domain = str(target.get("domain") or "")
+    essential = tuple(target.get("essential") or ())
+    if not cookie_path.is_file() or cookie_path.stat().st_size <= 0:
+        return "sem_cookie", "Sem cookie — faça o login visível."
+    valid, message = (
+        validate_storage_state(cookie_path, domain, essential_cookies=essential)
+        if domain
+        else (False, "Plataforma sem validação de cookie conhecida.")
+    )
+    if valid:
+        return "valido", f"Cookie válido · {cookie_path.name}"
+    return "expirado", message
+
+
+def render_sau_accounts() -> None:
+    """Render account/session management for the upstream social-auto-upload CLI."""
+    options, labels = _platform_options()
+    ids, proxy_labels, proxy_data = _proxy_options()
+
+    st.markdown("**Adicionar conta social (login visível por conta, com proxy associado)**")
     with st.form("sau_add_account_form"):
-        st.markdown("**Adicionar conta social**")
-        add_cols = st.columns([1.2, 1.2, 1.2, 1])
+        add_cols = st.columns([1.2, 1.2, 1.2, 1.2, 1])
         with add_cols[0]:
-            selected_platform = st.selectbox("Plataforma", [row["platform"] for row in rows], format_func=lambda value: labels.get(value, value), key="sau_new_platform")
+            selected_platform = st.selectbox("Plataforma", options, format_func=lambda value: labels.get(value, value), key="sau_new_platform")
         with add_cols[1]:
-            account_name = st.text_input("Nome da conta upstream", key="sau_new_account_name", help="Use letras, números, ponto, hífen ou underscore; não precisa ser um utilizador/e-mail da plataforma.")
+            account_name = st.text_input("Nome da conta", key="sau_new_account_name", help="Ex.: «Canal Gospel», «TikTok Gringo». Letras, números, ponto, hífen ou underscore.")
         with add_cols[2]:
             account_label = st.text_input("Nome visível (opcional)", key="sau_new_account_label")
         with add_cols[3]:
+            account_proxy = st.selectbox(
+                "Proxy associado",
+                ids,
+                index=0,
+                format_func=lambda value: "Sem proxy" if not value else proxy_labels.get(value, "Proxy"),
+                key="sau_new_account_proxy",
+                help="Login e upload desta conta saem SEMPRE por este proxy (consistência de IP). «Sem proxy» = ligação directa explícita.",
+            )
+        with add_cols[4]:
             add_clicked = st.form_submit_button("Adicionar conta", type="primary", width="stretch")
     if add_clicked:
         try:
-            account = add_sau_account(selected_platform, account_name, account_label)
-            st.success(f"Conta {account['label']} adicionada. O login só é necessário quando clicar em Login ou verificar a sessão.")
+            account = add_sau_account(selected_platform, account_name, account_label, proxy_id=account_proxy)
+            st.success(f"Conta {account['label']} adicionada. Clique em «Fazer Login Visível» no card para autenticar.")
             st.rerun()
         except ValueError as exc:
             st.error(str(exc))
 
     accounts = list_sau_accounts()
     if not accounts:
-        st.info("Ainda não há contas social-auto-upload. Pode continuar a usar as restantes áreas do Thunderbolt e adicionar uma conta quando precisar.")
+        st.info("Ainda não há contas sociais. Adicione a primeira acima — cada conta tem o seu próprio login, cookie e proxy.")
         return
-    st.markdown("**Contas e sessões**")
+
+    st.markdown("**Contas conectadas**")
     for item in accounts:
         platform = item["platform"]
         account_name = item["account_name"]
         account_key = f"{platform}_{account_name}".replace(".", "_").replace("-", "_")
-        cookie_path = get_sau_cookie_path(platform, account_name)
+        proxy_id = str(item.get("proxy_id") or "")
+        status, status_message = _account_session_badge(platform, account_name)
         with st.container(border=True):
-            cols = st.columns([2.3, 1.6, 1.1, 1.1, 0.9])
-            with cols[0]:
+            header = st.columns([2.4, 1.4, 1.4, 1])
+            with header[0]:
                 st.write(f"**{item['label']}** · {labels.get(platform, platform)}")
                 st.caption(f"Conta upstream: `{account_name}`")
-                st.caption(f"Cookie local: `{cookie_path}` · {'ficheiro presente' if cookie_path.is_file() else 'ainda não criado'}")
-            with cols[1]:
-                if platform == "bilibili":
-                    st.caption("Login em terminal visível")
-                elif platform == "youtube":
-                    st.caption("Sessão CLI separada do YouTube directo")
+                st.caption(status_message)
+            with header[1]:
+                if status == "valido":
+                    st.success("Válido")
+                elif status == "expirado":
+                    st.warning("Expirado")
                 else:
-                    st.caption("Login em browser visível")
-            with cols[2]:
-                if st.button("Login", key=f"sau_login_{account_key}", width="stretch"):
-                    with st.spinner("A abrir a sessão de login social-auto-upload…"):
-                        login = login_platform(platform, account_name, timeout_seconds=300)
-                    if login.get("success"):
-                        st.success(str(login.get("message") or "Login iniciado."))
-                        if login.get("cookie_path"):
-                            st.caption(f"Cookie: `{login['cookie_path']}`")
-                    else:
-                        st.warning(str(login.get("message") or "Não foi possível iniciar o login."))
-                        if login.get("cookie_path"):
-                            st.caption(f"Caminho esperado: `{login['cookie_path']}`")
-            with cols[3]:
-                if st.button("Verificar", key=f"sau_check_{account_key}", width="stretch"):
-                    with st.spinner("A verificar a sessão com a CLI upstream…"):
-                        checked = check_platform_session(platform, account_name)
-                    (st.success if checked.get("valid") else st.warning)(str(checked.get("message") or "A verificação não foi concluída."))
-            with cols[4]:
-                if st.button("Remover", key=f"sau_remove_{account_key}", width="stretch", help="Remove a conta da lista; não apaga o cookie local."):
+                    st.info("Sem cookie")
+            with header[2]:
+                st.caption(f"Proxy: {proxy_labels.get(proxy_id, 'Sem proxy (directo)') if proxy_id else 'Sem proxy (directo)'}")
+            with header[3]:
+                if st.button("Excluir", key=f"sau_remove_{account_key}", width="stretch", help="Remove a conta da lista; não apaga o cookie local."):
                     remove_sau_account(platform, account_name)
                     st.rerun()
+            action = st.columns([1.4, 1.4, 1.2])
+            with action[0]:
+                if st.button("Fazer Login Visível" if status != "valido" else "Renovar Login", key=f"sau_login_{account_key}", width="stretch", type="primary" if status != "valido" else "secondary"):
+                    with st.spinner(f"A abrir o browser visível para {item['label']} (máx. 5 min)…"):
+                        login = login_social_account(platform, account_name, timeout_seconds=300)
+                    if login.get("success"):
+                        st.success(str(login.get("message") or "Login validado."))
+                    else:
+                        st.error(str(login.get("message") or "O login falhou ou foi cancelado. Tente novamente."))
+            with action[1]:
+                new_proxy = st.selectbox(
+                    "Proxy associado",
+                    ids,
+                    index=ids.index(proxy_id) if proxy_id in ids else 0,
+                    format_func=lambda value: "Sem proxy" if not value else proxy_labels.get(value, "Proxy"),
+                    key=f"sau_proxy_{account_key}",
+                )
+                if new_proxy != proxy_id:
+                    set_sau_account_proxy(platform, account_name, new_proxy)
+                    st.rerun()
+            with action[2]:
+                if st.button("Verificar", key=f"sau_check_{account_key}", width="stretch"):
+                    st.info(_account_session_badge(platform, account_name)[1])
+
+    st.caption("Login e upload da MESMA conta usam sempre o MESMO proxy (consistência de IP). O cookie grava no caminho/formato que a CLI social-auto-upload espera (cookies/<plataforma>_<conta>.json).")
