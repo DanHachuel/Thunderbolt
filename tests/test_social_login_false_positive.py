@@ -111,6 +111,8 @@ def test_login_youtube_never_succeeds_without_essential_cookies(tmp_path, monkey
     cookies essenciais NUNCA autentica e o login devolve falha — o falso
     positivo (sucesso imediato pós-goto por URL) morre aqui."""
     _storage(tmp_path, monkeypatch)
+    # o CI corre headless: estes testes validam o fluxo de login, não a GUI
+    monkeypatch.setattr(backend, "has_gui_environment", lambda: True)
     context = _FakeContext(_visitor_youtube_cookies())
     monkeypatch.setattr(backend, "launch_browser", lambda *args, **kwargs: _FakeBrowser(context))
     result = backend.login_youtube_session(timeout_seconds=1)
@@ -124,6 +126,7 @@ def test_login_youtube_never_succeeds_without_essential_cookies(tmp_path, monkey
 
 def test_login_youtube_succeeds_only_after_real_authentication(tmp_path, monkeypatch):
     _storage(tmp_path, monkeypatch)
+    monkeypatch.setattr(backend, "has_gui_environment", lambda: True)
     context = _FakeContext(_authenticated_youtube_cookies())
     monkeypatch.setattr(backend, "launch_browser", lambda *args, **kwargs: _FakeBrowser(context))
     result = backend.login_youtube_session(timeout_seconds=5)
@@ -172,6 +175,7 @@ def test_login_social_account_uses_the_account_proxy_and_cli_cookie_path(tmp_pat
     login de cada conta abre o browser com o proxy ASSOCIADO e grava o cookie
     no caminho/formato da CLI (cookies/<plataforma>_<conta>.json)."""
     _storage(tmp_path, monkeypatch)
+    monkeypatch.setattr(backend, "has_gui_environment", lambda: True)
     backend.add_sau_account("youtube", "yt_principal", "YT Principal", proxy_id="proxy_us")
     backend.add_sau_account("tiktok", "tiktok_secundario", "TikTok Secundário", proxy_id="")
     launched = {}
@@ -213,6 +217,7 @@ def test_login_social_account_uses_the_account_proxy_and_cli_cookie_path(tmp_pat
 
 def test_login_social_account_without_essential_cookies_fails(tmp_path, monkeypatch):
     _storage(tmp_path, monkeypatch)
+    monkeypatch.setattr(backend, "has_gui_environment", lambda: True)
     backend.add_sau_account("douyin", "canal", "Canal")
     monkeypatch.setattr(
         backend, "launch_browser",
