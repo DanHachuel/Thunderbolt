@@ -6948,6 +6948,28 @@ def _video_backlog_card_body(task_id: str) -> str:
                     transition_task(task["id"], "blocked")
                     _invalidate_live_tasks_snapshot()
                     st.rerun()
+            # 1.0.33: botão «Legendar» — queima legendas num vídeo pronto
+            # sem re-renderizar (mesma trava: desabilitado se já tem legendas).
+            has_subtitles = bool(task.get("has_subtitles"))
+            video_exists = _task_artifact_path(task, "video") is not None
+            if has_subtitles:
+                st.button(
+                    "✓ Legendado",
+                    key=f"automation_subtitles_{task['id']}",
+                    width="stretch",
+                    disabled=True,
+                    help="O vídeo já tem legendas queimadas.",
+                )
+            elif video_exists and task_state == "done":
+                if st.button(
+                    "Legendar",
+                    key=f"automation_subtitles_{task['id']}",
+                    width="stretch",
+                    help="Queima legendas no vídeo pronto sem re-renderizar (~1-2 min).",
+                ):
+                    update_task(str(task["id"]), {"state": "to_do", "action": "burn_subtitles_only", "error": None})
+                    _invalidate_live_tasks_snapshot()
+                    st.rerun()
     return task_state
 
 
@@ -7794,6 +7816,7 @@ def _youtube_task_card_body(task_id: str) -> str:
             state = str(task.get("state") or "")
             upload_ready = _upload_ready_for_task(task, video_path, thumbnail_path)
             upload_ok = bool(task.get("upload_ok") or isinstance((task.get("artifacts") or {}).get("upload"), dict))
+            has_subtitles = bool(task.get("has_subtitles"))
             start_col, stop_col, delete_col = st.columns(3)
             with start_col:
                 if st.button("Start", key=f"automation_start_{task_id}", width="stretch", disabled=not _can_start_video_task(task, state)):
@@ -7847,18 +7870,43 @@ def _youtube_task_card_body(task_id: str) -> str:
                         width="stretch",
                         disabled=True,
                     )
-            if st.button(
-                "Upload",
-                key=f"automation_upload_{task['id']}",
-                type="primary",
-                width="stretch",
-                disabled=not upload_ready or upload_ok,
-                help="Disponível quando o vídeo e a thumbnail estiverem prontos." if not upload_ready else None,
-            ):
-                with st.spinner("A enviar vídeo..."):
-                    result = _upload_automation_task(task, video_path, thumbnail_path)
-                (st.success if result.ok else st.error)(result.message)
-                st.rerun()
+            upload_legend_col, legend_col = st.columns(2, gap="small")
+            with upload_legend_col:
+                if st.button(
+                    "Upload",
+                    key=f"automation_upload_{task['id']}",
+                    type="primary",
+                    width="stretch",
+                    disabled=not upload_ready or upload_ok,
+                    help="Disponível quando o vídeo e a thumbnail estiverem prontos." if not upload_ready else None,
+                ):
+                    with st.spinner("A enviar vídeo..."):
+                        result = _upload_automation_task(task, video_path, thumbnail_path)
+                    (st.success if result.ok else st.error)(result.message)
+                    st.rerun()
+            with legend_col:
+                # 1.0.33: botão «Legendar» — queima legendas num vídeo pronto
+                # sem re-renderizar (1-2 min vs 10+ de um «Refazer Vídeo»).
+                if video_path is None:
+                    st.button("Legendar", key=f"automation_subtitles_{task['id']}", width="stretch", disabled=True)
+                elif has_subtitles:
+                    st.button(
+                        "✓ Legendado",
+                        key=f"automation_subtitles_{task['id']}",
+                        width="stretch",
+                        disabled=True,
+                        help="O vídeo já tem legendas queimadas.",
+                    )
+                else:
+                    if st.button(
+                        "Legendar",
+                        key=f"automation_subtitles_{task['id']}",
+                        width="stretch",
+                        help="Queima legendas no vídeo pronto sem re-renderizar (~1-2 min). Usa o roteiro salvo e o estilo de legendas do canal.",
+                    ):
+                        update_task(task_id, {"state": "to_do", "action": "burn_subtitles_only", "error": None})
+                        _invalidate_live_tasks_snapshot()
+                        st.rerun()
             checked_upload_ok = st.checkbox(
                 "Upload ok",
                 value=upload_ok,

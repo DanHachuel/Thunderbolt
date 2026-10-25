@@ -2774,9 +2774,79 @@ def _run_remotion_blueprint(
     return video_path, llm_json
 
 
+def _task_has_subtitles(task: dict[str, Any], settings: dict[str, Any]) -> bool:
+    """1.0.33: True se o vídeo final tem legendas queimadas.
+
+    Espelha as MESMAS condições que decidem queimar nas rotas normais:
+    text_to_images/web_images queimam quando ``_subtitle_config_for_task``
+    devolve config; pexels/pixabay queimam via MPT nativo (TTS próprio,
+    word-accurate) ou via ``_apply_mpt_captions`` (áudio customizado).
+    Sem narração, sem config ou legendas desligadas → False.
+    """
+    generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else {}
+    if str(generation_settings.get("voiceover_mode") or "").strip().casefold() == "none":
+        return False  # sem narração = sem legenda
+    if not bool(generation_settings.get("enable_subtitles", True)):
+        return False  # desligadas nas definições
+    if _subtitle_config_for_task(task, settings) is None:
+        return False  # sem config resolvível (fonte em falta etc.)
+    return True
+
+
+def _run_burn_subtitles_only(task: dict[str, Any], settings: dict[str, Any]) -> dict[str, Any]:
+    """1.0.33: queima legendas num vídeo PRONTO sem re-renderizar nada.
+
+    O botão «Legendar» marca a tarefa com ``action="burn_subtitles_only"`` e
+    o worker intercepta aqui: lê o roteiro salvo como artefacto, extrai a
+    narração, resolve a config actual do canal, queima com MoviePy (1-2 min
+    vs 10+ de um «Refazer Vídeo» completo) e devolve a tarefa a done com
+    ``has_subtitles=True``.
+    """
+    task_id = str(task.get("id") or "")
+    channel = _channel_for_task(task)
+    artifacts = dict(task.get("artifacts") or {})
+    video_path_str = str(artifacts.get("video") or "").strip()
+    video_path = Path(video_path_str) if video_path_str else None
+    if video_path is None or not video_path.is_file():
+        raise PipelineError("A tarefa não tem um vídeo para legendar (artefacto em falta).")
+
+    _update(task_id, stage="video", state="doing", progress=60, error=None)
+    script = _read_persisted_script(task, channel, {"id": str(task.get("blueprint_id") or "")}, str(task.get("topic") or ""))
+    narration = narration_text_from_script(str(script.get("content") or "")) if script else ""
+    if not narration.strip():
+        raise PipelineError("O roteiro salvo não tem narração para legendar — use «Refazer Vídeo» para regenerar com legendas.")
+    config = _subtitle_config_for_task(task, settings)
+    if config is None:
+        raise PipelineError("Legendas desligadas nas configurações do canal — active-as antes de legendar.")
+    try:
+        from hermes_ui.text_to_images import burn_captions_on_video
+
+        burned = burn_captions_on_video(video_path, narration, config)
+    except Exception as exc:
+        raise PipelineError(f"Falha na queima de legendas: {exc}") from exc
+    artifacts["video"] = str(burned)
+    _mpt_runtime_log(f"[MPT-SUBTITLES] botão Legendar: queima concluída em {Path(burned).name} (tarefa {task_id})")
+    return _update(
+        task_id,
+        stage="upload",
+        state="done",
+        progress=100,
+        artifacts=artifacts,
+        video_ready=True,
+        has_subtitles=True,
+        action=None,
+        error=None,
+    ) or task
+
+
 def _run_task(task: dict[str, Any]) -> dict[str, Any]:
     """Run one resumable local-cascade task, reusing valid persisted artefacts."""
     task_id = str(task.get("id") or "")
+    settings = _settings()
+    # 1.0.33: botão «Legendar» — queima de legendas num vídeo pronto sem
+    # re-renderizar; interceptado ANTES da cascata normal.
+    if str(task.get("action") or "").strip() == "burn_subtitles_only":
+        return _run_burn_subtitles_only(task, settings)
     channel = _channel_for_task(task)
     settings = _settings()
     blueprint = _blueprint_for_channel(channel)
@@ -3163,7 +3233,8 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
         current_after_video = _task_by_id(task_id) or {}
         artifacts = dict(current_after_video.get("artifacts") or artifacts)
         artifacts["video"] = str(video_path)
-        _update(task_id, artifacts=artifacts, video_ready=True, progress=max(80, int(task.get("progress") or 0)))
+        # 1.0.33: flag de legendas — espelha as condições reais da queima
+        _update(task_id, artifacts=artifacts, video_ready=True, has_subtitles=_task_has_subtitles(task, settings), progress=max(80, int(task.get("progress") or 0)))
     else:
         # 1.0.29: artefactos reutilizados da era pré-faststart (moov no fim,
         # player preto) são normalizados na própria reutilização — o
