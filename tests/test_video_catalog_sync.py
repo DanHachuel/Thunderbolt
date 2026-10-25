@@ -25,17 +25,24 @@ def test_automation_video_cards_show_state_progress_and_video_source_like_backlo
 
 
 def test_youtube_automation_loads_local_video_player_only_after_explicit_request():
-    """1.0.32: o player renderiza DIRECTO (sem botões «Reproduzir vídeo»/
-    «Fechar leitor» nem session_state) e o st.video recebe o CAMINHO
-    resolvido — nunca a URL estática por symlink que causava a tela preta."""
+    """1.0.32→1.0.34: o player renderiza DIRECTO (sem botões «Reproduzir vídeo»/
+    «Fechar leitor» nem session_state). 1.0.34: em modo launcher o st.video
+    recebe a URL ABSOLUTA /tb-media/ (streaming do disco com Range, zero RAM
+    no servidor — o media manager 1.65 carregava o MP4 inteiro para a RAM a
+    cada render, a causa do spinner infinito); o caminho resolvido mantém-se
+    como fallback (dev puro / ficheiros fora das raízes servidas)."""
     block = MAIN_SOURCE.split("def _render_youtube_automation_task_list", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
     assert '_render_local_video_player(video_path, width="stretch")' in block
     assert 'if video_path is not None and _catalog_task_state(task) == "done":' in block
     # os botões de toggle saíram do card
     assert 'st.button("Reproduzir vídeo"' not in block
     assert 'player_state_key = "youtube_automation_player_task_id"' not in block
-    # o player usa o caminho resolvido, não a URL estática
-    assert 'st.video(str(path.resolve()), **video_kwargs)' in MAIN_SOURCE
+    # 1.0.34: URL do launcher primeiro; caminho resolvido só como fallback
+    player = MAIN_SOURCE.split("def _render_local_video_player", 1)[1].split("def _load_local_env", 1)[0]
+    assert "media_url = _tb_media_video_url(path)" in player
+    assert "st.video(media_url, **video_kwargs)" in player
+    assert "fallback (1.0.32): caminho absoluto resolvido" in player
+    assert player.index("st.video(media_url") < player.index("st.video(str(path.resolve())")
 
 
 def test_youtube_automation_video_download_uses_a_safe_standard_button():

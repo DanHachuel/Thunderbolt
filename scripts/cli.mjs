@@ -2,9 +2,9 @@
 import { spawn, spawnSync } from "node:child_process";
 import http from "node:http";
 import net from "node:net";
-import { existsSync, mkdirSync, readFileSync, copyFileSync, readdirSync, appendFileSync, writeFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, copyFileSync, readdirSync, appendFileSync, writeFileSync, rmSync, statSync, createReadStream } from "node:fs";
 import { homedir, platform } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
@@ -417,6 +417,144 @@ const dynamicChunkRecoveryScript = `<script data-thunderbolt-recovery="${package
 })();
 </script>`;
 
+// ---------------------------------------------------------------------------
+// 1.0.34 — player de vídeo: streaming DIRECTO do disco com Range requests.
+//
+// CAUSA DO SPINNER INFINITO: o Streamlit 1.65 usa MemoryMediaFileStorage —
+// `st.video(caminho)` lê o MP4 INTEIRO para a RAM do servidor a cada render
+// (um Backlog com N vídeos feitos = N cópias gigantes em RAM + re-leitura do
+// ficheiro a cada rerun, a maioria dentro do lock global do media manager) —
+// o script run bloqueia, a memória satura e o browser fica à espera para
+// sempre. O marshall_video 1.65 passa URLs http ABSOLUTAS ao browser SEM
+// tocar no ficheiro; este endpoint do launcher serve o mesmo vídeo a partir
+// do DISCO: toca imediatamente, suporta scrubbing (206 + Content-Range) e
+// preserva a invariante 0.9.95 (o servidor nunca carrega o .mp4 para RAM).
+// ---------------------------------------------------------------------------
+
+const TB_MEDIA_MIME = {
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mov": "video/quicktime",
+  ".m4v": "video/x-m4v",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".m4a": "audio/mp4",
+};
+
+function launcherSettings() {
+  try { return JSON.parse(readFileSync(settingsPath, "utf8")); } catch { return {}; }
+}
+
+function tbMediaRoots() {
+  const settings = launcherSettings();
+  const mptRoot = resolve(
+    String(settings.moneyprinter_path || process.env.MONEYPRINTER_PATH || join(thunderboltHome, "MoneyPrinterTurbo")),
+  );
+  return {
+    // vídeos das montagens locais (text_to_images, web_images, full_ia, remotion)
+    videos: join(thunderboltHome, "storage", "videos"),
+    // vídeos finais das rotas Pexels/Pixabay (dinâmico: MoneyPrinterTurbo configurável)
+    mpt: join(mptRoot, "storage", "tasks"),
+  };
+}
+
+function resolveTbMediaTarget(pathname) {
+  // /tb-media/<root>/<subpath...> — o subpath é RELATIVO dentro da root e a
+  // validação corta path traversal ANTES de resolver no disco.
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts.length < 3) return null;
+  const rootName = parts[1];
+  const root = tbMediaRoots()[rootName];
+  if (!root) return null;
+  let subParts;
+  try {
+    subParts = parts.slice(2).map((segment) => decodeURIComponent(segment));
+  } catch {
+    return null; // sequência percent mal formada
+  }
+  if (
+    subParts.some(
+      (segment) => !segment || segment === "." || segment === ".." || segment.includes("\\") || /^[a-zA-Z]:/.test(segment),
+    )
+  ) {
+    return null;
+  }
+  const resolvedRoot = resolve(root);
+  const target = resolve(join(resolvedRoot, ...subParts));
+  // contenção real: o alvo tem de continuar DENTRO da root resolvida
+  if (target !== resolvedRoot && !target.startsWith(resolvedRoot + sep)) return null;
+  return target;
+}
+
+function parseRangeHeader(rangeHeader, fileSize) {
+  // "bytes=start-end" | "bytes=start-" | "bytes=-sufixo" — devolve
+  // { start, end } inclusivos, ou null quando o pedido é do ficheiro inteiro;
+  // { invalid: true } quando o intervalo é impossível (→ 416).
+  const match = /^bytes=(\d*)-(\d*)$/.exec(String(rangeHeader || "").trim());
+  if (!match) return null;
+  const [, rawStart, rawEnd] = match;
+  if (rawStart === "" && rawEnd === "") return null;
+  let start;
+  let end;
+  if (rawStart === "") {
+    // sufixo: os últimos N bytes (o browser usa isto para achar o moov no fim)
+    const suffix = Number.parseInt(rawEnd, 10);
+    if (Number.isNaN(suffix) || suffix <= 0) return { invalid: true };
+    start = Math.max(0, fileSize - suffix);
+    end = fileSize - 1;
+  } else {
+    start = Number.parseInt(rawStart, 10);
+    end = rawEnd === "" ? fileSize - 1 : Number.parseInt(rawEnd, 10);
+    if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= fileSize) return { invalid: true };
+    end = Math.min(end, fileSize - 1);
+  }
+  return { start, end };
+}
+
+function serveTbMediaFile(request, response, requestUrl) {
+  const target = resolveTbMediaTarget(requestUrl.pathname);
+  let stats = null;
+  if (target) {
+    try { stats = statSync(target); } catch { stats = null; }
+  }
+  if (!target || !stats || !stats.isFile()) {
+    response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    response.end("Thunderbolt: media não encontrado.");
+    return;
+  }
+  const extension = target.slice(target.lastIndexOf(".")).toLowerCase();
+  const contentType = TB_MEDIA_MIME[extension] || "application/octet-stream";
+  const headers = {
+    "content-type": contentType,
+    "accept-ranges": "bytes",
+    // o ficheiro pode ser substituído in-place (re-render da mesma tarefa):
+    // o browser não pode cachear bytes antigos
+    "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+  };
+  if (request.method === "HEAD") {
+    response.writeHead(200, { ...headers, "content-length": stats.size });
+    response.end();
+    return;
+  }
+  const range = parseRangeHeader(request.headers.range, stats.size);
+  if (range && "invalid" in range) {
+    response.writeHead(416, { "content-range": `bytes */${stats.size}` });
+    response.end();
+    return;
+  }
+  if (range) {
+    response.writeHead(206, {
+      ...headers,
+      "content-range": `bytes ${range.start}-${range.end}/${stats.size}`,
+      "content-length": range.end - range.start + 1,
+    });
+    createReadStream(target, { start: range.start, end: range.end }).pipe(response);
+    return;
+  }
+  response.writeHead(200, { ...headers, "content-length": stats.size });
+  createReadStream(target).pipe(response);
+}
+
 const proxy = http.createServer((request, response) => {
   const requestUrl = new URL(request.url || "/", `http://localhost:${publicPort}`);
   const pathParts = requestUrl.pathname.split("/").filter(Boolean);
@@ -438,6 +576,13 @@ const proxy = http.createServer((request, response) => {
     requestUrl.searchParams.set("lang", languagePrefix);
     response.writeHead(302, { Location: `${requestUrl.pathname}?${requestUrl.searchParams.toString()}` });
     response.end();
+    return;
+  }
+  // 1.0.34 — streaming de media do disco (vídeos do player): servido pelo
+  // próprio launcher com Range/206, SEM passar pelo Streamlit (o media
+  // manager 1.65 carregaria o ficheiro inteiro para a RAM do servidor).
+  if (requestUrl.pathname.startsWith("/tb-media/")) {
+    serveTbMediaFile(request, response, requestUrl);
     return;
   }
   const upstream = http.request({

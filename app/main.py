@@ -164,6 +164,52 @@ def _clear_youtube_automation_download_task() -> None:
     st.session_state.pop("youtube_automation_download_task_id", None)
 
 
+def _tb_media_video_url(path: Path, settings: dict[str, Any] | None = None) -> str | None:
+    """URL absoluta do launcher para o player tocar o vídeo por streaming (1.0.34).
+
+    CAUSA DO SPINNER INFINITO (corrigida aqui): o Streamlit 1.65 usa
+    MemoryMediaFileStorage — `st.video(caminho)` lê o MP4 INTEIRO para a RAM
+    do servidor a cada render (Backlog com N vídeos feitos = N cópias
+    gigantes em RAM + re-leitura do ficheiro a cada rerun, dentro do lock
+    global do media manager) — o script run bloqueia, a memória satura e o
+    browser fica à espera para sempre. O `marshall_video` 1.65 passa URLs
+    http ABSOLUTAS ao browser SEM tocar no ficheiro; o endpoint /tb-media/
+    do launcher serve o mesmo vídeo do DISCO com 206/Content-Range: toca
+    imediatamente, scrubbing funcional e zero RAM no servidor (invariante
+    0.9.95 «o servidor nunca carrega o .mp4» preservada).
+
+    Só é usado em modo launcher (o runtime define THUNDERBOLT_STORAGE_DIR);
+    devolve None quando o ficheiro não pertence às raízes servidas ou quando
+    a app corre sem o launcher (dev puro) — o chamador cai para o caminho.
+    """
+    if not os.environ.get("THUNDERBOLT_STORAGE_DIR"):
+        return None
+    try:
+        resolved = path.resolve()
+        effective = settings if isinstance(settings, dict) else read_json("settings.json", {})
+        try:
+            port = int(effective.get("port") or 3030)
+        except (TypeError, ValueError):
+            port = 3030
+        roots: list[tuple[str, Path]] = [("videos", STORAGE / "videos")]
+        mpt_path = str(effective.get("moneyprinter_path") or os.environ.get("MONEYPRINTER_PATH") or "").strip()
+        if mpt_path:
+            roots.append(("mpt", Path(mpt_path).expanduser() / "storage" / "tasks"))
+        for root_name, root_path in roots:
+            try:
+                relative = resolved.relative_to(root_path.resolve())
+            except ValueError:
+                continue
+            if not relative.parts:
+                continue
+            # cada segmento é quote() — espaços/acentos não quebram o URL
+            quoted = "/".join(quote(part) for part in relative.parts)
+            return f"http://127.0.0.1:{port}/tb-media/{root_name}/{quoted}"
+    except (OSError, ValueError):
+        return None
+    return None
+
+
 def _render_local_video_player(path: Path, *, width: int | str = "stretch") -> None:
     """Render a local video directly — no custom URLs, no symlinks (1.0.32).
 
@@ -188,7 +234,14 @@ def _render_local_video_player(path: Path, *, width: int | str = "stretch") -> N
         video_signature = None
     if video_signature is None or "width" in video_signature.parameters:
         video_kwargs["width"] = width
-    # caminho absoluto resolvido → _marshall_av_media → media_file_mgr
+    media_url = _tb_media_video_url(path)
+    if media_url:
+        # 1.0.34 — URL http absoluta: o marshall_video entrega-a ao browser
+        # tal qual; nenhum byte do vídeo passa pelo processo do Streamlit
+        # (streaming directo do disco pelo launcher, com Range requests).
+        st.video(media_url, **video_kwargs)
+        return
+    # fallback (1.0.32): caminho absoluto resolvido → media_file_mgr
     st.video(str(path.resolve()), **video_kwargs)
 
 
