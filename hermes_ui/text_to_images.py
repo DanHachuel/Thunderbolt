@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 from pathlib import Path
 from typing import Any, Mapping
@@ -21,6 +22,130 @@ from .voice_preview import resolve_narration_provider, synthesize_preview
 # montado pelo FFMPEG_VideoWriter do MoviePy (verificado na 2.1.2), logo
 # são opções de saída válidas.
 WEB_SAFE_MP4_FFMPEG_PARAMS = ["-movflags", "+faststart", "-pix_fmt", "yuv420p"]
+
+# 1.0.36 — Aceleração de hardware nas escritas locais do MoviePy. A queima
+# de legendas da rota Pexels/Pixabay (áudio customizado: o MPT não gera
+# legendas próprias) re-encodava o vídeo INTEIRO em libx264 na CPU com o
+# preset "medium" do MoviePy — ~45-50 min para um vídeo de 6 min a 1080p
+# (provado no pipeline_worker.log de 25/10: queima 13:53 → 14:43:29). O
+# mesmo write passa a usar h264_nvenc quando o FFmpeg efectivo do MoviePy
+# suporta o encoder DE FACTO (probe REAL com cache — o "-encoders" anuncia
+# h264_nvenc mesmo quando o encoder falha a abrir, error -40 da 1.0.23),
+# com fallback automático para libx264 em qualquer falha. Os parâmetros
+# web-safe da 1.0.29 (+faststart +yuv420p) vão SEMPRE na chamada: o vídeo
+# sai streamable no player do navegador em ambos os caminhos (o NVENC
+# entrega yuv420p — a família que todos os <video> descodificam).
+NVENC_VIDEO_CODEC = "h264_nvenc"
+CPU_VIDEO_CODEC = "libx264"
+NVENC_PROBE_TIMEOUT_SECONDS = 45
+NVENC_PROBE_SOURCE = "testsrc=duration=1:size=320x240:rate=15"
+_NVENC_PROBE_CACHE: dict[tuple[str, str], bool] = {}
+
+
+def _moviepy_ffmpeg_binary() -> str:
+    """Binário FFmpeg que o MoviePy 2.x efectivamente usa (espelho da resolução).
+
+    moviepy.config resolve ``FFMPEG_BINARY`` (env) → senão imageio
+    (``IMAGEIO_FFMPEG_EXE`` env → wheel). O probe tem de testar O MESMO
+    binário que vai escrever o vídeo, não outro qualquer.
+    """
+    explicit = os.getenv("FFMPEG_BINARY", "").strip()
+    if explicit and explicit != "ffmpeg-imageio":
+        return explicit
+    try:
+        import imageio_ffmpeg
+
+        return str(imageio_ffmpeg.get_ffmpeg_exe() or "")
+    except Exception:
+        return ""
+
+
+def _nvenc_encoder_available(ffmpeg: str) -> bool:
+    """Probe REAL de NVENC (encode de 1 s), cacheado por binário + mtime."""
+    if not ffmpeg:
+        return False
+    import subprocess as _subprocess
+
+    try:
+        mtime = str(Path(ffmpeg).stat().st_mtime)
+    except OSError:
+        mtime = ""
+    cache_key = (ffmpeg, mtime)
+    cached = _NVENC_PROBE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    command = [
+        ffmpeg,
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        NVENC_PROBE_SOURCE,
+        "-c:v",
+        NVENC_VIDEO_CODEC,
+        "-pix_fmt",
+        "yuv420p",
+        "-f",
+        "null",
+        "-",
+    ]
+    available = False
+    try:
+        completed = _subprocess.run(
+            command,
+            capture_output=True,
+            timeout=NVENC_PROBE_TIMEOUT_SECONDS,
+            check=False,
+            creationflags=getattr(_subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+        )
+        available = completed.returncode == 0
+    except (OSError, _subprocess.TimeoutExpired):
+        available = False
+    _NVENC_PROBE_CACHE[cache_key] = available
+    return available
+
+
+def _write_web_safe_videofile(clip, output_path: Path, *, fps: int, audio_codec: str = "aac") -> str:
+    """Escreve o MP4 final web-safe (faststart + yuv420p), na GPU quando possível.
+
+    GPU (h264_nvenc) quando o probe REAL confirma o encoder; qualquer falha
+    do write repete UMA vez em libx264 (CPU) — o vídeo nunca fica por
+    produzir. Os ``WEB_SAFE_MP4_FFMPEG_PARAMS`` da 1.0.29 vão em ambas as
+    tentativas. Devolve o codec efectivo para a telemetria do chamador.
+    """
+    import sys as _sys
+
+    binary = _moviepy_ffmpeg_binary()
+    codec = NVENC_VIDEO_CODEC if _nvenc_encoder_available(binary) else CPU_VIDEO_CODEC
+    try:
+        clip.write_videofile(
+            str(output_path),
+            fps=fps,
+            codec=codec,
+            audio_codec=audio_codec,
+            logger=None,
+            ffmpeg_params=WEB_SAFE_MP4_FFMPEG_PARAMS,
+        )
+    except Exception as exc:
+        if codec == CPU_VIDEO_CODEC:
+            raise
+        print(
+            f"[text_to_images] [AVISO] NVENC falhou na escrita ({exc}) — a repetir no CPU (libx264)",
+            file=_sys.stderr,
+        )
+        clip.write_videofile(
+            str(output_path),
+            fps=fps,
+            codec=CPU_VIDEO_CODEC,
+            audio_codec=audio_codec,
+            logger=None,
+            ffmpeg_params=WEB_SAFE_MP4_FFMPEG_PARAMS,
+        )
+        return CPU_VIDEO_CODEC
+    return codec
 
 
 def _duration_from_words(words: list[dict[str, Any]], fallback_wpm: int) -> float:
@@ -516,14 +641,9 @@ def assemble_text_to_images_video(
         audio = AudioFileClip(str(audio_path))
         video = video.with_audio(audio)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        video.write_videofile(
-            str(output_path),
-            fps=max(1, int(fps or 30)),
-            codec="libx264",
-            audio_codec="aac",
-            logger=None,
-            ffmpeg_params=WEB_SAFE_MP4_FFMPEG_PARAMS,
-        )
+        # 1.0.36 — GPU (h264_nvenc) com fallback para libx264; os parâmetros
+        # web-safe da 1.0.29 (+faststart +yuv420p) seguem dentro do helper.
+        _write_web_safe_videofile(video, output_path, fps=max(1, int(fps or 30)))
     finally:
         for clip in clips:
             close = getattr(clip, "close", None)
@@ -579,14 +699,9 @@ def burn_captions_on_video(
             return output
         burned = CompositeVideoClip([video, *subtitle_clips]).with_duration(total)
         temporary = output.with_name(f"{output.stem}.legendas-tmp.mp4")
-        burned.write_videofile(
-            str(temporary),
-            fps=max(1, int(video.fps or 30)),
-            codec="libx264",
-            audio_codec="aac",
-            logger=None,
-            ffmpeg_params=WEB_SAFE_MP4_FFMPEG_PARAMS,
-        )
+        # 1.0.36 — a queima deixa de custar ~45 min na CPU: h264_nvenc na GPU
+        # com fallback libx264 e os mesmos parâmetros web-safe da 1.0.29.
+        burn_codec = _write_web_safe_videofile(burned, temporary, fps=max(1, int(video.fps or 30)))
         burned.close()
         burned = None
         # 1.0.00: o CompositeVideoClip.close() não fecha os clips membros — o
@@ -601,7 +716,10 @@ def burn_captions_on_video(
         # havia como confirmar no log que as legendas do canal foram aplicadas.
         import sys as _sys
 
-        print(f"[pexels] legendas queimadas localmente em {output.name}", file=_sys.stderr)
+        print(
+            f"[pexels] legendas queimadas localmente em {output.name} (codec={burn_codec})",
+            file=_sys.stderr,
+        )
         return output
     finally:
         for clip in (burned, video):

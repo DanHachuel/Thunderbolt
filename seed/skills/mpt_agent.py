@@ -463,6 +463,136 @@ def _forwarded_option_value(cli_args: list[str], option: str) -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------
+# 1.0.36 — Aceleração de hardware restaurada sem quebrar o player: o binário
+# FFmpeg escolhido no painel (Configurações > FFmpeg, ex. o 7.1 Péter com
+# NVENC) é injectado no ambiente do motor, o codec H.264 usa a GPU quando o
+# binário a suporta DE FACTO (probe real, não o ``-encoders`` que mente) e a
+# compatibilidade web da 1.0.29 (+faststart +yuv420p) mantém-se intacta — o
+# normalizador do worker continua a ser a última linha de defesa do player.
+# ---------------------------------------------------------------------------
+
+NVENC_VIDEO_CODEC = "h264_nvenc"
+CPU_VIDEO_CODEC = "libx264"
+NVENC_PROBE_TIMEOUT_SECONDS = 45
+NVENC_PROBE_SOURCE = "testsrc=duration=1:size=320x240:rate=15"
+# O próprio motor MPT loga estes marcadores quando desiste do NVENC a meio
+# do render (sessões esgotadas, falha transitória do encoder).
+MPT_CODEC_FALLBACK_MARKERS = ("fallback to libx264", "was disabled after a runtime failure")
+_NVENC_PROBE_CACHE: dict[tuple[str, str], bool] = {}
+
+
+def _effective_ffmpeg_path(config_path: Path) -> str:
+    """Binário FFmpeg efectivo do config.toml, quando é um ficheiro real.
+
+    O fork do MoneyPrinterTurbo ignora o ``ffmpeg_path`` do config.toml
+    (resolve por ``IMAGEIO_FFMPEG_EXE`` → PATH → wheel do imageio), pelo que
+    apenas a injecção de ambiente garante que o motor usa o FFmpeg 7.1 com
+    NVENC escolhido no painel em vez de um qualquer binário do sistema
+    (o 9.0 do PATH anunciava NVENC e falhava com error -40 — 1.0.23).
+    """
+    configured = _toml_section_value(config_path, "app", "ffmpeg_path")
+    if configured and Path(configured).is_file():
+        return configured
+    return ""
+
+
+def _ffmpeg_environment(config_path: Path) -> dict[str, str] | None:
+    """Ambiente com o FFmpeg efectivo para os subprocessos do motor MPT.
+
+    ``IMAGEIO_FFMPEG_EXE`` cobre o imageio/MoviePy e o próprio MPT
+    (``app.utils.get_ffmpeg_binary`` honra-a em primeiro lugar);
+    ``FFMPEG_BINARY`` cobre o MoviePy 2.x (``moviepy.config``). Sem binário
+    válido devolve None — o processo herda o ambiente tal como na v1.0.01.
+    """
+    ffmpeg_path = _effective_ffmpeg_path(config_path)
+    if not ffmpeg_path:
+        return None
+    return {
+        "IMAGEIO_FFMPEG_EXE": ffmpeg_path,
+        "FFMPEG_BINARY": ffmpeg_path,
+    }
+
+
+def _probe_nvenc_encoder(ffmpeg_path: str) -> bool:
+    """Probe REAL de NVENC: um encode de 1 s prova o encoder de facto.
+
+    O ``-encoders`` anuncia ``h264_nvenc`` mesmo quando o encoder falha a
+    abrir (driver/placa incompatíveis — error -40 reproduzido na 1.0.23 com
+    o FFmpeg 9.0 do PATH). O resultado é cacheado por binário (+ mtime)
+    para renders paralelos não repetirem o probe.
+    """
+    try:
+        mtime = str(Path(ffmpeg_path).stat().st_mtime)
+    except OSError:
+        mtime = ""
+    cache_key = (ffmpeg_path, mtime)
+    cached = _NVENC_PROBE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    command = [
+        ffmpeg_path,
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        NVENC_PROBE_SOURCE,
+        "-c:v",
+        NVENC_VIDEO_CODEC,
+        "-pix_fmt",
+        "yuv420p",
+        "-f",
+        "null",
+        "-",
+    ]
+    available = False
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            timeout=NVENC_PROBE_TIMEOUT_SECONDS,
+            check=False,
+            creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
+        )
+        available = completed.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        available = False
+    _NVENC_PROBE_CACHE[cache_key] = available
+    return available
+
+
+def _resolve_render_codec(config_path: Path, ffmpeg_path: str) -> tuple[str, str]:
+    """Decide o codec efectivo do render e deixa o config.toml coerente.
+
+    Com binário válido: probe REAL de NVENC → GPU disponível força
+    ``h264_nvenc``; GPU indisponível descarrega para ``libx264`` ANTES de o
+    motor arrancar (deixa de perder tempo a tentar NVENC e falhar — o
+    fallback de runtime do próprio MPT continua a existir como segunda
+    rede). Sem binário válido nada é escrito: o motor resolve sozinho
+    (PATH/wheel) exactamente como na v1.0.01.
+
+    Devolve ``(codec, estado)`` com estado ``ok`` / ``unavailable`` /
+    ``unknown`` (sem binário para provar).
+    """
+    configured = _toml_section_value(config_path, "app", "video_codec").strip().lower()
+    if not ffmpeg_path:
+        return (configured or CPU_VIDEO_CODEC, "unknown")
+    codec = NVENC_VIDEO_CODEC if _probe_nvenc_encoder(ffmpeg_path) else CPU_VIDEO_CODEC
+    if codec != configured:
+        try:
+            text = config_path.read_text(encoding="utf-8")
+            text = _replace_toml_section_value(text, "app", "video_codec", codec)
+            _atomic_write_text(config_path, text)
+        except OSError:
+            # Config não gravável (instalação só de leitura): o render segue
+            # com o codec já presente — o MPT tem fallback próprio.
+            pass
+    return (codec, "ok" if codec == NVENC_VIDEO_CODEC else "unavailable")
+
+
 def _azure_v2_voice(cli_args: list[str]) -> str:
     """Return the unmarked Azure voice when this invocation requests Azure V2."""
     voice = _forwarded_option_value(cli_args, "--voice-name")
@@ -521,6 +651,9 @@ def _prepare_azure_v2_chunked_audio(
     ffmpeg_path = _toml_section_value(config_path, "app", "ffmpeg_path")
     if ffmpeg_path:
         environment["IMAGEIO_FFMPEG_EXE"] = ffmpeg_path
+        # 1.0.36: o MoviePy 2.x do helper lê FFMPEG_BINARY — mesmo binário
+        # efectivo em todas as vias de áudio/vídeo do runtime.
+        environment["FFMPEG_BINARY"] = ffmpeg_path
     returncode, output = _run_streamed(
         command,
         cwd=root,
@@ -870,6 +1003,13 @@ def generate_video(
     run_checked([uv, "sync", "--frozen"], cwd=root)
     ensure_moviepy(root, uv)
     config_path = ensure_config(root)
+    # 1.0.36 — o binário do painel é injectado no ambiente do motor e o
+    # codec é decidido por probe REAL (o rollback da 1.0.24 removeu isto e
+    # a lentidão regressou: o motor usava o FFmpeg que encontrasse no
+    # PATH/wheel, nunca o 7.1 com NVENC escolhido nas Configurações).
+    render_ffmpeg = _effective_ffmpeg_path(config_path)
+    render_environment = _ffmpeg_environment(config_path)
+    render_codec, render_nvenc_state = _resolve_render_codec(config_path, render_ffmpeg)
     # As opções encaminhadas dependem da versão instalada do cli.py: opções
     # recentes (estilo completo de legendas, transições, â€¦) são ignoradas em
     # instalações mais antigas em vez de abortarem o argparse.
@@ -944,6 +1084,14 @@ def generate_video(
         "--stop-at",
         "video",
     ]
+    # 1.0.36 — telemetria do codec exactamente antes de o motor arrancar:
+    # quem olha para o terminal (ou para a diagonal da tarefa) vê se a GPU
+    # está a trabalhar ou se o render caiu para o CPU.
+    print(
+        f"[MPT-CODEC] ffmpeg={render_ffmpeg or 'auto (PATH/wheel do motor)'} "
+        f"codec={render_codec} nvenc={render_nvenc_state}",
+        flush=True,
+    )
     log(f"starting video generation, task ID: {task_id}")
     log(f"full generation log: {log_path}")
     generation_stop = threading.Event()
@@ -964,6 +1112,10 @@ def generate_video(
             result = subprocess.run(
                 command,
                 cwd=root,
+                # 1.0.36 — o motor (probe de codec, MoviePy, concat) recebe
+                # o FFmpeg 7.1 efectivo via IMAGEIO_FFMPEG_EXE/FFMPEG_BINARY.
+                # None = herda o ambiente (comportamento da v1.0.01).
+                env=render_environment,
                 stdout=log_file,
                 creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
                 stderr=subprocess.STDOUT,
@@ -993,6 +1145,22 @@ def generate_video(
             },
         )
         raise SkillError(error)
+
+    if render_nvenc_state == "ok":
+        # 1.0.36 — telemetria: o motor pode cair para libx264 a meio (sessões
+        # NVENC esgotadas, falha transitória do encoder); os marcadores do
+        # próprio MPT denunciam um fallback que de outra forma ficaria
+        # invisível — o vídeo final está pronto na mesma.
+        try:
+            engine_log = log_path.read_text(encoding="utf-8", errors="replace").casefold()
+        except OSError:
+            engine_log = ""
+        if any(marker in engine_log for marker in MPT_CODEC_FALLBACK_MARKERS):
+            print(
+                "[MPT-CODEC] [AVISO] o motor caiu para libx264 (CPU) durante o render — "
+                "o vídeo fica pronto na mesma; a GPU será reavaliada no próximo render",
+                flush=True,
+            )
 
     videos = sorted(
         path.resolve()
