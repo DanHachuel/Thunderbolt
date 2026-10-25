@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Política de Privacidade do Thunderbolt em conformidade com a LGPD (Lei 13.709/2018).">
+    <title>Política de Privacidade - Thunderbolt</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #4338ca 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.25);
+        }
+        .badge {
+            background: linear-gradient(135deg, #4338ca 0%, #0ea5e9 100%);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 50px;
+            display: inline-block;
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        h1 { color: #333; font-size: 2.5em; margin-bottom: 10px; }
+        h2 { color: #444; margin: 25px 0 15px 0; font-size: 1.8em; }
+        h3 { color: #555; margin: 20px 0 10px 0; font-size: 1.4em; }
+        p { color: #666; line-height: 1.6; margin: 10px 0; }
+        ul, ol { margin: 10px 0 10px 30px; color: #666; line-height: 1.6; }
+        li { margin: 5px 0; }
+        a { color: #4338ca; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .links {
+            margin: 30px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 15px;
+            text-align: center;
+        }
+        .links a { color: #4338ca; margin: 0 15px; font-weight: 500; }
+        .contact {
+            background: #fff3e0;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            line-height: 1.7;
+        }
+        .contact a { color: #b45309; }
+        footer { text-align: center; color: rgba(255,255,255,0.8); margin-top: 30px; line-height: 1.6; }
+        @media (max-width: 600px) {
+            .card { padding: 25px; }
+            h1 { font-size: 1.8em; }
+            h2 { font-size: 1.5em; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <main class="card">
+            <div class="badge">🔒 Documento Legal</div>
+            <h1>Política de Privacidade</h1>
+            <p><strong>Data de vigência:</strong> 25 de outubro de 2026</p>
+            <p>
+                Esta Política de Privacidade descreve como o <strong>Thunderbolt</strong> —
+                ferramenta local de automação de criação de conteúdo faceless — trata os dados
+                pessoais do utilizador, em conformidade com a <strong>Lei Geral de Proteção de
+                Dados Pessoais (LGPD, Lei nº 13.709/2018)</strong>.
+            </p>
+
+            <h2>1. Dados Coletados</h2>
+            <p>O Thunderbolt é uma aplicação local: não existe servidor central do desenvolvedor
+                que receba ou armazene os seus dados. Os dados abaixo são tratados apenas no seu
+                próprio computador, para o funcionamento da aplicação:</p>
+            <ul>
+                <li><strong>E-mail:</strong> o endereço configurado nas definições, usado apenas para identificação nos uploads e notificações locais.</li>
+                <li><strong>Dados de perfis de canais:</strong> nome do canal, plataforma, nicho, blueprint, definições de voz, legendas, música e agendamento.</li>
+                <li><strong>Dados de uso da plataforma:</strong> histórico de tarefas, roteiros gerados, títulos, keywords, artefactos (áudio, imagens, thumbnails, vídeos) e diagnósticos de execução.</li>
+                <li><strong>Cookies e sessões de navegador:</strong> durante o login e o upload por navegador (YouTube, TikTok, Meta e afins), são gravados localmente os <em>storage states</em> (cookies de sessão) das contas autenticadas, para não repetir o login a cada publicação.</li>
+                <li><strong>Tokens de acesso (OAuth):</strong> os tokens e credenciais concedidos pelas APIs oficiais (YouTube, TikTok, Meta) são guardados localmente e usados exclusivamente para publicar nas suas próprias contas.</li>
+            </ul>
+
+            <h2>2. Armazenamento Local</h2>
+            <p>
+                Todos os dados da aplicação — definições, canais, tarefas, chaves de API,
+                roteiros, vídeos, thumbnails, áudio e sessões — ficam armazenados
+                <strong>no disco do utilizador</strong>, em ficheiros JSON e bases locais
+                dentro da pasta do Thunderbolt. O desenvolvedor não tem qualquer acesso a
+                estes ficheiros.
+            </p>
+
+            <h2>3. Compartilhamento com Terceiros</h2>
+            <p>O processamento de conteúdo envia dados apenas durante a geração, diretamente
+                do seu computador aos serviços configurados por si:</p>
+            <ul>
+                <li><strong>Roteiros e prompts (texto)</strong> são enviados aos provedores de LLM configurados (OpenAI, Gemini, Anthropic) apenas no momento da geração.</li>
+                <li><strong>Pedidos de imagem/vídeo/voz</strong> são enviados aos serviços de mídia configurados (Pexels, Pixabay, FAL AI, Nano Banana, Azure Speech, ElevenLabs) apenas durante o processamento.</li>
+                <li><strong>Vídeos finais</strong> são enviados às redes sociais (YouTube, TikTok, Instagram, Facebook, Bilibili) exclusivamente através das <strong>APIs oficiais</strong> de cada plataforma, para publicação nas suas próprias contas.</li>
+            </ul>
+            <p>
+                Nenhum destes serviços recebe mais dados do que o estritamente necessário para
+                o pedido em causa, e nenhum dado é vendido ou partilhado para fins de
+                publicidade ou análise.
+            </p>
+
+            <h2>4. Direitos do Titular (LGPD)</h2>
+            <p>
+                Nos termos da LGPD, o titular dos dados é o próprio utilizador. Como todos os
+                dados são locais, o utilizador tem <strong>controle total</strong> e pode,
+                a qualquer momento e sem depender de qualquer solicitação:
+            </p>
+            <ul>
+                <li><strong>Acessar</strong> os seus dados diretamente na pasta da aplicação (ficheiros JSON e bases locais);</li>
+                <li><strong>Corrigir</strong> qualquer informação (canais, chaves, sessões) na interface ou nos próprios ficheiros;</li>
+                <li><strong>Eliminar</strong> dados ou a instalação inteira, apagando a pasta do Thunderbolt.</li>
+            </ul>
+            <p>
+                Para qualquer dúvida ou exercício de direitos, contacte o responsável pelo
+                tratamento: <a href="mailto:danchannels96@gmail.com">danchannels96@gmail.com</a>.
+            </p>
+
+            <h2>5. Segurança</h2>
+            <ul>
+                <li>As chaves de API e tokens de acesso são armazenados <strong>apenas localmente</strong>, no disco do utilizador, e são enviados exclusivamente aos serviços a que dizem respeito (nunca a servidores do desenvolvedor).</li>
+                <li>Recomenda-se manter o sistema operativo atualizado, restringir o acesso à pasta da aplicação e revogar tokens que deixem de ser utilizados diretamente nos painéis das respectivas plataformas.</li>
+                <li>As sessões de login por navegador são gravadas localmente e devem ser tratadas com o mesmo cuidado de qualquer credencial.</li>
+            </ul>
+
+            <h2>6. Crianças e Adolescentes</h2>
+            <p>A aplicação não se destina a menores de 18 anos e não recolhe dados com essa finalidade.</p>
+
+            <h2>7. Atualizações desta Política</h2>
+            <p>
+                Esta Política pode ser atualizada para refletir alterações na aplicação ou na
+                legislação. A data de vigência no topo da página indica a versão em vigor.
+                Alterações relevantes serão acompanhadas de atualização desta data.
+            </p>
+
+            <div class="links">
+                <a href="index.html">🏠 Voltar para a Página Inicial</a> |
+                <a href="terms.html">📜 Termos de Uso</a>
+            </div>
+
+            <div class="contact">
+                <strong>📧 Desenvolvedor:</strong> Dan Hachuel<br>
+                <strong>📩 Contato:</strong> <a href="mailto:danchannels96@gmail.com">danchannels96@gmail.com</a>
+            </div>
+        </main>
+        <footer>
+            <p>© 2026 Thunderbolt | Este site é usado exclusivamente para verificação de aplicação junto às plataformas TikTok, YouTube, Meta e Pinterest.</p>
+        </footer>
+    </div>
+</body>
+</html>
