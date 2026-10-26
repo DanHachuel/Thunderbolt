@@ -304,6 +304,11 @@ def test_generate_video_prints_codec_banner_and_injects_environment(
     tmp_path: Path, monkeypatch, capsys
 ):
     root, fake_ffmpeg, captured = _fake_generation_environment(tmp_path, monkeypatch)
+    # O marker herdado prova a extensão do ambiente em QUALQUER plataforma
+    # (no CI Linux o SYSTEMROOT não existe no os.environ — a garantia da
+    # essencial em si vive em _ensure_windows_essentials, testada à parte
+    # com os.name simulado).
+    monkeypatch.setenv("THUNDERBOLT_ENV_MARKER", "herdado-do-worker")
     videos, _task_dir, _log_path, _result_path = MPT_AGENT.generate_video(
         root, "Tema com GPU", ["--video-source", "pexels"]
     )
@@ -320,8 +325,38 @@ def test_generate_video_prints_codec_banner_and_injects_environment(
     assert kwargs["env"]["FFMPEG_BINARY"] == fake_ffmpeg
     # 1.0.37: o env do motor é EXTENSÃO do ambiente herdado — o
     # WinError 10106 nasceu de o env ter ficado reduzido às 2 chaves.
-    assert "SYSTEMROOT" in kwargs["env"]
+    assert kwargs["env"]["THUNDERBOLT_ENV_MARKER"] == "herdado-do-worker"
     assert "PATH" in kwargs["env"]
+    if os.name == "nt":
+        assert "SYSTEMROOT" in kwargs["env"]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="garantia especifica do runtime Windows")
+def test_generate_video_env_reinjects_systemroot_when_parent_lacks_it(
+    tmp_path: Path, monkeypatch, capsys
+):
+    """A garantia ao nível do spawn: mesmo sem SYSTEMROOT no pai, o motor recebe-o.
+
+    É o exacto cenário do WinError 10106 — o fallback C:\\Windows da
+    allowlist entra em acção dentro de _ffmpeg_environment.
+    """
+    root, fake_ffmpeg, captured = _fake_generation_environment(tmp_path, monkeypatch)
+    monkeypatch.delenv("SYSTEMROOT", raising=False)
+    videos, _task_dir, _log_path, _result_path = MPT_AGENT.generate_video(
+        root, "Tema sem SYSTEMROOT no pai", ["--video-source", "pexels"]
+    )
+    assert videos
+    assert captured["kwargs"]["env"]["SYSTEMROOT"] == "C:\\Windows"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="garantia especifica do runtime Windows")
+def test_spawn_env_reinject_keeps_the_banner_forthcoming(tmp_path: Path, monkeypatch, capsys):
+    # Contrário do anterior: com SYSTEMROOT presente, o valor do PAI é
+    # preservado (nunca sobrescrito pelo fallback).
+    root, _fake, _captured = _fake_generation_environment(tmp_path, monkeypatch)
+    monkeypatch.setenv("SYSTEMROOT", "D:\\WinCustom")
+    MPT_AGENT.generate_video(root, "Tema com SYSTEMROOT custom", ["--video-source", "pexels"])
+    assert _captured["kwargs"]["env"]["SYSTEMROOT"] == "D:\\WinCustom"
 
 
 def test_generate_video_reports_engine_fallback_marker(tmp_path: Path, monkeypatch, capsys):
