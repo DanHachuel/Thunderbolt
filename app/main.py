@@ -6925,6 +6925,41 @@ def render_videos():
 # ---------------------------------------------------------------------------
 
 
+def _task_subtitles_flag(task: dict[str, Any]) -> bool:
+    """1.0.37 — flag ``has_subtitles`` com INFERÊNCIA para tarefas antigas (pré-1.0.34).
+
+    Tarefas antigas não têm a chave no JSON — o critério (bug reportado):
+    ``has_subtitles`` em primeiro lugar; sem a chave, o vídeo saiu com
+    legendas quando as legendas estavam ACTIVAS nas definições da tarefa
+    (``enable_subtitles``); sem narração (``voiceover_mode`` «none») não há
+    legendas por definição → False.
+    """
+    known = task.get("has_subtitles")
+    if known is not None:
+        return bool(known)
+    generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else {}
+    if str(generation_settings.get("voiceover_mode") or "").strip().casefold() == "none":
+        return False
+    return bool(generation_settings.get("enable_subtitles", False))
+
+
+def _ensure_task_subtitles_flag(task: dict[str, Any], task_state: str) -> bool:
+    """1.0.37 — persiste retroactivamente a flag inferida (write-once, tarefas done).
+
+    O botão «Legendar» nunca fica activo em vídeos que já têm legendas: para
+    as tarefas antigas sem a chave, a inferência é GRAVADA no tasks.json
+    (retro-migração) para o estado do botão deixar de depender do cálculo —
+    escreve UMA vez (a chave passa a existir) e nunca nas falhas de escrita.
+    """
+    flag = _task_subtitles_flag(task)
+    if task.get("has_subtitles") is None and task_state == "done":
+        try:
+            update_task(str(task.get("id") or ""), {"has_subtitles": flag})
+        except Exception:
+            pass  # a inferência continua válida para este render
+    return flag
+
+
 def _video_backlog_card_body(task_id: str) -> str:
     """Renderiza o card do Backlog com dados FRESCOS; devolve o estado actual.
 
@@ -7003,7 +7038,9 @@ def _video_backlog_card_body(task_id: str) -> str:
                     st.rerun()
             # 1.0.33: botão «Legendar» — queima legendas num vídeo pronto
             # sem re-renderizar (mesma trava: desabilitado se já tem legendas).
-            has_subtitles = bool(task.get("has_subtitles"))
+            # 1.0.37: a trava usa a flag COM inferência retroactiva — tarefas
+            # antigas sem a chave deixam de deixar o botão activo por engano.
+            has_subtitles = _ensure_task_subtitles_flag(task, task_state)
             video_exists = _task_artifact_path(task, "video") is not None
             if has_subtitles:
                 st.button(
@@ -7020,7 +7057,9 @@ def _video_backlog_card_body(task_id: str) -> str:
                     width="stretch",
                     help="Queima legendas no vídeo pronto sem re-renderizar (~1-2 min).",
                 ):
-                    update_task(str(task["id"]), {"state": "to_do", "action": "burn_subtitles_only", "error": None})
+                    # 1.0.37: manual_start_required=False garante que o worker
+                    # apanha a tarefa em to_do (o legado do Start retinha a fila).
+                    update_task(str(task["id"]), {"state": "to_do", "action": "burn_subtitles_only", "manual_start_required": False, "error": None})
                     _invalidate_live_tasks_snapshot()
                     st.rerun()
     return task_state
@@ -7869,7 +7908,8 @@ def _youtube_task_card_body(task_id: str) -> str:
             state = str(task.get("state") or "")
             upload_ready = _upload_ready_for_task(task, video_path, thumbnail_path)
             upload_ok = bool(task.get("upload_ok") or isinstance((task.get("artifacts") or {}).get("upload"), dict))
-            has_subtitles = bool(task.get("has_subtitles"))
+            # 1.0.37: trava com inferência retroactiva (tarefas antigas sem a flag)
+            has_subtitles = _ensure_task_subtitles_flag(task, state)
             start_col, stop_col, delete_col = st.columns(3)
             with start_col:
                 if st.button("Start", key=f"automation_start_{task_id}", width="stretch", disabled=not _can_start_video_task(task, state)):
@@ -7957,7 +7997,9 @@ def _youtube_task_card_body(task_id: str) -> str:
                         width="stretch",
                         help="Queima legendas no vídeo pronto sem re-renderizar (~1-2 min). Usa o roteiro salvo e o estilo de legendas do canal.",
                     ):
-                        update_task(task_id, {"state": "to_do", "action": "burn_subtitles_only", "error": None})
+                        # 1.0.37: manual_start_required=False garante pickup
+                        # imediato pelo worker (o legado do Start retinha a fila).
+                        update_task(task_id, {"state": "to_do", "action": "burn_subtitles_only", "manual_start_required": False, "error": None})
                         _invalidate_live_tasks_snapshot()
                         st.rerun()
             checked_upload_ok = st.checkbox(

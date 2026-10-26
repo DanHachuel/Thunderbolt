@@ -2793,14 +2793,78 @@ def _task_has_subtitles(task: dict[str, Any], settings: dict[str, Any]) -> bool:
     return True
 
 
+# 1.0.37 — timeout rígido da queima: o MoviePy re-codifica o vídeo inteiro na
+# CPU (vídeos longos podem demorar muito mais do que os 1-2 min do cenário
+# ideal); sem isto a tarefa ficava eternamente em doing (o relato dos 40 min).
+BURN_SUBTITLES_TIMEOUT_SECONDS = 180
+
+
+def _fail_burn_subtitles_only(task_id: str, message: str) -> dict[str, Any]:
+    """1.0.37 — falha LIMPA da queima: failed + acção limpa, nunca doing eterno.
+
+    O bug reportado: um falhanço/engasgo da queima deixava a tarefa presa em
+    doing (a excepção anterior não limpava a ``action`` e a atribuição
+    genérica de falhas etiquetava o erro como LLM/Pexels). Aqui a falha é
+    persistida com a mensagem EXACTA e a acção limpa — o botão «Legendar»
+    volta a estar disponível e o utilizador decide.
+    """
+    _mpt_runtime_log(f"[MPT-SUBTITLES] botão Legendar FALHOU (tarefa {task_id}): {message}")
+    failed = _update(task_id, state="failed", error=message, action=None, video_helper_status="")
+    return failed or {"id": task_id, "state": "failed", "error": message, "action": None}
+
+
+def _run_burn_with_timeout(video_path: Path, narration: str, config: dict[str, Any], timeout_seconds: int) -> Path:
+    """Queima com TIMEOUT RÍGIDO: thread daemon + join(timeout) (1.0.37).
+
+    O MoviePy não tem callback de cancelamento; a thread daemon continua o
+    encode em fundo após o timeout (não há kill seguro de threads em Python),
+    mas a tarefa já foi marcada como failed — nunca fica presa em doing. O
+    ficheiro temporário da tentativa abandonada pode ser substituído pela
+    própria thread em fundo quando (e se) terminar.
+    """
+    outcome: dict[str, Any] = {}
+
+    def _burn() -> None:
+        try:
+            from hermes_ui.text_to_images import burn_captions_on_video
+
+            outcome["path"] = burn_captions_on_video(video_path, narration, config)
+        except BaseException as exc:  # devolvida ao chamador abaixo
+            outcome["error"] = exc
+
+    thread = threading.Thread(target=_burn, name=f"burn-subtitles-{video_path.stem}", daemon=True)
+    thread.start()
+    thread.join(timeout=timeout_seconds)
+    if thread.is_alive():
+        raise PipelineError(
+            f"A queima de legendas excedeu {timeout_seconds // 60} minutos e foi interrompida "
+            "(vídeos longos demoram mais no encode CPU). O encode pode continuar alguns minutos "
+            "em fundo; aguarde antes de repetir ou use «Refazer Vídeo»."
+        )
+    if "error" in outcome:
+        raise PipelineError(f"Falha na queima de legendas: {outcome['error']}")
+    burned = outcome.get("path")
+    if burned is None:
+        raise PipelineError("A queima de legendas terminou sem devolver o vídeo.")
+    return Path(burned)
+
+
 def _run_burn_subtitles_only(task: dict[str, Any], settings: dict[str, Any]) -> dict[str, Any]:
-    """1.0.33: queima legendas num vídeo PRONTO sem re-renderizar nada.
+    """1.0.37: queima legendas num vídeo PRONTO sem re-renderizar nada.
 
     O botão «Legendar» marca a tarefa com ``action="burn_subtitles_only"`` e
     o worker intercepta aqui: lê o roteiro salvo como artefacto, extrai a
-    narração, resolve a config actual do canal, queima com MoviePy (1-2 min
-    vs 10+ de um «Refazer Vídeo» completo) e devolve a tarefa a done com
-    ``has_subtitles=True``.
+    narração, resolve a config actual do canal, queima com MoviePy e devolve
+    a tarefa a done com ``has_subtitles=True``. SEM LLM, SEM materiais
+    (Pexels/Pixabay), SEM regenerar áudio — a intercepção acontece antes da
+    cascata normal.
+
+    Correcções 1.0.37 (bug E2E reportado): (1) progresso visível no card —
+    ``video_helper_status`` em cada passo + thread de progresso sintético
+    60→90 durante o encode (o polling de 3s da 1.0.15 mostra-o a mover);
+    (2) timeout RÍGIDO de 3 min — o encode CPU de vídeos longos não pode
+    deixar a tarefa eternamente em doing; (3) falha LIMPA: ``failed`` +
+    ``action=None`` com a mensagem exacta, nunca doing eterno.
     """
     task_id = str(task.get("id") or "")
     channel = _channel_for_task(task)
@@ -2808,22 +2872,35 @@ def _run_burn_subtitles_only(task: dict[str, Any], settings: dict[str, Any]) -> 
     video_path_str = str(artifacts.get("video") or "").strip()
     video_path = Path(video_path_str) if video_path_str else None
     if video_path is None or not video_path.is_file():
-        raise PipelineError("A tarefa não tem um vídeo para legendar (artefacto em falta).")
+        return _fail_burn_subtitles_only(task_id, "A tarefa não tem um vídeo para legendar (artefacto em falta).")
 
-    _update(task_id, stage="video", state="doing", progress=60, error=None)
+    _update(task_id, stage="video", state="doing", progress=45, video_helper_status="A preparar queima de legendas...", error=None)
     script = _read_persisted_script(task, channel, {"id": str(task.get("blueprint_id") or "")}, str(task.get("topic") or ""))
     narration = narration_text_from_script(str(script.get("content") or "")) if script else ""
     if not narration.strip():
-        raise PipelineError("O roteiro salvo não tem narração para legendar — use «Refazer Vídeo» para regenerar com legendas.")
+        return _fail_burn_subtitles_only(task_id, "O roteiro salvo não tem narração para legendar — use «Refazer Vídeo» para regenerar com legendas.")
     config = _subtitle_config_for_task(task, settings)
     if config is None:
-        raise PipelineError("Legendas desligadas nas configurações do canal — active-as antes de legendar.")
-    try:
-        from hermes_ui.text_to_images import burn_captions_on_video
+        return _fail_burn_subtitles_only(task_id, "Legendas desligadas nas configurações do canal — active-as antes de legendar.")
+    _update(task_id, progress=55, video_helper_status=f"Queimando legendas com MoviePy (máx. {BURN_SUBTITLES_TIMEOUT_SECONDS // 60} min)...")
+    progress_stop = threading.Event()
 
-        burned = burn_captions_on_video(video_path, narration, config)
-    except Exception as exc:
-        raise PipelineError(f"Falha na queima de legendas: {exc}") from exc
+    def _progress_loop() -> None:
+        # 1.0.37 — o MoviePy não reporta progresso; o sintético (60→90,
+        # nunca 100) prova ao utilizador que a tarefa está viva no card.
+        started = time.monotonic()
+        while not progress_stop.wait(5.0):
+            elapsed = int(time.monotonic() - started)
+            _update(task_id, progress=min(90, 60 + elapsed // 4), video_helper_status=f"Queimando legendas... {elapsed}s")
+
+    progress_thread = threading.Thread(target=_progress_loop, name=f"burn-progress-{task_id}", daemon=True)
+    progress_thread.start()
+    try:
+        burned = _run_burn_with_timeout(video_path, narration, config, BURN_SUBTITLES_TIMEOUT_SECONDS)
+    except PipelineError as exc:
+        progress_stop.set()
+        return _fail_burn_subtitles_only(task_id, str(exc))
+    progress_stop.set()
     artifacts["video"] = str(burned)
     _mpt_runtime_log(f"[MPT-SUBTITLES] botão Legendar: queima concluída em {Path(burned).name} (tarefa {task_id})")
     return _update(
@@ -2836,6 +2913,7 @@ def _run_burn_subtitles_only(task: dict[str, Any], settings: dict[str, Any]) -> 
         has_subtitles=True,
         action=None,
         error=None,
+        video_helper_status="",
     ) or task
 
 
@@ -2846,6 +2924,9 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
     # 1.0.33: botão «Legendar» — queima de legendas num vídeo pronto sem
     # re-renderizar; interceptado ANTES da cascata normal.
     if str(task.get("action") or "").strip() == "burn_subtitles_only":
+        # 1.0.37 — log EXPLÍCITO da intercepção: a validação pede ver no
+        # terminal que a queima foi apanhada (antes da cascata, sem LLM).
+        _mpt_runtime_log(f"[MPT-SUBTITLES] botão Legendar: intercepção imediata (tarefa {task_id}) — sem LLM, sem materiais, sem re-render")
         return _run_burn_subtitles_only(task, settings)
     channel = _channel_for_task(task)
     settings = _settings()
