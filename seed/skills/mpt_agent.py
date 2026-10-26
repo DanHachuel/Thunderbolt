@@ -481,6 +481,33 @@ NVENC_PROBE_SOURCE = "testsrc=duration=1:size=320x240:rate=15"
 MPT_CODEC_FALLBACK_MARKERS = ("fallback to libx264", "was disabled after a runtime failure")
 _NVENC_PROBE_CACHE: dict[tuple[str, str], bool] = {}
 
+# 1.0.37 — Allowlist das variáveis que QUALQUER subprocesso do Windows precisa
+# no ambiente (nunca removidas, re-injectadas se faltarem). Sem SYSTEMROOT o
+# Winsock não carrega a mswsock.dll e a PRIMEIRA chamada de rede do motor
+# (Azure Speech/LLM/Pexels) morre com WinError 10106 — reproduzido: um
+# subprocesso com env de 2 chaves rebenta no socket.socket(); com a cópia
+# completa de os.environ o mesmo processo imprime "WINSOCK OK".
+WINDOWS_ESSENTIAL_ENV_KEYS = ("SYSTEMROOT", "WINDIR", "COMSPEC", "APPDATA", "LOCALAPPDATA")
+WINDOWS_ESSENTIAL_FALLBACKS = {"SYSTEMROOT": "C:\\Windows", "WINDIR": "C:\\Windows"}
+
+
+def _ensure_windows_essentials(environment: dict[str, str]) -> None:
+    """Re-injecta as variáveis críticas do Windows quando faltam.
+
+    ``os.environ.copy()`` já as transporta; a re-injecção com fallback
+    cobre o cenário em que o ambiente do próprio processo pai as não tem.
+    As chaves sem fallback sano (COMSPEC/APPDATA/LOCALAPPDATA) nunca são
+    inventadas — apenas preservadas por virem na cópia base.
+    """
+    if os.name != "nt":
+        return
+    for key in WINDOWS_ESSENTIAL_ENV_KEYS:
+        if str(environment.get(key) or "").strip():
+            continue
+        fallback = WINDOWS_ESSENTIAL_FALLBACKS.get(key, "")
+        if fallback:
+            environment[key] = fallback
+
 
 def _effective_ffmpeg_path(config_path: Path) -> str:
     """Binário FFmpeg efectivo do config.toml, quando é um ficheiro real.
@@ -498,20 +525,26 @@ def _effective_ffmpeg_path(config_path: Path) -> str:
 
 
 def _ffmpeg_environment(config_path: Path) -> dict[str, str] | None:
-    """Ambiente com o FFmpeg efectivo para os subprocessos do motor MPT.
+    """Ambiente COMPLETO (herdado do processo) com o FFmpeg efectivo acrescentado.
 
-    ``IMAGEIO_FFMPEG_EXE`` cobre o imageio/MoviePy e o próprio MPT
-    (``app.utils.get_ffmpeg_binary`` honra-a em primeiro lugar);
+    1.0.37: a base passou a ``os.environ.copy()`` — a versão 1.0.36 devolvia
+    um dicionário mínimo com SÓ as duas chaves do FFmpeg e o motor MPT
+    arrancava sem SYSTEMROOT/PATH/TEMP: o Winsock não carregava a
+    mswsock.dll e a primeira chamada de rede (Azure Speech/LLM/Pexels)
+    falhava com WinError 10106 (reproduzido). A injecção EXTENDE o ambiente
+    herdado, nunca o substitui. ``IMAGEIO_FFMPEG_EXE`` cobre o
+    imageio/MoviePy e o próprio MPT (``app.utils.get_ffmpeg_binary``);
     ``FFMPEG_BINARY`` cobre o MoviePy 2.x (``moviepy.config``). Sem binário
     válido devolve None — o processo herda o ambiente tal como na v1.0.01.
     """
     ffmpeg_path = _effective_ffmpeg_path(config_path)
     if not ffmpeg_path:
         return None
-    return {
-        "IMAGEIO_FFMPEG_EXE": ffmpeg_path,
-        "FFMPEG_BINARY": ffmpeg_path,
-    }
+    environment = os.environ.copy()
+    environment["IMAGEIO_FFMPEG_EXE"] = ffmpeg_path
+    environment["FFMPEG_BINARY"] = ffmpeg_path
+    _ensure_windows_essentials(environment)
+    return environment
 
 
 def _probe_nvenc_encoder(ffmpeg_path: str) -> bool:

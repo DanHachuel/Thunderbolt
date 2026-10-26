@@ -19,6 +19,7 @@ Contratos desta release:
 from __future__ import annotations
 
 import importlib.util
+import os
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -106,14 +107,60 @@ def _fake_ffmpeg(directory: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def test_ffmpeg_environment_injects_both_keys_from_config(tmp_path: Path):
+def test_ffmpeg_environment_injects_both_keys_from_config(tmp_path: Path, monkeypatch):
     fake = _fake_ffmpeg(tmp_path)
     config_path = _write_config(tmp_path, ffmpeg_path=str(fake))
+    monkeypatch.setenv("THUNDERBOLT_ENV_MARKER", "herdado-do-worker")
     environment = MPT_AGENT._ffmpeg_environment(config_path)
-    assert environment == {
-        "IMAGEIO_FFMPEG_EXE": str(fake),
-        "FFMPEG_BINARY": str(fake),
-    }
+    # 1.0.37: a injecção EXTENDE o ambiente herdado, nunca o substitui —
+    # o WinError 10106 provou o custo de o motor arrancar sem SYSTEMROOT.
+    assert environment["IMAGEIO_FFMPEG_EXE"] == str(fake)
+    assert environment["FFMPEG_BINARY"] == str(fake)
+    assert environment["THUNDERBOLT_ENV_MARKER"] == "herdado-do-worker"
+    assert environment.get("SYSTEMROOT", os.environ.get("SYSTEMROOT", "C:\\Windows"))
+
+
+def test_ffmpeg_environment_extends_a_copy_of_os_environ(tmp_path: Path, monkeypatch):
+    fake = _fake_ffmpeg(tmp_path)
+    config_path = _write_config(tmp_path, ffmpeg_path=str(fake))
+    monkeypatch.setenv("THUNDERBOLT_ENV_MARKER_2", "presente-na-copia")
+    environment = MPT_AGENT._ffmpeg_environment(config_path)
+    assert isinstance(environment, dict)
+    for key, value in os.environ.items():
+        if key in {"IMAGEIO_FFMPEG_EXE", "FFMPEG_BINARY"}:
+            continue
+        assert environment.get(key) == value, f"o ambiente perdeu {key}"
+    assert environment["THUNDERBOLT_ENV_MARKER_2"] == "presente-na-copia"
+
+
+def test_windows_essentials_are_reinjected_with_fallback_when_missing(monkeypatch):
+    monkeypatch.setattr(MPT_AGENT.os, "name", "nt")
+    for key in MPT_AGENT.WINDOWS_ESSENTIAL_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    environment: dict[str, str] = {}
+    MPT_AGENT._ensure_windows_essentials(environment)
+    assert environment["SYSTEMROOT"] == "C:\\Windows"
+    assert environment["WINDIR"] == "C:\\Windows"
+    # Chaves sem fallback sano nunca são inventadas — apenas preservadas da
+    # cópia base (allowlist anti-remoção, não fabricação de valores).
+    assert "COMSPEC" not in environment
+    assert "APPDATA" not in environment
+    assert "LOCALAPPDATA" not in environment
+
+
+def test_windows_essentials_keep_existing_values(monkeypatch):
+    monkeypatch.setattr(MPT_AGENT.os, "name", "nt")
+    monkeypatch.setenv("SYSTEMROOT", "D:\\WinCustom")
+    environment: dict[str, str] = {"SYSTEMROOT": "D:\\WinCustom"}
+    MPT_AGENT._ensure_windows_essentials(environment)
+    assert environment["SYSTEMROOT"] == "D:\\WinCustom"
+
+
+def test_windows_essentials_are_a_noop_outside_windows(monkeypatch):
+    monkeypatch.setattr(MPT_AGENT.os, "name", "posix")
+    environment: dict[str, str] = {}
+    MPT_AGENT._ensure_windows_essentials(environment)
+    assert environment == {}
 
 
 def test_ffmpeg_environment_is_none_without_a_real_binary(tmp_path: Path):
@@ -271,6 +318,10 @@ def test_generate_video_prints_codec_banner_and_injects_environment(
     kwargs = captured["kwargs"]
     assert kwargs["env"]["IMAGEIO_FFMPEG_EXE"] == fake_ffmpeg
     assert kwargs["env"]["FFMPEG_BINARY"] == fake_ffmpeg
+    # 1.0.37: o env do motor é EXTENSÃO do ambiente herdado — o
+    # WinError 10106 nasceu de o env ter ficado reduzido às 2 chaves.
+    assert "SYSTEMROOT" in kwargs["env"]
+    assert "PATH" in kwargs["env"]
 
 
 def test_generate_video_reports_engine_fallback_marker(tmp_path: Path, monkeypatch, capsys):
@@ -455,6 +506,22 @@ def test_mpt_agent_contracts_of_the_codec_restoration():
     assert '"-c:v"' in probe_body and '"-pix_fmt"' in probe_body
     # …e a via Azure segmentada injecta o MESMO binário nas duas chaves.
     assert 'environment["FFMPEG_BINARY"] = ffmpeg_path' in MPT_AGENT_SOURCE
+
+
+def test_mpt_agent_environment_is_extension_not_replacement():
+    # 1.0.37 — contrato anti-WinError 10106: a injecção de FFmpeg parte
+    # SEMPRE de uma cópia completa do ambiente herdado (PATH, SYSTEMROOT,
+    # TEMP…); o dict mínimo de 2 chaves da 1.0.36 matava o Winsock
+    # (mswsock.dll não carregava) e a primeira rede do motor rebentava.
+    env_helper_body = MPT_AGENT_SOURCE.split("def _ffmpeg_environment", 1)[1].split(
+        "def _probe_nvenc_encoder", 1
+    )[0]
+    assert "environment = os.environ.copy()" in env_helper_body
+    assert "_ensure_windows_essentials(environment)" in env_helper_body
+    assert 'return {"IMAGEIO_FFMPEG_EXE"' not in MPT_AGENT_SOURCE
+    # A allowlist cobre as variáveis que o runtime do Windows exige.
+    assert '"SYSTEMROOT", "WINDIR", "COMSPEC", "APPDATA", "LOCALAPPDATA"' in MPT_AGENT_SOURCE
+    assert '"SYSTEMROOT": "C:\\\\Windows"' in MPT_AGENT_SOURCE
 
 
 def test_local_writes_keep_web_safe_params_and_use_the_gpu_writer():
