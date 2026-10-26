@@ -1,12 +1,13 @@
-"""Botão «Legendar» com trava de estado (1.0.33).
+"""Botão «Legendar» — REGISTRO DETERMINÍSTICO + trava estrita (1.0.38).
 
-Flag ``has_subtitles`` nas tarefas: gravada no fim da geração normal (True
-quando as legendas foram queimadas — MPT nativo/`_apply_mpt_captions` ou
-montagens locais com config resolvível; False quando desligadas/sem narração/
-sem config). O botão «Legendar» fica DESABILITADO quando ``has_subtitles=True``
-(trava: nunca re-legenda um vídeo já legendado). O worker intercepta
-``action="burn_subtitles_only"`` e queima as legendas com MoviePy sem
-re-renderizar (1-2 min vs 10+ de um «Refazer Vídeo»).
+1.0.38 (fim da adivinhação): a flag ``has_subtitles`` é carimbada no exacto
+momento da criação a partir do QUE ACONTECEU — o report das funções de queima
+(``burn_report`` nas montagens locais e no ``burn_captions_on_video``) e o
+tuplo ``(video, burned)`` do ``_apply_mpt_captions``; NUNCA a partir de
+configurações. Regra de ouro para os vídeos antigos: sem flag => botão
+«Legendar» ACTIVO (é melhor duplicar do que impedir) — o utilizador congela
+manualmente («Marcar como Legendado»). A LIMPEZA ÚNICA do arranque remove as
+flags adivinhadas da era pré-1.0.38 (marcador impede repetições).
 """
 from __future__ import annotations
 
@@ -33,46 +34,69 @@ def _storage(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 1. Flag has_subtitles: computada correctamente pelas condições da tarefa
+# 1. 1.0.38 — REGISTRO DETERMINÍSTICO: a flag sai do QUE ACONTECEU na queima
 # ---------------------------------------------------------------------------
 
 
-def _task(**extra):
-    base = {
-        "id": "t1",
-        "topic": "Tema",
-        "channel_id": "",
-        "generation_settings": {"voiceover_mode": "tts", "enable_subtitles": True},
-    }
-    base.update(extra)
-    return base
+def test_fresh_generation_stamps_the_actual_burn_outcome():
+    """Source-structure: o carimbo final vem de `subtitles_burned` (report das
+    funções de queima), nunca de `_task_has_subtitles` ou configurações."""
+    assert "has_subtitles=subtitles_burned" in PIPELINE_SOURCE
+    # a função de adivinhação da 1.0.33 desapareceu por inteiro
+    assert "def _task_has_subtitles(" not in PIPELINE_SOURCE
+    assert "_task_has_subtitles(" not in PIPELINE_SOURCE
+    # as montagens locais reportam o que aconteceu (burn_report wired)
+    assert "burn_report=burn_report" in PIPELINE_SOURCE
+    assert "subtitles_burned = bool(burn_report.get(\"subtitles_burned\"))" in PIPELINE_SOURCE
+    # a rota MPT devolve o desfecho no tuplo
+    assert "video_path, subtitles_burned = _apply_mpt_captions(task, video_path, script, settings)" in PIPELINE_SOURCE
 
 
-def test_has_subtitles_true_when_subtitles_enabled_and_config_resolves(tmp_path, monkeypatch):
-    _storage(tmp_path, monkeypatch)
-    # config resolvível: font_path presente → config não é None
-    settings = {"resource": {"font_dir": str(tmp_path)}}
-    monkeypatch.setattr(pipeline_worker, "_resolve_subtitle_font_path", lambda name, s: str(tmp_path / "arial.ttf"))
-    task = _task()
-    (tmp_path / "arial.ttf").write_bytes(b"font")
-    assert pipeline_worker._task_has_subtitles(task, settings) is True
+def test_apply_mpt_captions_returns_what_actually_happened(monkeypatch, tmp_path):
+    """Tuplo determinístico (video, burned) nos desfechos da rota MPT."""
+    video = tmp_path / "final-1.mp4"
+    video.write_bytes(b"mp4")
+    script = {"content": "Narração do vídeo de teste."}
 
+    def _task(**extra):
+        base = {"generation_settings": {"voiceover_mode": "tts", "voiceover_service": "", "enable_subtitles": True}}
+        base["generation_settings"].update(extra.pop("generation_settings", {}))
+        base.update(extra)
+        return base
 
-def test_has_subtitles_false_when_voiceover_mode_is_none():
-    task = _task(generation_settings={"voiceover_mode": "none", "enable_subtitles": True})
-    assert pipeline_worker._task_has_subtitles(task, {}) is False
-
-
-def test_has_subtitles_false_when_subtitles_disabled():
-    task = _task(generation_settings={"voiceover_mode": "tts", "enable_subtitles": False})
-    assert pipeline_worker._task_has_subtitles(task, {}) is False
-
-
-def test_has_subtitles_false_when_config_unresolvable(monkeypatch):
-    # sem fonte resolvível → _subtitle_config_for_task devolve None → False
+    # TTS nativo: o motor queima quando levou --subtitle-enabled com config válida
+    monkeypatch.setattr(pipeline_worker, "_resolve_subtitle_font_path", lambda name, settings: str(tmp_path / "arial.ttf"))
+    assert pipeline_worker._apply_mpt_captions(_task(), video, script, {}) == (video, True)
+    # sem fonte resolvível o motor não tinha config para queimar
     monkeypatch.setattr(pipeline_worker, "_resolve_subtitle_font_path", lambda name, settings: None)
-    task = _task(generation_settings={"voiceover_mode": "tts", "enable_subtitles": True})
-    assert pipeline_worker._task_has_subtitles(task, {}) is False
+    assert pipeline_worker._apply_mpt_captions(_task(), video, script, {}) == (video, False)
+    # sem narração não há legendas por definição
+    assert pipeline_worker._apply_mpt_captions(_task(generation_settings={"voiceover_mode": "none"}), video, script, {}) == (video, False)
+
+
+def test_burn_captions_reports_failure_when_clips_are_empty(tmp_path, monkeypatch):
+    """O report determinístico distingue queima real de saída antecipada:
+    sem clips para queimar => subtitles_burned False (nunca True às cegas)."""
+    from PIL import Image
+    from moviepy import ImageClip
+
+    from hermes_ui.text_to_images import burn_captions_on_video
+
+    if not Path("C:/Windows/Fonts/arial.ttf").is_file() and not Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf").is_file():
+        pytest.skip("sem fonte para preparar o video base")
+    Image.new("RGB", (320, 180), (20, 20, 20)).save(tmp_path / "a.png")
+    video = tmp_path / "final-1.mp4"
+    base = ImageClip(str(tmp_path / "a.png")).with_duration(1)
+    base.write_videofile(str(video), fps=10, codec="libx264", logger=None)
+    base.close()
+    monkeypatch.setattr(
+        "hermes_ui.text_to_images._subtitle_clips_for_scenes",
+        lambda *args, **kwargs: [],
+    )
+    report: dict = {}
+    result = burn_captions_on_video(video, "texto", {"font_path": "arial.ttf"}, burn_report=report)
+    assert result == video
+    assert report.get("subtitles_burned") is False
 
 
 def test_worker_intercepts_burn_subtitles_only_action(tmp_path, monkeypatch):
@@ -93,9 +117,12 @@ def test_worker_intercepts_burn_subtitles_only_action(tmp_path, monkeypatch):
     }])
     captured = {}
 
-    def fake_burn(video_path, text, config, **kwargs):
+    def fake_burn(video_path, text, config, burn_report=None, **kwargs):
         captured["text"] = text
         captured["config"] = config
+        # 1.0.38 — a queima real preenche o report determinístico
+        if burn_report is not None:
+            burn_report["subtitles_burned"] = True
         return Path(video_path)
 
     import hermes_ui.text_to_images
@@ -135,15 +162,15 @@ def test_worker_burn_subtitles_fails_without_video(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 2. Worker: a flag é gravada no fim normal da geração de vídeo
+# 2. Worker: o carimbo vem da geração real
 # ---------------------------------------------------------------------------
 
 
-def test_normal_pipeline_persists_has_subtitles_flag():
-    """Source-structure: o _update com video_ready=True também grava
-    has_subtitles (computado pela mesma função que decide queimar)."""
-    assert "has_subtitles=_task_has_subtitles(task, settings)" in PIPELINE_SOURCE
-    assert "def _task_has_subtitles(" in PIPELINE_SOURCE
+def test_normal_pipeline_stamps_the_deterministic_outcome():
+    """Source-structure: o _update com video_ready=True carimba has_subtitles
+    a partir do desfecho real (subtitles_burned), nunca de configurações."""
+    assert "has_subtitles=subtitles_burned" in PIPELINE_SOURCE
+    assert "has_subtitles=_task_has_subtitles" not in PIPELINE_SOURCE
 
 
 def test_burn_subtitles_only_intercepted_before_normal_cascade():
@@ -155,19 +182,25 @@ def test_burn_subtitles_only_intercepted_before_normal_cascade():
 
 
 # ---------------------------------------------------------------------------
-# 3. UI: o botão «Legendar» com trava de estado
+# 3. UI: trava estrita + override manual (regra de ouro: sem flag => ACTIVO)
 # ---------------------------------------------------------------------------
 
 
 def test_youtube_card_has_legendar_button_with_state_lock():
     """O card tem o botão com as TRÊS estados: sem vídeo (disabled), já
-    legendado (✓ Legendado disabled), pronto (ativo). 1.0.37: a trava usa a
-    flag COM inferência retroactiva (tarefas antigas sem a chave)."""
+    legendado (✓ Legendado disabled), pronto (ativo). 1.0.38: trava ESTRITA
+    (só a flag gravada) + override manual para vídeos antigos."""
     block = APP_SOURCE.split("def _youtube_task_card_body(", 1)[1].split("return _catalog_task_state(task)", 1)[0]
-    assert "has_subtitles = _ensure_task_subtitles_flag(task, state)" in block
+    # 1.0.38 — FIM DA ADIVINHAÇÃO: apenas a flag determinística
+    assert 'has_subtitles = bool(task.get("has_subtitles"))' in block
+    assert "_ensure_task_subtitles_flag" not in APP_SOURCE
+    assert "_task_subtitles_flag" not in APP_SOURCE
     assert '"✓ Legendado"' in block
     assert "disabled=True" in block
     assert '"Legendar"' in block
+    # 1.0.38 — override manual: congela vídeos antigos já legendados
+    assert '"Marcar como Legendado"' in block
+    assert 'update_task(task_id, {"has_subtitles": True})' in block
     # o Upload está em coluna (mesmo tamanho dos downloads)
     assert "upload_legend_col, legend_col = st.columns(2, gap=\"small\")" in block
     assert '"type": "primary"' not in block  # Legendar NÃO é azul
@@ -175,7 +208,10 @@ def test_youtube_card_has_legendar_button_with_state_lock():
 
 def test_backlog_card_has_legendar_button_with_state_lock():
     block = APP_SOURCE.split("def _video_backlog_card_body(", 1)[1].split("return task_state", 1)[0]
-    assert "has_subtitles = _ensure_task_subtitles_flag(task, task_state)" in block
+    # trava estrita + override manual também no Backlog
+    assert 'has_subtitles = bool(task.get("has_subtitles"))' in block
+    assert '"Marcar como Legendado"' in block
+    assert 'update_task(str(task["id"]), {"has_subtitles": True})' in block
     assert '"✓ Legendado"' in block
     assert '"Legendar"' in block
     # a acção marca a tarefa com o campo correcto
@@ -183,53 +219,42 @@ def test_backlog_card_has_legendar_button_with_state_lock():
 
 
 # ---------------------------------------------------------------------------
-# 4. 1.0.37 — correção E2E: inferência para tarefas antigas, timeout rígido,
-#    progresso visível e pickup garantido
+# 4. 1.0.38 — limpeza única das flags adivinhadas + restantes correcções E2E
 # ---------------------------------------------------------------------------
 
 
-def test_old_task_without_flag_infers_from_generation_settings():
-    """Cenário reportado: tarefa ANTIGA sem a flag — o vídeo saiu com legendas
-    quando as legendas estavam activas nas definições da tarefa."""
-    from app import main as app_main
-
-    # sem a chave + legendas activas + narração → vídeo tem legendas
-    assert app_main._task_subtitles_flag({"generation_settings": {"voiceover_mode": "tts", "enable_subtitles": True}}) is True
-    # sem a chave + legendas desligadas → sem legendas
-    assert app_main._task_subtitles_flag({"generation_settings": {"voiceover_mode": "tts", "enable_subtitles": False}}) is False
-    # sem a chave + sem narração → sem legendas por definição
-    assert app_main._task_subtitles_flag({"generation_settings": {"voiceover_mode": "none", "enable_subtitles": True}}) is False
-    # a chave EXPLÍCITA vence a inferência
-    assert app_main._task_subtitles_flag({"has_subtitles": False, "generation_settings": {"enable_subtitles": True}}) is False
-    assert app_main._task_subtitles_flag({"has_subtitles": True, "generation_settings": {"enable_subtitles": False}}) is True
-
-
-def test_ensure_task_subtitles_flag_persists_retroactively_for_done_tasks(tmp_path, monkeypatch):
-    """Retro-migração: a inferência é GRAVADA no tasks.json (write-once) para
-    tarefas done — o estado do botão deixa de depender do cálculo."""
+def test_cleanup_removes_guessed_flags_exactly_once(tmp_path, monkeypatch):
+    """A limpeza 1.0.38 remove as flags ADIVINHADAS (todas as pré-1.0.38) e o
+    marcador impede repetições — os carimbos DETERMINÍSTICOS de depois (uma
+    queima real, um override) ficam intactos para sempre."""
     _storage(tmp_path, monkeypatch)
-    storage.write_json("tasks.json", [{
-        "id": "t_antiga",
-        "state": "done",
-        "artifacts": {"video": str(tmp_path / "v.mp4")},
-        "generation_settings": {"voiceover_mode": "tts", "enable_subtitles": True},
-    }])
-    task = storage.read_json("tasks.json", [])[0]
-    from app import main as app_main
+    from hermes_ui import domain
 
-    flag = app_main._ensure_task_subtitles_flag(task, "done")
-    assert flag is True
-    persisted = storage.read_json("tasks.json", [])[0]
-    assert persisted.get("has_subtitles") is True
-    # tarefa em curso não é retro-migrada (a flag só faz sentido no done)
-    storage.write_json("tasks.json", [{
-        "id": "t_curso",
-        "state": "doing",
-        "generation_settings": {"voiceover_mode": "tts", "enable_subtitles": True},
-    }])
-    task_doing = storage.read_json("tasks.json", [])[0]
-    assert app_main._ensure_task_subtitles_flag(task_doing, "doing") is True
-    assert "has_subtitles" not in storage.read_json("tasks.json", [])[0]
+    storage.write_json("tasks.json", [
+        {"id": "t_antiga_com_flag", "state": "done", "has_subtitles": True},
+        {"id": "t_antiga_sem_flag", "state": "done"},
+        {"id": "t_recente", "state": "done", "has_subtitles": False},
+    ])
+    removed = domain.cleanup_legacy_subtitle_flags()
+    assert removed == 2  # as duas flags existentes saíram (sejam elas quais forem)
+    tasks = {task["id"]: task for task in storage.read_json("tasks.json", [])}
+    assert "has_subtitles" not in tasks["t_antiga_com_flag"]
+    assert "has_subtitles" not in tasks["t_recente"]
+    # a limpeza corre UMA vez: o marcador bloqueia novas passagens
+    storage.write_json("tasks.json", [
+        {"id": "t_queimada_depois", "state": "done", "has_subtitles": True},
+    ])
+    assert domain.cleanup_legacy_subtitle_flags() == 0
+    tasks = {task["id"]: task for task in storage.read_json("tasks.json", [])}
+    assert tasks["t_queimada_depois"].get("has_subtitles") is True
+
+
+def test_cleanup_wired_at_both_boots():
+    """A limpeza corre no arranque da UI E do worker (o primeiro a chegar
+    executa; o marcador desarma o segundo)."""
+    assert "cleanup_legacy_subtitle_flags()" in APP_SOURCE
+    worker_boot = PIPELINE_SOURCE.split("def run_worker(", 1)[1].split("while True:", 1)[0]
+    assert "cleanup_legacy_subtitle_flags()" in worker_boot
 
 
 def test_legendar_payload_forces_worker_pickup():
@@ -275,7 +300,7 @@ def test_burn_timeout_marks_failed_and_clears_action(tmp_path, monkeypatch):
         "generation_settings": {"voiceover_mode": "tts", "enable_subtitles": True},
     }])
 
-    def slow_burn(video_path, text, config, **kwargs):
+    def slow_burn(video_path, text, config, burn_report=None, **kwargs):
         _time.sleep(5)  # mais lento que o timeout de 1s injectado
         return Path(video_path)
 
@@ -298,7 +323,7 @@ def test_burn_success_returns_the_path_within_the_timeout(tmp_path, monkeypatch)
     video.write_bytes(b"mp4")
     monkeypatch.setattr(
         "hermes_ui.text_to_images.burn_captions_on_video",
-        lambda video_path, text, config, **kwargs: Path(video_path),
+        lambda video_path, text, config, burn_report=None, **kwargs: Path(video_path),
     )
     burned = pipeline_worker._run_burn_with_timeout(video, "texto", {"font_path": "f"}, timeout_seconds=10)
     assert burned == video

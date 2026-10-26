@@ -124,8 +124,11 @@ def test_burned_captions_receive_tag_free_narration(monkeypatch, tmp_path):
     script = {"content": "Grace covers you. [Visual: open Bible in nature] [Audio: soft wind]\nSCENE 4 — Still waters"}
     captured = {}
 
-    def fake_burn(video_path, narration, config):
+    def fake_burn(video_path, narration, config, burn_report=None):
         captured["narration"] = narration
+        # 1.0.38 — a queima real preenche o report determinístico
+        if burn_report is not None:
+            burn_report["subtitles_burned"] = True
         return video
 
     monkeypatch.setattr("hermes_ui.text_to_images.burn_captions_on_video", fake_burn)

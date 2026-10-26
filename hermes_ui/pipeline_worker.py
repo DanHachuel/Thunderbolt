@@ -2350,7 +2350,7 @@ def _apply_mpt_captions(
     video_path: Path,
     script: dict[str, Any],
     settings: dict[str, Any],
-) -> Path:
+) -> tuple[Path, bool]:
     """Queima as legendas no vídeo Pexels/Pixabay quando o MPT as saltou.
 
     O MPT só gera legendas com word-boundaries quando faz o próprio TTS; com
@@ -2362,39 +2362,54 @@ def _apply_mpt_captions(
     1.0.29: TODOS os desfechos passam pelo log `[MPT-SUBTITLES]` (logger
     thunderbolt.mpt, espelhado no pipeline_worker.log) — a queima deixou
     de ser invisível: sem legenda queimada, o log diz exactamente porquê.
+
+    1.0.38 — REGISTRO DETERMINÍSTICO: devolve ``(video, burned)`` onde
+    ``burned`` é o QUE ACONTECEU DE FACTO: True apenas quando a queima
+    local substituiu o ficheiro (report da ``burn_captions_on_video``) ou
+    quando o motor MPT recebeu ``--subtitle-enabled`` com config válida
+    (TTS nativo: o próprio motor queima); False quando sem narração,
+    desligadas, sem config, clips vazios ou falha. O worker carimba
+    ``has_subtitles`` a partir daqui — NUNCA de configurações.
     """
     generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else {}
     if str(generation_settings.get("voiceover_mode") or "").strip().casefold() == "none":
         _mpt_runtime_log(f"[MPT-SUBTITLES] modo sem narração — nada a queimar em {Path(video_path).name}")
-        return video_path
-    if not _mpt_uses_custom_audio(task, settings):
-        # MPT nativo: gerou as legendas word-accurate na própria renderização.
-        _mpt_runtime_log(f"[MPT-SUBTITLES] legendas word-accurate geradas pelo próprio motor MPT (TTS nativo) — nada a queimar em {Path(video_path).name}")
-        return video_path
+        return video_path, False
     config = _subtitle_config_for_task(task, settings)
+    if not _mpt_uses_custom_audio(task, settings):
+        # MPT nativo: o próprio motor queimou as legendas word-accurate na
+        # renderização — quando o CLI levou --subtitle-enabled e a config era
+        # válida; sem isso o motor recebeu --no-subtitle-enabled e nada queimou.
+        native_burned = bool(generation_settings.get("enable_subtitles", True)) and config is not None
+        _mpt_runtime_log(
+            f"[MPT-SUBTITLES] motor MPT (TTS nativo): legendas {'queimadas pelo motor' if native_burned else 'DESACTIVADAS'} em {Path(video_path).name}"
+        )
+        return video_path, native_burned
     if not config:
         _mpt_runtime_log(
             "[MPT-SUBTITLES] [AVISO] queima local cancelada: legendas desligadas no canal ou fonte não resolvível "
             f"(o vídeo {Path(video_path).name} mantém-se SEM legendas)"
         )
-        return video_path
+        return video_path, False
     narration = narration_text_from_script(str(script.get("content") or ""))
     if not narration.strip():
         _mpt_runtime_log(f"[MPT-SUBTITLES] [AVISO] queima local cancelada: o roteiro não tem narração (vídeo {Path(video_path).name} sem legendas)")
-        return video_path
+        return video_path, False
+    burn_report: dict[str, Any] = {}
     try:
         from hermes_ui.text_to_images import burn_captions_on_video
 
-        burned = burn_captions_on_video(video_path, narration, config)
+        burned = burn_captions_on_video(video_path, narration, config, burn_report=burn_report)
+        burned_flag = bool(burn_report.get("subtitles_burned"))
         burned_font = re.split(r"[\\/]", str(config.get("font_path") or ""))[-1]
-        _mpt_runtime_log(f"[MPT-SUBTITLES] queima local concluída em {Path(burned).name} (fonte={burned_font})")
-        return burned
+        _mpt_runtime_log(f"[MPT-SUBTITLES] queima local {'concluída' if burned_flag else 'sem clips'} em {Path(burned).name} (fonte={burned_font})")
+        return burned, burned_flag
     except Exception as exc:
         import sys as _sys
 
         print(f"[pexels] legendas ignoradas por falha na queima: {exc}", file=_sys.stderr)
         _mpt_runtime_log(f"[MPT-SUBTITLES] [AVISO] falha na queima local ({exc}) — o vídeo {Path(video_path).name} mantém-se sem legendas")
-        return video_path
+        return video_path, False
 
 
 # ---------------------------------------------------------------------------
@@ -2774,25 +2789,6 @@ def _run_remotion_blueprint(
     return video_path, llm_json
 
 
-def _task_has_subtitles(task: dict[str, Any], settings: dict[str, Any]) -> bool:
-    """1.0.33: True se o vídeo final tem legendas queimadas.
-
-    Espelha as MESMAS condições que decidem queimar nas rotas normais:
-    text_to_images/web_images queimam quando ``_subtitle_config_for_task``
-    devolve config; pexels/pixabay queimam via MPT nativo (TTS próprio,
-    word-accurate) ou via ``_apply_mpt_captions`` (áudio customizado).
-    Sem narração, sem config ou legendas desligadas → False.
-    """
-    generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else {}
-    if str(generation_settings.get("voiceover_mode") or "").strip().casefold() == "none":
-        return False  # sem narração = sem legenda
-    if not bool(generation_settings.get("enable_subtitles", True)):
-        return False  # desligadas nas definições
-    if _subtitle_config_for_task(task, settings) is None:
-        return False  # sem config resolvível (fonte em falta etc.)
-    return True
-
-
 # 1.0.37 — timeout rígido da queima: o MoviePy re-codifica o vídeo inteiro na
 # CPU (vídeos longos podem demorar muito mais do que os 1-2 min do cenário
 # ideal); sem isto a tarefa ficava eternamente em doing (o relato dos 40 min).
@@ -2813,7 +2809,7 @@ def _fail_burn_subtitles_only(task_id: str, message: str) -> dict[str, Any]:
     return failed or {"id": task_id, "state": "failed", "error": message, "action": None}
 
 
-def _run_burn_with_timeout(video_path: Path, narration: str, config: dict[str, Any], timeout_seconds: int) -> Path:
+def _run_burn_with_timeout(video_path: Path, narration: str, config: dict[str, Any], timeout_seconds: int, burn_report: dict[str, Any] | None = None) -> Path:
     """Queima com TIMEOUT RÍGIDO: thread daemon + join(timeout) (1.0.37).
 
     O MoviePy não tem callback de cancelamento; a thread daemon continua o
@@ -2821,6 +2817,10 @@ def _run_burn_with_timeout(video_path: Path, narration: str, config: dict[str, A
     mas a tarefa já foi marcada como failed — nunca fica presa em doing. O
     ficheiro temporário da tentativa abandonada pode ser substituído pela
     própria thread em fundo quando (e se) terminar.
+
+    1.0.38 — `burn_report` atravessa até `burn_captions_on_video`: o carimbo
+    final vem do QUE ACONTECEU (True só quando a substituição in-place foi
+    feita; False quando não havia clips), nunca às cegas.
     """
     outcome: dict[str, Any] = {}
 
@@ -2828,7 +2828,7 @@ def _run_burn_with_timeout(video_path: Path, narration: str, config: dict[str, A
         try:
             from hermes_ui.text_to_images import burn_captions_on_video
 
-            outcome["path"] = burn_captions_on_video(video_path, narration, config)
+            outcome["path"] = burn_captions_on_video(video_path, narration, config, burn_report=burn_report)
         except BaseException as exc:  # devolvida ao chamador abaixo
             outcome["error"] = exc
 
@@ -2895,14 +2895,19 @@ def _run_burn_subtitles_only(task: dict[str, Any], settings: dict[str, Any]) -> 
 
     progress_thread = threading.Thread(target=_progress_loop, name=f"burn-progress-{task_id}", daemon=True)
     progress_thread.start()
+    burn_report: dict[str, Any] = {}
     try:
-        burned = _run_burn_with_timeout(video_path, narration, config, BURN_SUBTITLES_TIMEOUT_SECONDS)
+        burned = _run_burn_with_timeout(video_path, narration, config, BURN_SUBTITLES_TIMEOUT_SECONDS, burn_report)
     except PipelineError as exc:
         progress_stop.set()
         return _fail_burn_subtitles_only(task_id, str(exc))
     progress_stop.set()
+    # 1.0.38 — carimbo DETERMINÍSTICO: a substituição in-place aconteceu de
+    # facto (report da burn_captions_on_video); «sucesso» sem clips queimou
+    # NADA e a flag tem de dizê-lo (botão volta a ficar disponível).
+    burned_flag = bool(burn_report.get("subtitles_burned", True))
     artifacts["video"] = str(burned)
-    _mpt_runtime_log(f"[MPT-SUBTITLES] botão Legendar: queima concluída em {Path(burned).name} (tarefa {task_id})")
+    _mpt_runtime_log(f"[MPT-SUBTITLES] botão Legendar: queima {'concluída' if burned_flag else 'terminou SEM clips de legenda'} em {Path(burned).name} (tarefa {task_id})")
     return _update(
         task_id,
         stage="upload",
@@ -2910,10 +2915,10 @@ def _run_burn_subtitles_only(task: dict[str, Any], settings: dict[str, Any]) -> 
         progress=100,
         artifacts=artifacts,
         video_ready=True,
-        has_subtitles=True,
+        has_subtitles=burned_flag,
         action=None,
         error=None,
-        video_helper_status="",
+        video_helper_status="" if burned_flag else "Queima terminou sem clips de legenda (nada foi queimado).",
     ) or task
 
 
@@ -3147,6 +3152,12 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
     existing_video = _valid_artifact_path(artifacts.get("video"))
     if existing_video is None:
         _update(task_id, stage="video", state="doing", progress=max(52, int(task.get("progress") or 0)), error=None)
+        # 1.0.38 — REGISTRO DETERMINÍSTICO: `subtitles_burned` é o que
+        # ACONTECEU DE FACTO na geração (report das funções de queima), nunca
+        # uma adivinhação a partir das configurações — o carimbo final
+        # `has_subtitles` sai daqui.
+        subtitles_burned = False
+        burn_report: dict[str, Any] = {}
         try:
             video_prompt = _append_generation_constraints(
                 f"Título: {title}\n\nRoteiro:\n{str(script.get('content') or '')[:12000]}",
@@ -3191,7 +3202,8 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                         video_helper_status=f"imagem web da cena {scene_index}/{len(scenes)} descarregada",
                     )
                 output_path = STORAGE / "videos" / f"{task_id}-web-images.mp4"
-                video_path = assemble_text_to_images_video(image_scenes, audio_path, output_path, str(task.get("format") or "wide"), fps=int(generation_settings.get("text_to_images_fps") or 30), subtitle_config=_subtitle_config_for_task(task, settings))
+                video_path = assemble_text_to_images_video(image_scenes, audio_path, output_path, str(task.get("format") or "wide"), fps=int(generation_settings.get("text_to_images_fps") or 30), subtitle_config=_subtitle_config_for_task(task, settings), burn_report=burn_report)
+                subtitles_burned = bool(burn_report.get("subtitles_burned"))
             elif route == "text_to_images":
                 target_seconds = float(generation_settings.get("text_to_images_scene_duration") or 5)
                 # 1.0.03: as cenas (imagens + subtítulos) passam a vir da
@@ -3254,7 +3266,9 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                     fps=int(generation_settings.get("text_to_images_fps") or 30),
                     ken_burns=bool(generation_settings.get("text_to_images_ken_burns", False)),
                     subtitle_config=_subtitle_config_for_task(task, settings),
+                    burn_report=burn_report,
                 )
+                subtitles_burned = bool(burn_report.get("subtitles_burned"))
             elif route == "remotion":
                 # Remotion (renderização local React): a narração é garantida
                 # pela mesma cadeia TTS das outras fontes e o roteiro Markdown
@@ -3298,7 +3312,7 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                     "video_keywords": keywords,
                     "style_wide": route,
                 })
-                video_path = _apply_mpt_captions(task, video_path, script, settings)
+                video_path, subtitles_burned = _apply_mpt_captions(task, video_path, script, settings)
         except MediaGenerationError as exc:
             if route == "full_ia":
                 message = f"Pool Full IA (FAL AI/KIE AI/Agnes AI/Nano Banana/Replicate AI/Pollinations.ai/Hugging Face Inference API/InferencePort Proxy/HeyGen): {exc}"
@@ -3314,8 +3328,11 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
         current_after_video = _task_by_id(task_id) or {}
         artifacts = dict(current_after_video.get("artifacts") or artifacts)
         artifacts["video"] = str(video_path)
-        # 1.0.33: flag de legendas — espelha as condições reais da queima
-        _update(task_id, artifacts=artifacts, video_ready=True, has_subtitles=_task_has_subtitles(task, settings), progress=max(80, int(task.get("progress") or 0)))
+        # 1.0.38 — carimbo DETERMINÍSTICO: o que aconteceu de facto nesta
+        # geração (burn_report das montagens / tuplo do _apply_mpt_captions;
+        # full_ia e remotion não queimam legendas → False). Nunca mais uma
+        # leitura de configurações — nada de falsos positivos.
+        _update(task_id, artifacts=artifacts, video_ready=True, has_subtitles=subtitles_burned, progress=max(80, int(task.get("progress") or 0)))
     else:
         # 1.0.29: artefactos reutilizados da era pré-faststart (moov no fim,
         # player preto) são normalizados na própria reutilização — o
@@ -3718,6 +3735,19 @@ IDLE_INTERVAL_SECONDS = 30
 def run_worker(interval_seconds: int = ACTIVE_INTERVAL_SECONDS) -> None:
     try:
         ensure_storage()
+        # 1.0.38 — LIMPEZA ÚNICA no arranque do worker: remove as flags
+        # `has_subtitles` ADIVINHADAS da era pré-1.0.38 (falsos positivos
+        # que travavam o botão «Legendar» em vídeos sem legenda). Marcador
+        # em legacy_subtitle_flags_cleanup.json: corre uma vez; os carimbos
+        # DETERMINÍSTICOS de depois ficam intactos. A falha nunca mata o worker.
+        try:
+            from hermes_ui.domain import cleanup_legacy_subtitle_flags
+
+            removed = cleanup_legacy_subtitle_flags()
+            if removed:
+                _mpt_runtime_log(f"[MPT-SUBTITLES] limpeza 1.0.38: {removed} flags has_subtitles adivinhadas removidas (regra de ouro: sem flag => botão «Legendar» ACTIVO)")
+        except Exception as exc:
+            _mpt_runtime_log(f"[MPT-SUBTITLES] [AVISO] limpeza 1.0.38 indisponível ({type(exc).__name__}: {exc}); a fila continua")
         while True:
             # 1.0.11: o loop usa o pump paralelo — até motor.max_parallel_videos
             # tarefas de vídeo em simultâneo; run_once fica para --once.

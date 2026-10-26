@@ -201,7 +201,10 @@ def test_apply_mpt_captions_burns_and_logs_for_custom_audio(tmp_path: Path, monk
     video.write_bytes(b"mp4")
     burned_marker = tmp_path / "final-1.mp4"
 
-    def fake_burn(path, _text, _config):
+    def fake_burn(path, _text, _config, burn_report=None):
+        # 1.0.38 — a queima real preenche o report determinístico
+        if burn_report is not None:
+            burn_report["subtitles_burned"] = True
         return burned_marker
 
     import hermes_ui.text_to_images as text_module
@@ -209,8 +212,9 @@ def test_apply_mpt_captions_burns_and_logs_for_custom_audio(tmp_path: Path, monk
     monkeypatch.setattr(text_module, "burn_captions_on_video", fake_burn)
     task = {"generation_settings": {"enable_subtitles": True, "voiceover_service": "elevenlabs"}}
     script = {"content": "Fala directa da narração que a queima divide em segmentos."}
-    result = pipeline_worker._apply_mpt_captions(task, video, script, {})
+    result, burned = pipeline_worker._apply_mpt_captions(task, video, script, {})
     assert result == burned_marker
+    assert burned is True
     assert any("queima local concluída" in message for message in messages)
 
 
@@ -219,8 +223,10 @@ def test_apply_mpt_captions_skips_and_logs_when_disabled(tmp_path: Path, monkeyp
     video = tmp_path / "final-1.mp4"
     video.write_bytes(b"mp4")
     task = {"generation_settings": {"enable_subtitles": False, "voiceover_service": "elevenlabs"}}
-    result = pipeline_worker._apply_mpt_captions(task, video, {"content": "narração"}, {})
+    result, burned = pipeline_worker._apply_mpt_captions(task, video, {"content": "narração"}, {})
     assert result == video
+    # 1.0.38 — desligadas nas configurações: nada queimado, determinístico
+    assert burned is False
     assert any("cancelada" in message for message in messages)
 
 

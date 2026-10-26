@@ -300,12 +300,18 @@ def test_apply_mpt_captions_skips_native_and_disabled_and_none(monkeypatch, tmp_
     video = tmp_path / "video.mp4"
     video.write_bytes(b"mp4")
     script = {"content": "Narração do vídeo de teste."}
-    # TTS nativo: o MPT já queimou as legendas — não mexer
-    assert pipeline_worker._apply_mpt_captions(_mpt_task(), video, script, {}) == video
-    # modo sem voz: sem áudio não há legendas para queimar
-    assert pipeline_worker._apply_mpt_captions(_mpt_task(voiceover_mode="none"), video, script, {}) == video
+    # 1.0.38 — REGISTRO DETERMINÍSTICO: (video, burned). O TTS nativo do MPT
+    # queimou as legendas NO MOTOR quando o CLI levou --subtitle-enabled E a
+    # config era válida (fonte resolvível); sem fonte ou desligadas → False.
+    monkeypatch.setattr(pipeline_worker, "_resolve_subtitle_font_path", lambda name, settings: str(tmp_path / "arial.ttf"))
+    assert pipeline_worker._apply_mpt_captions(_mpt_task(), video, script, {}) == (video, True)
+    # fonte não resolvível: o motor não tinha config válida para queimar
+    monkeypatch.setattr(pipeline_worker, "_resolve_subtitle_font_path", lambda name, settings: None)
+    assert pipeline_worker._apply_mpt_captions(_mpt_task(), video, script, {}) == (video, False)
+    # modo sem voz: sem áudio não há legendas por definição
+    assert pipeline_worker._apply_mpt_captions(_mpt_task(voiceover_mode="none"), video, script, {}) == (video, False)
     # legendas desactivadas nas configurações
-    assert pipeline_worker._apply_mpt_captions(_mpt_task(voiceover_service="elevenlabs", enable_subtitles=False), video, script, {}) == video
+    assert pipeline_worker._apply_mpt_captions(_mpt_task(voiceover_service="elevenlabs", enable_subtitles=False), video, script, {}) == (video, False)
 
 
 def test_apply_mpt_captions_burns_when_custom_audio(monkeypatch, tmp_path):
@@ -323,16 +329,20 @@ def test_apply_mpt_captions_burns_when_custom_audio(monkeypatch, tmp_path):
     script = {"content": "Narração do vídeo com ElevenLabs."}
     captured = {}
 
-    def fake_burn(video_path, narration, config):
+    def fake_burn(video_path, narration, config, burn_report=None):
         captured["narration"] = narration
         captured["config"] = config
+        # 1.0.38 — a queima real preenche o report determinístico
+        if burn_report is not None:
+            burn_report["subtitles_burned"] = True
         return video
 
     monkeypatch.setattr("hermes_ui.text_to_images.burn_captions_on_video", fake_burn)
-    result = pipeline_worker._apply_mpt_captions(
+    result, burned = pipeline_worker._apply_mpt_captions(
         _mpt_task(voiceover_service="elevenlabs"), video, script, {}
     )
     assert result == video
+    assert burned is True
     assert captured["narration"].startswith("Narração")
     assert captured["config"].get("font_path")
 
@@ -351,14 +361,16 @@ def test_burn_captions_failure_leaves_original_video(monkeypatch, tmp_path):
     video.write_bytes(b"mp4-original")
     script = {"content": "Narração."}
 
-    def fake_burn(video_path, narration, config):
+    def fake_burn(video_path, narration, config, burn_report=None):
         raise RuntimeError("fonte em falta")
 
     monkeypatch.setattr("hermes_ui.text_to_images.burn_captions_on_video", fake_burn)
-    result = pipeline_worker._apply_mpt_captions(
+    result, burned = pipeline_worker._apply_mpt_captions(
         _mpt_task(voiceover_service="elevenlabs"), video, script, {}
     )
     assert result == video
+    # 1.0.38 — falha da queima: determinístico False, o original intacto
+    assert burned is False
     assert video.read_bytes() == b"mp4-original"
 
 
@@ -367,7 +379,7 @@ def test_pipeline_wires_mpt_captions_after_helper():
     mpt_block = source.split("video_path = _run_video_helper({", 1)[1].split("})", 1)[0]
     assert "_apply_mpt_captions" in source
     wiring = source.split('video_path = _run_video_helper({', 1)[1]
-    assert "video_path = _apply_mpt_captions(task, video_path, script, settings)" in wiring.split("except MediaGenerationError", 1)[0]
+    assert "video_path, subtitles_burned = _apply_mpt_captions(task, video_path, script, settings)" in wiring.split("except MediaGenerationError", 1)[0]
 
 
 @pytest.mark.skipif(

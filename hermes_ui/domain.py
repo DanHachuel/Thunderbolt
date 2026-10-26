@@ -695,6 +695,44 @@ def repair_task_queue() -> dict[str, int]:
     return dict(counters)
 
 
+def cleanup_legacy_subtitle_flags() -> int:
+    """1.0.38 — LIMPEZA ÚNICA: remove a chave ``has_subtitles`` de TODAS as tarefas.
+
+    As flags gravadas antes da 1.0.38 vieram de ADIVINHAÇÕES (condições da
+    1.0.33 ou inferência por configurações da 1.0.37) e geraram falsos
+    positivos que travavam o botão «Legendar» em vídeos sem legenda. Regra de
+    ouro da 1.0.38: sem a flag, o padrão é False (botão ACTIVO — é melhor
+    duplicar uma legenda do que impedir); o utilizador congela vídeos
+    antigos manualmente («Marcar como Legendado») e TODOS os vídeos NOVOS
+    recebem a flag carimbada deterministicamente no momento da criação.
+
+    Corre UMA vez (marcador em ``legacy_subtitle_flags_cleanup.json``) no
+    arranque da UI e do worker — as flags carimbadas depois da limpeza
+    (queimas reais) ficam intactas para sempre.
+    """
+    marker = read_json("legacy_subtitle_flags_cleanup.json", {})
+    if isinstance(marker, dict) and marker.get("done"):
+        return 0
+
+    removed = {"count": 0}
+
+    def mutate(tasks: Any) -> Any:
+        if not isinstance(tasks, list):
+            raise StorageIntegrityError("O ficheiro tasks.json não contém uma lista válida.")
+        for task in tasks:
+            if isinstance(task, dict) and "has_subtitles" in task:
+                task.pop("has_subtitles", None)
+                removed["count"] += 1
+        return tasks
+
+    update_json("tasks.json", [], mutate)
+    write_json(
+        "legacy_subtitle_flags_cleanup.json",
+        {"done": True, "at": now(), "removed": removed["count"]},
+    )
+    return removed["count"]
+
+
 def retry_task_with_current_settings(task_id: str, *, confirm_upload_uncertain: bool = False) -> dict[str, Any] | None:
     """Queue a failed or blocked task without persisting API credentials or provider snapshots.
 

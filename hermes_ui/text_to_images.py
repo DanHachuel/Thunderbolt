@@ -585,6 +585,7 @@ def assemble_text_to_images_video(
     fps: int = 30,
     ken_burns: bool = False,
     subtitle_config: dict | None = None,
+    burn_report: dict | None = None,
 ) -> Path:
     """Assemble still images and audio using only project-provided MoviePy/FFmpeg.
 
@@ -594,6 +595,12 @@ def assemble_text_to_images_video(
     Com `subtitle_config` (Configurações de legendas), cada cena queima o seu
     texto como legenda — fonte, tamanho, cor, contorno, fundo e posição —
     sincronizado com a duração da cena.
+
+    1.0.38 — `burn_report` (REGISTRO DETERMINÍSTICO): quando fornecido, a
+    função preenche ``burn_report["subtitles_burned"]`` com o QUE ACONTECEU
+    DE FACTO (True apenas quando os clips de legenda entraram no composto;
+    False quando o config está ausente ou a queima falhou) — o worker
+    carimba ``has_subtitles`` a partir daqui, nunca de configurações.
     """
     del format, ken_burns
     if not scenes_with_images:
@@ -602,6 +609,7 @@ def assemble_text_to_images_video(
 
     clips = []
     audio = None
+    burned_subtitles = False
     try:
         for scene in scenes_with_images:
             image = Path(str(scene.get("image_path") or ""))
@@ -622,6 +630,9 @@ def assemble_text_to_images_video(
                     from moviepy import CompositeVideoClip
 
                     video = CompositeVideoClip([video, *subtitle_clips]).with_duration(video.duration)
+                    # 1.0.38 — o carimbo determinístico: os clips entraram no
+                    # composto; a legenda ESTÁ no vídeo que vai ser escrito.
+                    burned_subtitles = True
                     # 1.0.29 — telemetria de legendas no stderr do worker
                     # (espelhada no pipeline_worker.log pelo launcher): a
                     # validação da tarefa passa a provar no log que as
@@ -638,6 +649,10 @@ def assemble_text_to_images_video(
                 import sys as _sys
 
                 print(f"[text_to_images] legendas ignoradas por falha: {exc}", file=_sys.stderr)
+        # 1.0.38 — o report reflecte o resultado REAL, mesmo com falha de
+        # queima acima (burned_subtitles fica False nesse caso).
+        if burn_report is not None:
+            burn_report["subtitles_burned"] = burned_subtitles
         audio = AudioFileClip(str(audio_path))
         video = video.with_audio(audio)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -663,6 +678,7 @@ def burn_captions_on_video(
     *,
     target_seconds: float = 5.0,
     wpm: int = 150,
+    burn_report: dict | None = None,
 ) -> Path:
     """Queima legendas aproximadas num vídeo final (rota Pexels/Pixabay do MPT).
 
@@ -672,6 +688,12 @@ def burn_captions_on_video(
     e queima as legendas com o mesmo motor/estilo das outras fontes. O
     ficheiro original é substituído in-place (o artefacto da tarefa mantém-se
     válido). Qualquer falha deixa o vídeo original intacto.
+
+    1.0.38 — `burn_report` (REGISTRO DETERMINÍSTICO): quando fornecido,
+    preenche ``burn_report["subtitles_burned"]`` com True APENAS quando a
+    substituição in-place aconteceu (clips compostos + vídeo reescrito) e
+    False quando não havia clips para queimar — o worker carimba
+    ``has_subtitles`` a partir daqui, nunca de configurações.
     """
     import os
 
@@ -696,6 +718,9 @@ def burn_captions_on_video(
             subtitle_config,
         )
         if not subtitle_clips:
+            # determinístico: NADA foi queimado — o vídeo sai igual ao original
+            if burn_report is not None:
+                burn_report["subtitles_burned"] = False
             return output
         burned = CompositeVideoClip([video, *subtitle_clips]).with_duration(total)
         temporary = output.with_name(f"{output.stem}.legendas-tmp.mp4")
@@ -711,6 +736,10 @@ def burn_captions_on_video(
         video.close()
         video = None
         os.replace(temporary, output)
+        # 1.0.38 — carimbo determinístico: a substituição in-place aconteceu,
+        # a legenda ESTÁ no ficheiro final.
+        if burn_report is not None:
+            burn_report["subtitles_burned"] = True
         # 1.0.29 — telemetria de sucesso no stderr do worker: sem isto a
         # queima local era invisível (apenas as falhas deixavam rasto) e não
         # havia como confirmar no log que as legendas do canal foram aplicadas.
