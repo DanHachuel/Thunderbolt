@@ -20,6 +20,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -88,15 +89,15 @@ class _FakeGenerationProcess:
     e medir as fases de montagem sem correr um render real.
     """
 
-    def __init__(self, *, log_handle=None, script=None, returncode=0, finish_after=None):
+    def __init__(self, *, log_handle=None, script=None, returncode=0, finish_after="auto"):
         self._log_handle = log_handle
         self._script = dict(script or {})
         self._returncode = returncode
-        self.finish_after = (
-            finish_after
-            if finish_after is not None
-            else (max(self._script) + 1 if self._script else 1)
-        )
+        # "auto": termina depois da última linha scriptada; None: só o kill
+        # o faz sair (usado na prova de falha rápida — sem corrida possível).
+        if finish_after == "auto":
+            finish_after = (max(self._script) + 1) if self._script else 1
+        self.finish_after = finish_after
         self.pid = 4242
         self.returncode = None
         self.killed = False
@@ -110,7 +111,7 @@ class _FakeGenerationProcess:
                 self._log_handle.flush()
         if self.killed:
             return self._returncode or 1
-        if self.returncode is None and self._polls >= self.finish_after:
+        if self.returncode is None and self.finish_after is not None and self._polls >= self.finish_after:
             self.returncode = self._returncode
         return self.returncode
 
@@ -137,6 +138,18 @@ def _fake_ffmpeg(directory: Path) -> Path:
     fake = directory / "ffmpeg-7.1-fake.exe"
     fake.write_bytes(b"#!/bin/sh\nexit 0\n")
     return fake
+
+
+def _fast_sleep(monkeypatch) -> None:
+    """Sono mínimo REAL nos laços do helper (wait-loop + watcher).
+
+    Não pode ser None (estrangula o GIL — o watcher só correria ao fim de
+    ~1 min num runner carregado) nem chamar o ``time.sleep`` patchado
+    (recursão — ``MPT_AGENT.time`` É o módulo time partilhado): por isso o
+    original é capturado antes do patch.
+    """
+    real_sleep = time.sleep
+    monkeypatch.setattr(MPT_AGENT.time, "sleep", lambda _seconds: real_sleep(0.001))
 
 
 _HELP_STDOUT = "options:\n  --video-source VIDEO_SOURCE\n  --video-script VIDEO_SOURCE\n"
@@ -312,7 +325,9 @@ def test_resolve_render_codec_survives_readonly_config(tmp_path: Path, monkeypat
 # ---------------------------------------------------------------------------
 
 
-def _fake_generation_environment(tmp_path: Path, monkeypatch, *, engine_script=None):
+def _fake_generation_environment(
+    tmp_path: Path, monkeypatch, *, engine_script=None, engine_finish_after="auto"
+):
     root = tmp_path / "MoneyPrinterTurbo"
     root.mkdir()
     fake_ffmpeg = _fake_ffmpeg(tmp_path)
@@ -324,8 +339,9 @@ def _fake_generation_environment(tmp_path: Path, monkeypatch, *, engine_script=N
     monkeypatch.setattr(MPT_AGENT.shutil, "which", lambda _: "/usr/bin/uv")
     monkeypatch.setattr(MPT_AGENT, "run_checked", lambda *args, **kwargs: None)
     monkeypatch.setattr(MPT_AGENT, "_probe_nvenc_encoder", lambda _path: True)
-    # 1.0.40: sem dormir — o wait-loop e o watcher do log correm rápido.
-    monkeypatch.setattr(MPT_AGENT.time, "sleep", lambda _seconds: None)
+    # 1.0.40: sono mínimo (não None — um no-op estrangularia o GIL e o
+    # watcher só correria ao fim de um minuto num runner carregado).
+    _fast_sleep(monkeypatch)
     captured: dict[str, object] = {}
     killed: list[int] = []
     processes: list = []
@@ -359,6 +375,7 @@ def _fake_generation_environment(tmp_path: Path, monkeypatch, *, engine_script=N
             log_handle=kwargs.get("stdout"),
             script=engine_script or {},
             returncode=0,
+            finish_after=engine_finish_after,
         )
         processes.append(process)
         captured["process"] = process
@@ -413,6 +430,7 @@ def test_generate_video_fails_fast_when_engine_falls_back_to_cpu(
                 "2026-10-27 13:09:21 | WARNING | video codec h264_nvenc failed, fallback to libx264. reason: No capable devices found"
             ],
         },
+        engine_finish_after=None,
     )
     with pytest.raises(MPT_AGENT.SkillError) as raised:
         MPT_AGENT.generate_video(root, "Tema com queda de GPU", ["--video-source", "pexels"])
@@ -501,7 +519,7 @@ def test_generate_video_without_configured_ffmpeg_keeps_inherited_environment(
     (root / "config.toml").write_text("[app]\n", encoding="utf-8")
     monkeypatch.setattr(MPT_AGENT.shutil, "which", lambda _: "/usr/bin/uv")
     monkeypatch.setattr(MPT_AGENT, "run_checked", lambda *args, **kwargs: None)
-    monkeypatch.setattr(MPT_AGENT.time, "sleep", lambda _seconds: None)
+    _fast_sleep(monkeypatch)
     captured: dict[str, object] = {}
 
     def fake_run(command, **_kwargs):

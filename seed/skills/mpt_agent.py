@@ -711,18 +711,20 @@ def _watch_engine_log(
     final_announced = False
 
     def _drain() -> str:
-        # Lê tudo o que o motor escreveu desde o offset anterior. Tolerante a
-        # leitura concorrente (Windows partilha o handle com o escritor).
+        # Lê tudo o que o motor escreveu desde o offset anterior. Binário:
+        # offsets de byte são exactos e seguros entre handles (o cookie do
+        # modo texto do tell() é opaco entre aberturas distintas). Tolerante
+        # a leitura concorrente (Windows partilha o handle com o escritor).
         nonlocal offset
-        chunk = ""
+        chunk = b""
         try:
-            with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+            with log_path.open("rb") as handle:
                 handle.seek(offset)
                 chunk = handle.read()
                 offset = handle.tell()
         except OSError:
             pass
-        return chunk
+        return chunk.decode("utf-8", errors="replace")
 
     while True:
         for raw_line in _drain().splitlines():
