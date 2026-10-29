@@ -626,6 +626,147 @@ def _resolve_render_codec(config_path: Path, ffmpeg_path: str) -> tuple[str, str
     return (codec, "ok" if codec == NVENC_VIDEO_CODEC else "unavailable")
 
 
+# ---------------------------------------------------------------------------
+# 1.0.40 — Falha rápida e telemetria de tempo da montagem final.
+#
+# O MOTOR do MoneyPrinterTurbo tem um fallback silencioso embutido: quando
+# um write de NVENC falha (driver, esgotamento de sessões com renders em
+# paralelo), ele reescreve o clip em libx264 e DESLIGA o NVENC para o resto
+# do runtime — o vídeo «termina», mas 6 min de vídeo a 1080p passam a
+# custar 40+ min na CPU sem uma única linha de erro evidente. Como esse
+# código vive no MPT (fora deste repo), a defesa do Thunderbolt é:
+# observar o log do motor EM TEMPO REAL e, ao primeiro marcador de queda
+# de GPU (MPT_CODEC_FALLBACK_MARKERS, os avisos do próprio motor), MATAR a
+# geração e falhar a tarefa com mensagem clara — mais o tempo das fases de
+# montagem para o utilizador ver onde o tempo passou.
+# ---------------------------------------------------------------------------
+
+# Marcadores de fase no log loguru do motor (app/services/video.py).
+MPT_ASSEMBLY_CONCAT_MARKER = "concatenating"
+MPT_ASSEMBLY_DONE_MARKER = "video combining completed"
+MPT_ASSEMBLY_FINAL_MARKER = "generating video:"
+MPT_ASSEMBLY_ANNOUNCE = "clips with ffmpeg"
+# Limiar de aviso da tarefa: acima disto a fase pode ter caído para CPU.
+MPT_ASSEMBLY_WARNING_THRESHOLD_SECONDS = 120
+MPT_CODEC_FAIL_FAST_MESSAGE = (
+    "Falha na GPU: NVENC indisponível. Verifique os drivers da NVIDIA. "
+    "O motor MoneyPrinterTurbo caiu para libx264 (CPU) a meio do render e a "
+    "geração foi abortada de imediato — com renders em paralelo, esgotamento "
+    "de sessões NVENC também produz esta queda (o motor não volta a tentar a "
+    "GPU no mesmo runtime)."
+)
+_ASSEMBLY_SLOW_WARNING = (
+    "[MPT-CODEC] [AVISO] A montagem final demorou muito. "
+    "A GPU pode ter falhado e o processo caiu para CPU."
+)
+
+
+def _kill_process_tree(pid: int) -> None:
+    """Mata o processo e a sua árvore (motor + subprocessos ffmpeg).
+
+    Sem isto o aborto por queda de GPU deixaria o write actual do ffmpeg a
+    continuar sozinho. Em Windows o `taskkill /T` percorre a árvore; em
+    POSIX o grupo criado por `start_new_session` leva SIGKILL.
+    """
+    if not pid:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(pid)],
+            capture_output=True,
+            check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        return
+    try:
+        import signal
+
+        os.killpg(os.getpgid(pid), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            os.kill(pid, 9)
+        except OSError:
+            pass
+
+
+def _watch_engine_log(
+    stop: threading.Event,
+    log_path: Path,
+    *,
+    on_codec_fallback,
+    timings: dict[str, float],
+) -> None:
+    """Observa o log do motor enquanto a geração corre (tail com offset).
+
+    (a) FALHA RÁPIDA: primeiro marcador de queda de NVENC → chamada de
+    ``on_codec_fallback(linha)`` (que mata a árvore) e fim do watcher.
+    (b) TEMPO DE MONTAGEM: mede o concat ffmpeg («concatenating N clips
+    with ffmpeg» → «video combining completed») e regista o arranque da
+    escrita final; acima do limiar emite o aviso. Falhas de leitura
+    (ficheiro ausente/rotação) nunca matam o watcher.
+    """
+    offset = 0
+    concat_started: float | None = None
+    concat_done = False
+    final_announced = False
+
+    def _drain() -> str:
+        # Lê tudo o que o motor escreveu desde o offset anterior. Tolerante a
+        # leitura concorrente (Windows partilha o handle com o escritor).
+        nonlocal offset
+        chunk = ""
+        try:
+            with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+                handle.seek(offset)
+                chunk = handle.read()
+                offset = handle.tell()
+        except OSError:
+            pass
+        return chunk
+
+    while True:
+        for raw_line in _drain().splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            lowered = line.casefold()
+            if any(marker in lowered for marker in MPT_CODEC_FALLBACK_MARKERS):
+                if concat_started is not None and not concat_done:
+                    timings["concat_seconds"] = time.monotonic() - concat_started
+                on_codec_fallback(line)
+                return
+            if (
+                concat_started is None
+                and MPT_ASSEMBLY_CONCAT_MARKER in lowered
+                and MPT_ASSEMBLY_ANNOUNCE in lowered
+            ):
+                concat_started = time.monotonic()
+                timings["concat_started"] = concat_started
+            elif (
+                concat_started is not None
+                and not concat_done
+                and MPT_ASSEMBLY_DONE_MARKER in lowered
+            ):
+                concat_done = True
+                concat_seconds = time.monotonic() - concat_started
+                timings["concat_seconds"] = concat_seconds
+                print(
+                    f"[MPT-CODEC] montagem (combine_videos): {concat_seconds:.1f}s para o concat ffmpeg",
+                    flush=True,
+                )
+                if concat_seconds > MPT_ASSEMBLY_WARNING_THRESHOLD_SECONDS:
+                    print(_ASSEMBLY_SLOW_WARNING, flush=True)
+            elif not final_announced and MPT_ASSEMBLY_FINAL_MARKER in lowered:
+                final_announced = True
+                timings["final_started"] = time.monotonic()
+        # Dreno final determinista: o motor pode ter escrito as últimas
+        # linhas (queda de GPU e saída) antes de o stop chegar — o ciclo
+        # corre sempre UMA leitura completa depois do stop.
+        if stop.is_set():
+            break
+        time.sleep(1.0)
+
+
 def _azure_v2_voice(cli_args: list[str]) -> str:
     """Return the unmarked Azure voice when this invocation requests Azure V2."""
     voice = _forwarded_option_value(cli_args, "--voice-name")
@@ -1138,11 +1279,34 @@ def generate_video(
             elapsed += 45
             log(f"generation still running ({elapsed}s)")
 
+    # 1.0.40 — watcher do log do motor: falha rápida na queda de GPU +
+    # tempos de montagem. O Popen (em vez do run) dá o PID necessário para
+    # matar a árvore (motor + ffmpeg) no instante do primeiro marcador.
+    codec_fallback: dict[str, str] = {}
+    assembly_timings: dict[str, float] = {}
+    watcher_stop = threading.Event()
+    generation_process: subprocess.Popen | None = None
+
+    def _abort_on_codec_fallback(engine_line: str) -> None:
+        if "line" not in codec_fallback:
+            codec_fallback["line"] = engine_line
+            _kill_process_tree(generation_process.pid if generation_process else 0)
+
+    def _observe_generation_log() -> None:
+        _watch_engine_log(
+            watcher_stop,
+            log_path,
+            on_codec_fallback=_abort_on_codec_fallback,
+            timings=assembly_timings,
+        )
+
+    watcher = threading.Thread(target=_observe_generation_log, daemon=True)
+    watcher.start()
     generation_beater = threading.Thread(target=_generation_beat, daemon=True)
     generation_beater.start()
     try:
         with log_path.open("w", encoding="utf-8") as log_file:
-            result = subprocess.run(
+            generation_process = subprocess.Popen(
                 command,
                 cwd=root,
                 # 1.0.36 — o motor (probe de codec, MoviePy, concat) recebe
@@ -1150,19 +1314,65 @@ def generate_video(
                 # None = herda o ambiente (comportamento da v1.0.01).
                 env=render_environment,
                 stdout=log_file,
-                creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
                 stderr=subprocess.STDOUT,
                 text=True,
-                check=False,
+                creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
+                # start_new_session permite killpg da árvore em POSIX.
+                start_new_session=os.name != "nt",
             )
+            while generation_process.poll() is None:
+                if codec_fallback.get("line"):
+                    _kill_process_tree(generation_process.pid)
+                time.sleep(1.0)
+        result_returncode = (
+            generation_process.returncode
+            if generation_process.returncode is not None
+            else -1
+        )
     finally:
+        watcher_stop.set()
         generation_stop.set()
-    if result.returncode != 0:
+        # O dreno final do watcher corre depois do stop — o join torna a
+        # leitura dos tempos determinista (sem corrida com o thread principal).
+        watcher.join(timeout=10)
+    # 1.0.40 — telemetria: tempo da escrita final (o «79%» que o utilizador
+    # vê no card é exactamente esta fase a correr no worker).
+    final_started = assembly_timings.get("final_started")
+    if final_started:
+        final_seconds = time.monotonic() - final_started
+        print(
+            f"[MPT-CODEC] escrita final (combine+audio): {final_seconds:.1f}s",
+            flush=True,
+        )
+        if final_seconds > MPT_ASSEMBLY_WARNING_THRESHOLD_SECONDS:
+            print(_ASSEMBLY_SLOW_WARNING, flush=True)
+    if codec_fallback.get("line"):
+        # 1.0.40 — queda de GPU no meio do render: abortar AGORA com
+        # mensagem clara, não deixar correr 40+ min em CPU e «terminar».
+        tail = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-8:]
+        if tail:
+            print("\n".join(tail), file=sys.stderr)
+        detail = codec_fallback["line"][:240]
+        error = f"{MPT_CODEC_FAIL_FAST_MESSAGE} Motor: {detail}"
+        write_result_manifest(
+            root,
+            {
+                "status": "failed",
+                "subject": subject,
+                "task_id": task_id,
+                "task_dir": str(task_dir.resolve()),
+                "log_file": str(log_path.resolve()),
+                "video_files": [],
+                "error": error,
+            },
+        )
+        raise SkillError(error)
+    if result_returncode != 0:
         tail = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-30:]
         if tail:
             print("\n".join(tail), file=sys.stderr)
         error = (
-            f"video generation failed with exit code {result.returncode}; "
+            f"video generation failed with exit code {result_returncode}; "
             f"log: {log_path}"
         )
         write_result_manifest(
@@ -1180,20 +1390,29 @@ def generate_video(
         raise SkillError(error)
 
     if render_nvenc_state == "ok":
-        # 1.0.36 — telemetria: o motor pode cair para libx264 a meio (sessões
-        # NVENC esgotadas, falha transitória do encoder); os marcadores do
-        # próprio MPT denunciam um fallback que de outra forma ficaria
-        # invisível — o vídeo final está pronto na mesma.
+        # 1.0.40 — rede de segurança: se o watcher perdeu o marcador na
+        # corrida final (motor escreveu a queda e saiu antes da última
+        # leitura), a queda de GPU NÃO passa em silêncio — a tarefa falha
+        # com a mesma mensagem clara em vez de entregar vídeo em CPU.
         try:
             engine_log = log_path.read_text(encoding="utf-8", errors="replace").casefold()
         except OSError:
             engine_log = ""
         if any(marker in engine_log for marker in MPT_CODEC_FALLBACK_MARKERS):
-            print(
-                "[MPT-CODEC] [AVISO] o motor caiu para libx264 (CPU) durante o render — "
-                "o vídeo fica pronto na mesma; a GPU será reavaliada no próximo render",
-                flush=True,
+            error = f"{MPT_CODEC_FAIL_FAST_MESSAGE} (marcador no log do motor)"
+            write_result_manifest(
+                root,
+                {
+                    "status": "failed",
+                    "subject": subject,
+                    "task_id": task_id,
+                    "task_dir": str(task_dir.resolve()),
+                    "log_file": str(log_path.resolve()),
+                    "video_files": [],
+                    "error": error,
+                },
             )
+            raise SkillError(error)
 
     videos = sorted(
         path.resolve()

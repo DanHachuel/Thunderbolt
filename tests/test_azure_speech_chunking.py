@@ -62,6 +62,23 @@ class _FakeStreamedProcess:
         self._exhausted.set()
 
 
+class _FakeGenerationProcess:
+    """Popen fake do motor (1.0.40): termina sem escrever no log."""
+
+    def __init__(self, *, returncode=0, finish_after=1):
+        self._returncode = returncode
+        self.finish_after = finish_after
+        self.pid = 5252
+        self.returncode = None
+        self._polls = 0
+
+    def poll(self):
+        self._polls += 1
+        if self.returncode is None and self._polls >= self.finish_after:
+            self.returncode = self._returncode
+        return self.returncode
+
+
 def test_mpt_agent_requires_moneyprinter_moviepy_release(tmp_path, monkeypatch):
     calls = []
 
@@ -241,14 +258,19 @@ def test_generate_video_injects_chunked_audio_into_moneyprinter_command(tmp_path
                 ),
                 stderr="",
             )
+        raise AssertionError("o spawn do motor passou a usar Popen (1.0.40)")
+
+    def fake_popen(command, **kwargs):
         captured["command"] = command
         task_id = command[command.index("--task-id") + 1]
         output = root / "storage" / "tasks" / task_id / "final-video.mp4"
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"mp4")
-        return SimpleNamespace(returncode=0)
+        process = _FakeGenerationProcess(returncode=0)
+        return process
 
     monkeypatch.setattr(MPT_AGENT.subprocess, "run", fake_run)
+    monkeypatch.setattr(MPT_AGENT.subprocess, "Popen", fake_popen)
     videos, task_dir, _log_path, _result_path = MPT_AGENT.generate_video(
         root,
         "Tema longo",

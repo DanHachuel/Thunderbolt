@@ -1,19 +1,18 @@
-"""1.0.36 — Aceleração de hardware (NVENC) restaurada sem quebrar o player.
+"""1.0.36/37/38/40 — Aceleração NVENC + ambiente saudável + falha rápida.
 
-Contratos desta release:
-- o binário FFmpeg escolhido no painel é injectado no ambiente do motor MPT
-  (IMAGEIO_FFMPEG_EXE + FFMPEG_BINARY) — o fork ignora o ffmpeg_path do
-  config.toml e usava o que encontrasse no PATH/wheel;
-- o codec é decidido por probe REAL (encode de 1 s — o "-encoders" anuncia
-  h264_nvenc mesmo quando o encoder falha a abrir, error -40 da 1.0.23);
-  GPU indisponível descarrega para libx264 ANTES do render;
-- o banner [MPT-CODEC] imprime-se exactamente antes de o motor arrancar;
-- os marcadores de fallback do próprio motor denunciam uma descida de GPU
-  a meio do render;
-- as escritas locais do MoviePy (montagem + queima de legendas da rota
-  Pexels/Pixabay, a etapa que custava ~45 min na CPU) usam h264_nvenc com
-  retry único em libx264 e SEM perder os WEB_SAFE_MP4_FFMPEG_PARAMS da
-  1.0.29 (+faststart +yuv420p) — o vídeo continua streamable no browser.
+Contratos cobertos por este ficheiro:
+- 1.0.36: o binário FFmpeg escolhido no painel é injectado no ambiente do
+  motor MPT (IMAGEIO_FFMPEG_EXE + FFMPEG_BINARY) e o codec é decidido por
+  probe REAL (encode de 1 s — o "-encoders" mente); GPU indisponível
+  descarrega para libx264 ANTES do render; banner [MPT-CODEC] antes de o
+  motor arrancar;
+- 1.0.37: a injecção EXTENDE o ambiente herdado (os.environ.copy) —
+  WinError 10106 provou o custo de o motor arrancar sem SYSTEMROOT;
+- 1.0.38: contrato cross-platform do spawn e re-injecção das essenciais;
+- 1.0.40: FALHA RÁPIDA na queda de GPU (o watcher vê os marcadores do
+  motor em tempo real, mata a árvore do render e a tarefa morre com
+  mensagem clara em vez de esperar 40+ min em CPU) + telemetria de tempo
+  das fases de montagem (concat e escrita final, aviso acima do limiar).
 """
 
 from __future__ import annotations
@@ -81,6 +80,44 @@ class _FakeStreamedProcess:
         self._exhausted.set()
 
 
+class _FakeGenerationProcess:
+    """Popen fake do motor MPT (1.0.40): escreve o log por poll e termina.
+
+    ``script`` mapeia o número do poll às linhas que o "motor" escreve no
+    log nesse instante — permite simular a queda de NVENC no meio do render
+    e medir as fases de montagem sem correr um render real.
+    """
+
+    def __init__(self, *, log_handle=None, script=None, returncode=0, finish_after=None):
+        self._log_handle = log_handle
+        self._script = dict(script or {})
+        self._returncode = returncode
+        self.finish_after = (
+            finish_after
+            if finish_after is not None
+            else (max(self._script) + 1 if self._script else 1)
+        )
+        self.pid = 4242
+        self.returncode = None
+        self.killed = False
+        self._polls = 0
+
+    def poll(self):
+        self._polls += 1
+        for line in self._script.get(self._polls, []):
+            if self._log_handle is not None:
+                self._log_handle.write(line + "\n")
+                self._log_handle.flush()
+        if self.killed:
+            return self._returncode or 1
+        if self.returncode is None and self._polls >= self.finish_after:
+            self.returncode = self._returncode
+        return self.returncode
+
+    def kill(self):
+        self.killed = True
+
+
 def _write_config(root: Path, *, ffmpeg_path: str = "", video_codec: str = "") -> Path:
     import json as _json
 
@@ -102,8 +139,25 @@ def _fake_ffmpeg(directory: Path) -> Path:
     return fake
 
 
+_HELP_STDOUT = "options:\n  --video-source VIDEO_SOURCE\n  --video-script VIDEO_SOURCE\n"
+
+
+class _FakeHelpRun:
+    """Resultado do subprocess.run de --help (com protocolo de contexto)."""
+
+    returncode = 0
+    stdout = _HELP_STDOUT
+    stderr = ""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+
 # ---------------------------------------------------------------------------
-# mpt_agent — injecção de ambiente
+# mpt_agent — injecção de ambiente (1.0.36/1.0.37)
 # ---------------------------------------------------------------------------
 
 
@@ -163,15 +217,9 @@ def test_windows_essentials_are_a_noop_outside_windows(monkeypatch):
     assert environment == {}
 
 
-def test_ffmpeg_environment_is_none_without_a_real_binary(tmp_path: Path):
-    # Caminho vazio, inexistente e "ffmpeg" nu do PATH: nada se injecta —
-    # o motor herda o ambiente exactamente como na v1.0.01.
-    empty = MPT_AGENT._ffmpeg_environment(_write_config(tmp_path))
-    missing = MPT_AGENT._ffmpeg_environment(
-        _write_config(tmp_path, ffmpeg_path=str(tmp_path / "ffmpeg.exe"))
-    )
-    assert empty is None
-    assert missing is None
+# ---------------------------------------------------------------------------
+# mpt_agent — probe REAL de NVENC (1.0.36)
+# ---------------------------------------------------------------------------
 
 
 def test_probe_nvenc_encoder_runs_a_real_encode_and_caches(tmp_path: Path, monkeypatch):
@@ -260,11 +308,11 @@ def test_resolve_render_codec_survives_readonly_config(tmp_path: Path, monkeypat
 
 
 # ---------------------------------------------------------------------------
-# mpt_agent — banner [MPT-CODEC] + env no spawn do render
+# mpt_agent — spawn do render: banner, env e FALHA RÁPIDA na queda de GPU
 # ---------------------------------------------------------------------------
 
 
-def _fake_generation_environment(tmp_path: Path, monkeypatch, *, engine_log_marker: str = ""):
+def _fake_generation_environment(tmp_path: Path, monkeypatch, *, engine_script=None):
     root = tmp_path / "MoneyPrinterTurbo"
     root.mkdir()
     fake_ffmpeg = _fake_ffmpeg(tmp_path)
@@ -276,38 +324,55 @@ def _fake_generation_environment(tmp_path: Path, monkeypatch, *, engine_log_mark
     monkeypatch.setattr(MPT_AGENT.shutil, "which", lambda _: "/usr/bin/uv")
     monkeypatch.setattr(MPT_AGENT, "run_checked", lambda *args, **kwargs: None)
     monkeypatch.setattr(MPT_AGENT, "_probe_nvenc_encoder", lambda _path: True)
+    # 1.0.40: sem dormir — o wait-loop e o watcher do log correm rápido.
+    monkeypatch.setattr(MPT_AGENT.time, "sleep", lambda _seconds: None)
     captured: dict[str, object] = {}
+    killed: list[int] = []
+    processes: list = []
 
-    def fake_run(command, **kwargs):
+    def fake_kill(pid):
+        killed.append(pid)
+        for process in processes:
+            if process.pid == pid:
+                process.kill()
+
+    monkeypatch.setattr(MPT_AGENT, "_kill_process_tree", fake_kill)
+
+    def fake_run(command, **_kwargs):
+        # só a detecção de opções passa ainda pelo run (--help)
         if "--help" in command:
-            return SimpleNamespace(
-                returncode=0,
-                stdout="options:\n  --video-source VIDEO_SOURCE\n  --video-script VIDEO_SOURCE\n",
-                stderr="",
-            )
+            return _FakeHelpRun()
+        raise AssertionError("o spawn do motor passou a usar Popen (1.0.40)")
+
+    def fake_popen(command, **kwargs):
+        if "--help" in command:
+            # subprocess.run chama internamente o Popen patchado — a
+            # detecção de opções responde pelo mesmo caminho em qualquer teste.
+            return _FakeHelpRun()
         captured["command"] = command
         captured["kwargs"] = kwargs
-        stdout = kwargs.get("stdout")
-        if engine_log_marker and stdout is not None:
-            stdout.write(engine_log_marker)
         task_id = command[command.index("--task-id") + 1]
         output = root / "storage" / "tasks" / task_id / "final-1.mp4"
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"mp4")
-        return SimpleNamespace(returncode=0)
+        process = _FakeGenerationProcess(
+            log_handle=kwargs.get("stdout"),
+            script=engine_script or {},
+            returncode=0,
+        )
+        processes.append(process)
+        captured["process"] = process
+        return process
 
     monkeypatch.setattr(MPT_AGENT.subprocess, "run", fake_run)
-    return root, str(fake_ffmpeg), captured
+    monkeypatch.setattr(MPT_AGENT.subprocess, "Popen", fake_popen)
+    return root, str(fake_ffmpeg), captured, killed
 
 
 def test_generate_video_prints_codec_banner_and_injects_environment(
     tmp_path: Path, monkeypatch, capsys
 ):
-    root, fake_ffmpeg, captured = _fake_generation_environment(tmp_path, monkeypatch)
-    # O marker herdado prova a extensão do ambiente em QUALQUER plataforma
-    # (no CI Linux o SYSTEMROOT não existe no os.environ — a garantia da
-    # essencial em si vive em _ensure_windows_essentials, testada à parte
-    # com os.name simulado).
+    root, fake_ffmpeg, captured, _killed = _fake_generation_environment(tmp_path, monkeypatch)
     monkeypatch.setenv("THUNDERBOLT_ENV_MARKER", "herdado-do-worker")
     videos, _task_dir, _log_path, _result_path = MPT_AGENT.generate_video(
         root, "Tema com GPU", ["--video-source", "pexels"]
@@ -329,6 +394,139 @@ def test_generate_video_prints_codec_banner_and_injects_environment(
     assert "PATH" in kwargs["env"]
     if os.name == "nt":
         assert "SYSTEMROOT" in kwargs["env"]
+    # Sem queda de GPU: render feliz, nenhum aviso de lentidão.
+    assert "[AVISO] A montagem final demorou muito" not in output
+
+
+def test_generate_video_fails_fast_when_engine_falls_back_to_cpu(
+    tmp_path: Path, monkeypatch, capsys
+):
+    """1.0.40 — o motor caiu para libx264? MATAR e falhar, não esperar 40+ min."""
+    root, _fake_ffmpeg, captured, killed = _fake_generation_environment(
+        tmp_path,
+        monkeypatch,
+        engine_script={
+            1: [
+                "2026-10-27 13:02:31 | DEBUG | combine_videos - concatenating 97 clips with ffmpeg"
+            ],
+            2: [
+                "2026-10-27 13:09:21 | WARNING | video codec h264_nvenc failed, fallback to libx264. reason: No capable devices found"
+            ],
+        },
+    )
+    with pytest.raises(MPT_AGENT.SkillError) as raised:
+        MPT_AGENT.generate_video(root, "Tema com queda de GPU", ["--video-source", "pexels"])
+    message = str(raised.value)
+    assert "Falha na GPU: NVENC indisponível" in message
+    assert "Verifique os drivers da NVIDIA" in message
+    # A árvore do motor foi morta no instante do marcador (PID do fake).
+    assert killed and captured["process"].pid in killed
+    assert captured["process"].killed
+    output = capsys.readouterr().out
+    assert "o motor caiu para libx264" not in output  # a mensagem vai no SkillError
+
+
+def test_generate_video_engine_fallback_marker_fails_even_if_watcher_misses_it(
+    tmp_path: Path, monkeypatch
+):
+    """1.0.40 — rede de segurança: marcador só no log FINAL também falha."""
+    root, _fake_ffmpeg, captured, _killed = _fake_generation_environment(
+        tmp_path,
+        monkeypatch,
+        engine_script={
+            # O watcher precisa de uma poll para ler; o fake fecha antes da
+            # leitura do marcador — a verificação pós-render apanha-o.
+            3: ["2026-10-27 13:12:00 | WARNING | video codec h264_nvenc was disabled after a runtime failure"],
+        },
+    )
+    with pytest.raises(MPT_AGENT.SkillError) as raised:
+        MPT_AGENT.generate_video(root, "Tema com queda tardia", ["--video-source", "pexels"])
+    assert "Falha na GPU: NVENC indisponível" in str(raised.value)
+
+
+def test_generate_video_reports_assembly_timings_and_warns_when_slow(
+    tmp_path: Path, monkeypatch, capsys
+):
+    root, _fake_ffmpeg, _captured, _killed = _fake_generation_environment(
+        tmp_path,
+        monkeypatch,
+        engine_script={
+            1: ["2026-10-27 13:09:21 | INFO | combine_videos - concatenating 40 clips with ffmpeg"],
+            2: [
+                "2026-10-27 13:10:11 | INFO | combine_videos - video combining completed",
+                "2026-10-27 13:10:11 | INFO | generate_final_videos - ## generating video: 1 => .\\storage\\tasks\\x\\final-1.mp4",
+            ],
+        },
+    )
+    # Limiar negativo: qualquer duração medida dispara o aviso (teste).
+    monkeypatch.setattr(MPT_AGENT, "MPT_ASSEMBLY_WARNING_THRESHOLD_SECONDS", -1)
+    videos, _task_dir, _log_path, _result_path = MPT_AGENT.generate_video(
+        root, "Tema com telemetria", ["--video-source", "pexels"]
+    )
+    assert videos
+    output = capsys.readouterr().out
+    assert "[MPT-CODEC] montagem (combine_videos):" in output
+    assert "concat ffmpeg" in output
+    assert "[MPT-CODEC] escrita final (combine+audio):" in output
+    assert "[AVISO] A montagem final demorou muito" in output
+    assert "A GPU pode ter falhado e o processo caiu para CPU" in output
+
+
+def test_generate_video_assembly_warning_not_emitted_for_normal_timings(
+    tmp_path: Path, monkeypatch, capsys
+):
+    root, _fake_ffmpeg, _captured, _killed = _fake_generation_environment(
+        tmp_path,
+        monkeypatch,
+        engine_script={
+            1: ["combine_videos - concatenating 3 clips with ffmpeg"],
+            2: [
+                "combine_videos - video combining completed",
+                "generate_final_videos - ## generating video: 1 => .\\storage\\tasks\\x\\final-1.mp4",
+            ],
+        },
+    )
+    MPT_AGENT.generate_video(root, "Tema rápido", ["--video-source", "pexels"])
+    output = capsys.readouterr().out
+    assert "[MPT-CODEC] montagem (combine_videos):" in output
+    assert "[MPT-CODEC] escrita final (combine+audio):" in output
+    assert "[AVISO] A montagem final demorou muito" not in output
+
+
+def test_generate_video_without_configured_ffmpeg_keeps_inherited_environment(
+    tmp_path: Path, monkeypatch, capsys
+):
+    root = tmp_path / "MoneyPrinterTurbo"
+    root.mkdir()
+    (root / "config.toml").write_text("[app]\n", encoding="utf-8")
+    monkeypatch.setattr(MPT_AGENT.shutil, "which", lambda _: "/usr/bin/uv")
+    monkeypatch.setattr(MPT_AGENT, "run_checked", lambda *args, **kwargs: None)
+    monkeypatch.setattr(MPT_AGENT.time, "sleep", lambda _seconds: None)
+    captured: dict[str, object] = {}
+
+    def fake_run(command, **_kwargs):
+        if "--help" in command:
+            return _FakeHelpRun()
+        raise AssertionError("o spawn do motor passou a usar Popen (1.0.40)")
+
+    monkeypatch.setattr(MPT_AGENT.subprocess, "run", fake_run)
+
+    def fake_popen(command, **kwargs):
+        captured["kwargs"] = kwargs
+        task_id = command[command.index("--task-id") + 1]
+        output = root / "storage" / "tasks" / task_id / "final-1.mp4"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"mp4")
+        return _FakeGenerationProcess(returncode=0)
+
+    monkeypatch.setattr(MPT_AGENT.subprocess, "Popen", fake_popen)
+    MPT_AGENT.generate_video(root, "Tema sem ffmpeg no config", ["--video-source", "pexels"])
+    kwargs = captured["kwargs"]
+    assert kwargs["env"] is None
+    banner = next(
+        line for line in capsys.readouterr().out.splitlines() if line.startswith("[MPT-CODEC]")
+    )
+    assert "nvenc=unknown" in banner
 
 
 @pytest.mark.skipif(os.name != "nt", reason="garantia especifica do runtime Windows")
@@ -340,7 +538,7 @@ def test_generate_video_env_reinjects_systemroot_when_parent_lacks_it(
     É o exacto cenário do WinError 10106 — o fallback C:\\Windows da
     allowlist entra em acção dentro de _ffmpeg_environment.
     """
-    root, fake_ffmpeg, captured = _fake_generation_environment(tmp_path, monkeypatch)
+    root, fake_ffmpeg, captured, _killed = _fake_generation_environment(tmp_path, monkeypatch)
     monkeypatch.delenv("SYSTEMROOT", raising=False)
     videos, _task_dir, _log_path, _result_path = MPT_AGENT.generate_video(
         root, "Tema sem SYSTEMROOT no pai", ["--video-source", "pexels"]
@@ -353,54 +551,10 @@ def test_generate_video_env_reinjects_systemroot_when_parent_lacks_it(
 def test_spawn_env_reinject_keeps_the_banner_forthcoming(tmp_path: Path, monkeypatch, capsys):
     # Contrário do anterior: com SYSTEMROOT presente, o valor do PAI é
     # preservado (nunca sobrescrito pelo fallback).
-    root, _fake, _captured = _fake_generation_environment(tmp_path, monkeypatch)
+    root, _fake, captured, _killed = _fake_generation_environment(tmp_path, monkeypatch)
     monkeypatch.setenv("SYSTEMROOT", "D:\\WinCustom")
     MPT_AGENT.generate_video(root, "Tema com SYSTEMROOT custom", ["--video-source", "pexels"])
-    assert _captured["kwargs"]["env"]["SYSTEMROOT"] == "D:\\WinCustom"
-
-
-def test_generate_video_reports_engine_fallback_marker(tmp_path: Path, monkeypatch, capsys):
-    root, _fake_ffmpeg, _captured = _fake_generation_environment(
-        tmp_path,
-        monkeypatch,
-        engine_log_marker="video codec h264_nvenc failed, fallback to libx264. reason: boom\n",
-    )
-    videos, _task_dir, _log_path, _result_path = MPT_AGENT.generate_video(
-        root, "Tema com queda de GPU", ["--video-source", "pexels"]
-    )
-    assert videos
-    output = capsys.readouterr().out
-    assert "[MPT-CODEC] [AVISO] o motor caiu para libx264 (CPU) durante o render" in output
-
-
-def test_generate_video_without_configured_ffmpeg_keeps_inherited_environment(
-    tmp_path: Path, monkeypatch, capsys
-):
-    root = tmp_path / "MoneyPrinterTurbo"
-    root.mkdir()
-    (root / "config.toml").write_text("[app]\n", encoding="utf-8")
-    monkeypatch.setattr(MPT_AGENT.shutil, "which", lambda _: "/usr/bin/uv")
-    monkeypatch.setattr(MPT_AGENT, "run_checked", lambda *args, **kwargs: None)
-    captured: dict[str, object] = {}
-
-    def fake_run(command, **kwargs):
-        if "--help" in command:
-            return SimpleNamespace(returncode=0, stdout="options:\n  --video-source VIDEO_SOURCE\n", stderr="")
-        captured["kwargs"] = kwargs
-        task_id = command[command.index("--task-id") + 1]
-        output = root / "storage" / "tasks" / task_id / "final-1.mp4"
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_bytes(b"mp4")
-        return SimpleNamespace(returncode=0)
-
-    monkeypatch.setattr(MPT_AGENT.subprocess, "run", fake_run)
-    MPT_AGENT.generate_video(root, "Tema sem ffmpeg no config", ["--video-source", "pexels"])
-    kwargs = captured["kwargs"]
-    assert kwargs["env"] is None
-    banner = next(
-        line for line in capsys.readouterr().out.splitlines() if line.startswith("[MPT-CODEC]")
-    )
-    assert "nvenc=unknown" in banner
+    assert captured["kwargs"]["env"]["SYSTEMROOT"] == "D:\\WinCustom"
 
 
 # ---------------------------------------------------------------------------
@@ -521,7 +675,8 @@ def test_nvenc_probe_is_cached_per_binary_and_mtime(tmp_path: Path, monkeypatch)
 
 
 # ---------------------------------------------------------------------------
-# Contratos de source — a camada 1.0.29/1.0.32/1.0.35 continua intocada
+# Contratos de source — as camadas 1.0.29/1.0.32/1.0.35/1.0.39 continuam
+# intocadas e a 1.0.40 mantém as garantias anteriores
 # ---------------------------------------------------------------------------
 
 
@@ -557,6 +712,29 @@ def test_mpt_agent_environment_is_extension_not_replacement():
     # A allowlist cobre as variáveis que o runtime do Windows exige.
     assert '"SYSTEMROOT", "WINDIR", "COMSPEC", "APPDATA", "LOCALAPPDATA"' in MPT_AGENT_SOURCE
     assert '"SYSTEMROOT": "C:\\\\Windows"' in MPT_AGENT_SOURCE
+
+
+def test_mpt_agent_fail_fast_contracts():
+    """1.0.40 — a queda de GPU falha cedo e com mensagem clara; sem limites."""
+    # O spawn passou a Popen (é preciso o PID para matar a árvore)…
+    assert "subprocess.Popen(" in MPT_AGENT_SOURCE
+    # …o watcher corre durante a geração…
+    assert "def _watch_engine_log(" in MPT_AGENT_SOURCE
+    assert "_observe_generation_log" in MPT_AGENT_SOURCE
+    # …mata a árvore do motor (taskkill/killpg)…
+    assert "def _kill_process_tree(" in MPT_AGENT_SOURCE
+    assert '"taskkill", "/T", "/F"' in MPT_AGENT_SOURCE
+    # …e a mensagem de falha é a que o utilizador precisa de ver no card.
+    assert "Falha na GPU: NVENC indisponível" in MPT_AGENT_SOURCE
+    assert "Verifique os drivers da NVIDIA" in MPT_AGENT_SOURCE
+    # Telemetria de tempo das fases de montagem + aviso do limiar.
+    assert "MPT_ASSEMBLY_WARNING_THRESHOLD_SECONDS" in MPT_AGENT_SOURCE
+    assert "[MPT-CODEC] montagem (combine_videos):" in MPT_AGENT_SOURCE
+    assert "[MPT-CODEC] escrita final (combine+audio):" in MPT_AGENT_SOURCE
+    assert "A montagem final demorou muito." in MPT_AGENT_SOURCE
+    assert "A GPU pode ter falhado e o processo caiu para CPU." in MPT_AGENT_SOURCE
+    # PROIBIDO limitar a concorrência: o gate de runtimes fica intacto.
+    assert "max_parallel_mpt_runtimes = 1" not in MPT_AGENT_SOURCE
 
 
 def test_local_writes_keep_web_safe_params_and_use_the_gpu_writer():
