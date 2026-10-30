@@ -152,16 +152,43 @@ function moduleAvailable(moduleName) {
 }
 
 const requiredWorkerModules = ["psutil", "serpapi", "playwright", "patchright"];
-const optionalWorkerModules = ["camoufox"];
+
+// 1.0.42 — Camoufox é OBRIGATÓRIO (o stealth do upload directo YouTube
+// depende dele) e passa a usar a MESMA checagem do botão «Testar instalação
+// do browser» da UI: `hermes_ui.browser_manager.camoufox_environment_ready`
+// (import REAL do módulo — lição 1.0.20 — + integridade do binário). O aviso
+// falso de «dependências opcionais ausentes (camoufox)» morreu: quando o
+// módulo está lá, o boot fica calado; quando falta, é ERRO REAL com o
+// comando do instalador — nunca um aviso de opcional.
+function camoufoxWorkerReady() {
+  try {
+    const probe = spawnSync(
+      python,
+      [
+        "-c",
+        "import json;from hermes_ui.browser_manager import camoufox_environment_ready;print(json.dumps(camoufox_environment_ready()))",
+      ],
+      { encoding: "utf8", env: { ...pythonEnvironment, PYTHONPATH: root }, timeout: 90000 },
+    );
+    if (probe.status === 0 && String(probe.stdout || "").trim()) {
+      const environment = JSON.parse(String(probe.stdout).trim());
+      return { ready: Boolean(environment.module), message: String(environment.message || "") };
+    }
+  } catch {
+    // probe Python indisponível: cai no import simples abaixo
+  }
+  return { ready: moduleAvailable("camoufox"), message: "" };
+}
 
 function checkWorkerDependencies(label) {
   const missing = requiredWorkerModules.filter((moduleName) => !moduleAvailable(moduleName));
-  const optionalMissing = optionalWorkerModules.filter((moduleName) => !moduleAvailable(moduleName));
-  if (optionalMissing.length) {
-    console.warn(`Thunderbolt: dependências opcionais ausentes (${optionalMissing.join(", ")}); funcionalidades opcionais ficarão indisponíveis.`);
-  }
+  // 1.0.42: o Camoufox sai da lista de opcionais — obrigatório, pela mesma
+  // checagem central que a UI usa (fim da discórdia terminal × interface).
+  const camoufox = camoufoxWorkerReady();
+  if (!camoufox.ready) missing.push("camoufox");
   if (!missing.length) return true;
   console.error(`Thunderbolt: ${label} não iniciado; imports obrigatórios ausentes: ${missing.join(", ")}.`);
+  if (camoufox.message) console.error(`Thunderbolt: ${camoufox.message}`);
   console.error("Execute: npx.cmd --yes --prefer-online @danhachuel/thunderbolt install");
   console.error("Depois confirme com: npx.cmd --yes --prefer-online @danhachuel/thunderbolt --check");
   return false;

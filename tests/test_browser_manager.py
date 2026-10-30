@@ -43,7 +43,12 @@ def test_firefox_always_uses_original_playwright(monkeypatch):
 
 
 def test_camoufox_status_missing_package_includes_fetch_command(monkeypatch):
-    monkeypatch.setattr(browser_manager, "_module_available", lambda name: False)
+    # 1.0.42: o status passa pela checagem CENTRAL (camoufox_environment_ready)
+    monkeypatch.setattr(
+        browser_manager,
+        "camoufox_environment_ready",
+        lambda: {"ready": False, "module": False, "binary": False, "message": "O pacote Camoufox não está instalado. Execute python -m camoufox fetch para descarregar o browser Camoufox."},
+    )
     result = browser_manager.get_browser_status("camoufox")
     assert result["status"] == "not_installed"
     assert "python -m camoufox fetch" in result["message"]

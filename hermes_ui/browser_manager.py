@@ -218,16 +218,65 @@ def _camoufox_browser_downloaded() -> bool:
     return re.search(r"(?mi)^\s*Installed\s+(?:yes|true)\s*$", result.stdout) is not None
 
 
+def _camoufox_module_importable() -> bool:
+    """1.0.42: import REAL do Camoufox num SUBPROCESSO.
+
+    A estrictidade do import real (lição 1.0.20 — o `find_spec` é raso e dá
+    falsos positivos com pacotes parciais) sem a poluição: `import camoufox`
+    arrasta o `playwright` para o `sys.modules` DO HOSPEDEIRO (provado: o
+    camoufox é construído sobre o playwright), e sockets/testes que dependem
+    do playwright NÃO estar em memória quebram com a partilha. A sonda em
+    subprocesso mantém o rigor e isola a memória — o mesmo padrão das sondas
+    de binário abaixo e do launcher (`moduleAvailable`).
+    """
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", "import importlib; importlib.import_module('camoufox')"],
+            capture_output=True,
+            text=True,
+            timeout=90,
+            check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
+def camoufox_environment_ready() -> dict[str, Any]:
+    """1.0.42 — checagem CENTRAL do Camoufox: import REAL do módulo + binário.
+
+    A MESMA fonte de verdade usada pelos DOIS lados que discordavam:
+      · o botão «Testar instalação do browser» da UI (get_browser_status);
+      · o boot do launcher (scripts/cli.mjs chama este módulo por `python -c`).
+    O módulo é importado de VERDADE (subprocesso — ver `_camoufox_module_importable`)
+    e o binário é validado por integridade (`_camoufox_browser_downloaded`,
+    1.0.22). `ready` só é True quando os dois passam; `message` diz sempre a
+    acção seguinte.
+    """
+    module_ok = _camoufox_module_importable()
+    binary_ok = _camoufox_browser_downloaded()
+    if not module_ok:
+        message = f"O pacote Camoufox não está instalado. {CAMOUFOX_FETCH_HINT}"
+    elif not binary_ok:
+        message = f"O binário Firefox do Camoufox não está descarregado. {CAMOUFOX_FETCH_HINT}"
+    else:
+        message = "Camoufox pronto."
+    return {"ready": module_ok and binary_ok, "module": module_ok, "binary": binary_ok, "message": message}
+
+
 def get_browser_status(browser_type: str) -> dict[str, str]:
     """Check browser import, binary availability and a real test launch."""
     name = str(browser_type or "").strip().casefold()
     if name not in {"camoufox", "chromium", "firefox"}:
         return {"status": "error", "message": "Tipo de browser desconhecido."}
     if name == "camoufox":
-        if not _module_available("camoufox"):
-            return {"status": "not_installed", "message": f"O pacote Camoufox não está instalado. {CAMOUFOX_FETCH_HINT}"}
-        if not _camoufox_browser_downloaded():
-            return {"status": "not_installed", "message": f"O binário Firefox do Camoufox não está descarregado. {CAMOUFOX_FETCH_HINT}"}
+        # 1.0.42: a MESMA checagem central que o boot do launcher usa
+        environment = camoufox_environment_ready()
+        if not environment["module"]:
+            return {"status": "not_installed", "message": str(environment["message"])}
+        if not environment["binary"]:
+            return {"status": "not_installed", "message": str(environment["message"])}
     elif name == "firefox":
         if not _module_available("playwright"):
             return {"status": "not_installed", "message": "Playwright não está instalado para Firefox."}
