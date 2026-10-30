@@ -309,6 +309,9 @@ DEFAULTS: dict[str, Any] = {
         "ffmpeg_path": "ffmpeg",
         "ffmpeg_version": "7.1-20240930",
         "ffmpeg_seed_path": "",
+        # 1.0.41 — pré-processamento de clipes (rota Pexels/Pixabay): OFF por
+        # omissão preserva o fluxo antigo (o motor MPT processa tudo).
+        "ffmpeg_preprocess_clips": False,
         "video_codec": "h264_nvenc",
         "material_directory": "",
         "whisper_model_size": "large-v3",

@@ -11752,10 +11752,23 @@ def render_settings():
             st.warning("O executável seleccionado ainda não foi encontrado no PATH. A instalação Windows abaixo pode corrigir isso.")
         with st.expander("Instalação incluída no pacote", expanded=False):
             st.caption("As duas versões são instaladas pelo próprio pacote: o FFmpeg 7.1 é extraído para a pasta isolada do Thunderbolt e o FFmpeg actual é instalado no ambiente Python através de imageio-ffmpeg. Nenhuma versão altera o PATH global ou substitui a outra.")
+        # 1.0.41 — pré-processamento de clipes (rota Pexels/Pixabay).
+        st.checkbox(
+            "Pré-processar clipes com FFmpeg antes da montagem",
+            key="ffmpeg_preprocess_clips_ui",
+            value=bool(settings.get("ffmpeg_preprocess_clips")),
+            help=(
+                "Ligado: entre a descarga dos materiais e a montagem do MoviePy, os clipes são normalizados "
+                "com FFmpeg para a resolução exacta do vídeo (GPU h264_nvenc quando disponível, senão libx264) "
+                "— a fase de compositing do MoviePy fica muito mais rápida. Desligado: fluxo antigo, o motor "
+                "processa tudo. Qualquer falha no FFmpeg mantém o clipe original — o render não quebra."
+            ),
+        )
         if st.button("Guardar configuração de FFmpeg", type="primary", width="stretch", key="save_ffmpeg_settings"):
             settings.update({
                 "ffmpeg_version": ffmpeg_version,
                 "ffmpeg_path": selected_ffmpeg_path,
+                "ffmpeg_preprocess_clips": bool(st.session_state.get("ffmpeg_preprocess_clips_ui")),
             })
             write_json("settings.json", settings)
             ffmpeg_moneyprinter_path = str(settings.get("moneyprinter_path") or "").strip()

@@ -113,6 +113,9 @@ def build_moneyprinter_config(settings: dict[str, Any], existing: dict[str, Any]
         "subtitle_provider": "subtitle_provider",
         "ffmpeg_path": "ffmpeg_path",
         "video_codec": "video_codec",
+        # 1.0.41 — o toggle de pré-processamento de clipes viaja para o
+        # config.toml: o mpt_agent (que arranca o motor) lê-o dali.
+        "ffmpeg_preprocess_clips": "ffmpeg_preprocess_clips",
         "material_directory": "material_directory",
         "match_materials_to_script": "match_materials_to_script",
         "twelvelabs_rerank_terms": "twelvelabs_rerank_terms",

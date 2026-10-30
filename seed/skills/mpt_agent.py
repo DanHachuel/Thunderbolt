@@ -769,6 +769,272 @@ def _watch_engine_log(
         time.sleep(1.0)
 
 
+# ---------------------------------------------------------------------------
+# 1.0.41 — Pré-processamento de clipes com FFmpeg (rota Pexels/Pixabay).
+#
+# Com o toggle LIGADO nas Configurações > FFmpeg, a geração passa a ter TRÊS
+# fases: (A) o motor corre até «materials» (descarrega e regista os clipes em
+# storage/tasks/<id>/script.json → material_sources); (B) o Thunderbolt
+# normaliza cada clipe com FFmpeg para a resolução exacta do vídeo (GPU
+# h264_nvenc quando existir nvidia-smi + probe ok; senão libx264) — a fase de
+# compositing do MoviePy deixa de andar a redimensionar; (C) o motor corre
+# até «video» como sempre. Qualquer falha de FFmpeg mantém o clipe original
+# (o render nunca quebra) e o toggle DESLIGADO preserva o fluxo antigo.
+# ---------------------------------------------------------------------------
+
+CLIP_PREPROCESS_CONFIG_KEY = "ffmpeg_preprocess_clips"
+CLIP_PREPROCESS_STAGE = "materials"
+CLIP_ASPECT_SIZES = {"16:9": (1920, 1080), "9:16": (1080, 1920), "1:1": (1080, 1080)}
+CLIP_PREPROCESS_FPS = 30
+# Só as rotas cujos materiais vivem no cache do motor (local = ficheiros do
+# utilizador, nunca se tocam).
+CLIP_PREPROCESS_ROUTES = {"pexels", "pixabay", "coverr"}
+CLIP_EXTENSIONS = {".mp4", ".mov", ".webm", ".mkv", ".m4v"}
+
+
+def _clip_preprocess_enabled(config_path: Path) -> bool:
+    """Toggle das Configurações > FFmpeg, lido do config.toml sincronizado."""
+    return _toml_section_value(config_path, "app", CLIP_PREPROCESS_CONFIG_KEY).strip().lower() in {
+        "1",
+        "true",
+        "on",
+        "yes",
+    }
+
+
+def _gpu_clips_available(ffmpeg_path: str) -> bool:
+    """GPU para o pré-processamento: nvidia-smi presente E probe NVENC ok.
+
+    É o teste que a tarefa pede (nvidia-smi) somado ao probe REAL de encoder
+    — anunciar NVENC sem o abrir (error -40 da 1.0.23) não conta.
+    """
+    if not ffmpeg_path or not shutil.which("nvidia-smi"):
+        return False
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True,
+            timeout=20,
+            check=False,
+            creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
+        )
+        if result.returncode != 0 or not (result.stdout or "").strip():
+            return False
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return _probe_nvenc_encoder(ffmpeg_path)
+
+
+def _clip_target_size(cli_args: list[str]) -> tuple[int, int]:
+    """Resolução exacta do vídeo final a partir do --video-aspect encaminhado."""
+    aspect = _forwarded_option_value(cli_args, "--video-aspect").strip()
+    return CLIP_ASPECT_SIZES.get(aspect, CLIP_ASPECT_SIZES["16:9"])
+
+
+def _material_clip_files(root: Path, task_id: str, config_path: Path) -> list[Path]:
+    """Ficheiros de clipe descarregados pelo motor para ESTA tarefa.
+
+    Fonte da verdade: ``storage/tasks/<task_id>/script.json`` →
+    ``material_sources[].local_file`` (registo escrito pelo próprio motor
+    depois da descarga). O directório segue a config do motor
+    (``material_directory = "task"`` → pasta da tarefa; vazio → cache
+    ``storage/local_videos``).
+    """
+    script_file = root / "storage" / "tasks" / task_id / "script.json"
+    try:
+        payload = json.loads(script_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    records = payload.get("material_sources") if isinstance(payload, dict) else None
+    if not isinstance(records, list):
+        return []
+    material_directory = _toml_section_value(config_path, "app", "material_directory")
+    if material_directory == "task":
+        clip_dir = root / "storage" / "tasks" / task_id
+    elif material_directory:
+        clip_dir = Path(material_directory)
+    else:
+        clip_dir = root / "storage" / "local_videos"
+    files: list[Path] = []
+    seen: set[str] = set()
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        name = str(record.get("local_file") or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        candidate = clip_dir / name
+        if candidate.suffix.lower() in CLIP_EXTENSIONS and candidate.is_file():
+            files.append(candidate)
+    return files
+
+
+def _clip_sidecar(path: Path) -> Path:
+    return path.with_name(f"{path.name}.prep")
+
+
+def _clip_already_prepared(path: Path, width: int, height: int) -> bool:
+    """Idempotente: sidecar com a medida certa e o ficheiro intacto salta."""
+    sidecar = _clip_sidecar(path)
+    if not sidecar.is_file():
+        return False
+    try:
+        marker = json.loads(sidecar.read_text(encoding="utf-8"))
+        return (
+            int(marker.get("width") or 0) == width
+            and int(marker.get("height") or 0) == height
+            and int(marker.get("size") or -1) == path.stat().st_size
+        )
+    except (OSError, json.JSONDecodeError, ValueError):
+        return False
+
+
+def _write_clip_sidecar(path: Path, width: int, height: int, codec: str, gpu: bool) -> None:
+    try:
+        _clip_sidecar(path).write_text(
+            json.dumps(
+                {
+                    "width": width,
+                    "height": height,
+                    "codec": codec,
+                    "gpu": bool(gpu),
+                    "size": path.stat().st_size,
+                    "prepared_at": datetime.now(timezone.utc).isoformat(),
+                }
+            ),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
+def _normalize_clip_with_ffmpeg(
+    ffmpeg_path: str,
+    source: Path,
+    width: int,
+    height: int,
+    *,
+    gpu: bool,
+) -> tuple[bool, str]:
+    """Normaliza UM clipe para WxH exacto (duração preservada, web-safe).
+
+    Duas tentativas: GPU (``-hwaccel cuda`` + ``h264_nvenc``) quando
+    disponível e CPU (``libx264``) sempre. Falha qualquer uma delas → o
+    ficheiro ORIGINAL fica intacto (nunca se perde material). Devolve
+    ``(ok, codec_utilizado)``.
+    """
+    temporary = source.with_name(f"{source.stem}.prep-tmp.mp4")
+    filters = f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},fps={CLIP_PREPROCESS_FPS}"
+    for codec in ("h264_nvenc", "libx264"):
+        if codec == "h264_nvenc" and not gpu:
+            continue
+        command = [ffmpeg_path, "-nostdin", "-y", "-hide_banner", "-loglevel", "error"]
+        if codec == "h264_nvenc":
+            command.extend(["-hwaccel", "cuda"])
+        command.extend(
+            [
+                "-i",
+                str(source),
+                "-vf",
+                filters,
+                "-c:v",
+                codec,
+                "-pix_fmt",
+                "yuv420p",
+                "-movflags",
+                "+faststart",
+                str(temporary),
+            ]
+        )
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                timeout=600,
+                check=False,
+                creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if completed.returncode == 0 and temporary.is_file() and temporary.stat().st_size > 0:
+            try:
+                os.replace(temporary, source)
+            except OSError:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                continue
+            return True, codec
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return False, ""
+
+
+def _preprocess_task_clips(
+    root: Path,
+    config_path: Path,
+    task_id: str,
+    ffmpeg_path: str,
+    cli_args: list[str],
+) -> dict[str, int]:
+    """Fase B: normaliza os clipes descarregados antes da montagem.
+
+    Telemetria ``[FFMPEG-PRE]`` no terminal (e na diagonal da tarefa): um
+    «clip i/N: WxH -> WxH (codec, X.Ys)» por clipe e um resumo final. Sem
+    binário FFmpeg ou sem clipes, tudo passa em NO-OP — o fluxo antigo segue.
+    """
+    stats = {"total": 0, "prepared": 0, "skipped": 0, "failed": 0}
+    if not ffmpeg_path:
+        print("[FFMPEG-PRE] sem binário FFmpeg efectivo — fluxo antigo mantido", flush=True)
+        return stats
+    files = _material_clip_files(root, task_id, config_path)
+    if not files:
+        print("[FFMPEG-PRE] nenhum clipe descarregado para normalizar — fluxo antigo mantido", flush=True)
+        return stats
+    width, height = _clip_target_size(cli_args)
+    gpu = _gpu_clips_available(ffmpeg_path)
+    print(
+        f"[FFMPEG-PRE] {len(files)} clipes -> {width}x{height} "
+        f"({'h264_nvenc' if gpu else 'libx264'}{', nvidia-smi ok' if gpu else ', sem GPU'})",
+        flush=True,
+    )
+    stats["total"] = len(files)
+    started = time.monotonic()
+    for index, clip in enumerate(files, start=1):
+        if _clip_already_prepared(clip, width, height):
+            stats["skipped"] += 1
+            print(f"[FFMPEG-PRE] clip {index}/{len(files)}: {clip.name} já normalizado", flush=True)
+            continue
+        clip_started = time.monotonic()
+        ok, codec = _normalize_clip_with_ffmpeg(ffmpeg_path, clip, width, height, gpu=gpu)
+        elapsed = time.monotonic() - clip_started
+        if ok:
+            stats["prepared"] += 1
+            _write_clip_sidecar(clip, width, height, codec, gpu)
+            print(
+                f"[FFMPEG-PRE] clip {index}/{len(files)}: {clip.name} -> {width}x{height} "
+                f"({codec}, {elapsed:.1f}s)",
+                flush=True,
+            )
+        else:
+            stats["failed"] += 1
+            print(
+                f"[FFMPEG-PRE] clip {index}/{len(files)}: {clip.name} FALHOU — original mantido "
+                f"({elapsed:.1f}s)",
+                flush=True,
+            )
+    print(
+        f"[FFMPEG-PRE] resumo: {stats['prepared']} normalizados, {stats['skipped']} já prontos, "
+        f"{stats['failed']} falharam (originais mantidos) em {time.monotonic() - started:.1f}s",
+        flush=True,
+    )
+    return stats
+
+
 def _azure_v2_voice(cli_args: list[str]) -> str:
     """Return the unmarked Azure voice when this invocation requests Azure V2."""
     voice = _forwarded_option_value(cli_args, "--voice-name")
@@ -1260,12 +1526,20 @@ def generate_video(
         "--stop-at",
         "video",
     ]
+    # 1.0.41 — o toggle de pré-processamento fecha a fase de materiais do
+    # motor: corre-se primeiro até «materials», normalizam-se os clipes com
+    # FFmpeg e só depois se monta (ver _preprocess_task_clips).
+    preprocess_clips = _clip_preprocess_enabled(config_path) and (
+        selected_video_source(forwarded_args) in CLIP_PREPROCESS_ROUTES
+    )
+    materials_command = [*command[:-2], "--stop-at", CLIP_PREPROCESS_STAGE]
     # 1.0.36 — telemetria do codec exactamente antes de o motor arrancar:
     # quem olha para o terminal (ou para a diagonal da tarefa) vê se a GPU
     # está a trabalhar ou se o render caiu para o CPU.
     print(
         f"[MPT-CODEC] ffmpeg={render_ffmpeg or 'auto (PATH/wheel do motor)'} "
-        f"codec={render_codec} nvenc={render_nvenc_state}",
+        f"codec={render_codec} nvenc={render_nvenc_state} "
+        f"preprocess={'on' if preprocess_clips else 'off'}",
         flush=True,
     )
     log(f"starting video generation, task ID: {task_id}")
@@ -1306,31 +1580,53 @@ def generate_video(
     watcher.start()
     generation_beater = threading.Thread(target=_generation_beat, daemon=True)
     generation_beater.start()
+
+    def _spawn_and_wait(spawn_command: list[str], log_file) -> int:
+        """Corre UMA fase do motor com a vigilância da 1.0.40 (falha rápida)."""
+        nonlocal generation_process
+        generation_process = subprocess.Popen(
+            spawn_command,
+            cwd=root,
+            # 1.0.36 — o motor (probe de codec, MoviePy, concat) recebe
+            # o FFmpeg 7.1 efectivo via IMAGEIO_FFMPEG_EXE/FFMPEG_BINARY.
+            # None = herda o ambiente (comportamento da v1.0.01).
+            env=render_environment,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            text=True,
+            creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
+            # start_new_session permite killpg da árvore em POSIX.
+            start_new_session=os.name != "nt",
+        )
+        while generation_process.poll() is None:
+            if codec_fallback.get("line"):
+                _kill_process_tree(generation_process.pid)
+            time.sleep(1.0)
+        return generation_process.returncode if generation_process.returncode is not None else -1
+
     try:
         with log_path.open("w", encoding="utf-8") as log_file:
-            generation_process = subprocess.Popen(
-                command,
-                cwd=root,
-                # 1.0.36 — o motor (probe de codec, MoviePy, concat) recebe
-                # o FFmpeg 7.1 efectivo via IMAGEIO_FFMPEG_EXE/FFMPEG_BINARY.
-                # None = herda o ambiente (comportamento da v1.0.01).
-                env=render_environment,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                text=True,
-                creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
-                # start_new_session permite killpg da árvore em POSIX.
-                start_new_session=os.name != "nt",
-            )
-            while generation_process.poll() is None:
+            if preprocess_clips:
+                # Fase A — o motor só descarrega os materiais e sai.
+                log(f"pre-processamento ligado: fase de materiais do motor (--stop-at {CLIP_PREPROCESS_STAGE})")
+                materials_returncode = _spawn_and_wait(materials_command, log_file)
                 if codec_fallback.get("line"):
-                    _kill_process_tree(generation_process.pid)
-                time.sleep(1.0)
-        result_returncode = (
-            generation_process.returncode
-            if generation_process.returncode is not None
-            else -1
-        )
+                    detail = codec_fallback["line"][:240]
+                    error = f"{MPT_CODEC_FAIL_FAST_MESSAGE} Motor: {detail}"
+                    raise SkillError(error)
+                if materials_returncode != 0:
+                    tail = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-30:]
+                    if tail:
+                        print("\n".join(tail), file=sys.stderr)
+                    error = (
+                        f"a fase de materiais do motor falhou com o código {materials_returncode}; "
+                        f"log: {log_path}"
+                    )
+                    raise SkillError(error)
+                # Fase B — normalização FFmpeg dos clipes descarregados.
+                _preprocess_task_clips(root, config_path, task_id, render_ffmpeg, forwarded_args)
+            # Fase C — montagem final pelo motor (fluxo normal).
+            result_returncode = _spawn_and_wait(command, log_file)
     finally:
         watcher_stop.set()
         generation_stop.set()

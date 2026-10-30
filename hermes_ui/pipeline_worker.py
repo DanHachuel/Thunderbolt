@@ -66,6 +66,29 @@ VIDEO_HELPER_OUTPUT_MAX_LINE_CHARS = 16_000
 VIDEO_TIMEOUT_SECONDS = 10 * 60
 LONG_STOCK_VIDEO_TIMEOUT_SECONDS = 90 * 60
 VIDEO_IDLE_TIMEOUT_SECONDS = 10 * 60
+# 1.0.41 — barra DINÂMICA da etapa de vídeo (fim do «cravado em 79%»). A
+# rampa temporal fina (1 ponto a cada 2 s) nunca deixa a barra parada e a
+# fracção real do motor (lida do log: clips, concat, escrita final) puxa-a
+# para cima quando há progresso de facto. O 79 fica reservado ao fim da
+# etapa (como antes) — durante a etapa o máximo é 78.
+VIDEO_STAGE_FLOOR_PROGRESS = 52
+VIDEO_STAGE_CEILING_PROGRESS = 78
+# Piso temporal (rede de segurança): lento de propósito — 1 ponto a cada
+# 30 s. Nunca é o líder em renders longos (a fracção real do motor passa
+# à frente) mas garante que a barra NUNCA fica parada enquanto o processo
+# corre (regra de ouro), mesmo em fases sem marcadores no log.
+VIDEO_STAGE_RAMP_SECONDS_PER_POINT = 30
+# Fracções da etapa atribuídas a cada fase real do motor MPT (log loguru):
+# clips 5%..75% (pelo número de clips processados), concat até 85% (tempo),
+# escrita final 85%..98% (tempo estimado pela duração do áudio). O 79 fica
+# reservado ao fim da etapa, como antes.
+VIDEO_STAGE_CLIP_FRACTION_FLOOR = 0.05
+VIDEO_STAGE_CLIP_FRACTION_CEILING = 0.75
+VIDEO_STAGE_CONCAT_FRACTION_CEILING = 0.85
+VIDEO_STAGE_FINAL_FRACTION_CEILING = 0.98
+VIDEO_STAGE_CONCAT_SECONDS_ESTIMATE = 90.0
+VIDEO_STAGE_FINAL_WRITE_SECONDS_PER_AUDIO_SECOND = 0.5
+VIDEO_STAGE_FINAL_WRITE_MIN_SECONDS = 60.0
 # O helper do MoneyPrinterTurbo pode ficar silencioso durante downloads/API.
 # Mantemos uma janela de inactividade maior para Pixabay, sem remover o watchdog.
 STOCK_VIDEO_IDLE_TIMEOUT_SECONDS = 5 * 60
@@ -1126,6 +1149,26 @@ def _latest_helper_log_activity(log_path: Path | None, previous_mtime: float) ->
     return (current_mtime, current_mtime > previous_mtime)
 
 
+def _read_engine_log_text(log_path: Path | None, *, max_chars: int = 400_000) -> str:
+    """Texto do log do motor para a barra dinâmica (1.0.41).
+
+    Lê ONLY o que já existe — o ficheiro está a ser escrito pelo motor em
+    concorrência. Qualquer falha devolve "" (a rampa temporal assume).
+    Só a cauda interessa (marcadores de fase recentes); o limite de
+    caracteres mantém o custo irrisório a cada 5 s.
+    """
+    if log_path is None:
+        return ""
+    try:
+        size = log_path.stat().st_size
+        with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+            if size > max_chars:
+                handle.seek(size - max_chars)
+            return handle.read()
+    except OSError:
+        return ""
+
+
 def _mpt_aspect_ratio(value: Any, format_value: Any = "") -> str:
     raw = str(value or format_value or "").strip().casefold()
     if raw in {"landscape 16:9", "wide", "16:9", "landscape"}:
@@ -1834,6 +1877,11 @@ def _run_video_helper_once(
         # janela: o carregamento pesado do runtime vem DEPOIS delas e o idle
         # watchdog de 5 min matava o arranque a meio (relato 1.0.19).
         generation_started = False
+        # 1.0.41 — ponto de partida da rampa dinâmica (nunca abaixo de 52) e
+        # estado das fases silenciosas (concat/escrita final medidas pelo
+        # worker — o motor não escreve no log durante elas).
+        video_progress = VIDEO_STAGE_FLOOR_PROGRESS
+        video_phase_state: dict[str, float] = {}
         try:
             while True:
                 try:
@@ -1860,10 +1908,15 @@ def _run_video_helper_once(
                     if not last_output_line:
                         last_output_line = "[MoneyPrinterTurbo] actividade de geração confirmada"
                 if elapsed - last_heartbeat >= 5:
-                    # O helper expõe o resultado final, mas não uma percentagem estável.
-                    # Mantemos uma faixa reservada para a etapa de vídeo e avançamos-a
-                    # lentamente enquanto o processo responde, sem fingir conclusão.
-                    video_progress = min(79, 52 + int(elapsed // 15))
+                    # 1.0.41 — barra DINÂMICA: rampa temporal fina (nunca
+                    # parada) + fracção real do motor lida do log. Substitui
+                    # a rampa de 15 s que cravava em 79% (relato do utilizador).
+                    video_progress = _video_stage_progress(
+                        _read_engine_log_text(helper_log_path),
+                        elapsed,
+                        video_progress,
+                        video_phase_state,
+                    )
                     current_task = _task_by_id(task_id)
                     if current_task and str(current_task.get("state") or "") in {"blocked", "cancelled"}:
                         _stop_process(process, reason="cancel")
@@ -2189,6 +2242,131 @@ def _read_json_artifact(value: Any) -> dict[str, Any] | None:
     except (OSError, json.JSONDecodeError):
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _video_stage_progress(
+    engine_log_text: str,
+    elapsed: float,
+    previous: int,
+    phase_state: dict[str, float] | None = None,
+) -> int:
+    """Progresso DINÂMICO da etapa de vídeo (52..78 enquanto o motor corre).
+
+    REGRA DE OURO (1.0.41): a barra nunca fica cravada num número enquanto o
+    processo corre. Duas fontes por máximo (nunca desce):
+
+    1. **Piso temporal lento** — 1 ponto a cada
+       ``VIDEO_STAGE_RAMP_SECONDS_PER_POINT`` (30 s): cobre arranque e
+       downloads, garante movimento contínuo e quase nunca é o líder;
+    2. **Fracção real do motor** lida do log do MPT — clips processados
+       (``processing clip N`` sobre o total estimado de ``audio duration`` /
+       ``maximum clip duration``), concat ffmpeg (``concatenating``) e escrita
+       final (``generating video:``). As fases silenciosas (concat e escrita
+       final não escrevem no log) medem o tempo pelo ``phase_state`` do
+       WORKER — marcas monotónicas registadas quando o marcador apareceu.
+
+    Devolve sempre entre 52 e 78 (o 79 fica reservado ao fim da etapa, como
+    antes) e nunca menos que ``previous`` — o card nunca recua.
+    """
+    floor = VIDEO_STAGE_FLOOR_PROGRESS
+    ceiling = VIDEO_STAGE_CEILING_PROGRESS
+    # (1) piso temporal lento — nunca parado, quase nunca o líder (é a rede
+    # de segurança para fases sem marcadores no log).
+    ramp = floor + int(max(0.0, elapsed) / VIDEO_STAGE_RAMP_SECONDS_PER_POINT)
+    progress = min(ceiling, max(floor, ramp))
+    # (2) fracção real do motor, quando o log a expõe.
+    text = str(engine_log_text or "")
+    if text:
+        lowered = text.casefold()
+        clip_number = 0
+        for match in re.finditer(r"processing clip (\d+)[:\s]", lowered):
+            clip_number = max(clip_number, int(match.group(1)))
+        audio_seconds = 0.0
+        audio_match = re.search(r"audio duration: ([0-9.]+)", lowered)
+        if audio_match:
+            audio_seconds = float(audio_match.group(1))
+        clip_seconds = 0.0
+        clip_match = re.search(r"maximum clip duration: (\d+)", lowered)
+        if clip_match:
+            clip_seconds = float(clip_match.group(1))
+        expected_clips = int(audio_seconds / clip_seconds) if audio_seconds and clip_seconds else 0
+        fraction = None
+        if "generating video:" in lowered:
+            # Escrita final: interpola pelo tempo estimado da fase (áudio).
+            # O motor NÃO escreve no log durante a escrita final (silenciosa) —
+            # o tempo vem do phase_state do worker (monotónico), com o hint do
+            # log como rede de segurança.
+            state = phase_state if isinstance(phase_state, dict) else {}
+            started_at = state.get("final_started")
+            if started_at is None:
+                started_at = time.monotonic()
+                state["final_started"] = started_at
+            tail_seconds = max(0.0, time.monotonic() - started_at) or _engine_log_elapsed_hint(
+                lowered, lowered.rfind("generating video:")
+            )
+            estimate = max(
+                VIDEO_STAGE_FINAL_WRITE_MIN_SECONDS,
+                audio_seconds * VIDEO_STAGE_FINAL_WRITE_SECONDS_PER_AUDIO_SECOND,
+            )
+            final_fraction = min(1.0, tail_seconds / estimate) if estimate else 1.0
+            fraction = VIDEO_STAGE_CONCAT_FRACTION_CEILING + (
+                VIDEO_STAGE_FINAL_FRACTION_CEILING - VIDEO_STAGE_CONCAT_FRACTION_CEILING
+            ) * final_fraction
+        elif "concatenating" in lowered:
+            # Concat ffmpeg a correr: sobe até 85% pelo tempo estimado.
+            state = phase_state if isinstance(phase_state, dict) else {}
+            started_at = state.get("concat_started")
+            if started_at is None:
+                started_at = time.monotonic()
+                state["concat_started"] = started_at
+            tail_seconds = max(0.0, time.monotonic() - started_at) or _engine_log_elapsed_hint(
+                lowered, lowered.rfind("concatenating")
+            )
+            concat_fraction = min(1.0, tail_seconds / VIDEO_STAGE_CONCAT_SECONDS_ESTIMATE)
+            fraction = VIDEO_STAGE_CLIP_FRACTION_CEILING + (
+                VIDEO_STAGE_CONCAT_FRACTION_CEILING - VIDEO_STAGE_CLIP_FRACTION_CEILING
+            ) * concat_fraction
+        elif clip_number and expected_clips:
+            # Fase de clips: 5%..75% pelo número de clips processados.
+            clip_fraction = min(1.0, clip_number / max(1, expected_clips))
+            fraction = VIDEO_STAGE_CLIP_FRACTION_FLOOR + (
+                VIDEO_STAGE_CLIP_FRACTION_CEILING - VIDEO_STAGE_CLIP_FRACTION_FLOOR
+            ) * clip_fraction
+        if fraction is not None:
+            engine_progress = floor + int(fraction * (ceiling - floor))
+            progress = min(ceiling, max(progress, engine_progress))
+    return max(floor, min(ceiling, max(previous, progress)))
+
+
+def _engine_log_elapsed_hint(lowered_log: str, marker_index: int) -> float:
+    """Segundos decorridos na fase do motor até à última marca do log.
+
+    O log do motor (loguru) marca cada linha com ``YYYY-MM-DD HH:MM:SS``; a
+    fase actual começa no ``marker_index`` (posição do marcador de fase). A
+    diferença entre a última marca temporal ANTERIOR ao marcador (arranque
+    da fase) e a última marca do texto (agora) dá o tempo na fase. Sem marcas
+    utilizáveis devolve 0 — o chamador segue pela rampa temporal.
+    """
+    if marker_index < 0:
+        return 0.0
+    stamps = [
+        (match.start(), match.group(1))
+        for match in re.finditer(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", lowered_log)
+    ]
+    if len(stamps) < 2:
+        return 0.0
+    try:
+        from datetime import datetime as _datetime
+
+        phase_start = next(
+            (stamp for position, stamp in reversed(stamps) if position < marker_index),
+            stamps[0][1],
+        )
+        started = _datetime.strptime(phase_start, "%Y-%m-%d %H:%M:%S")
+        now = _datetime.strptime(stamps[-1][1], "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return 0.0
+    return max(0.0, (now - started).total_seconds())
 
 
 def _scene_video_progress(index: int, total: int) -> int:
