@@ -163,7 +163,10 @@ def test_launch_browser_async_translates_the_missing_binary_error(monkeypatch):
 
 
 def test_get_browser_status_translates_the_missing_binary_error(monkeypatch):
-    monkeypatch.setattr(browser_manager, "_module_available", lambda name: True)
+    # 1.0.42: o status passa pela checagem CENTRAL — o módulo é simulado
+    # presente (no CI o camoufox não está instalado: requirements-dev exclui
+    # os motores pesados) e o binário também, para o teste chegar ao launch.
+    monkeypatch.setattr(browser_manager, "_camoufox_module_importable", lambda: True)
     monkeypatch.setattr(browser_manager, "_camoufox_browser_downloaded", lambda: True)
 
     def raise_driver_error(*args, **kwargs):

@@ -65,15 +65,20 @@ def test_module_probe_is_a_subprocess_that_cannot_pollute_the_host():
     arrasta o `playwright` para o `sys.modules` do hospedeiro — quebrou o
     isolamento de testes que dependem do playwright NÃO estar em memória.
     A checagem central corre as sondas em SUBPROCESSO: o hospedeiro sai
-    limpo (mesmo com o camoufox disponível)."""
+    limpo. Cross-plataforma: onde o módulo existe (dev/estações do
+    utilizador) a poluição é verificada; no CI (requirements-dev exclui os
+    motores pesados) apenas a consistência e o contrato do subprocesso."""
     import sys
 
     from hermes_ui import browser_manager
 
     before = "playwright.sync_api" in sys.modules
+    module_present = browser_manager._camoufox_module_importable()
     state = browser_manager.camoufox_environment_ready()
-    assert state["module"] is True  # o camoufox está no venv de teste
-    assert ("playwright.sync_api" in sys.modules) == before, "a sonda poluiu o hospedeiro"
+    assert state["module"] is module_present  # consistência em qualquer ambiente
+    if module_present:
+        assert ("playwright.sync_api" in sys.modules) == before, "a sonda poluiu o hospedeiro"
+        assert state["ready"] is state["binary"]
     # e o contrato do subprocesso fica pinado no fonte
     source = (ROOT / "hermes_ui" / "browser_manager.py").read_text(encoding="utf-8")
     assert "def _camoufox_module_importable() -> bool:" in source
