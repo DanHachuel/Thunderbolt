@@ -1,6 +1,6 @@
 [project]
 name = "thunderbolt-runtime"
-version = "1.0.45"
+version = "1.0.46"
 requires-python = ">=3.10,<3.13"
 dependencies = [
   "psutil>=5.9.0,<8",

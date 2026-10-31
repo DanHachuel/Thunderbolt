@@ -41,11 +41,6 @@ const pythonBin = platform() === "win32" ? join(venvPath, "Scripts", "python.exe
 const defaultMpt = process.env.MONEYPRINTER_PATH || join(thunderboltHome, "MoneyPrinterTurbo");
 const dependencyStatePath = join(thunderboltHome, "storage", "state", "install-state.json");
 const forceDeps = args.includes("--force-deps");
-// 1.0.31 — uploaders opt-in: o social-auto-upload (zip do GitHub, pesado) não
-// é essencial ao funcionamento base — o import é lazy na hora do upload e
-// nunca mata o arranque. Por omissão fica FORA da instalação/verificação e o
-// instalador avisa; só entra quando o utilizador pede explicitamente.
-const withUploaders = args.includes("--with-uploaders");
 const refreshMoneyPrinter = args.includes("--refresh-moneyprinter");
 const pythonEnvironment = { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", PYTHONLEGACYWINDOWSSTDIO: "1", CLICK_NO_WIN_CONSOLE: "1" };
 
@@ -498,15 +493,17 @@ function fileHash(path) {
 }
 
 // ---------------------------------------------------------------------------
-// 1.0.31 — requirements inteligentes:
+// 1.0.31/1.0.44 — requirements inteligentes, TODOS obrigatórios:
 //   · a instalação PESADA (ficheiro inteiro) só corre quando o requirements
 //     realmente MUDOU (hash persistido em install-state.json + marcador
 //     .sha256 junto ao venv) — um import que falhou nunca mais a despoleta;
 //   · a reparação é ALVO: `pip install --force-reinstall <spec exata>` de
-//     APENAS os pacotes que não importam, com a spec (versão/URL) do
-//     requirements.txt — falha ⇒ aviso e continua, nunca bloqueia o arranque;
-//   · os uploaders GitHub (social-auto-upload) são OPT-IN (--with-uploaders):
-//     saem da instalação pesada (requirements filtrado) e da reparação.
+//     TODOS os pacotes que não importam — uploaders GitHub (social-auto-
+//     upload/sau_cli) incluídos: são OBRIGATÓRIOS, nunca ficaram atrás de
+//     flag (a era opt-in da 1.0.31 foi revertida na 1.0.44);
+//   · falha da instalação ou da reparação ⇒ ABORTA com erro claro (regra
+//     «Pré-requisitos e Dependências Obrigatórias» do AGENTS.md) — nunca
+//     pula silenciosamente.
 // ---------------------------------------------------------------------------
 
 const moduleRequirementAliases = {
@@ -597,13 +594,8 @@ function missingModules(modules) {
   return [...modules];
 }
 
-function installRequirementIfNeeded(requirementsPath, stateKey, modules, label, options = {}) {
+function installRequirementIfNeeded(requirementsPath, stateKey, modules, label) {
   if (!existsSync(requirementsPath)) return;
-  // 1.0.31: gatedModules = pacotes pesados opt-in (uploaders GitHub). Sem o
-  // flag saem da instalação pesada (requirements filtrado) e da reparação —
-  // o import deles falhar volta a ser apenas um AVISO, nunca um download.
-  const gatedModules = options.gatedModules || [];
-  const gatedFlag = Boolean(options.gatedFlag);
   const lines = requirementLines(requirementsPath);
   const currentHash = fileHash(requirementsPath);
   const state = readDependencyState();
@@ -621,47 +613,33 @@ function installRequirementIfNeeded(requirementsPath, stateKey, modules, label, 
     return;
   }
 
-  // Instalação PESADA (ficheiro inteiro): só quando o requirements MUDOU
-  // mesmo (hash ≠ do último install) ou --force-deps. 1.0.20/1.0.31: um
-  // import que falhou NUNCA mais despoleta este caminho — a reacção a
-  // pacotes partidos é a reparação ALVO, em baixo.
+  // Instalação PESADA (ficheiro INTEIRO — nenhum pacote é filtrado atrás de
+  // flag): só quando o requirements MUDOU mesmo (hash ≠ do último install)
+  // ou --force-deps. 1.0.20/1.0.31: um import que falhou NUNCA mais
+  // despoleta este caminho — a reacção a pacotes partidos é a reparação
+  // ALVO, em baixo. O `run()` aborta com erro claro se o pip falhar.
   if (forceDeps || !persistedHashMatches) {
     const reason = forceDeps ? "forçados (--force-deps)" : "alterados desde a última instalação";
-    if (gatedModules.length && !gatedFlag) {
-      // requirements filtrado: o pacote pesado do GitHub fica de fora por
-      // omissão (opt-in --with-uploaders); a cópia em storage/state evita
-      // tocar na pasta (read-only) da versão do npx.
-      const gatedSpecs = new Set(gatedModules.map((moduleName) => requirementSpecForModule(lines, moduleName)).filter(Boolean));
-      const filteredPath = join(thunderboltHome, "storage", "state", `requirements.${stateKey}.filtered.txt`);
-      const filteredLines = lines.filter((line) => !gatedSpecs.has(line));
-      mkdirSync(dirname(filteredPath), { recursive: true });
-      writeFileSync(filteredPath, filteredLines.join("\n") + "\n", "utf8");
-      console.log(`${label}: requirements ${reason}; a instalar agora (uploaders GitHub fora — inclua-os com --with-uploaders).`);
-      run(pythonBin, ["-m", "pip", "install", "-r", filteredPath]);
-    } else {
-      console.log(`${label}: requirements ${reason}; a instalar agora.`);
-      run(pythonBin, ["-m", "pip", "install", "-r", requirementsPath]);
-    }
+    console.log(`${label}: requirements ${reason}; a instalar agora.`);
+    run(pythonBin, ["-m", "pip", "install", "-r", requirementsPath]);
     writeFileSync(markerPath, `${currentHash}\n`, "utf8");
     writeDependencyState({ [stateKey]: currentHash });
   }
 
-  // Reparação ALVO: APENAS os pacotes que ainda não importam, com a spec
-  // exata do requirements.txt (versão/URL preservados — nunca nome nu). O
-  // falhanço é um AVISO e a instalação CONTINUA: nada bloqueia o arranque
-  // (o launcher continua a validar os módulos críticos nos workers).
+  // Reparação ALVO: TODOS os pacotes que ainda não importam (uploaders
+  // GitHub incluídos — obrigatórios, sem excepções), com a spec exata do
+  // requirements.txt (versão/URL preservados — nunca nome nu). Regra 1.0.44:
+  // falhar aqui ABORTA a instalação com erro claro — dependência obrigatória
+  // nunca fica silenciosamente em falta.
   const missingAfter = missingModules(modules);
   if (!missingAfter.length) return;
   const repairable = [];
   const repairSpecs = [];
+  const unmatched = [];
   for (const moduleName of missingAfter) {
-    if (gatedModules.includes(moduleName) && !gatedFlag) {
-      console.warn(`${label}: ${moduleName} em falta (uploader GitHub opt-in). Para activar o upload automático: npx.cmd --yes --prefer-online @danhachuel/thunderbolt install --with-uploaders`);
-      continue;
-    }
     const spec = requirementSpecForModule(lines, moduleName);
     if (!spec) {
-      console.warn(`${label}: ${moduleName} não consta do requirements.txt; se for essencial: npx.cmd --yes --prefer-online @danhachuel/thunderbolt install --force-deps`);
+      unmatched.push(moduleName);
       continue;
     }
     if (!repairable.includes(moduleName)) {
@@ -669,23 +647,29 @@ function installRequirementIfNeeded(requirementsPath, stateKey, modules, label, 
       if (!repairSpecs.includes(spec)) repairSpecs.push(spec);
     }
   }
+  if (unmatched.length) {
+    console.error(`${label}: pacotes obrigatórios sem spec no requirements.txt: ${unmatched.join(", ")}. A instalação foi ABORTADA.`);
+    console.error("Corrija o requirements.txt ou execute: npx.cmd --yes --prefer-online @danhachuel/thunderbolt install --force-deps");
+    process.exit(1);
+  }
   if (!repairable.length) return;
   console.warn(`${label}: pacotes que não importam no ambiente existente: ${repairable.join(", ")}.`);
-  console.log(`${label}: a instalar APENAS os pacotes em falta (a instalação continua se algum falhar)...`);
+  console.log(`${label}: a instalar APENAS os pacotes em falta...`);
   const repaired = spawnSync(
     pythonBin,
     ["-m", "pip", "install", "--force-reinstall", "--disable-pip-version-check", ...repairSpecs],
     { stdio: "inherit", env: pythonEnvironment },
   );
   if (repaired.status !== 0) {
-    console.warn(`${label}: a reparação de ${repairable.join(", ")} falhou; a instalação CONTINUA (nada bloqueado).`);
-    console.warn("Verifique com: npx.cmd --yes --prefer-online @danhachuel/thunderbolt --check; se persistir, --force-deps reinstala tudo.");
-    return;
+    console.error(`${label}: a reparação de ${repairable.join(", ")} falhou. A instalação foi ABORTADA — dependências obrigatórias não podem ficar em falta.`);
+    console.error("Confirme o acesso à Internet e execute o instalador novamente.");
+    process.exit(repaired.status || 1);
   }
   const stillMissing = missingModules(modules);
   if (stillMissing.length) {
-    console.warn(`${label}: ainda sem importar após a reparação: ${stillMissing.join(", ")}.`);
-    console.warn("Verifique com: npx.cmd --yes --prefer-online @danhachuel/thunderbolt --check; se persistir, --force-deps reinstala tudo.");
+    console.error(`${label}: pacotes obrigatórios ainda sem importar após a reparação: ${stillMissing.join(", ")}. A instalação foi ABORTADA.`);
+    console.error("Execute: npx.cmd --yes --prefer-online @danhachuel/thunderbolt install --force-deps");
+    process.exit(1);
   }
 }
 
@@ -775,8 +759,12 @@ function installCamoufoxBrowser() {
     console.log("Camoufox: browser instalado.");
     return;
   }
-  console.error("Aviso: Falha ao baixar o binário do Camoufox. A automação de browsers pode falhar.");
+  // 1.0.44 — regra «Pré-requisitos e Dependências Obrigatórias»: o Camoufox
+  // (com GeoIP) é OBRIGATÓRIO; falhar o download ABORTA a instalação com
+  // erro claro (antes era apenas aviso — nada de skip silencioso).
+  console.error("Falha ao baixar o binário do Camoufox. A instalação foi ABORTADA.");
   console.error("Confirme o acesso à Internet e execute o instalador novamente; o download é retomado de onde parou.");
+  process.exit(result.status || 1);
 }
 
 function writeSettings(moneyprinterPath) {
@@ -816,19 +804,15 @@ function installThunderboltDependencies(python) {
   // Patchright, Camoufox) passam a ser geridos no main() com a flag
   // --skip-browsers: sem flags, `npx thunderbolt install` baixa-os SEMPRE.
   if (!existsSync(pythonBin)) run(python.command, [...python.args, "-m", "venv", venvPath]);
-  // 1.0.31: TODOS os módulos continuam a ser validados com import real
-  // (garantia 1.0.20 contra pacotes partidos), mas a REACÇÃO mudou:
-  // «psutil», «playwright», «patchright», «serpapi» e restantes críticos
-  // (importados no arranque dos workers/UI) entram na reparação alvo;
-  // «uploader»/«sau_cli» (social-auto-upload, zip pesado do GitHub) são
-  // OPT-IN via --with-uploaders — o import é lazy na hora do upload, nunca
-  // mata o arranque, e não pode obrigar a um download massivo.
+  // 1.0.31/1.0.44: TODOS os módulos são validados com import real (garantia
+  // 1.0.20 contra pacotes partidos) e reparados sem excepções — «uploader»/
+  // «sau_cli» (social-auto-upload) são OBRIGATÓRIOS como os restantes; a era
+  // opt-in (--with-uploaders) foi revertida na 1.0.44 (regra do AGENTS.md).
   installRequirementIfNeeded(
     join(root, "requirements.txt"),
     "thunderbolt_requirements_sha256",
     ["psutil", "streamlit", "requests", "pandas", "toml", "imageio_ffmpeg", "edge_tts", "google.auth", "google_auth_oauthlib", "googleapiclient", "yt_dlp", "deno", "youtube_transcript_api", "huggingface_hub", "playwright", "patchright", "camoufox", "filelock", "uploader", "sau_cli", "serpapi"],
     "Thunderbolt",
-    { gatedModules: ["uploader", "sau_cli"], gatedFlag: withUploaders },
   );
 }
 
@@ -941,12 +925,8 @@ function main() {
   if (skipBrowsers) {
     console.log("Browsers: SALTOU (--skip-browsers) — Playwright/Patchright/Camoufox não foram verificados.");
   }
-  // 1.0.31: os uploaders são opt-in — o resumo diz sempre o estado real.
-  if (withUploaders) {
-    console.log("Uploaders (social-auto-upload): incluídos nesta instalação (--with-uploaders).");
-  } else {
-    console.log("Uploaders (social-auto-upload): fora desta instalação (opt-in) — para o upload automático, execute: npx.cmd --yes --prefer-online @danhachuel/thunderbolt install --with-uploaders");
-  }
+  // 1.0.44: TODAS as dependências obrigatórias — uploaders incluídos — são
+  // instaladas incondicionalmente; o resumo não tem estados opt-in.
   console.log("Execute `npx.cmd --yes @danhachuel/thunderbolt` no Windows ou `npx --yes @danhachuel/thunderbolt` noutros sistemas.");
 }
 

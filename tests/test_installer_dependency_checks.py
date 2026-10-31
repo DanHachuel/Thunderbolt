@@ -50,11 +50,12 @@ def test_installer_heavy_install_only_runs_when_requirements_really_change():
     # falhou NUNCA mais despoleta o requirements inteiro.
     assert "if (forceDeps || !persistedHashMatches) {" in gate
     assert '"-m", "pip", "install", "-r", requirementsPath' in gate
-    # a reparação é ALVO (spec exata, --force-reinstall) e NÃO fatal
+    # a reparação é ALVO (spec exata, --force-reinstall)
     assert '"--force-reinstall"' in gate
     assert "a instalar APENAS os pacotes em falta" in gate
+    # 1.0.44 — reparação obrigatória falha ⇒ ABORTO (regra do AGENTS.md)
     repair = gate.split("const missingAfter = missingModules(modules);", 1)[1]
-    assert "process.exit" not in repair
+    assert "A instalação foi ABORTADA" in repair
 
 
 def test_installer_checks_the_reported_missing_packages():

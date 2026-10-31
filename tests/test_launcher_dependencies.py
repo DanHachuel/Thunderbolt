@@ -100,9 +100,9 @@ def test_installer_installs_the_camoufox_browser_as_a_mandatory_dependency():
     # sucesso = exit 0 do fetch E detecção pós-fetch a confirmar o binário
     assert "if (result.status === 0 && camoufoxBrowserDownloaded())" in block
     assert '"Camoufox: browser instalado."' in block
-    # falha = AVISO claro, sem abortar o resto da instalação
-    assert '"Aviso: Falha ao baixar o binário do Camoufox. A automação de browsers pode falhar."' in block
-    assert "process.exit" not in block
+    # 1.0.44 — regra "Pré-requisitos e Dependências Obrigatórias": falha = ABORTO com erro claro
+    assert '"Falha ao baixar o binário do Camoufox. A instalação foi ABORTADA."' in block
+    assert "process.exit(result.status || 1);" in block
     # 1.0.22: integridade REAL — o directório `camoufox path` com bytes;
     # «Installed: yes» do version fica como FALLBACK.
     detection_block = source.split("function camoufoxBrowserDownloaded()", 1)[1].split("\nfunction ", 1)[0]
