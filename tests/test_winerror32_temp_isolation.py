@@ -32,6 +32,7 @@ WORKER_SOURCE = (ROOT / "hermes_ui" / "pipeline_worker.py").read_text(encoding="
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(os.name != "nt", reason="branch LOCALAPPDATA específica do Windows")
 def test_thunderbolt_temp_dir_is_isolated_from_mobaxterm(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
     monkeypatch.setenv("TEMP", r"C:\Users\danha\AppData\Roaming\MobaXterm\...\tmp")
@@ -40,6 +41,17 @@ def test_thunderbolt_temp_dir_is_isolated_from_mobaxterm(monkeypatch, tmp_path: 
     assert temp_dir == tmp_path / "local" / "THUNDERBOLT" / "temp"
     assert temp_dir.is_dir()
     assert "MobaXterm" not in str(temp_dir)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="branch POSIX (HOME/.thunderbolt)")
+def test_thunderbolt_temp_dir_posix_never_invents_windows_paths(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    temp_dir = ui_storage.thunderbolt_temp_dir()
+    assert temp_dir == tmp_path / "home" / ".thunderbolt" / "temp"
+    assert temp_dir.is_dir()
+    # Nunca um caminho com unidade Windows (o FFmpeg lê «C:» como protocolo).
+    assert not str(temp_dir).startswith("C:")
 
 
 def test_thunderbolt_temp_dir_falls_back_when_not_creatable(monkeypatch):

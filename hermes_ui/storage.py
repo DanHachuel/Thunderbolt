@@ -26,9 +26,21 @@ THUNDERBOLT_TEMP_DIRNAME = "THUNDERBOLT"
 
 
 def thunderbolt_temp_dir() -> Path:
-    """Directório temporário isolado e estável (criado se faltar)."""
-    base = os.getenv("LOCALAPPDATA") or os.getenv("USERPROFILE") or "C:\\"
-    temp_dir = Path(base) / THUNDERBOLT_TEMP_DIRNAME / "temp"
+    """Directório temporário isolado e estável (criado se faltar).
+
+    Windows: ``%LOCALAPPDATA%\\THUNDERBOLT\\temp`` (a mesma casa do runtime —
+    nunca o TEMP instável herdado do MobaXterm). POSIX: ``$HOME/.thunderbolt/
+    temp`` (ou o temp do sistema como último recurso) — NUNCA se inventa um
+    caminho Windows fora do Windows: em POSIX um ``C:\\`` relativo faz o
+    FFmpeg interpretar «C:» como protocolo e o writer morre (BrokenPipe —
+    lição do gate CI da 1.0.43).
+    """
+    if os.name == "nt":
+        base = Path(os.getenv("LOCALAPPDATA") or os.getenv("USERPROFILE") or "C:\\")
+        temp_dir = base / THUNDERBOLT_TEMP_DIRNAME / "temp"
+    else:
+        base = Path(os.getenv("HOME") or tempfile.gettempdir())
+        temp_dir = base / ".thunderbolt" / "temp"
     try:
         temp_dir.mkdir(parents=True, exist_ok=True)
     except OSError:
