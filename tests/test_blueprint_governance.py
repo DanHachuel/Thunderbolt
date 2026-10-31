@@ -314,14 +314,18 @@ def test_oracao_script_governance_extracts_channel_law():
 
 
 def test_script_length_guardrail_retries_until_compliant(monkeypatch):
+    """1.0.45 — REGRA INVIOLÁVEL: a extensão do blueprint NUNCA manda no roteiro.
+
+    O canal (tempo médio) é a única fonte de verdade: um roteiro curto
+    NÃO é rejeitado por contagem de caracteres — o alvo de palavras é
+    injectado no topo do prompt e a lei de tom do blueprint permanece.
+    """
     blueprint = _blueprint("BlueprintOração.json")
     calls = []
 
     def fake_chat(settings, system, user):
         calls.append({"system": system, "user": json.loads(user)})
-        if len(calls) == 1:
-            return {"title": "Christ In You Is Greater", "summary": "s", "content": "x" * 500}
-        return {"title": "Christ In You Is Greater", "summary": "s", "content": "y" * 7500}
+        return {"title": "Christ In You Is Greater", "summary": "s", "content": "x" * 500}
 
     monkeypatch.setattr(script_generation, "_chat_json", fake_chat)
     result = generate_script_document(
@@ -335,36 +339,47 @@ def test_script_length_guardrail_retries_until_compliant(monkeypatch):
         generation_settings={"target_word_count": 1200},
     )
 
-    assert len(calls) == 2
-    feedback = calls[1]["user"]["system_feedback"]
-    assert "REJEITADO" in feedback and "caracteres" in feedback
-    # o system prompt do roteiro transporta a lei do canal
-    assert "7000" in calls[1]["system"]
-    assert "This is Daniel" in calls[1]["system"]
-    # a extensão obrigatória substitui a referência média de palavras
-    assert "1200" not in calls[1]["system"]
-    assert len(result["content"]) == 7500
+    # Sem retry por caracteres: uma chamada basta (o validador deixou de
+    # impor a range do blueprint).
+    assert len(calls) == 1
+    system = calls[0]["system"]
+    # O alvo do canal (settings do canal ou tempo médio) está no prompt…
+    assert "1,200 palavras" in system
+    assert "[INSTRUÇÃO DE TAMANHO OBRIGATÓRIA]" in system
+    # …e a range do blueprint desapareceu (sanitização 1.0.45).
+    assert "7000" not in system
+    assert "EXTENSÃO OBRIGATÓRIA" not in system
+    assert "STRICTLY" not in system
+    # A lei do canal que não é de tamanho permanece intacta.
+    assert "This is Daniel" in system
+    assert len(result["content"]) == 500
 
 
 def test_script_length_guardrail_hard_fails(monkeypatch):
+    """1.0.45 — o roteiro curto NUNCA mais falha por contagem de caracteres."""
     blueprint = _blueprint("BlueprintOração.json")
     calls = []
 
     def fake_chat(settings, system, user):
-        calls.append(user)
+        calls.append({"system": system, "user": json.loads(user)})
         return {"title": "t", "summary": "s", "content": "x" * 500}
 
     monkeypatch.setattr(script_generation, "_chat_json", fake_chat)
-    with pytest.raises(CreativeGenerationError, match="não cumpre as regras do blueprint"):
-        generate_script_document(
-            _settings(),
-            document_type="Roteiro de vídeo",
-            title="Christ In You Is Greater",
-            brief="identity",
-            language="en",
-            blueprint=blueprint,
-        )
-    assert len(calls) == MAX_SCRIPT_GENERATION_ATTEMPTS
+    # Sem canal explícito: o padrão do canal (20:00) é a fonte única.
+    result = generate_script_document(
+        _settings(),
+        document_type="Roteiro de vídeo",
+        title="Christ In You Is Greater",
+        brief="identity",
+        language="en",
+        blueprint=blueprint,
+    )
+    assert result["content"] == "x" * 500
+    assert len(calls) == 1
+    # A range de caracteres do blueprint não chega ao prompt.
+    assert "EXTENSÃO OBRIGATÓRIA" not in calls[0]["system"]
+    assert "7000" not in calls[0]["system"]
+    assert "STRICTLY" not in calls[0]["system"]
 
 
 def test_script_without_blueprint_range_keeps_word_count_reference(monkeypatch):
@@ -380,13 +395,16 @@ def test_script_without_blueprint_range_keeps_word_count_reference(monkeypatch):
         document_type="Roteiro de vídeo",
         title="As muralhas esquecidas",
         brief="Explicar o mistério de uma cidade antiga.",
-        language="01 – Inglês",
+        language="01 — Inglês",
         channel={"id": "c", "name": "History Vault"},
         blueprint={"id": "bp-history", "name": "História"},
         generation_settings={"target_word_count": 900},
     )
-    assert "900" in captured["system"]
+    # 1.0.45: sem range no blueprint, o alvo de palavras do canal lidera
+    # (instrução obrigatória no topo) — e a range continua ausente.
+    assert "900 palavras" in captured["system"]
     assert "EXTENSÃO OBRIGATÓRIA" not in captured["system"]
+    assert "STRICTLY" not in captured["system"]
 
 
 # ---------------------------------------------------------------------------

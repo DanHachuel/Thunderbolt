@@ -13,7 +13,14 @@ from .blueprint_governance import (
     validate_script_content,
     validate_title_with_governance,
 )
+from .blueprint_length_guard import (
+    channel_length_instruction,
+    length_instruction_for_words,
+    sanitize_blueprint_for_prompt,
+    strip_length_governance,
+)
 from .creative_generation import CreativeGenerationError, _chat_json, channel_context, target_language
+from .video_length import channel_video_length
 
 
 DOCUMENT_TYPES = {
@@ -40,10 +47,13 @@ def generate_script_document(
     decides whether the generated draft should be saved after the user reviews it.
 
     1.1.x — o Blueprint activo é a lei do canal: tom (GLOBAL_TONE_DIRECTIVE /
-    channel_persona / role_enforcement), extensão obrigatória
-    (metadata.strict_character_range + length_compliance_mandatory), must_avoid,
-    must_include e CTA obrigatório são injectados no system prompt e a extensão
-    é VALIDADA EM CÓDIGO, com loop de auto-correcção quando falha.
+    channel_persona / role_enforcement), must_avoid, must_include e CTA
+    obrigatório são injectados no system prompt. 1.0.45 — REGRA INVIOLÁVEL
+    (AGENTS.md): o ``average_video_time`` do canal é a ÚNICA fonte de verdade
+    para o tamanho do roteiro; as regras de contagem de caracteres dos
+    Blueprints são REMOVIDAS antes de qualquer ida à LLM
+    (``sanitize_blueprint_for_prompt``) e a instrução de tamanho do canal vai
+    no TOPO do system prompt (``channel_length_instruction``).
     """
     normalized_type = DOCUMENT_TYPES.get(document_type, document_type)
     if normalized_type not in {"video_script", "music_lyrics"}:
@@ -51,18 +61,30 @@ def generate_script_document(
     if not brief.strip():
         raise CreativeGenerationError("Escreva um tema ou briefing antes de gerar o documento.")
 
-    channel_context_value = channel_context(channel or {}, blueprint or {})
+    channel = channel or {}
+    # 1.0.45 — SANITIZAÇÃO: as chaves de comprimento do blueprint NUNCA
+    # chegam à LLM (a qualquer profundidade). O original fica intacto para
+    # títulos/visuais; tudo o que segue usa a cópia limpa.
+    blueprint_payload = sanitize_blueprint_for_prompt(blueprint or {})
+    channel_context_value = channel_context(channel, blueprint_payload)
     requested_language = language or channel_context_value["language"]
     language_code, language_name = target_language(requested_language)
-    blueprint_payload = blueprint or {}
     generation_settings_payload = generation_settings or {}
     governance: dict[str, Any] = {}
+    length_instruction = ""
     if normalized_type == "video_script":
-        governance = script_governance(blueprint_payload)
-        target_word_count = generation_settings_payload.get("target_word_count")
-        # Quando o blueprint fixa uma extensão OBRIGATÓRIA em caracteres, ela
-        # substitui a referência média de palavras (nunca enviar as duas).
-        length_is_mandatory = bool(governance.get("length_compliance_mandatory")) and governance.get("strict_character_range") is not None
+        # 1.0.45 — a governança de roteiro perde as regras de comprimento
+        # (sem secção «EXTENSÃO OBRIGATÓRIA», sem validação dura de caracteres).
+        governance = strip_length_governance(script_governance(blueprint_payload))
+        # 1.0.45 — o tamanho vem do canal: o ``target_word_count`` explícito
+        # (derivado do Tempo Médio do cartão) vence o padrão; NUNCA suprimido
+        # por regra de blueprint.
+        target_word_count = int(generation_settings_payload.get("target_word_count") or 0)
+        length_instruction, _instruction_words, _instruction_duration = channel_length_instruction(channel)
+        if target_word_count:
+            length_instruction, _words, _duration = length_instruction_for_words(
+                target_word_count, _instruction_duration
+            )
         output_requirements = {
             "content": "roteiro completo em Markdown: título, gancho e narração integral; directivas visuais/sonoras apenas em linhas de marcação próprias ([VISUAL]/[ÁUDIO] isoladas)",
             "summary": "resumo editorial em uma frase",
@@ -82,8 +104,11 @@ def generate_script_document(
             "se incluíres directivas visuais/sonoras, usa linhas de marcação isoladas ([VISUAL]/[ÁUDIO]); "
             "todo o restante é apenas narração falada. "
         )
-        if target_word_count and not length_is_mandatory:
-            system += f"Escreve aproximadamente {int(target_word_count)} palavras; trata este valor como uma referência média e não como um limite rígido. "
+        # 1.0.45 — a instrução de tamanho do canal vai no TOPO do prompt:
+        # antes de tudo, com a ordem explícita de ignorar restrições
+        # residuais de tamanho do Blueprint (regra imutável).
+        if length_instruction:
+            system = length_instruction + "\n\n" + system
         governance_section = script_rules_prompt_section(governance)
         if governance_section:
             system += "\n\n" + governance_section
