@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .blueprint_governance import visual_requirements_fallback_suffix, visual_requirements_prompt_section
+from .fs_safe import safe_replace, safe_unlink
 from .provider_routing import ProviderRoutingError, route_llm_json
+from .storage import thunderbolt_temp_dir
 from .voice_preview import resolve_narration_provider, synthesize_preview
 
 # 1.0.29 — MP4 pronto para o browser: o MoviePy escreve o átomo `moov` no
@@ -108,27 +110,43 @@ def _nvenc_encoder_available(ffmpeg: str) -> bool:
     return available
 
 
-def _write_web_safe_videofile(clip, output_path: Path, *, fps: int, audio_codec: str = "aac") -> str:
+def _write_web_safe_videofile(
+    clip,
+    output_path: Path,
+    *,
+    fps: int,
+    audio_codec: str = "aac",
+    temp_audiofile_path: Path | str | None = None,
+) -> str:
     """Escreve o MP4 final web-safe (faststart + yuv420p), na GPU quando possível.
 
     GPU (h264_nvenc) quando o probe REAL confirma o encoder; qualquer falha
     do write repete UMA vez em libx264 (CPU) — o vídeo nunca fica por
     produzir. Os ``WEB_SAFE_MP4_FFMPEG_PARAMS`` da 1.0.29 vão em ambas as
-    tentativas. Devolve o codec efectivo para a telemetria do chamador.
+    tentativas. ``temp_audiofile_path`` isola o TEMP_MPY_wvf_snd do MoviePy
+    (1.0.43): sem ele o temporário cai ao lado do output, onde o
+    Defender/FFmpeg o pode bloquear (WinError 32 — issue #217 do MPT).
+    Devolve o codec efectivo para a telemetria do chamador.
     """
     import sys as _sys
 
     binary = _moviepy_ffmpeg_binary()
     codec = NVENC_VIDEO_CODEC if _nvenc_encoder_available(binary) else CPU_VIDEO_CODEC
-    try:
+    write_kwargs: dict[str, object] = {"logger": None, "ffmpeg_params": WEB_SAFE_MP4_FFMPEG_PARAMS}
+    if temp_audiofile_path is not None:
+        write_kwargs["temp_audiofile_path"] = str(temp_audiofile_path)
+
+    def _write(with_codec: str) -> None:
         clip.write_videofile(
             str(output_path),
             fps=fps,
-            codec=codec,
+            codec=with_codec,
             audio_codec=audio_codec,
-            logger=None,
-            ffmpeg_params=WEB_SAFE_MP4_FFMPEG_PARAMS,
+            **write_kwargs,
         )
+
+    try:
+        _write(codec)
     except Exception as exc:
         if codec == CPU_VIDEO_CODEC:
             raise
@@ -136,16 +154,26 @@ def _write_web_safe_videofile(clip, output_path: Path, *, fps: int, audio_codec:
             f"[text_to_images] [AVISO] NVENC falhou na escrita ({exc}) — a repetir no CPU (libx264)",
             file=_sys.stderr,
         )
-        clip.write_videofile(
-            str(output_path),
-            fps=fps,
-            codec=CPU_VIDEO_CODEC,
-            audio_codec=audio_codec,
-            logger=None,
-            ffmpeg_params=WEB_SAFE_MP4_FFMPEG_PARAMS,
-        )
+        _write(CPU_VIDEO_CODEC)
         return CPU_VIDEO_CODEC
     return codec
+
+
+def _close_clip_reader(clip) -> None:
+    """Fecha o reader (e o áudio) de um clip MoviePy antes de o mover/apagar.
+
+    O ``clip.close()`` do MoviePy 2.x não fecha sempre o ``reader`` de
+    imediato — o handle do FFmpeg pode manter o ficheiro bloqueado e o
+    ``os.replace`` falha com WinError 32 (reproduzido a 25/10 14:35).
+    """
+    for target in (clip, getattr(clip, "audio", None)):
+        reader = getattr(target, "reader", None)
+        close = getattr(reader, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
 
 
 def _duration_from_words(words: list[dict[str, Any]], fallback_wpm: int) -> float:
@@ -658,7 +686,13 @@ def assemble_text_to_images_video(
         output_path.parent.mkdir(parents=True, exist_ok=True)
         # 1.0.36 — GPU (h264_nvenc) com fallback para libx264; os parâmetros
         # web-safe da 1.0.29 (+faststart +yuv420p) seguem dentro do helper.
-        _write_web_safe_videofile(video, output_path, fps=max(1, int(fps or 30)))
+        # 1.0.43 — TEMP isolado (WinError 32 no TEMP_MPY_wvf_snd).
+        _write_web_safe_videofile(
+            video,
+            output_path,
+            fps=max(1, int(fps or 30)),
+            temp_audiofile_path=thunderbolt_temp_dir(),
+        )
     finally:
         for clip in clips:
             close = getattr(clip, "close", None)
@@ -705,6 +739,7 @@ def burn_captions_on_video(
         segments = [{"index": 1, "text": str(text or "").strip()[:200], "duration": target_seconds}]
     video = None
     burned = None
+    temporary: Path | None = None
     try:
         video = VideoFileClip(str(output))
         total = max(1.0, float(video.duration or 0))
@@ -723,19 +758,28 @@ def burn_captions_on_video(
                 burn_report["subtitles_burned"] = False
             return output
         burned = CompositeVideoClip([video, *subtitle_clips]).with_duration(total)
-        temporary = output.with_name(f"{output.stem}.legendas-tmp.mp4")
+        # 1.0.43 — nome único por PID: dois workers a queimar em paralelo
+        # nunca partilham o ficheiro temporário (a colisão era uma das
+        # fontes do WinError 32 visto a 25/10).
+        temporary = output.with_name(f"{output.stem}.legendas-{os.getpid()}-tmp.mp4")
         # 1.0.36 — a queima deixa de custar ~45 min na CPU: h264_nvenc na GPU
         # com fallback libx264 e os mesmos parâmetros web-safe da 1.0.29.
-        burn_codec = _write_web_safe_videofile(burned, temporary, fps=max(1, int(video.fps or 30)))
+        burn_codec = _write_web_safe_videofile(
+            burned,
+            temporary,
+            fps=max(1, int(video.fps or 30)),
+            temp_audiofile_path=thunderbolt_temp_dir(),
+        )
         burned.close()
         burned = None
-        # 1.0.00: o CompositeVideoClip.close() não fecha os clips membros — o
-        # leitor do vídeo original mantinha o ficheiro aberto e o os.replace
-        # falhava no Windows (WinError 5) depois de a queima já estar feita.
-        # Fechar o leitor antes do replace garante a substituição in-place.
+        # 1.0.00/1.0.43: o CompositeVideoClip.close() não fecha os clips
+        # membros e o moviepy pode manter o reader alguns instantes — o
+        # leitor do vídeo original é fechado EXPLICITAMENTE (reader + audio)
+        # antes do replace, que por sua vez tem retry em WinError 32.
+        _close_clip_reader(video)
         video.close()
         video = None
-        os.replace(temporary, output)
+        safe_replace(temporary, output)
         # 1.0.38 — carimbo determinístico: a substituição in-place aconteceu,
         # a legenda ESTÁ no ficheiro final.
         if burn_report is not None:
@@ -751,6 +795,11 @@ def burn_captions_on_video(
         )
         return output
     finally:
+        # 1.0.43 — um write falhado não deixa lixo: o temporário único desta
+        # tentativa é removido com retry em WinError 32 (None no retorno
+        # antecipado — sem clips de legenda não há temporário).
+        if temporary is not None:
+            safe_unlink(temporary, missing_ok=True)
         for clip in (burned, video):
             if clip is not None:
                 close = getattr(clip, "close", None)

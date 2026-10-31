@@ -759,9 +759,11 @@ def test_local_writes_keep_web_safe_params_and_use_the_gpu_writer():
     # As duas escritas locais (montagem text_to_images + queima de legendas
     # da rota Pexels/Pixabay) delegam no helper com GPU + fallback…
     assert TEXT_TO_IMAGES_SOURCE.count("_write_web_safe_videofile(") == 3  # def + 2 chamadas
-    # …e o helper mantém os parâmetros web-safe da 1.0.29 em ambas as
-    # tentativas (GPU e CPU) — o player do navegador continua a tocar.
-    assert TEXT_TO_IMAGES_SOURCE.count("ffmpeg_params=WEB_SAFE_MP4_FFMPEG_PARAMS") == 2
+    # …e o helper mantém os parâmetros web-safe da 1.0.29 em CADA write que
+    # executa (GPU e CPU) — 1.0.43: saem de um ponto único (o dict de
+    # kwargs) aplicado a todas as tentativas, com TEMP isolado.
+    assert '"ffmpeg_params": WEB_SAFE_MP4_FFMPEG_PARAMS' in TEXT_TO_IMAGES_SOURCE
+    assert "temp_audiofile_path" in TEXT_TO_IMAGES_SOURCE
     # A telemetria da queima reporta o codec efectivo.
     assert "(codec={burn_codec})" in TEXT_TO_IMAGES_SOURCE
 

@@ -64,7 +64,12 @@ def test_web_safe_params_move_moov_to_front_and_keep_yuv420p(tmp_path: Path):
 
 def test_text_to_images_write_contract_carries_faststart_params():
     assert 'WEB_SAFE_MP4_FFMPEG_PARAMS = ["-movflags", "+faststart", "-pix_fmt", "yuv420p"]' in TEXT_TO_IMAGES_SOURCE
-    assert TEXT_TO_IMAGES_SOURCE.count("ffmpeg_params=WEB_SAFE_MP4_FFMPEG_PARAMS") == 2
+    # 1.0.43: os params web-safe saem de UM ponto (o dict do helper) e são
+    # aplicados a CADA write que o helper executa (GPU e CPU) — a montagem e
+    # a queima passam ambas por _write_web_safe_videofile (contrato 1.0.41).
+    assert '"ffmpeg_params": WEB_SAFE_MP4_FFMPEG_PARAMS' in TEXT_TO_IMAGES_SOURCE
+    assert TEXT_TO_IMAGES_SOURCE.count("_write_web_safe_videofile(") == 3  # def + 2 chamadas
+    assert "temp_audiofile_path" in TEXT_TO_IMAGES_SOURCE
     assert "[text_to_images] legendas queimadas:" in TEXT_TO_IMAGES_SOURCE
     assert "[pexels] legendas queimadas localmente em" in TEXT_TO_IMAGES_SOURCE
 

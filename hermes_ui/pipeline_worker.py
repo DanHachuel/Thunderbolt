@@ -36,7 +36,18 @@ from integrations.upload_routing import resolve_youtube_account, upload_with_def
 from hermes_ui.creative_generation import CreativeGenerationError, generate_creative_package, generate_title_and_keywords, generate_thumbnail_prompt, generate_topic_for_channel
 from hermes_ui.script_documents import save_script_document
 from hermes_ui.script_generation import generate_script_document
-from hermes_ui.storage import STORAGE, atomic_write, ensure_storage, get_display_name, list_blueprint_files, load_blueprint_file, read_json, write_json
+from hermes_ui.storage import (
+    STORAGE,
+    atomic_write,
+    ensure_storage,
+    get_display_name,
+    list_blueprint_files,
+    load_blueprint_file,
+    read_json,
+    thunderbolt_temp_dir,
+    write_json,
+)
+from hermes_ui.fs_safe import safe_replace, safe_unlink
 from hermes_ui.llm_providers import active_llm_card, provider_definition
 from hermes_ui.media_generation import MediaGenerationError, _append_generation_constraints, generate_image_from_pool, generate_video_from_pool, web_images_search
 from hermes_ui.media_providers import FULL_IA_VIDEO_PROVIDER_CODES, media_cards_for_pool, media_provider_definition
@@ -56,6 +67,30 @@ from hermes_ui.remotion_provider import (
     prepare_input_props,
     run_remotion_render,
 )
+
+# 1.0.43 — isolamento do TEMP do PROCESSO worker (e, por herança, de todos os
+# filhos: mpt_agent/motor MPT, Remotion, Azure). O launcher arrancado de
+# shells externos (MobaXterm) herda TEMP/TMP apontados para a pasta da app —
+# instável. O motor MPT escreve lá o seu TEMP_MPY_wvf_snd (workaround da
+# issue #217) e a limpeza falha com WinError 32. Só se força quando o TEMP
+# herdado é instável (MobaXterm) ou está ausente — um TEMP são escolhido
+# pelo utilizador é respeitado.
+def _isolate_worker_process_temp() -> None:
+    try:
+        isolated = thunderbolt_temp_dir()
+    except Exception:
+        return
+    inherited = " ".join(
+        part for part in (os.environ.get("TEMP", ""), os.environ.get("TMP", "")) if part
+    ).casefold()
+    unstable = "mobaxterm" in inherited or not inherited.strip()
+    if unstable:
+        os.environ["TEMP"] = str(isolated)
+        os.environ["TMP"] = str(isolated)
+
+
+_isolate_worker_process_temp()
+
 
 PIPELINE_LOCK_FILENAME = "pipeline_worker.lock"
 PIPELINE_LOG_FILENAME = "pipeline_worker.json"
@@ -1656,6 +1691,15 @@ def _run_video_helper_once(
     if not task_id:
         raise PipelineError("A tarefa de vídeo não tem um identificador válido.")
     env = os.environ.copy()
+    # 1.0.43 — TEMP/TMP isolados: o launcher pode herdar o TEMP do MobaXterm
+    # (aponta para a pasta da app, instável) e o motor MPT escreve lá o seu
+    # TEMP_MPY_wvf_snd (workaround da issue #217) — a limpeza rebentava com
+    # WinError 32. Apontamos para LOCALAPPDATA/THUNDERBOLT/temp (estável, a
+    # mesma casa do runtime); SYSTEMROOT/Windows-essentials da 1.0.37/38
+    # permanecem intactos (cópia completa + re-injecção).
+    isolated_temp = thunderbolt_temp_dir()
+    env["TEMP"] = str(isolated_temp)
+    env["TMP"] = str(isolated_temp)
     for key in (
         "MPT_PEXELS_API_KEY",
         "MPT_PEXELS_API_KEYS",
@@ -2741,25 +2785,20 @@ def _ensure_streamable_mp4(video_path: Path | str, settings: dict[str, Any] | No
         return path
     if completed.returncode != 0 or not target.is_file() or target.stat().st_size == 0:
         detail = str(completed.stderr or "").strip().splitlines()[-1:] or ["sem detalhe do FFmpeg"]
-        try:
-            if target.exists():
-                target.unlink()
-        except OSError:
-            pass
+        # 1.0.43 — retry em WinError 32: o FFmpeg pode manter o handle alguns
+        # instantes depois de sair.
+        safe_unlink(target)
         _mpt_runtime_log(
             f"[STREAMABLE] [AVISO] FFmpeg não normalizou {path.name} ({'; '.join(detail)}); "
             "o vídeo mantém-se como está — o download continua a funcionar"
         )
         return path
     try:
-        os.replace(target, path)
+        # Substituição in-place tolerante a bloqueio (WinError 32).
+        safe_replace(target, path)
     except OSError as exc:
         _mpt_runtime_log(f"[STREAMABLE] [AVISO] falha ao substituir {path.name} ({exc}); o vídeo mantém-se como está")
-        try:
-            if target.exists():
-                target.unlink()
-        except OSError:
-            pass
+        safe_unlink(target)
         return path
     action = (
         "re-codificado para streaming (faststart + yuv420p)"

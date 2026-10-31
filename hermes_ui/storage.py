@@ -16,6 +16,26 @@ from typing import Any, Callable, Iterator
 
 ROOT = Path(__file__).resolve().parents[1]
 STORAGE = Path(os.getenv("THUNDERBOLT_STORAGE_DIR") or ROOT / "storage")
+# 1.0.43 — directório temporário CONTROLADO pelo Thunderbolt. O launcher pode
+# herdar TEMP/TMP de shells externos (MobaXterm aponta-os para a sua própria
+# pasta, instável) — o MoviePy do motor MPT escreve lá o seu
+# TEMP_MPY_wvf_snd (workaround da issue #217) e a limpeza falha com WinError
+# 32. Este caminho estável (LOCALAPPDATA/THUNDERBOLT/temp, a mesma casa do
+# runtime) substitui essa herança em todos os subprocessos.
+THUNDERBOLT_TEMP_DIRNAME = "THUNDERBOLT"
+
+
+def thunderbolt_temp_dir() -> Path:
+    """Directório temporário isolado e estável (criado se faltar)."""
+    base = os.getenv("LOCALAPPDATA") or os.getenv("USERPROFILE") or "C:\\"
+    temp_dir = Path(base) / THUNDERBOLT_TEMP_DIRNAME / "temp"
+    try:
+        temp_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # Último recurso: nunca falhar por causa do directório — o temp do
+        # sistema permanece aceitável (o retry WinError 32 cobre o resto).
+        return Path(tempfile.gettempdir())
+    return temp_dir
 DEFAULT_LLM_PROVIDER = "openai"
 LEGACY_DEFAULT_LLM_PROVIDERS = {"", "moonshot"}
 STATE = STORAGE / "state"
