@@ -12242,6 +12242,58 @@ def render_youtube_data_api_key_tutorial():
     st.markdown(tutorial_content, unsafe_allow_html=False)
 
 
+@st.cache_data(ttl=60)
+def _cached_dependencies_report() -> list[dict[str, Any]]:
+    """Diagnóstico em cache (ttl 60 s) — as sondas são subprocessos reais
+    (node/npm, drivers Playwright, CLI sau) e NÃO podem travar a página;
+    o botão «Actualizar Diagnóstico» limpa a cache e força nova verificação."""
+    from hermes_ui.dependencies_check import check_all_dependencies
+
+    return check_all_dependencies()
+
+
+def render_dependencies_page() -> None:
+    """1.0.47 — Configurações > Dependências: saúde do ambiente em cards.
+
+    Lista todas as dependências OBRIGATÓRIAS (regra do AGENTS.md) com o estado
+    real de cada uma (import/binário/versão) e a solução quando falha. O
+    resumo no topo diz quantas estão operacionais; falhas mostram alerta
+    vermelho com a acção seguinte.
+    """
+    st.title("Dependências")
+    st.caption(
+        "Diagnóstico do ambiente: cada dependência obrigatória é verificada com import/binário reais "
+        "(a mesma checagem usada pelo instalador e pelo botão «Testar instalação»). "
+        "O resultado fica em cache 60 s — use o botão abaixo para forçar uma nova verificação."
+    )
+
+    if st.button("🔄 Atualizar Diagnóstico", key="dependencies_report_refresh", width="stretch"):
+        _cached_dependencies_report.clear()
+        st.rerun()
+
+    report = _cached_dependencies_report()
+    operational = [item for item in report if str(item.get("status") or "") == "ok"]
+    failed = [item for item in report if str(item.get("status") or "") != "ok"]
+
+    if failed:
+        st.error(f"⚠️ {len(failed)} de {len(report)} dependências com falha ({len(operational)} operacionais).")
+    else:
+        st.success(f"✅ {len(operational)} de {len(report)} dependências operacionais.")
+
+    for item in report:
+        name = str(item.get("name") or "Dependência")
+        version = str(item.get("version") or "").strip()
+        message = str(item.get("message") or "").strip()
+        is_ok = str(item.get("status") or "") == "ok"
+        render = st.success if is_ok else st.error
+        with st.container(border=True):
+            if is_ok:
+                label = f"✅ **{name}**" + (f" — `{version}`" if version else " — OK")
+            else:
+                label = f"❌ **{name}**" + (f" — `{message}`" if message else " — Falha")
+            render(label)
+
+
 def render_mcp():
     st.title("MCP")
     st.caption("Clientes externos, servidor MCP do Thunderbolt e a skill local ficam separados para evitar confundir funções diferentes.")
@@ -12692,6 +12744,8 @@ def main():
         ("Notificações", ":material/notifications:", "Notificações"),
         ("Logs", ":material/description:", "Logs"),
         ("Configuração API", ":material/settings:", "Configuração API"),
+        # 1.0.47 — diagnóstico do ambiente (dependências obrigatórias do AGENTS.md)
+        ("Dependências", ":material/extension:", "Dependências"),
     ]
     niche_finder_items = [
         ("Niche Finder Kaggle", ":material/search:", "Niche Finder Kaggle"),
@@ -12752,7 +12806,7 @@ def main():
         "Edição": "/edicao", "Limpador de Metadados": "/edicao/limpador-metadados", "Cortes": "/edicao/cortes", "Editor Python": "/edicao/editor-python", "Download Mídia": "/edicao/download-midia",
         "Growth": "/growth", "Analise Growth": "/growth/analise", "Growth Youtube": "/growth/analise/youtube", "Growth Tiktok": "/growth/analise/tiktok", "Growth Instagram": "/growth/analise/instagram", "Facebook Pages": "/growth/analise/facebook-pages", "Growth Bilibili": "/growth/analise/bilibili",
         "Documentação": "/documentacao", "Tutoriais": "/documentacao/tutoriais", "Meta": "/documentacao/tutoriais/meta", "Supabase": "/documentacao/tutoriais/supabase", "Kaggle": "/documentacao/tutoriais/kaggle", "Apify": "/documentacao/tutoriais/apify", "YouTube Video-Upload Frontend": "/documentacao/tutoriais/youtube-video-upload-frontend", "OAuth do Google": "/documentacao/tutoriais/oauth-google", "YouTube Data API Key (Public Data)": "/documentacao/tutoriais/youtube-data-api-key",
-        "Configurações": "/configuracoes", "MCP": "/configuracoes/mcp", "Notificações": "/configuracoes/notificacoes", "Logs": "/configuracoes/logs", "Configuração API": "/configuracoes/api",
+        "Configurações": "/configuracoes", "MCP": "/configuracoes/mcp", "Notificações": "/configuracoes/notificacoes", "Logs": "/configuracoes/logs", "Configuração API": "/configuracoes/api", "Dependências": "/configuracoes/dependencias",
     }
 
     aliases = {
@@ -12930,6 +12984,7 @@ def main():
         "Configuração API": render_settings,
         "Notificações": render_notifications,
         "Logs": render_logs,
+        "Dependências": render_dependencies_page,
     }
     renderers.get(current_page, render_dashboard)()
 
