@@ -204,12 +204,21 @@ def test_notification_log_uses_task_log_when_metadata_only_has_task_id(tmp_path)
 
 
 def test_logs_page_is_between_notifications_and_api_configuration():
+    """1.0.48: «Dependências» entrou ENTRE «Configuração API» e «Logs» (pedido
+    do utilizador) — «Logs» passou a último item de Configurações; a ordem
+    Notificações < Configuração API < Dependências < Logs fica fixada."""
     root = Path(__file__).resolve().parents[1]
     source = (root / "app" / "main.py").read_text(encoding="utf-8")
     settings_start = source.index("settings_items = [")
     settings_end = source.index("]", settings_start)
     settings_block = source[settings_start:settings_end]
-    assert settings_block.index('("Notificações"') < settings_block.index('("Logs"') < settings_block.index('("Configuração API"')
+    order = (
+        settings_block.index('("Notificações"'),
+        settings_block.index('("Configuração API"'),
+        settings_block.index('("Dependências"'),
+        settings_block.index('("Logs"'),
+    )
+    assert order == tuple(sorted(order)), f"ordem inesperada no menu: {order}"
     assert '"Logs": render_logs' in source
     for label in ("Filtrar operações", "Operação", "Estado", "Data", "Hora", "Registo", "Ficheiro", "Origem", "API/Provider", "Detalhes"):
         assert label in source

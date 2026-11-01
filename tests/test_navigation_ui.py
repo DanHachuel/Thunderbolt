@@ -52,7 +52,12 @@ def test_settings_children_include_logs_between_notifications_and_api():
     assert '("Notificações", ":material/notifications:", "Notificações")' in settings_block
     assert '("Logs", ":material/description:", "Logs")' in settings_block
     assert '("Configuração API", ":material/settings:", "Configuração API")' in settings_block
-    assert settings_block.index('("Notificações"') < settings_block.index('("Logs"') < settings_block.index('("Configuração API"')
+    assert '("Dependências", ":material/extension:", "Dependências")' in settings_block
+    # 1.0.48: «Dependências» ENTRE «Configuração API» e «Logs» (pedido do
+    # utilizador) — «Logs» passou a último item de Configurações.
+    assert settings_block.index('("Notificações"') < settings_block.index('("Configuração API"')
+    assert settings_block.index('("Configuração API"') < settings_block.index('("Dependências"')
+    assert settings_block.index('("Dependências"') < settings_block.index('("Logs"')
     assert '"Contas Google": render_google_accounts' in MAIN_SOURCE
     assert '"Configuração API": render_settings' in MAIN_SOURCE
     assert '"Notificações": render_notifications' in MAIN_SOURCE

@@ -12742,10 +12742,11 @@ def main():
     settings_items = [
         ("MCP", ":material/hub:", "MCP"),
         ("Notificações", ":material/notifications:", "Notificações"),
-        ("Logs", ":material/description:", "Logs"),
         ("Configuração API", ":material/settings:", "Configuração API"),
-        # 1.0.47 — diagnóstico do ambiente (dependências obrigatórias do AGENTS.md)
+        # 1.0.47/1.0.48 — diagnóstico do ambiente; fica ENTRE "Configuração API"
+        # e "Logs" (posição pedida pelo utilizador; "Logs" passou a último).
         ("Dependências", ":material/extension:", "Dependências"),
+        ("Logs", ":material/description:", "Logs"),
     ]
     niche_finder_items = [
         ("Niche Finder Kaggle", ":material/search:", "Niche Finder Kaggle"),

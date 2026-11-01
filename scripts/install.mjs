@@ -40,6 +40,34 @@ const venvPath = process.env.THUNDERBOLT_VENV || process.env.HERMES_VENV || join
 const pythonBin = platform() === "win32" ? join(venvPath, "Scripts", "python.exe") : join(venvPath, "bin", "python");
 const defaultMpt = process.env.MONEYPRINTER_PATH || join(thunderboltHome, "MoneyPrinterTurbo");
 const dependencyStatePath = join(thunderboltHome, "storage", "state", "install-state.json");
+// 1.0.48 — REGRA INVIOLÁVEL «Silêncio Absoluto no Terminal» (AGENTS.md): a
+// saída de pip/npm/git/browsers (barras de progresso, "Uninstalling...",
+// "Successfully installed...") NUNCA vai para o console — no MobaXterm cp1252
+// esse lixo ainda virava mojibake (ร”รถ...). Tudo é capturado e escrito em
+// install.log; o terminal mostra APENAS as mensagens amigáveis do Thunderbolt.
+const installLogPath = join(thunderboltHome, "install.log");
+
+function appendInstallLog(header, stdout, stderr) {
+  try {
+    mkdirSync(dirname(installLogPath), { recursive: true });
+    appendFileSync(installLogPath, `\n===== ${header} (${new Date().toISOString()}) =====\n`, "utf8");
+    for (const [label, payload] of [["stdout", stdout], ["stderr", stderr]]) {
+      const text = String(payload || "").trim();
+      if (text) {
+        appendFileSync(installLogPath, `--- ${label} ---\n${text.slice(-20000)}\n`, "utf8");
+      }
+    }
+  } catch {
+    /* logging nunca muda o comportamento do instalador */
+  }
+}
+
+function failureTail(result) {
+  const text = String((result && (result.stderr || result.stdout)) || "").trim();
+  if (!text) return "";
+  return text.split(/\r?\n/).slice(-6).join("\n").slice(0, 2000);
+}
+
 const forceDeps = args.includes("--force-deps");
 const refreshMoneyPrinter = args.includes("--refresh-moneyprinter");
 const pythonEnvironment = { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", PYTHONLEGACYWINDOWSSTDIO: "1", CLICK_NO_WIN_CONSOLE: "1" };
@@ -62,10 +90,30 @@ function commandExists(command) {
   return result.status === 0;
 }
 
+// 1.0.48 — execução SILENCIOSA: imprime só a etiqueta amigável; a saída
+// completa do subprocesso vai para install.log. Falhanço = rótulo + cauda
+// do log + caminho do registo, e aborta (regra: falha aborta, nunca silencia).
+function runQuiet(label, command, commandArgs, options = {}) {
+  console.log(label);
+  const result = spawnSync(command, commandArgs, {
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
+    ...options,
+    env: { ...pythonEnvironment, ...(options.env || {}) },
+  });
+  appendInstallLog(`${label} > ${command} ${commandArgs.join(" ")}`, result && result.stdout, result && result.stderr);
+  if (result.status !== 0) {
+    console.error(`${label} — falhou (código ${result.status || 1}).`);
+    const tail = failureTail(result);
+    if (tail) console.error(tail);
+    console.error(`Veja o registo completo em ${installLogPath}`);
+    process.exit(result.status || 1);
+  }
+  return result;
+}
+
 function run(command, commandArgs, options = {}) {
-  console.log(`\n> ${command} ${commandArgs.join(" ")}`);
-  const result = spawnSync(command, commandArgs, { stdio: "inherit", env: pythonEnvironment, ...options, env: { ...pythonEnvironment, ...(options.env || {}) } });
-  if (result.status !== 0) process.exit(result.status || 1);
+  runQuiet(`> ${command} ${commandArgs.join(" ")}`, command, commandArgs, options);
 }
 
 function probePython(command, commandArgs = []) {
@@ -395,7 +443,11 @@ function installPythonWindows() {
     process.exit(1);
   }
   console.log("Python 3.11/3.12 compatível não encontrado. A instalar Python 3.11 automaticamente através do winget...");
-  const result = spawnSync("winget", ["install", "--exact", "--id", "Python.Python.3.11", "--source", "winget", "--scope", "user", "--accept-source-agreements", "--accept-package-agreements", "--silent"], { stdio: "inherit" });
+  const result = runQuiet(
+    "A instalar o Python 3.11 via winget (detalhes no install.log)...",
+    "winget",
+    ["install", "--exact", "--id", "Python.Python.3.11", "--source", "winget", "--scope", "user", "--accept-source-agreements", "--accept-package-agreements", "--silent"],
+  );
   if (result.status !== 0) process.exit(result.status || 1);
   const found = findPython();
   if (!found) {
@@ -484,7 +536,7 @@ function cloneMoneyPrinter(path) {
   const destination = resolve(path);
   const parent = resolve(destination, "..");
   mkdirSync(parent, { recursive: true });
-  run("git", ["clone", "--depth", "1", "https://github.com/harry0703/MoneyPrinterTurbo.git", basename(destination)], { cwd: parent });
+  run("git", ["clone", "--quiet", "--depth", "1", "https://github.com/harry0703/MoneyPrinterTurbo.git", basename(destination)], { cwd: parent });
 }
 
 function fileHash(path) {
@@ -620,8 +672,13 @@ function installRequirementIfNeeded(requirementsPath, stateKey, modules, label) 
   // ALVO, em baixo. O `run()` aborta com erro claro se o pip falhar.
   if (forceDeps || !persistedHashMatches) {
     const reason = forceDeps ? "forçados (--force-deps)" : "alterados desde a última instalação";
-    console.log(`${label}: requirements ${reason}; a instalar agora.`);
-    run(pythonBin, ["-m", "pip", "install", "-r", requirementsPath]);
+    // 1.0.48 — pip SILENCIOSO (--quiet --no-input): o terminal não vê barras
+    // de progresso nem "Uninstalling..."; a saída completa fica em install.log
+    runQuiet(
+      `${label}: requirements ${reason}; a instalar (detalhes em ${installLogPath})...`,
+      pythonBin,
+      ["-m", "pip", "install", "--quiet", "--no-input", "--disable-pip-version-check", "-r", requirementsPath],
+    );
     writeFileSync(markerPath, `${currentHash}\n`, "utf8");
     writeDependencyState({ [stateKey]: currentHash });
   }
@@ -654,11 +711,12 @@ function installRequirementIfNeeded(requirementsPath, stateKey, modules, label) 
   }
   if (!repairable.length) return;
   console.warn(`${label}: pacotes que não importam no ambiente existente: ${repairable.join(", ")}.`);
-  console.log(`${label}: a instalar APENAS os pacotes em falta...`);
-  const repaired = spawnSync(
+  // 1.0.48 — reparação ALVO também silenciosa (o "Uninstalling/Installing"
+  // do --force-reinstall costumava poluir o terminal e assustar o utilizador)
+  const repaired = runQuiet(
+    `${label}: a instalar APENAS os pacotes em falta (detalhes em ${installLogPath})...`,
     pythonBin,
-    ["-m", "pip", "install", "--force-reinstall", "--disable-pip-version-check", ...repairSpecs],
-    { stdio: "inherit", env: pythonEnvironment },
+    ["-m", "pip", "install", "--quiet", "--no-input", "--force-reinstall", "--disable-pip-version-check", ...repairSpecs],
   );
   if (repaired.status !== 0) {
     console.error(`${label}: a reparação de ${repairable.join(", ")} falhou. A instalação foi ABORTADA — dependências obrigatórias não podem ficar em falta.`);
@@ -676,24 +734,34 @@ function installRequirementIfNeeded(requirementsPath, stateKey, modules, label) 
 function installPlaywrightBrowsers() {
   if (!existsSync(pythonBin)) return;
   console.log("Playwright: a verificar os browsers Chromium e Firefox... ");
-  const result = spawnSync(pythonBin, ["-m", "playwright", "install", "chromium", "firefox"], { stdio: "inherit", env: pythonEnvironment });
+  const result = runQuiet(
+    "Playwright: a instalar os browsers Chromium e Firefox (detalhes no install.log)...",
+    pythonBin,
+    ["-m", "playwright", "install", "chromium", "firefox"],
+  );
   if (result.status !== 0) {
     console.error("Não foi possível instalar os browsers Chromium e Firefox do Playwright.");
-    console.error("Execute novamente o instalador depois de confirmar o acesso à Internet.");
+    console.error(`Veja o registo completo em ${installLogPath}`);
     process.exit(result.status || 1);
   }
+  console.log("Playwright: browsers Chromium e Firefox prontos.");
 }
 
 function installPatchrightBrowser() {
   if (!existsSync(pythonBin)) return;
   const executable = join(venvPath, process.platform === "win32" ? "Scripts" : "bin", process.platform === "win32" ? "patchright.exe" : "patchright");
   console.log("Patchright: a verificar o browser Chromium...");
-  const result = spawnSync(executable, ["install", "chromium"], { stdio: "inherit", env: pythonEnvironment });
+  const result = runQuiet(
+    "Patchright: a instalar o browser Chromium (detalhes no install.log)...",
+    executable,
+    ["install", "chromium"],
+  );
   if (result.status !== 0) {
     console.error("Não foi possível instalar o Chromium do Patchright.");
-    console.error("Execute novamente o instalador depois de confirmar o acesso à Internet.");
+    console.error(`Veja o registo completo em ${installLogPath}`);
     process.exit(result.status || 1);
   }
+  console.log("Patchright: browser Chromium pronto.");
 }
 
 function directoryHasContent(directory, depth = 3) {
@@ -754,7 +822,11 @@ function installCamoufoxBrowser() {
     return;
   }
   console.log("Camoufox: a descarregar o browser (python -m camoufox fetch)...");
-  const result = spawnSync(pythonBin, ["-m", "camoufox", "fetch"], { stdio: "inherit", env: pythonEnvironment });
+  const result = runQuiet(
+    "Camoufox: a descarregar o browser (detalhes no install.log)...",
+    pythonBin,
+    ["-m", "camoufox", "fetch"],
+  );
   if (result.status === 0 && camoufoxBrowserDownloaded()) {
     console.log("Camoufox: browser instalado.");
     return;
@@ -846,11 +918,11 @@ function installRemotionDependencies() {
     // por isso o npm é invocado via npm-cli.js ao lado do node.
     const npmCli = join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
     if (existsSync(npmCli)) {
-      run(process.execPath, [npmCli, "install", "--no-audit", "--no-fund"], { cwd: persistentDir });
+      run(process.execPath, [npmCli, "install", "--silent", "--no-audit", "--no-fund"], { cwd: persistentDir });
     } else if (platform() === "win32") {
-      run("cmd", ["/d", "/s", "/c", "npm install --no-audit --no-fund"], { cwd: persistentDir });
+      run("cmd", ["/d", "/s", "/c", "npm install --silent --no-audit --no-fund"], { cwd: persistentDir });
     } else {
-      run("npm", ["install", "--no-audit", "--no-fund"], { cwd: persistentDir });
+      run("npm", ["install", "--silent", "--no-audit", "--no-fund"], { cwd: persistentDir });
     }
     if (!existsSync(rendererMarker)) {
       console.error(`O npm terminou sem instalar @remotion/renderer em ${persistentDir}.`);

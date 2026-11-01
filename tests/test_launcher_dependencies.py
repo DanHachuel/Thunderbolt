@@ -24,7 +24,8 @@ def test_installer_checks_psutil_before_reusing_dependency_state():
     call = source.split("function installThunderboltDependencies(", 1)[1].split("function installRemotionDependencies", 1)[0]
     assert 'join(root, "requirements.txt"),' in call
     assert '["psutil", "streamlit"' in call
-    assert 'run(pythonBin, ["-m", "pip", "install", "-r", requirementsPath])' in source
+    assert '"--quiet", "--no-input", "--disable-pip-version-check", "-r", requirementsPath' in source
+    assert "runQuiet(" in source  # 1.0.48: execução silenciosa (install.log)
 
 
 def test_installer_installs_remotion_as_a_mandatory_persistent_dependency():
@@ -44,8 +45,9 @@ def test_installer_installs_remotion_as_a_mandatory_persistent_dependency():
     # junction liga a cópia da versão às dependências persistentes
     assert "symlinkSync" in block
     assert '"junction"' in block
-    # npm via npm-cli.js (Node >= 18 recusa .cmd directo, CVE-2024-27980)
-    assert 'run(process.execPath, [npmCli, "install", "--no-audit", "--no-fund"]' in block
+    # npm via npm-cli.js (Node >= 18 recusa .cmd directo, CVE-2024-27980);
+    # 1.0.48 — npm também SILENCIOSO (--silent + runQuiet => install.log)
+    assert 'run(process.execPath, [npmCli, "install", "--silent", "--no-audit", "--no-fund"]' in block
     # validação do binário do esbuild mesmo com postinstall bloqueado pelo npm
     assert "require('esbuild').transform" in block
     # obrigatória e fatal: falha aborta a instalação

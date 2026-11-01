@@ -1,5 +1,12 @@
 # Instruções do Repositório Thunderbolt
 
+## 🚨 REGRAS INVIOLÁVEIS DE ESCOPO, TERMINAL E PROJETO
+
+1. **Proibido tocar no instalador para tarefas de UI:** Se a tarefa pedir uma mudança visual ou nova aba (ex: "Criar aba de Dependências"), é TERMINANTEMENTE PROIBIDO alterar `install.mjs`, `requirements.txt` ou scripts de setup.
+2. **Silêncio Absoluto no Terminal:** O comando de instalação NUNCA deve imprimir a saída do `pip` (barras de progresso, "Uninstalling...", "Successfully installed..."). Use `--quiet` ou redirecione a saída (ex: `> install.log 2>&1`). O terminal deve exibir APENAS as mensagens amigáveis do Thunderbolt.
+3. **Fim do Mojibake:** Nenhum subprocesso pode emitir caracteres corrompidos. Force `PYTHONIOENCODING=utf-8` em todas as chamadas `subprocess`.
+4. **Verificação de Importação Correta:** A checagem pós-instalação DEVE usar o Python do `.venv` (ex: `.venv/Scripts/python.exe -c "import uploader"`) e não o Python global.
+
 ## Pré-requisitos e Dependências Obrigatórias (IMUTÁVEL)
 
 1. O comando padrão `npx @danhachuel/thunderbolt install` DEVE instalar TODAS as dependências listadas abaixo. Nenhuma delas pode ser "opt-in" ou exigir flags adicionais (ex: `--with-uploaders`).

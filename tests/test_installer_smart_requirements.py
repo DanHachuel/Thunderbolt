@@ -125,8 +125,8 @@ def test_default_install_never_filters_the_requirements_file():
     runtime = _installer_runtime()
     assert "filtered" not in runtime.lower()
     heavy = INSTALLER_SOURCE.split("if (forceDeps || !persistedHashMatches) {", 1)[1].split("writeFileSync(markerPath", 1)[0]
-    assert '"-m", "pip", "install", "-r", requirementsPath' in heavy
-    assert "run(pythonBin, [\"-m\", \"pip\", \"install\", \"-r\", requirementsPath])" in heavy
+    assert '"--quiet", "--no-input", "--disable-pip-version-check", "-r", requirementsPath' in heavy
+    assert "runQuiet(" in heavy  # 1.0.48: silencioso, mas sempre o ficheiro inteiro
     # o requirements.txt REAL tem exactamente UMA linha social-auto-upload — e ela é instalada
     assert sum(1 for line in REQUIREMENTS_LINES if line.startswith("social-auto-upload")) == 1
     assert any(line.startswith("justokenmax") for line in REQUIREMENTS_LINES)

@@ -74,9 +74,10 @@ def test_heavy_install_always_uses_the_complete_requirements():
     """A instalação pesada (quando o hash muda) é SEMPRE o ficheiro inteiro —
     nenhuma cópia filtrada a esconder pacotes obrigatórios."""
     heavy = INSTALLER_SOURCE.split("if (forceDeps || !persistedHashMatches) {", 1)[1].split("writeFileSync(markerPath", 1)[0]
-    assert '"-m", "pip", "install", "-r", requirementsPath' in heavy
+    assert '"--quiet", "--no-input", "--disable-pip-version-check", "-r", requirementsPath' in heavy
     assert "filtered" not in heavy.lower()
-    assert "run(pythonBin, [\"-m\", \"pip\", \"install\", \"-r\", requirementsPath])" in heavy
+    # 1.0.48 — runQuiet silencioso (rótulo amigável + install.log), ficheiro INTEIRO
+    assert "runQuiet(" in heavy
 
 
 def test_failed_install_or_repair_aborts_with_clear_error():
@@ -120,3 +121,69 @@ def test_agents_md_records_the_immutable_rule():
     assert "## Pré-requisitos e Dependências Obrigatórias (IMUTÁVEL)" in AGENTS_SOURCE
     assert "--with-uploaders" in AGENTS_SOURCE  # a regra cita o exemplo proibido
     assert "social-auto-upload (SAU) + `sau_cli` (CLI multi-plataforma)" in AGENTS_SOURCE
+
+
+# ---------------------------------------------------------------------------
+# 1.0.48 — REGRAS INVIOLÁVEIS DE ESCOPO, TERMINAL E PROJETO (AGENTS.md)
+# ---------------------------------------------------------------------------
+
+
+def test_agents_md_records_the_terminal_and_scope_rules():
+    assert "## 🚨 REGRAS INVIOLÁVEIS DE ESCOPO, TERMINAL E PROJETO" in AGENTS_SOURCE
+    assert "Silêncio Absoluto no Terminal" in AGENTS_SOURCE
+    assert "Fim do Mojibake" in AGENTS_SOURCE
+    assert "PYTHONIOENCODING=utf-8" in AGENTS_SOURCE
+    assert "Verificação de Importação Correta" in AGENTS_SOURCE
+
+
+def test_pip_installs_are_quiet_and_never_touch_the_terminal():
+    """Regra 2: pip em --quiet/--no-input e NENHUM stdio "inherit" — o
+    terminal mostra só mensagens amigáveis; a saída completa vai a install.log."""
+    runtime = "\n".join(
+        line for line in INSTALLER_SOURCE.splitlines() if not line.strip().startswith("//")
+    )
+    assert '"-m", "pip", "install", "--quiet", "--no-input", "--disable-pip-version-check", "-r", requirementsPath' in runtime
+    assert '"-m", "pip", "install", "--quiet", "--no-input", "--force-reinstall", "--disable-pip-version-check"' in runtime
+    assert 'stdio: "inherit"' not in runtime  # nada de pip/npm/browser no console
+
+
+def test_installer_output_is_redirected_to_install_log():
+    runtime = "\n".join(
+        line for line in INSTALLER_SOURCE.splitlines() if not line.strip().startswith("//")
+    )
+    assert "install.log" in runtime
+    assert "appendInstallLog(" in runtime
+    assert "function runQuiet(" in INSTALLER_SOURCE  # execução silenciosa com aborto claro
+    # o caminho feliz imprime SÓ a etiqueta; no falhanço aponta o registo
+    assert 'stdout: []' not in runtime
+    assert 'stdio: ["ignore", "pipe", "pipe"]' in runtime
+
+
+def test_git_and_npm_are_quiet_too():
+    assert '"clone", "--quiet", "--depth", "1"' in INSTALLER_SOURCE
+    assert INSTALLER_SOURCE.count('"--silent"') >= 3  # as 3 vias do npm install (npmCli/cmd/npm)
+
+
+def test_post_install_import_check_uses_the_venv_python():
+    """Regra 4: a verificação pós-instalação (imports que validam uploader,
+    sau_cli, camoufox...) usa o pythonBin — o interpretador do .venv."""
+    probe = INSTALLER_SOURCE.split("function missingModules(", 1)[1].split("\nfunction ", 1)[0]
+    assert "spawnSync(pythonBin," in probe
+    assert "pythonBin = " in INSTALLER_SOURCE  # definido a partir do venvPath
+    assert 'join(venvPath, "Scripts", "python.exe")' in INSTALLER_SOURCE
+    # e nunca um python genérico do sistema na verificação
+    runtime = "\n".join(
+        line for line in INSTALLER_SOURCE.splitlines() if not line.strip().startswith("//")
+    )
+    assert '"python3", "-c"' not in runtime
+    assert '"python", "-c"' not in runtime
+
+
+def test_python_environment_forces_utf8_for_every_subprocess():
+    """Regra 3 (fim do mojibake): todas as execuções levam o ambiente UTF-8."""
+    assert 'PYTHONIOENCODING: "utf-8"' in INSTALLER_SOURCE
+    assert 'PYTHONUTF8: "1"' in INSTALLER_SOURCE
+    assert 'PYTHONLEGACYWINDOWSSTDIO: "1"' in INSTALLER_SOURCE
+    # e o runQuiet propaga esse ambiente em TODAS as chamadas
+    quiet = INSTALLER_SOURCE.split("function runQuiet(", 1)[1].split("\nfunction ", 1)[0]
+    assert "env: { ...pythonEnvironment" in quiet

@@ -49,7 +49,7 @@ def test_installer_heavy_install_only_runs_when_requirements_really_change():
     # 1.0.31: a instalação PESADA fica ATRÁS do gate de hash — um import que
     # falhou NUNCA mais despoleta o requirements inteiro.
     assert "if (forceDeps || !persistedHashMatches) {" in gate
-    assert '"-m", "pip", "install", "-r", requirementsPath' in gate
+    assert '"--quiet", "--no-input", "--disable-pip-version-check", "-r", requirementsPath' in gate
     # a reparação é ALVO (spec exata, --force-reinstall)
     assert '"--force-reinstall"' in gate
     assert "a instalar APENAS os pacotes em falta" in gate
