@@ -108,6 +108,15 @@ def test_everything_ok_reports_versions(tmp_path, monkeypatch):
         return 0, "", ""
 
     monkeypatch.setattr(dependencies_check, "_run", fake_run)
+    # yt-dlp: o CI não instala o motor (requirements-dev) — simular a versão
+    # para o cenário «tudo OK» ser determinístico em qualquer plataforma.
+    import types
+
+    fake_yt_dlp = types.ModuleType("yt_dlp")
+    fake_yt_dlp_version = types.ModuleType("yt_dlp.version")
+    fake_yt_dlp_version.__version__ = "2025.01.15"
+    monkeypatch.setitem(system_sys.modules, "yt_dlp", fake_yt_dlp)
+    monkeypatch.setitem(system_sys.modules, "yt_dlp.version", fake_yt_dlp_version)
     monkeypatch.setattr(
         "hermes_ui.browser_manager.camoufox_environment_ready",
         lambda: {"ready": True, "module": True, "binary": True, "message": "Camoufox pronto."},
@@ -128,6 +137,7 @@ def test_everything_ok_reports_versions(tmp_path, monkeypatch):
     assert by_name["Camoufox (GeoIP)"]["version"] == "pronto"
     assert by_name["Playwright (Chromium e Firefox)"]["version"] == str(chromium)
     assert by_name["Patchright (Chromium)"]["version"] == str(chromium)
+    assert by_name["yt-dlp"]["version"] == "2025.01.15"
 
 
 def test_venv_check_detects_system_python(monkeypatch):
