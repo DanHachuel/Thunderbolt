@@ -7,6 +7,17 @@
 3. **Fim do Mojibake:** Nenhum subprocesso pode emitir caracteres corrompidos. Force `PYTHONIOENCODING=utf-8` em todas as chamadas `subprocess`.
 4. **Verificação de Importação Correta:** A checagem pós-instalação DEVE usar o Python do `.venv` (ex: `.venv/Scripts/python.exe -c "import uploader"`) e não o Python global.
 
+## 🚨 REGRA INVIOLÁVEL: ESCOPO DO INSTALADOR
+
+- É TERMINANTEMENTE PROIBIDO alterar o arquivo `install.mjs`, `requirements.txt`, `package.json` (dependências) ou rodar comandos de instalação (`pip install`, `npm install`, `npx ... install`) se a tarefa solicitada não for explicitamente sobre gerenciamento de dependências ou setup do ambiente.
+- Tarefas de UI, correção de layout, ajuste de lógica ou criação de abas NÃO DEVEM, sob nenhuma hipótese, tocar no instalador.
+- O agente NUNCA deve tentar "consertar", "verificar" ou "reinstalar" dependências do ambiente por conta própria. Se houver um problema de dependência, ele deve apenas reportar ao usuário.
+
+## Regra de UI: Inserção de Itens
+
+- Ao adicionar um novo item a um menu existente, NUNCA mova, reordene ou toque na posição dos itens que já estavam lá.
+- Insira o novo item EXATAMENTE na posição solicitada, mantendo o fluxo visual e a ordem original do restante do menu intocados.
+
 ## Pré-requisitos e Dependências Obrigatórias (IMUTÁVEL)
 
 1. O comando padrão `npx @danhachuel/thunderbolt install` DEVE instalar TODAS as dependências listadas abaixo. Nenhuma delas pode ser "opt-in" ou exigir flags adicionais (ex: `--with-uploaders`).
