@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import http.client
+import importlib.util
 import json
 import os
 import re
@@ -538,13 +539,170 @@ def _ffmpeg_environment(config_path: Path) -> dict[str, str] | None:
     válido devolve None — o processo herda o ambiente tal como na v1.0.01.
     """
     ffmpeg_path = _effective_ffmpeg_path(config_path)
+    environment = os.environ.copy()
+    # 1.0.51 — o TEMP do motor é SEMPRE o directório isolado do Thunderbolt:
+    # o nome estático do temporário do MoviePy (TEMP_MPY_wvf_snd) colidia
+    # entre renders e rebentava com WinError 32 no TEMP herdado.
+    _apply_engine_temp_isolation(environment)
     if not ffmpeg_path:
         return None
-    environment = os.environ.copy()
     environment["IMAGEIO_FFMPEG_EXE"] = ffmpeg_path
     environment["FFMPEG_BINARY"] = ffmpeg_path
     _ensure_windows_essentials(environment)
     return environment
+
+
+# ---------------------------------------------------------------------------
+# 1.0.51 — Blindagem total do temporário do MoviePy + travão do fallback
+# falso-positivo. O motor MPT vive FORA deste repo (clone oficial em
+# <THUNDERBOLT_HOME>/MoneyPrinterTurbo, ver install.mjs): o seu
+# app/services/video.py passa apenas ``temp_audiofile_path`` ao MoviePy, que
+# deriva o nome do ficheiro temporário do nome da saída — ``final-1.mp4`` →
+# ``final-1TEMP_MPY_wvf_snd.mp4``, ESTÁTICO para todos os renders e todos os
+# processos concorrentes. O «Refazer Vídeo» (ou dois renders em paralelo)
+# colide no mesmo caminho e o Windows devolve WinError 32; o motor trata a
+# excepção como falha do codec e DESATIVA o NVENC (prova nos logs reais:
+# «video codec h264_nvenc failed, fallback to libx264. reason: [WinError 32]
+# … final-1TEMP_MPY_wvf_snd.mp4»). A correcção entra no PROCESSO do motor
+# por um bootstrap ``python -c`` que carrega ``mpt_runtime_patch.py`` e só
+# depois executa o ``cli.py`` (runpy) — o contrato fica gravado em
+# tests/test_motor_stability_contract.py.
+# ---------------------------------------------------------------------------
+
+MPT_RUNTIME_PATCH_FILENAME = "mpt_runtime_patch.py"
+ENGINE_TEMP_DIRNAME = "THUNDERBOLT"
+MPT_ENGINE_TEMP_GLOB = "*TEMP_MPY_*"
+ENGINE_TEMP_ORPHAN_MAX_AGE_HOURS = 24
+
+
+def _runtime_patch_path() -> Path:
+    """Caminho absoluto do patch de runtime (companheiro deste helper)."""
+    return Path(__file__).resolve().with_name(MPT_RUNTIME_PATCH_FILENAME)
+
+
+def _load_runtime_patch_module():
+    """Carrega o módulo do patch — também quando o helper é carregado por path."""
+    try:
+        import mpt_runtime_patch
+
+        return mpt_runtime_patch
+    except ImportError:
+        pass
+    path = _runtime_patch_path()
+    if not path.is_file():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("mpt_runtime_patch", path)
+        if spec is None or spec.loader is None:
+            return None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except Exception:
+        return None
+
+
+def _engine_bootstrap_code() -> str:
+    """Código do ``python -c`` que injeta o patch e executa o cli.py do motor.
+
+    ``python -c CODE <args…>`` deixa sys.argv[1:] igual a ``python cli.py
+    <args…>`` — os argumentos encaminhados ao motor não mudam. O runpy
+    executa o cli.py com run_name="__main__" (mesma semântica do spawn
+    directo, incluindo o SystemExit do código de saída).
+    """
+    patch = str(_runtime_patch_path())
+    return (
+        "import importlib.util as _ilu, os as _os, runpy as _runpy, sys as _sys\n"
+        f"_sys.path.insert(0, _os.path.dirname({patch!r}))\n"
+        "try:\n"
+        f"    _spec = _ilu.spec_from_file_location('mpt_runtime_patch', {patch!r})\n"
+        "    _mod = _ilu.module_from_spec(_spec)\n"
+        "    _spec.loader.exec_module(_mod)\n"
+        "    print('[THUNDERBOLT-MPT-PATCH] motor blindado: ' + str(_mod.apply()), flush=True)\n"
+        "except Exception as _exc:\n"
+        "    print('[THUNDERBOLT-MPT-PATCH] [AVISO] patch de runtime nao aplicado: ' + str(_exc), flush=True)\n"
+        "_sys.path.insert(0, _os.getcwd())\n"
+        "_runpy.run_path(_os.path.join(_os.getcwd(), 'cli.py'), run_name='__main__')\n"
+    )
+
+
+def _thunderbolt_temp_dir() -> Path:
+    """Directório temporário ISOLADO e estável (espelho de hermes_ui.storage).
+
+    O helper pode correr fora do worker (MobaXterm herda TEMP/TMP a apontar
+    para a pasta da app, instável): este caminho estável substitui essa
+    herança no ambiente do motor. Windows: %LOCALAPPDATA%\\THUNDERBOLT\\temp;
+    POSIX: $HOME/.thunderbolt/temp, com o temp do sistema como último
+    recurso — nunca um caminho Windows fora do Windows.
+    """
+    if os.name == "nt":
+        base = Path(os.getenv("LOCALAPPDATA") or os.getenv("USERPROFILE") or "C:\\")
+        temp_dir = base / ENGINE_TEMP_DIRNAME / "temp"
+    else:
+        base = Path(os.getenv("HOME") or tempfile.gettempdir())
+        temp_dir = base / ".thunderbolt" / "temp"
+    try:
+        temp_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return Path(tempfile.gettempdir())
+    return temp_dir
+
+
+def _apply_engine_temp_isolation(environment: dict[str, str]) -> dict[str, str]:
+    """Força TEMP/TMP do motor no directório isolado do Thunderbolt (1.0.51)."""
+    isolated = str(_thunderbolt_temp_dir())
+    environment["TEMP"] = isolated
+    environment["TMP"] = isolated
+    return environment
+
+
+def _engine_spawn_environment(environment: dict[str, str] | None) -> dict[str, str]:
+    """Ambiente COMPLETO do motor, sempre com o TEMP isolado (1.0.51).
+
+    Sem ffmpeg no config o motor herdava o ambiente tal qual (env=None):
+    com o helper corrido sozinho, o TEMP herdido volta a ser a pasta
+    instável do MobaXterm — a origem exacta do WinError 32. A cópia completa
+    preserva PATH/SYSTEMROOT/herança da 1.0.37/38 e isola o TEMP em qualquer
+    cenário; ``_ensure_windows_essentials`` re-injecta as chaves críticas
+    quando o pai não as tem.
+    """
+    resolved = dict(environment) if isinstance(environment, dict) else os.environ.copy()
+    _apply_engine_temp_isolation(resolved)
+    _ensure_windows_essentials(resolved)
+    return resolved
+
+
+def _cleanup_orphan_engine_temp_files(max_age_hours: int = ENGINE_TEMP_ORPHAN_MAX_AGE_HOURS) -> int:
+    """Limpeza preventiva: apaga ``*TEMP_MPY_*`` órfãos (> 24 h) do TEMP isolado.
+
+    Um temporário deixado por um render morto (ou por um processo fantasma do
+    Windows) não pode bloquear o próximo «Refazer Vídeo». Corre antes de
+    cada render; a idade mínima protege os temporários dos renders a correr
+    em paralelo. Devolve quantos ficheiros foram removidos (telemetria).
+    """
+    module = _load_runtime_patch_module()
+    if module is not None:
+        try:
+            return int(module.cleanup_orphan_mpt_temp_files(max_age_hours=max_age_hours))
+        except Exception:
+            pass
+    # Sem o módulo do patch (ficheiro ausente): limpeza local equivalente —
+    # nunca falha o render por causa da casa.
+    isolated = _thunderbolt_temp_dir()
+    cutoff = time.time() - max_age_hours * 3600
+    removed = 0
+    try:
+        candidates = list(isolated.glob(MPT_ENGINE_TEMP_GLOB))
+    except OSError:
+        return 0
+    for candidate in candidates:
+        try:
+            if candidate.is_file() and candidate.stat().st_mtime < cutoff:
+                candidate.unlink(missing_ok=True)
+                removed += 1
+        except OSError:
+            continue
+    return removed
 
 
 def _probe_nvenc_encoder(ffmpeg_path: str) -> bool:
@@ -1452,6 +1610,14 @@ def generate_video(
     render_ffmpeg = _effective_ffmpeg_path(config_path)
     render_environment = _ffmpeg_environment(config_path)
     render_codec, render_nvenc_state = _resolve_render_codec(config_path, render_ffmpeg)
+    # 1.0.51 — limpeza preventiva: temporários órfãos do MoviePy (> 24 h)
+    # nunca podem bloquear o «Refazer Vídeo» que arranca agora.
+    orphaned_temp_files = _cleanup_orphan_engine_temp_files()
+    if orphaned_temp_files:
+        log(
+            f"temporarios orfaos do motor removidos "
+            f"(> {ENGINE_TEMP_ORPHAN_MAX_AGE_HOURS}h): {orphaned_temp_files}"
+        )
     # As opções encaminhadas dependem da versão instalada do cli.py: opções
     # recentes (estilo completo de legendas, transições, â€¦) são ignoradas em
     # instalações mais antigas em vez de abortarem o argparse.
@@ -1511,7 +1677,11 @@ def generate_video(
         "--with",
         MOVIEPY_REQUIREMENT,
         "python",
-        "cli.py",
+        # 1.0.51 — bootstrap: aplica o patch de runtime do motor
+        # (temp_audiofile único por execução + trava do fallback falso para
+        # libx264 em WinError 32) e só depois executa o cli.py do motor.
+        "-c",
+        _engine_bootstrap_code(),
         *forwarded_args,
         "--video-subject",
         subject,
@@ -1587,10 +1757,11 @@ def generate_video(
         generation_process = subprocess.Popen(
             spawn_command,
             cwd=root,
-            # 1.0.36 — o motor (probe de codec, MoviePy, concat) recebe
-            # o FFmpeg 7.1 efectivo via IMAGEIO_FFMPEG_EXE/FFMPEG_BINARY.
-            # None = herda o ambiente (comportamento da v1.0.01).
-            env=render_environment,
+            # 1.0.51 — o motor (probe de codec, MoviePy, concat) recebe o
+            # FFmpeg 7.1 efectivo via IMAGEIO_FFMPEG_EXE/FFMPEG_BINARY e o
+            # TEMP/TMP SEMPRE isolados no directório do Thunderbolt (o None
+            # herdado deixava o motor no TEMP instável do MobaXterm).
+            env=_engine_spawn_environment(render_environment),
             stdout=log_file,
             stderr=subprocess.STDOUT,
             text=True,

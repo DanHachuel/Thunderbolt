@@ -194,7 +194,9 @@ def test_ffmpeg_environment_extends_a_copy_of_os_environ(tmp_path: Path, monkeyp
     environment = MPT_AGENT._ffmpeg_environment(config_path)
     assert isinstance(environment, dict)
     for key, value in os.environ.items():
-        if key in {"IMAGEIO_FFMPEG_EXE", "FFMPEG_BINARY"}:
+        # 1.0.51: TEMP/TMP deixam de ser "herdados" e passam a apontar para
+        # o directório isolado do Thunderbolt (contrato do Motor Lock).
+        if key in {"IMAGEIO_FFMPEG_EXE", "FFMPEG_BINARY", "TEMP", "TMP"}:
             continue
         assert environment.get(key) == value, f"o ambiente perdeu {key}"
     assert environment["THUNDERBOLT_ENV_MARKER_2"] == "presente-na-copia"
@@ -514,12 +516,16 @@ def test_generate_video_assembly_warning_not_emitted_for_normal_timings(
 def test_generate_video_without_configured_ffmpeg_keeps_inherited_environment(
     tmp_path: Path, monkeypatch, capsys
 ):
+    """1.0.51 — sem ffmpeg no config o motor continua a herdar o ambiente,
+    mas o TEMP passa a ser SEMPRE o directório isolado do Thunderbolt (o
+    None herdado devolvia o motor ao TEMP instável do MobaXterm)."""
     root = tmp_path / "MoneyPrinterTurbo"
     root.mkdir()
     (root / "config.toml").write_text("[app]\n", encoding="utf-8")
     monkeypatch.setattr(MPT_AGENT.shutil, "which", lambda _: "/usr/bin/uv")
     monkeypatch.setattr(MPT_AGENT, "run_checked", lambda *args, **kwargs: None)
     _fast_sleep(monkeypatch)
+    monkeypatch.setenv("THUNDERBOLT_ENV_MARKER", "herdado-do-pai")
     captured: dict[str, object] = {}
 
     def fake_run(command, **_kwargs):
@@ -540,7 +546,12 @@ def test_generate_video_without_configured_ffmpeg_keeps_inherited_environment(
     monkeypatch.setattr(MPT_AGENT.subprocess, "Popen", fake_popen)
     MPT_AGENT.generate_video(root, "Tema sem ffmpeg no config", ["--video-source", "pexels"])
     kwargs = captured["kwargs"]
-    assert kwargs["env"] is None
+    # Herança completa preservada (PATH/SYSTEMROOT)…
+    env = kwargs["env"]
+    assert isinstance(env, dict) and env["THUNDERBOLT_ENV_MARKER"] == "herdado-do-pai"
+    # …com o TEMP isolado do Thunderbolt SEMPRE (contrato 1.0.51).
+    assert env["TEMP"] == str(MPT_AGENT._thunderbolt_temp_dir())
+    assert env["TMP"] == str(MPT_AGENT._thunderbolt_temp_dir())
     banner = next(
         line for line in capsys.readouterr().out.splitlines() if line.startswith("[MPT-CODEC]")
     )
@@ -699,8 +710,9 @@ def test_nvenc_probe_is_cached_per_binary_and_mtime(tmp_path: Path, monkeypatch)
 
 
 def test_mpt_agent_contracts_of_the_codec_restoration():
-    # O spawn do render recebe o ambiente injectado…
-    assert "env=render_environment," in MPT_AGENT_SOURCE
+    # O spawn do render recebe o ambiente injectado (1.0.51: sempre com o
+    # TEMP isolado — _engine_spawn_environment normaliza o None herdado)…
+    assert "env=_engine_spawn_environment(render_environment)," in MPT_AGENT_SOURCE
     # …o banner sai antes de o motor arrancar…
     assert MPT_AGENT_SOURCE.index("f\"[MPT-CODEC] ffmpeg=") < MPT_AGENT_SOURCE.index(
         "starting video generation, task ID:"
