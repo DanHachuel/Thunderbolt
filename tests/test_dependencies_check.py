@@ -191,10 +191,20 @@ def test_node_check_uses_npm_cmd_on_windows(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_settings_menu_has_dependencies_after_api_config():
+def test_settings_menu_has_dependencies_between_logs_and_api_config():
+    """1.0.49 — regra «Inserção de Itens»: a ordem ORIGINAL (MCP, Notificações,
+    Logs, Configuração API) fica intacta e «Dependências» entra EXATAMENTE
+    entre «Logs» e «Configuração API»."""
     block = MAIN_SOURCE.split("settings_items = [", 1)[1].split("]", 1)[0]
     assert '("Dependências", ":material/extension:", "Dependências")' in block
-    assert block.index('("Configuração API"') < block.index('("Dependências"')
+    order = (
+        block.index('("MCP"'),
+        block.index('("Notificações"'),
+        block.index('("Logs"'),
+        block.index('("Dependências"'),
+        block.index('("Configuração API"'),
+    )
+    assert order == tuple(sorted(order)), f"ordem inesperada no menu: {order}"
     assert '"/configuracoes/dependencias"' in MAIN_SOURCE
 
 

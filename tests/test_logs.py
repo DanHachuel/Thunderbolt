@@ -214,9 +214,9 @@ def test_logs_page_is_between_notifications_and_api_configuration():
     settings_block = source[settings_start:settings_end]
     order = (
         settings_block.index('("Notificações"'),
-        settings_block.index('("Configuração API"'),
-        settings_block.index('("Dependências"'),
         settings_block.index('("Logs"'),
+        settings_block.index('("Dependências"'),
+        settings_block.index('("Configuração API"'),
     )
     assert order == tuple(sorted(order)), f"ordem inesperada no menu: {order}"
     assert '"Logs": render_logs' in source

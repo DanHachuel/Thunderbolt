@@ -136,6 +136,13 @@ def test_agents_md_records_the_terminal_and_scope_rules():
     assert "Verificação de Importação Correta" in AGENTS_SOURCE
 
 
+def test_agents_md_records_the_menu_insertion_rule():
+    """1.0.49 — crava a regra de UI: novos itens NUNCA reordenam o menu."""
+    assert "## Regra de UI: Inserção de Itens" in AGENTS_SOURCE
+    assert "NUNCA mova, reordene ou toque na posição dos itens que já estavam lá" in AGENTS_SOURCE
+    assert "Insira o novo item EXATAMENTE na posição solicitada" in AGENTS_SOURCE
+
+
 def test_pip_installs_are_quiet_and_never_touch_the_terminal():
     """Regra 2: pip em --quiet/--no-input e NENHUM stdio "inherit" — o
     terminal mostra só mensagens amigáveis; a saída completa vai a install.log."""

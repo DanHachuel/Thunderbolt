@@ -12742,11 +12742,12 @@ def main():
     settings_items = [
         ("MCP", ":material/hub:", "MCP"),
         ("Notificações", ":material/notifications:", "Notificações"),
-        ("Configuração API", ":material/settings:", "Configuração API"),
-        # 1.0.47/1.0.48 — diagnóstico do ambiente; fica ENTRE "Configuração API"
-        # e "Logs" (posição pedida pelo utilizador; "Logs" passou a último).
-        ("Dependências", ":material/extension:", "Dependências"),
+        # 1.0.49 — regra de UI «Inserção de Itens» (AGENTS.md): a ordem
+        # ORIGINAL do menu fica intacta (Logs voltou ao seu lugar, antes de
+        # "Configuração API"); o novo item entra EXATAMENTE no meio pedido.
         ("Logs", ":material/description:", "Logs"),
+        ("Dependências", ":material/extension:", "Dependências"),
+        ("Configuração API", ":material/settings:", "Configuração API"),
     ]
     niche_finder_items = [
         ("Niche Finder Kaggle", ":material/search:", "Niche Finder Kaggle"),
