@@ -213,9 +213,9 @@ def test_growth_pages_keep_other_placeholders_and_render_youtube_auditor():
     assert '"Growth Youtube": render_growth_youtube' in MAIN_SOURCE
     assert 'Canal a analisar' in MAIN_SOURCE
     assert 'Nota geral do canal' in MAIN_SOURCE
-    assert '("Facebook Pages", ":material/analytics:", "Facebook Pages")' in MAIN_SOURCE
+    assert '("Growth Facebook Pages", ":material/analytics:", "Facebook Pages")' in MAIN_SOURCE
     assert '("Growth Bilibili", ":material/analytics:", "Growth Bilibili")' in MAIN_SOURCE
-    assert '"Facebook Pages": render_growth_facebook_pages' in MAIN_SOURCE
+    assert '"Growth Facebook Pages": render_growth_facebook_pages' in MAIN_SOURCE
     assert '"Growth Bilibili": render_growth_bilibili' in MAIN_SOURCE
 
 

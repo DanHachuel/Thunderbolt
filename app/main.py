@@ -12722,7 +12722,10 @@ def main():
         ("Growth Youtube", ":material/analytics:", "Growth Youtube"),
         ("Growth Tiktok", ":material/analytics:", "Growth Tiktok"),
         ("Growth Instagram", ":material/analytics:", "Growth Instagram"),
-        ("Facebook Pages", ":material/analytics:", "Facebook Pages"),
+        # 1.0.54 — target distinto do "Facebook Pages" de Canais/Perfis (o
+        # rótulo no menu continua igual; a colisão de chave escondia um dos
+        # dois renderizadores — o última-ocorrência-gana do dict literal).
+        ("Growth Facebook Pages", ":material/analytics:", "Facebook Pages"),
         ("Growth Bilibili", ":material/analytics:", "Growth Bilibili"),
     ]
     growth_items = growth_analysis_items
@@ -12793,7 +12796,7 @@ def main():
         "Canais/Perfis (Vídeos)": "/canais-perfis-videos", "Canais YouTube": "/canais-perfis-videos/canais-youtube", "Canais Tiktok": "/canais-perfis-videos/canais-tiktok", "Contas Instagram": "/canais-perfis-videos/contas-instagram", "Facebook Pages": "/canais-perfis-videos/facebook-pages", "Blueprints Youtube": "/blueprints/youtube", "Music Blueprint": "/blueprints/music", "Thumbnail Blueprints": "/blueprints/thumbnails", "Brandings Youtube": "/blueprints/brandings-youtube", "Prompt-Masters Tiktok": "/blueprints/prompt-masters-tiktok", "Facebook Blueprint": "/blueprints/facebook",
         "AI Influencers": "/ai-influencers", "Personagens": "/ai-influencers/personagens", "Geração de Conteúdo IA": "/ai-influencers/geracao-conteudo", "Motion Control": "/ai-influencers/motion-control", "UGC Products": "/ai-influencers/ugc-products",
         "Edição": "/edicao", "Limpador de Metadados": "/edicao/limpador-metadados", "Cortes": "/edicao/cortes", "Editor Python": "/edicao/editor-python", "Download Mídia": "/edicao/download-midia",
-        "Growth": "/growth", "Analise Growth": "/growth/analise", "Growth Youtube": "/growth/analise/youtube", "Growth Tiktok": "/growth/analise/tiktok", "Growth Instagram": "/growth/analise/instagram", "Facebook Pages": "/growth/analise/facebook-pages", "Growth Bilibili": "/growth/analise/bilibili",
+        "Growth": "/growth", "Analise Growth": "/growth/analise", "Growth Youtube": "/growth/analise/youtube", "Growth Tiktok": "/growth/analise/tiktok", "Growth Instagram": "/growth/analise/instagram", "Growth Facebook Pages": "/growth/analise/facebook-pages", "Growth Bilibili": "/growth/analise/bilibili",
         "Configurações": "/configuracoes", "MCP": "/configuracoes/mcp", "Notificações": "/configuracoes/notificacoes", "Logs": "/configuracoes/logs", "Configuração API": "/configuracoes/api", "Dependências": "/configuracoes/dependencias",
     }
 
@@ -12817,7 +12820,7 @@ def main():
         "Analista Growth Youtube": "Growth Youtube",
         "Analista Growth Tiktok": "Growth Tiktok",
         "Analista Growth Instagram": "Growth Instagram",
-        "Analista Facebook Pages": "Facebook Pages",
+        "Analista Facebook Pages": "Growth Facebook Pages",
         "Analista Bilibili": "Growth",
         "Analise Growth": "Growth",
         # 1.0.50 — os aliases que colapsavam as sub-abas de Growth no pai
@@ -12940,7 +12943,7 @@ def main():
         "Growth Youtube": render_growth_youtube,
         "Growth Tiktok": render_growth_tiktok,
         "Growth Instagram": render_growth_instagram,
-        "Facebook Pages": render_growth_facebook_pages,
+        "Growth Facebook Pages": render_growth_facebook_pages,
         "Growth Bilibili": render_growth_bilibili,
         "Configurações": lambda: render_edit_placeholder("Configurações", "Seleccione uma opção no menu expansível."),
         "MCP": render_mcp,
