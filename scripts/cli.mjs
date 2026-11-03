@@ -130,6 +130,34 @@ function run(command, commandArgs, label = "comando", environment = process.env)
   process.exit(result.status ?? 1);
 }
 
+// 1.0.52 — o utilizador reportou o `install` a falhar silenciosamente no
+// PowerShell (ExecutionPolicy do sistema contra scripts). A nota só aparece
+// quando o lançamento vem MESMO de um PowerShell (pwsh/powershell) — nunca
+// para quem usa o CMD. PSHOME é o marcador rápido; quando está vazio (perfis
+// mínimos / -NoProfile, provado nesta máquina), a cadeia de processos pais é
+// resolvida por CIM. Qualquer falha devolve false: a nota é cortesia, nunca
+// bloqueia o install.
+function runningInsidePowerShell() {
+  if (platform() !== "win32") return false;
+  if (process.env.PSHOME) return true;
+  try {
+    const result = spawnSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `$id = ${process.ppid}; for ($i = 0; $i -lt 10 -and $id -gt 0; $i++) { $p = Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction SilentlyContinue; if (-not $p) { break }; if ($p.Name -match '^(pwsh|powershell)(\\.exe)?$') { 'POWERSHELL_PARENT'; break }; $id = $p.ParentProcessId }`,
+      ],
+      { encoding: "utf8", timeout: 15000, windowsHide: true },
+    );
+    if (result && !result.error && String(result.stdout || "").includes("POWERSHELL_PARENT")) return true;
+  } catch {
+    // detecção indisponível: silêncio (nunca falhar o arranque por isto)
+  }
+  return false;
+}
+
 function pythonVersion() {
   return spawnSync(python, ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"], { encoding: "utf8", env: pythonEnvironment });
 }
@@ -355,6 +383,12 @@ if (args[0] === "install" || args[0] === "--install") {
   if (!existsSync(installer)) {
     console.error(`Thunderbolt: instalador não encontrado: ${installer}`);
     process.exit(1);
+  }
+  // 1.0.52: aviso amigável — o PowerShell pode bloquear a instalação de
+  // scripts (ExecutionPolicy); a falha era silenciosa e o utilizador ficava
+  // sem saber por onde continuar.
+  if (runningInsidePowerShell()) {
+    console.log("Atenção: O PowerShell pode bloquear a instalação de scripts. Se falhar, use o CMD (Prompt de Comando).");
   }
   run(process.execPath, [installer, ...args.slice(1)], "a instalação");
 }
@@ -776,8 +810,68 @@ let queueWorkersDependencyFailureReported = false;
 // 5s para sempre (o check find_spec dava falso positivo com pacote parcial/
 // corrompido: o check passava, o worker morria no boot, o launcher repetia) —
 // poluindo o terminal e travando a consola do Windows com erros fatais.
-const dependencyFailurePattern = /ImportError|ModuleNotFoundError|Fatal Python error/i;
+// 1.0.52: o KeyboardInterrupt entra no padrão — o usuário reportou workers a
+// morrerem no boot (import argparse/re) com o código 3221225786, sem uma
+// linha «No module named» no stderr: a detecção 1.0.20 falhava e o launcher
+// reiniciava para sempre. Morte instantânea de intérprete normalmente é
+// ambiente corrompido (DLL/pacote) ou Ctrl+C do sistema — nunca vale a pena
+// insistir.
+const dependencyFailurePattern = /ImportError|ModuleNotFoundError|Fatal Python error|KeyboardInterrupt/i;
 const workerStderrTails = new WeakMap();
+
+// 1.0.52 — CIRCUIT BREAKER (detector de crash loop). Qualquer morte de
+// worker/serviço MENOS de 10 s depois do spawn é uma falha de BOOT, não um
+// problema de execução; três falhas de boot seguidas cancelam o loop de
+// reinício com mensagem vermelha em vez de insistir para sempre («a
+// reiniciar em 5s» até o utilizador desistir). Um processo que viva mais de
+// 10 s e caia depois ZERA o contador: era problema de execução, não de boot.
+const fastFailWindowMs = 10_000;
+const fastFailLimit = 3;
+const workerBootTracker = new Map();
+let queueWorkersFastFailDisabled = false;
+let pipelineFastFailDisabled = false;
+let automationFastFailDisabled = false;
+let streamlitFastFailDisabled = false;
+
+function noteWorkerStarted(key) {
+  const entry = workerBootTracker.get(key) || { startedAt: 0, fastFails: 0 };
+  entry.startedAt = Date.now();
+  workerBootTracker.set(key, entry);
+  return entry;
+}
+
+function noteWorkerStopped(key) {
+  const entry = workerBootTracker.get(key) || { startedAt: 0, fastFails: 0 };
+  const lifetimeMs = entry.startedAt ? Date.now() - entry.startedAt : Number.POSITIVE_INFINITY;
+  if (lifetimeMs >= fastFailWindowMs) entry.fastFails = 0; // viveu: não é boot
+  return { lifetimeMs, fastFail: lifetimeMs < fastFailWindowMs, fastFails: entry.fastFails };
+}
+
+function registerFastFailure(key) {
+  const entry = workerBootTracker.get(key) || { startedAt: 0, fastFails: 0 };
+  entry.fastFails += 1;
+  workerBootTracker.set(key, entry);
+  return entry.fastFails;
+}
+
+function reportFastFailLoop(label, key, code, signal, logPath) {
+  console.error(`\x1b[31m[ERRO FATAL] O ${label} falhou ${fastFailLimit} vezes seguidas em menos de ${fastFailWindowMs / 1000}s (código ${code ?? "-"}, sinal ${signal ?? "-"}). Verifique os logs ou execute 'npx.cmd --yes --prefer-online @danhachuel/thunderbolt install'. Loop cancelado.\x1b[0m`);
+  if (logPath) console.error(`Thunderbolt: log do ${label}: ${logPath}`);
+  diagnostic("worker_crash_loop_detected", {
+    worker: key,
+    fast_fail_limit: fastFailLimit,
+    exit_code: code ?? null,
+    signal: signal ?? null,
+  });
+}
+
+// 1.0.52 — avalia a morte no circuito: devolve true quando o loop de reinício
+// tem de ser CANCELADO (3 mortes instantâneas seguidas). Nunca lança.
+function workerBootFailedForGood(key) {
+  const boot = noteWorkerStopped(key);
+  if (!boot.fastFail) return false;
+  return registerFastFailure(key) >= fastFailLimit;
+}
 
 function rememberWorkerStderr(child, chunk) {
   const previous = workerStderrTails.get(child) || "";
@@ -821,7 +915,7 @@ function scheduleAutomationWorkerRestart() {
 }
 
 function startAutomationWorker() {
-  if (shuttingDown || worker || automationAutoRestartDisabled || !hasScheduledAutomation() || workerDependencyFailureReported) return;
+  if (shuttingDown || worker || automationAutoRestartDisabled || automationFastFailDisabled || !hasScheduledAutomation() || workerDependencyFailureReported) return;
   if (!checkWorkerDependencies("o worker de automação")) {
     workerDependencyFailureReported = true;
     return;
@@ -834,6 +928,7 @@ function startAutomationWorker() {
     env: runtimeEnv,
     windowsHide: false,
   });
+  noteWorkerStarted("automation");
   worker.stderr?.setEncoding("utf8");
   worker.stderr?.on("data", (chunk) => {
     const message = String(chunk).trim();
@@ -849,6 +944,14 @@ function startAutomationWorker() {
     if (diedFromDependencies) {
       reportFatalDependencyFailure("O worker de automação", dependencyTail);
       workerDependencyFailureReported = true;
+      return;
+    }
+    // 1.0.52 — circuit breaker: morte instantânea repetida (< 10 s) cancelo o
+    // loop do worker de automação (antes: 5 mortes em 60 s e depois insistia).
+    if (workerBootFailedForGood("automation")) {
+      reportFastFailLoop("worker de automação", "automation", code, signal);
+      automationFastFailDisabled = true;
+      automationAutoRestartDisabled = true;
       return;
     }
     if (automationStableTimer) {
@@ -887,7 +990,7 @@ function stopPipelineWorker() {
 }
 
 function startPipelineWorker() {
-  if (shuttingDown || pipelineWorker || pipelineRestartTimer || pipelineAutoRestartDisabled || pipelineDependencyFailureReported) return;
+  if (shuttingDown || pipelineWorker || pipelineRestartTimer || pipelineAutoRestartDisabled || pipelineFastFailDisabled || pipelineDependencyFailureReported) return;
   if (!checkWorkerDependencies("o worker do pipeline de vídeos")) {
     pipelineDependencyFailureReported = true;
     return;
@@ -903,7 +1006,8 @@ function startPipelineWorker() {
     env: runtimeEnv,
     windowsHide: false,
   });
-  attachQueueWorkerLog(pipelineWorker, "pipeline_worker.log", "pipeline worker");
+  const pipelineLog = attachQueueWorkerLog(pipelineWorker, "pipeline_worker.log", "pipeline worker");
+  noteWorkerStarted("pipeline");
   pipelineWorker.on("error", (error) => console.error(`Thunderbolt pipeline worker: ${error.message}`));
   pipelineStableTimer = setTimeout(() => {
     pipelineFailureCount = 0;
@@ -923,6 +1027,13 @@ function startPipelineWorker() {
     if (diedFromDependencies) {
       reportFatalDependencyFailure("O worker do pipeline de vídeos", dependencyTail);
       pipelineDependencyFailureReported = true;
+      return;
+    }
+    // 1.0.52 — circuit breaker: 3 mortes instantâneas (< 10 s) cancelam o
+    // loop de reinício do pipeline.
+    if (workerBootFailedForGood("pipeline")) {
+      reportFastFailLoop("worker do pipeline de vídeos", "pipeline", code, signal, pipelineLog);
+      pipelineFastFailDisabled = true;
       return;
     }
     if (Date.now() - startedAt >= 60000) {
@@ -981,7 +1092,7 @@ function attachQueueWorkerLog(child, filename, label) {
 function startQueueWorkers() {
   // 1.0.11: filas paralelas do Motor — thumbnails e imagens de produção são
   // workers independentes com pools próprios (motor.max_parallel_*).
-  if (shuttingDown || queueWorkersDependencyFailureReported || thumbnailWorker || imageWorker) return;
+  if (shuttingDown || queueWorkersDependencyFailureReported || queueWorkersFastFailDisabled || thumbnailWorker || imageWorker) return;
   if (!checkWorkerDependencies("os workers de filas do Motor")) {
     queueWorkersDependencyFailureReported = true;
     return;
@@ -994,7 +1105,8 @@ function startQueueWorkers() {
     env: runtimeEnv,
     windowsHide: false,
   });
-  attachQueueWorkerLog(thumbnailWorker, "thumbnail_worker.log", "thumbnail worker");
+  const thumbnailLog = attachQueueWorkerLog(thumbnailWorker, "thumbnail_worker.log", "thumbnail worker");
+  noteWorkerStarted("thumbnail");
   thumbnailWorker.on("error", (error) => console.error(`Thunderbolt thumbnail worker: ${error.message}`));
   thumbnailWorker.on("exit", (code, signal) => {
     const diedFromDependencies = workerDiedFromDependencies(thumbnailWorker);
@@ -1006,9 +1118,16 @@ function startQueueWorkers() {
       queueWorkersDependencyFailureReported = true;
       return;
     }
+    // 1.0.52 — circuit breaker: 3 mortes instantâneas (< 10 s) cancelam o
+    // loop de reinício em vez de o repetir para sempre.
+    if (workerBootFailedForGood("thumbnail")) {
+      reportFastFailLoop("thumbnail worker", "thumbnail", code, signal, thumbnailLog);
+      queueWorkersFastFailDisabled = true;
+      return;
+    }
     console.error(`Thunderbolt thumbnail worker: terminou (código ${code ?? "-"}, sinal ${signal ?? "-"}); a reiniciar em 5s.`);
     setTimeout(() => {
-      if (!shuttingDown) startQueueWorkers();
+      if (!shuttingDown && !queueWorkersFastFailDisabled) startQueueWorkers();
     }, 5000).unref?.();
   });
   imageWorker = spawn(python, ["-m", "hermes_ui.image_worker"], {
@@ -1018,7 +1137,8 @@ function startQueueWorkers() {
     env: runtimeEnv,
     windowsHide: false,
   });
-  attachQueueWorkerLog(imageWorker, "image_worker.log", "image worker");
+  const imageLog = attachQueueWorkerLog(imageWorker, "image_worker.log", "image worker");
+  noteWorkerStarted("image");
   imageWorker.on("error", (error) => console.error(`Thunderbolt image worker: ${error.message}`));
   imageWorker.on("exit", (code, signal) => {
     const diedFromDependencies = workerDiedFromDependencies(imageWorker);
@@ -1030,9 +1150,15 @@ function startQueueWorkers() {
       queueWorkersDependencyFailureReported = true;
       return;
     }
+    // 1.0.52 — circuit breaker (mesmo travão do thumbnail worker).
+    if (workerBootFailedForGood("image")) {
+      reportFastFailLoop("image worker", "image", code, signal, imageLog);
+      queueWorkersFastFailDisabled = true;
+      return;
+    }
     console.error(`Thunderbolt image worker: terminou (código ${code ?? "-"}, sinal ${signal ?? "-"}); a reiniciar em 5s.`);
     setTimeout(() => {
-      if (!shuttingDown) startQueueWorkers();
+      if (!shuttingDown && !queueWorkersFastFailDisabled) startQueueWorkers();
     }, 5000).unref?.();
   });
 }
@@ -1052,7 +1178,7 @@ function monitorWorkers() {
 }
 
 function startStreamlit() {
-  if (shuttingDown || child || streamlitRestartTimer || streamlitAutoRestartDisabled) return;
+  if (shuttingDown || child || streamlitRestartTimer || streamlitAutoRestartDisabled || streamlitFastFailDisabled) return;
   const startedAt = Date.now();
   child = spawn(python, [streamlitBootstrap, "run", main, "--server.port", String(backendPort), "--server.address", "127.0.0.1"], {
     cwd: root,
@@ -1060,6 +1186,7 @@ function startStreamlit() {
     env: { ...runtimeEnv, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", PYTHONLEGACYWINDOWSSTDIO: "1", CLICK_NO_WIN_CONSOLE: "1", THUNDERBOLT_LAUNCHER_RESTART: "1" },
     windowsHide: false,
   });
+  noteWorkerStarted("streamlit");
   child.stdout?.on("data", (chunk) => {
     if (!shuttingDown) process.stdout.write(chunk);
   });  child.stderr?.on("data", (chunk) => {
@@ -1102,6 +1229,13 @@ function startStreamlit() {
     if (streamlitStableTimer) {
       clearTimeout(streamlitStableTimer);
       streamlitStableTimer = null;
+    }
+    // 1.0.52 — circuit breaker: 3 mortes instantâneas do servidor (< 10 s)
+    // cancelam a recuperação em vez de a repetir em loop.
+    if (workerBootFailedForGood("streamlit")) {
+      reportFastFailLoop("Streamlit", "streamlit", code, signal);
+      streamlitFastFailDisabled = true;
+      return;
     }
     if (Date.now() - startedAt >= 60000) {
       streamlitFailureCount = 0;
