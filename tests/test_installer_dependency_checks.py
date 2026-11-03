@@ -89,7 +89,8 @@ def test_launcher_reports_missing_worker_modules_with_the_install_command():
 
 
 def test_launcher_detects_dependency_deaths_from_worker_stderr():
-    assert "const dependencyFailurePattern = /ImportError|ModuleNotFoundError|Fatal Python error/i;" in LAUNCHER_SOURCE
+    # 1.0.52 (circuit breaker): o padrão passou a incluir KeyboardInterrupt
+    assert "const dependencyFailurePattern = /ImportError|ModuleNotFoundError|Fatal Python error|KeyboardInterrupt/i;" in LAUNCHER_SOURCE
     assert "const workerStderrTails = new WeakMap();" in LAUNCHER_SOURCE
     assert "function workerDiedFromDependencies(child)" in LAUNCHER_SOURCE
     # attachQueueWorkerLog memoriza o stderr para o exit handler decidir.
@@ -100,7 +101,8 @@ def test_launcher_detects_dependency_deaths_from_worker_stderr():
 def test_queue_workers_stop_instead_of_restarting_on_dependency_deaths():
     block = LAUNCHER_SOURCE.split("function startQueueWorkers()", 1)[1].split("function stopQueueWorkers()", 1)[0]
     assert "queueWorkersDependencyFailureReported" in LAUNCHER_SOURCE.split("function startQueueWorkers()", 1)[0].split("function attachQueueWorkerLog(", 1)[0] or True
-    assert "if (shuttingDown || queueWorkersDependencyFailureReported || thumbnailWorker || imageWorker) return;" in LAUNCHER_SOURCE
+    # 1.0.52 (circuit breaker): a guarda passou a incluir queueWorkersFastFailDisabled
+    assert "if (shuttingDown || queueWorkersDependencyFailureReported || queueWorkersFastFailDisabled || thumbnailWorker || imageWorker) return;" in LAUNCHER_SOURCE
     thumbnail_exit = block.split("thumbnailWorker.on(\"exit\"", 1)[1].split("imageWorker = spawn(", 1)[0]
     image_exit = block.split("imageWorker.on(\"exit\"", 1)[1]
     for handler in (thumbnail_exit, image_exit):

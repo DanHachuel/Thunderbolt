@@ -39,7 +39,8 @@ class NpxCacheCompatibilityTests(unittest.TestCase):
         # A guarda ganhou o flag de falha de dependências (f698584,
         # "instalar e validar dependências dos workers"): se as dependências
         # falharam, o worker não arranca em loop; continua disponível manualmente.
-        self.assertIn('if (shuttingDown || pipelineWorker || pipelineRestartTimer || pipelineAutoRestartDisabled || pipelineDependencyFailureReported) return;', start_block)
+        # 1.0.52 (circuit breaker): a guarda passou a incluir pipelineFastFailDisabled
+        self.assertIn('if (shuttingDown || pipelineWorker || pipelineRestartTimer || pipelineAutoRestartDisabled || pipelineFastFailDisabled || pipelineDependencyFailureReported) return;', start_block)
         self.assertNotIn('!hasPendingPipelineWork()', start_block)
         self.assertIn('startPipelineWorker();', monitor_block)
         self.assertNotIn('stopPipelineWorker();', monitor_block)
