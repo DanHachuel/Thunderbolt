@@ -9,10 +9,10 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_youtube_frontend_upload_tutorial_is_registered_in_documentation_menu():
     source = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 
-    # 1.0.52 — os tutoriais saíram do menu lateral e são sub-tabs da aba
-    # "Documentação" dentro das Configurações.
+    # 1.0.56 — a Documentação é sub-item autónomo do menu lateral (grupo
+    # «Configurações»); o tutorial é aba do st.tabs dessa página.
     assert '("YouTube Video-Upload Frontend", ":material/video_library:", "YouTube Video-Upload Frontend")' not in source
-    assert "with documentation_tab:" in source
+    assert "def render_documentation_pages" in source
     assert "render_youtube_frontend_upload_tutorial," in source
 
 

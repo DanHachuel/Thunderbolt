@@ -5,11 +5,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_google_oauth_tutorial_is_registered_in_documentation_menu():
-    # 1.0.52 — os tutoriais saíram do menu lateral e vivem como aba interna
-    # das Configurações; o OAuth continua registado nessa aba.
+    # 1.0.56 — a Documentação é sub-item autónomo do menu lateral (grupo
+    # «Configurações»); o OAuth continua como aba do st.tabs dessa página.
     source = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 
-    assert "with documentation_tab:" in source
+    assert "def render_documentation_pages" in source
     assert '"OAuth do Google", "YouTube Data API Key (Public Data)",' in source.replace("\n", " ")
     assert "render_google_oauth_tutorial," in source
     # já não existe item de menu lateral nem rota /documentacao para o tutorial

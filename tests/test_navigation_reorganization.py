@@ -48,10 +48,11 @@ class NavigationReorganizationTests(unittest.TestCase):
         self.assertNotIn('"Contas TikTok": render_tiktok_accounts', MAIN_SOURCE)
 
     def test_niche_finder_tutorials_are_documentation_only(self):
-        # 1.0.52 — os tutoriais deixaram o menu lateral e são aba INTERNA das
-        # Configurações; Kaggle/Apify continuam exclusivamente nesses tutoriais.
+        # 1.0.56 — os tutoriais vivem na página «Documentação» (sub-item do
+        # grupo «Configurações» no menu lateral); Kaggle/Apify continuam
+        # exclusivamente nesses tutoriais.
         niche_block = MAIN_SOURCE.split("    niche_finder_items = [", 1)[1].split("    ]", 1)[0]
-        documentation_block = MAIN_SOURCE.split("with documentation_tab:", 1)[1].split("def _render_telegram_notification_settings", 1)[0]
+        documentation_block = MAIN_SOURCE.split("def render_documentation_pages", 1)[1].split("def main():", 1)[0]
         for label in ("Kaggle", "Apify"):
             self.assertNotIn(f'("{label}"', niche_block)
             self.assertIn(f'"{label}"', documentation_block)
@@ -67,8 +68,10 @@ class NavigationReorganizationTests(unittest.TestCase):
         )
         for label in required:
             self.assertIn(f'"{label}"', MAIN_SOURCE)
-        # 1.0.52 — a página «Documentação» e os sub-itens saíram do menu lateral
-        self.assertNotIn('("Documentação", ":material/menu_book:", "Documentação")', MAIN_SOURCE)
+        # 1.0.56 — «Documentação» voltou ao menu lateral como sub-item AUTÓNOMO
+        # do grupo «Configurações» (página própria, não aba interna)
+        self.assertIn('("Documentação", ":material/menu_book:", "Documentação")', MAIN_SOURCE)
+        self.assertIn('"Documentação": render_documentation_pages,', MAIN_SOURCE)
         self.assertNotIn('"Tutoriais":', MAIN_SOURCE)
         self.assertNotIn('"/documentacao', MAIN_SOURCE)
 
@@ -147,11 +150,21 @@ class NavigationReorganizationTests(unittest.TestCase):
         settings_block = MAIN_SOURCE.split("    settings_items = [", 1)[1].split("    ]", 1)[0]
         self.assertLess(settings_block.index('"Notificações"'), settings_block.index('"Configuração API"'))
 
+    def test_documentation_is_last_settings_subitem(self):
+        # 1.0.56 — «Documentação» é sub-item AUTÓNOMO do grupo «Configurações»,
+        # a seguir a «Configuração API» (correcção de roteamento da 1.0.53).
+        settings_block = MAIN_SOURCE.split("    settings_items = [", 1)[1].split("    ]", 1)[0]
+        self.assertLess(settings_block.index('"Configuração API"'), settings_block.index('"Documentação"'))
+        top_block = MAIN_SOURCE.split("    top_pages = [", 1)[1].split("    ]", 1)[0]
+        self.assertNotIn('("Documentação"', top_block)
+        self.assertIn('"Documentação": render_documentation_pages,', MAIN_SOURCE)
+        self.assertIn('"Documentação": "/configuracoes/documentacao"', MAIN_SOURCE)
+
     def test_google_accounts_are_moved_to_api_settings_subtab(self):
         settings_block = MAIN_SOURCE.split("    settings_items = [", 1)[1].split("    ]", 1)[0]
         self.assertNotIn('("Contas Google",', settings_block)
-        # 1.0.52 — a lista de tabs ganhou a aba "Documentação" (tutoriais)
-        self.assertIn('browser_proxy_tab, documentation_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "Motor", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz", "Navegador e Proxies", "Documentação"])', MAIN_SOURCE)
+        # 1.0.56 — a aba «Documentação» NÃO vive nas tabs da Configuração API
+        self.assertIn('api_keys_tab, upload_api_keys_tab, subtitles_tab, motor_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab, browser_proxy_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "Motor", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz", "Navegador e Proxies"])', MAIN_SOURCE)
         self.assertIn('with st.expander("API Instagram", expanded=False):', MAIN_SOURCE)
         self.assertIn('with st.expander("API Facebook Pages", expanded=False):', MAIN_SOURCE)
         self.assertIn('"Contas Google": "Configuração API"', MAIN_SOURCE)

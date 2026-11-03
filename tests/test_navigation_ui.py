@@ -66,9 +66,9 @@ def test_settings_children_include_logs_between_notifications_and_api():
 
 
 def test_models_ai_has_meta_tutorial_renderer():
-    # 1.0.52 — o tutorial Meta saiu do menu lateral e é sub-tab da aba
-    # "Documentação" dentro das Configurações.
-    assert "with documentation_tab:" in MAIN_SOURCE
+    # 1.0.56 — o tutorial Meta é aba do st.tabs da página «Documentação»
+    # (sub-item do grupo «Configurações» no menu lateral).
+    assert "def render_documentation_pages" in MAIN_SOURCE
     assert '("Meta", ":material/menu_book:", "Meta")' not in MAIN_SOURCE
     assert "render_models_ai_tutorial," in MAIN_SOURCE
     # A ligação à fonte externa foi removida (commit 41d2dc6, "remove
@@ -85,10 +85,7 @@ def test_google_configuration_keeps_account_fields_and_api_page_does_not_duplica
     settings_start = MAIN_SOURCE.index("def render_settings():")
     notifications_start = MAIN_SOURCE.index("def render_notifications():")
     google_page = MAIN_SOURCE[google_start:settings_start]
-    # 1.0.52 — a aba "Documentação" (tutoriais) vive dentro de render_settings,
-    # mas o contrato de não-duplicação da conta Google olha só para as tabs de
-    # API: o recorte pára antes de `with documentation_tab:`.
-    api_page = MAIN_SOURCE[settings_start:MAIN_SOURCE.index("with documentation_tab:", settings_start)]
+    api_page = MAIN_SOURCE[settings_start:notifications_start]
     assert "INNERTUBE_API_KEY" in google_page
     assert "sessionInfo" in google_page
     assert "google_global_api_settings_form" in google_page
@@ -153,7 +150,7 @@ def test_api_keys_contains_material_sources_expander_with_multi_key_controls():
     settings_start = MAIN_SOURCE.index("def render_settings():")
     settings_page = MAIN_SOURCE[settings_start:]
     material_sources_page = MAIN_SOURCE[MAIN_SOURCE.index("def render_material_source_api_keys("):]
-    tabs_literal = 'browser_proxy_tab, documentation_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "Motor", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz", "Navegador e Proxies", "Documentação"])'
+    tabs_literal = 'api_keys_tab, upload_api_keys_tab, subtitles_tab, motor_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab, browser_proxy_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "Motor", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz", "Navegador e Proxies"])'
     assert tabs_literal in settings_page
     assert 'with material_sources_tab:' not in settings_page
     assert 'render_material_source_api_keys(settings, embedded=True)' in settings_page
@@ -199,11 +196,11 @@ def test_supabase_tutorial_is_packaged_and_added_to_ai_influencers():
     # O item de navegação passou de "Tutorial Supabase" para "Supabase" (commit
     # d887ac2, "reorganizar abas de documentacao"); o nome antigo ficou como
     # alias para não quebrar ligações existentes.
-    # 1.0.52 — o Supabase deixou o menu lateral e é sub-tab da aba
-    # "Documentação" dentro das Configurações (o guia .md fica intacto).
+    # 1.0.56 — o Supabase é aba do st.tabs da página «Documentação» (sub-item
+    # do grupo «Configurações» no menu lateral; o guia .md fica intacto).
     assert '("Supabase", ":material/storage:", "Supabase")' not in MAIN_SOURCE
     assert '"Tutorial Supabase": "Supabase"' not in MAIN_SOURCE
-    assert "with documentation_tab:" in MAIN_SOURCE
+    assert "def render_documentation_pages" in MAIN_SOURCE
     assert "render_supabase_tutorial," in MAIN_SOURCE
     assert 'guide-supabase.md' in MAIN_SOURCE
 

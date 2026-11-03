@@ -11133,7 +11133,7 @@ def render_settings():
             key=f"settings_{key}",
         )
 
-    api_keys_tab, upload_api_keys_tab, subtitles_tab, motor_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab, browser_proxy_tab, documentation_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "Motor", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz", "Navegador e Proxies", "Documentação"])
+    api_keys_tab, upload_api_keys_tab, subtitles_tab, motor_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab, browser_proxy_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "Motor", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz", "Navegador e Proxies"])
 
     with api_keys_tab:
         with st.container(border=True):
@@ -11865,22 +11865,6 @@ def render_settings():
 
     with browser_proxy_tab:
         render_social_auto_upload_settings()
-    with documentation_tab:
-        # 1.0.52 — os tutoriais deixaram o menu lateral e passam a viver aqui,
-        # como aba interna das Configurações. Conteúdo e formato st.tabs
-        # intactos (apenas mudaram de sítio).
-        tutorial_subtabs = render_localized_tabs([
-            "Meta", "Supabase", "Kaggle", "Apify", "YouTube Video-Upload Frontend",
-            "OAuth do Google", "YouTube Data API Key (Public Data)",
-        ])
-        tutorial_renderers = [
-            render_models_ai_tutorial, render_supabase_tutorial, lambda: render_niche_tutorial("kaggle"),
-            lambda: render_niche_tutorial("apify"), render_youtube_frontend_upload_tutorial,
-            render_google_oauth_tutorial, render_youtube_data_api_key_tutorial,
-        ]
-        for tab, renderer in zip(tutorial_subtabs, tutorial_renderers):
-            with tab:
-                renderer()
 
 
 def _render_telegram_notification_settings() -> None:
@@ -12682,6 +12666,30 @@ def render_growth_pages() -> None:
                 renderer()
 
 
+def render_documentation_pages() -> None:
+    """Render the Documentação page: title + the horizontal tutorial tabs.
+
+    1.0.56 — a Documentação é sub-item AUTÓNOMO do grupo «Configurações» no
+    menu lateral (ao lado de MCP, Notificações, Logs, Dependências e
+    Configuração API). A 1.0.53 tinha errado ao colocá-la como aba interna
+    da página Configuração API; agora é página própria, com as 7 abas de
+    tutoriais logo abaixo do título. Conteúdo e formato st.tabs intactos.
+    """
+    st.title("Documentação")
+    tutorial_subtabs = render_localized_tabs([
+        "Meta", "Supabase", "Kaggle", "Apify", "YouTube Video-Upload Frontend",
+        "OAuth do Google", "YouTube Data API Key (Public Data)",
+    ])
+    tutorial_renderers = [
+        render_models_ai_tutorial, render_supabase_tutorial, lambda: render_niche_tutorial("kaggle"),
+        lambda: render_niche_tutorial("apify"), render_youtube_frontend_upload_tutorial,
+        render_google_oauth_tutorial, render_youtube_data_api_key_tutorial,
+    ]
+    for tab, renderer in zip(tutorial_subtabs, tutorial_renderers):
+        with tab:
+            renderer()
+
+
 def main():
     pipeline_video_items = [
         ("Criação de Vídeos", ":material/add_circle:", "Criação de Vídeos"),
@@ -12729,9 +12737,10 @@ def main():
         ("Growth Bilibili", ":material/analytics:", "Growth Bilibili"),
     ]
     growth_items = growth_analysis_items
-    # 1.0.52 — os tutoriais (Meta, Supabase, Kaggle, ...) deixaram de ser
-    # itens do menu lateral: vivem agora como aba interna da página
-    # Configurações (render_settings → tab "Documentação").
+    # 1.0.56 — os tutoriais (Meta, Supabase, Kaggle, ...) voltaram ao menu
+    # lateral como sub-item AUTÓNOMO do grupo «Configurações»: a página
+    # «Documentação» (render_documentation_pages) fica ao lado de
+    # «Configuração API», não como aba interna dela.
     settings_items = [
         ("MCP", ":material/hub:", "MCP"),
         ("Notificações", ":material/notifications:", "Notificações"),
@@ -12741,6 +12750,10 @@ def main():
         ("Logs", ":material/description:", "Logs"),
         ("Dependências", ":material/extension:", "Dependências"),
         ("Configuração API", ":material/settings:", "Configuração API"),
+        # 1.0.56 — correcção de roteamento: a Documentação é sub-item AUTÓNOMO
+        # do grupo «Configurações» (ao lado de Configuração API), não aba
+        # interna da página Configuração API (regressão da 1.0.53).
+        ("Documentação", ":material/menu_book:", "Documentação"),
     ]
     niche_finder_items = [
         ("Niche Finder Kaggle", ":material/search:", "Niche Finder Kaggle"),
@@ -12797,7 +12810,7 @@ def main():
         "AI Influencers": "/ai-influencers", "Personagens": "/ai-influencers/personagens", "Geração de Conteúdo IA": "/ai-influencers/geracao-conteudo", "Motion Control": "/ai-influencers/motion-control", "UGC Products": "/ai-influencers/ugc-products",
         "Edição": "/edicao", "Limpador de Metadados": "/edicao/limpador-metadados", "Cortes": "/edicao/cortes", "Editor Python": "/edicao/editor-python", "Download Mídia": "/edicao/download-midia",
         "Growth": "/growth", "Analise Growth": "/growth/analise", "Growth Youtube": "/growth/analise/youtube", "Growth Tiktok": "/growth/analise/tiktok", "Growth Instagram": "/growth/analise/instagram", "Growth Facebook Pages": "/growth/analise/facebook-pages", "Growth Bilibili": "/growth/analise/bilibili",
-        "Configurações": "/configuracoes", "MCP": "/configuracoes/mcp", "Notificações": "/configuracoes/notificacoes", "Logs": "/configuracoes/logs", "Configuração API": "/configuracoes/api", "Dependências": "/configuracoes/dependencias",
+        "Configurações": "/configuracoes", "MCP": "/configuracoes/mcp", "Notificações": "/configuracoes/notificacoes", "Logs": "/configuracoes/logs", "Configuração API": "/configuracoes/api", "Dependências": "/configuracoes/dependencias", "Documentação": "/configuracoes/documentacao",
     }
 
     aliases = {
@@ -12952,6 +12965,7 @@ def main():
         "Notificações": render_notifications,
         "Logs": render_logs,
         "Dependências": render_dependencies_page,
+        "Documentação": render_documentation_pages,
     }
     renderers.get(current_page, render_dashboard)()
 

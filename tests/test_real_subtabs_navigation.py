@@ -155,11 +155,13 @@ def test_growth_is_a_page_with_real_content_tabs():
 
 
 def test_documentation_is_a_page_with_real_content_tabs():
-    # 1.0.52 — «Documentação» deixou de ser página do menu lateral: os
-    # tutoriais passaram a aba INTERNA da página Configurações (render_settings),
-    # com as sub-tabs reais (Meta, Supabase, Kaggle, ...) intactas.
-    assert "with documentation_tab:" in MAIN_SOURCE
-    assert "render_documentation_pages" not in MAIN_SOURCE
+    # 1.0.56 — «Documentação» voltou a ser sub-item do menu lateral (grupo
+    # «Configurações»), com página própria (render_documentation_pages) e as
+    # sub-tabs reais (Meta, Supabase, Kaggle, ...) intactas.
+    assert "with documentation_tab:" not in MAIN_SOURCE
+    assert "def render_documentation_pages" in MAIN_SOURCE
+    assert '"Documentação": render_documentation_pages,' in MAIN_SOURCE
+    assert '("Documentação", ":material/menu_book:", "Documentação")' in MAIN_SOURCE
     assert '"Documentação": documentation_items' not in MAIN_SOURCE
     assert "documentation_items" not in MAIN_SOURCE
     assert "tutorial_items" not in MAIN_SOURCE

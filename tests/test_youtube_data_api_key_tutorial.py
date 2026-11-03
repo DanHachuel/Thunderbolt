@@ -5,11 +5,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_youtube_data_api_key_tutorial_is_registered_in_documentation_menu():
-    # 1.0.52 — os tutoriais saíram do menu lateral e vivem como aba interna
-    # das Configurações; o tutorial continua registado nessa aba.
+    # 1.0.56 — a Documentação é sub-item autónomo do menu lateral (grupo
+    # «Configurações»); o tutorial continua como aba do st.tabs dessa página.
     source = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
     label = "YouTube Data API Key (Public Data)"
-    assert "with documentation_tab:" in source
+    assert "def render_documentation_pages" in source
     assert f'"{label}",' in source.replace("\n", " ")
     assert "render_youtube_data_api_key_tutorial," in source
     # nada de item de menu lateral nem rota /documentacao para o tutorial
