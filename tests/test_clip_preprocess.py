@@ -441,14 +441,19 @@ def test_preprocess_task_clips_skips_already_normalized(tmp_path: Path, monkeypa
 # ---------------------------------------------------------------------------
 
 
-def _fake_generation(tmp_path: Path, monkeypatch, *, preprocess: bool, engine_script=None):
+def _fake_generation(tmp_path: Path, monkeypatch, *, preprocess: bool, engine_script=None, gpu: bool = True):
     root = tmp_path / "MoneyPrinterTurbo"
     root.mkdir()
     fake = _fake_ffmpeg(tmp_path)
     config_path = _write_config(root, ffmpeg_path=str(fake), preprocess=preprocess)
     monkeypatch.setattr(MPT_AGENT.shutil, "which", lambda _: "/usr/bin/uv")
     monkeypatch.setattr(MPT_AGENT, "run_checked", lambda *args, **kwargs: None)
-    monkeypatch.setattr(MPT_AGENT, "_probe_nvenc_encoder", lambda _path: True)
+    # 1.0.54: `gpu=False` simula a máquina sem placa NVIDIA (probe falha) —
+    # o contrato AUTO-ON só dispara com GPU REAL.
+    monkeypatch.setattr(MPT_AGENT, "_probe_nvenc_encoder", lambda _path: bool(gpu))
+    monkeypatch.setattr(
+        MPT_AGENT, "_gpu_clips_available", lambda _path: bool(gpu)
+    )
     real_sleep = __import__("time").sleep
     monkeypatch.setattr(MPT_AGENT.time, "sleep", lambda _seconds: real_sleep(0.001))
     captured: dict[str, object] = {"commands": []}
@@ -506,7 +511,15 @@ def test_generate_video_runs_two_spawns_with_preprocess_on(tmp_path: Path, monke
 
 
 def test_generate_video_keeps_single_spawn_with_preprocess_off(tmp_path: Path, monkeypatch, capsys):
-    root, _fake, captured, _killed = _fake_generation(tmp_path, monkeypatch, preprocess=False)
+    """1.0.54: toggle OFF só preserva o fluxo ANTIGO quando não há GPU.
+
+    Com placa NVIDIA (probe OK) a fase FFmpeg entra em AUTO-ON — é o
+    contrato que destrava o «76% por 12 min» (resize dos clipes no
+    MoviePy/Python). Aqui o probe falha de propósito: fluxo antigo, 1 spawn.
+    """
+    root, _fake, captured, _killed = _fake_generation(
+        tmp_path, monkeypatch, preprocess=False, gpu=False
+    )
     videos, _task_dir, _log_path, _result = MPT_AGENT.generate_video(
         root, "Tema sem pré-processamento", ["--video-source", "pexels"]
     )
@@ -515,6 +528,24 @@ def test_generate_video_keeps_single_spawn_with_preprocess_off(tmp_path: Path, m
     assert len(commands) == 1, f"fluxo antigo devia ter 1 spawn: {len(commands)}"
     assert commands[0][-2:] == ["--stop-at", "video"]
     assert "preprocess=off" in capsys.readouterr().out
+
+
+def test_generate_video_gpu_forces_preprocess_even_with_toggle_off(tmp_path: Path, monkeypatch, capsys):
+    """1.0.54: GPU + toggle OFF = AUTO-ON (o relato do utilizador)."""
+    root, _fake, captured, _killed = _fake_generation(
+        tmp_path, monkeypatch, preprocess=False, gpu=True
+    )
+    videos, _task_dir, _log_path, _result = MPT_AGENT.generate_video(
+        root, "Tema com GPU e toggle off", ["--video-source", "pexels"]
+    )
+    assert videos
+    commands = captured["commands"]
+    assert len(commands) == 2, f"GPU devia forçar as 2 fases: {len(commands)}"
+    assert commands[0][-2:] == ["--stop-at", "materials"]
+    output = capsys.readouterr().out
+    assert "preprocess=on" in output
+    assert "[FFMPEG-PRE]" in output
+
 
 
 def test_generate_video_local_route_never_preprocesses(tmp_path: Path, monkeypatch, capsys):

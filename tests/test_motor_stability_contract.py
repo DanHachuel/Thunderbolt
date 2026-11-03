@@ -288,6 +288,10 @@ def _fake_generation_environment(tmp_path: Path, monkeypatch, root: Path, captur
     (root / "config.toml").write_text("[app]\n", encoding="utf-8")
     monkeypatch.setattr(MPT_AGENT.shutil, "which", lambda _: "/usr/bin/uv")
     monkeypatch.setattr(MPT_AGENT, "run_checked", lambda *args, **kwargs: None)
+    # Determinismo: este contrato mede o bootstrap/patch/env do spawn, não a
+    # fase de clipes (coberta por test_gpu_forced_encode.py) — a máquina com
+    # placa NVIDIA real não pode alterar o resultado.
+    monkeypatch.setattr(MPT_AGENT, "_gpu_clips_available", lambda _path: False)
     monkeypatch.setattr(
         MPT_AGENT, "_cleanup_orphan_engine_temp_files", lambda *a, **k: captured.setdefault("cleaned", 3)
     )
@@ -392,12 +396,54 @@ def test_motor_lock_source_contracts():
     # Camada 2 — trava do fallback falso: lock não passa do guarda.
     assert "if is_windows_lock_error(reason):" in PATCH_SOURCE
     assert PATCH.LOCK_GUARD_MARKER in PATCH_SOURCE and PATCH.WRITER_RETRY_MARKER in PATCH_SOURCE
-    # O patch NUNCA mexe no NVENC por conta própria — codecs não aparecem
-    # aqui; uma falha real de encoder continua no caminho original.
-    assert "h264_nvenc" not in PATCH_SOURCE and "libx264" not in PATCH_SOURCE
     # Camada 3 — TEMP isolado + limpeza de órfãos (> 24 h).
     assert PATCH.ORPHAN_MAX_AGE_HOURS == 24
     assert 'MPT_TEMP_AUDIO_GLOB = "*TEMP_MPY_*"' in PATCH_SOURCE
+    # 1.0.54 — encode de hardware: params SEGUROS (pix_fmt + threads) e
+    # NUNCA hwaccel no write do MoviePy (quebra o pipe raw — Errno 22,
+    # provado). A prova comportamental está em
+    # test_write_wrapper_injects_hardware_params_only_for_nvenc.
+    assert '"h264_nvenc", "hevc_nvenc"' in PATCH_SOURCE
+    assert "def _hardware_write_params(" in PATCH_SOURCE
+    assert "quebra a leitura do pipe" in PATCH_SOURCE
+    assert "Errno 22" in PATCH_SOURCE
+    # O patch não decide codecs do motor: libx264 continua fora daqui.
+    assert "libx264" not in PATCH_SOURCE
+
+
+def test_patch_hardware_params_are_negotiated_not_duplicated():
+    params, threads = PATCH._hardware_write_params("h264_nvenc", None)
+    assert params == ["-pix_fmt", "yuv420p"]
+    assert threads == PATCH.DEFAULT_WRITE_THREADS == 4
+    # Params do chamador preservados (sem segundo -pix_fmt).
+    params, threads = PATCH._hardware_write_params("h264_nvenc", ["-preset", "fast"])
+    assert params == ["-pix_fmt", "yuv420p", "-preset", "fast"]
+    # Um -pix_fmt explícito do chamador NUNCA é duplicado.
+    params, _ = PATCH._hardware_write_params("h264_nvenc", ["-pix_fmt", "yuv444p"])
+    assert params == ["-pix_fmt", "yuv444p"]
+
+
+def test_write_wrapper_injects_hardware_params_only_for_nvenc(monkeypatch):
+    """Write com encoder de hardware recebe pix_fmt+threads; libx264 intacto."""
+    from moviepy.video.VideoClip import VideoClip
+
+    seen: list[dict] = []
+
+    def fake_write(self, filename, *args, **kwargs):
+        seen.append(dict(kwargs))
+        return "ok"
+
+    monkeypatch.setattr(VideoClip, "write_videofile", fake_write, raising=False)
+    assert PATCH.patch_moviepy_write_videofile() is True
+    patched = VideoClip.write_videofile
+
+    patched(object(), "final-1.mp4", codec="h264_nvenc", temp_audiofile_path=str(ROOT))
+    patched(object(), "final-1.mp4", codec="libx264", temp_audiofile_path=str(ROOT))
+
+    assert seen[0]["ffmpeg_params"] == ["-pix_fmt", "yuv420p"]
+    assert seen[0]["threads"] == 4
+    assert seen[1].get("ffmpeg_params") is None
+    assert "threads" not in seen[1]
 
 
 def test_agent_source_contracts_for_the_motor_lock():
@@ -410,10 +456,11 @@ def test_agent_source_contracts_for_the_motor_lock():
     assert "env=_engine_spawn_environment(render_environment)," in MPT_AGENT_SOURCE
     # …limpeza preventiva antes do render…
     assert "_cleanup_orphan_engine_temp_files()" in MPT_AGENT_SOURCE
-    # …e o fail-fast da 1.0.40 (queda REAL de GPU) continua intacto.
+    # …e o fail-fast da 1.0.40+1.0.54 (queda REAL de GPU) continua intacto.
     assert MPT_AGENT.MPT_CODEC_FALLBACK_MARKERS == (
         "fallback to libx264",
         "was disabled after a runtime failure",
+        "video codec h264_nvenc failed",
     )
     assert "Falha na GPU: NVENC indisponível" in MPT_AGENT_SOURCE
 

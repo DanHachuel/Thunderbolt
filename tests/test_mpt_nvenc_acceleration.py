@@ -341,6 +341,10 @@ def _fake_generation_environment(
     monkeypatch.setattr(MPT_AGENT.shutil, "which", lambda _: "/usr/bin/uv")
     monkeypatch.setattr(MPT_AGENT, "run_checked", lambda *args, **kwargs: None)
     monkeypatch.setattr(MPT_AGENT, "_probe_nvenc_encoder", lambda _path: True)
+    # 1.0.54: estes testes medem o CODEC/AMBIENTE, não a fase de clipes — sem
+    # GPU forçada, o fluxo é o de um spawn (a fase FFmpeg de clipes é
+    # coberta por test_gpu_forced_encode.py e test_clip_preprocess.py).
+    monkeypatch.setattr(MPT_AGENT, "_gpu_clips_available", lambda _path: False)
     # 1.0.40: sono mínimo (não None — um no-op estrangularia o GIL e o
     # watcher só correria ao fim de um minuto num runner carregado).
     _fast_sleep(monkeypatch)

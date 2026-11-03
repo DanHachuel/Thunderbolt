@@ -478,8 +478,15 @@ CPU_VIDEO_CODEC = "libx264"
 NVENC_PROBE_TIMEOUT_SECONDS = 45
 NVENC_PROBE_SOURCE = "testsrc=duration=1:size=320x240:rate=15"
 # O próprio motor MPT loga estes marcadores quando desiste do NVENC a meio
-# do render (sessões esgotadas, falha transitória do encoder).
-MPT_CODEC_FALLBACK_MARKERS = ("fallback to libx264", "was disabled after a runtime failure")
+# do render (sessões esgotadas, falha transitória do encoder). 1.0.54:
+# «video codec h264_nvenc failed» entra na lista — é a primeira metade da
+# mesma linha («video codec h264_nvenc failed, fallback to libx264.
+# reason: …»); o utilizador prefere o erro rápido a 15 min de CPU surda.
+MPT_CODEC_FALLBACK_MARKERS = (
+    "fallback to libx264",
+    "was disabled after a runtime failure",
+    "video codec h264_nvenc failed",
+)
 _NVENC_PROBE_CACHE: dict[tuple[str, str], bool] = {}
 
 # 1.0.37 — Allowlist das variáveis que QUALQUER subprocesso do Windows precisa
@@ -960,6 +967,28 @@ def _clip_preprocess_enabled(config_path: Path) -> bool:
     }
 
 
+def _should_preprocess_clips(config_path: Path, ffmpeg_path: str, route: str) -> bool:
+    """1.0.54 — a fase FFmpeg de clipes decide pelo QUE A MÁQUINA PRECISA.
+
+    O relato do utilizador (vídeo Pexels 12 min em 76%, GPU a 5%) provou que
+    deixar a decisão só ao toggle condena quem tem GPU ao caminho lento: com
+    `ffmpeg_preprocess_clips = false` (omissão da UI) o MoviePy REDIMENSIONA
+    os 97 clipes em numpy/Python — 10,1 s por clipe de 5 s nesta máquina
+    (medido), ~16 min de compositing, GPU idle. A fase B (FFmpeg faz
+    decode+scale+encode num processo C) leva 0,87 s no MESMO clipe.
+
+    Contrato novo: toggle ON liga sempre (fluxo antigo da 1.0.41 preservado);
+    toggle OFF/AUSENTE + **GPU REAL** (nvidia-smi + probe NVENC) → AUTO-ON,
+    porque quem tem placa NVIDIA não pode pagar o resize em Python. Rota
+    `local` (ficheiros do utilizador) nunca é tocada.
+    """
+    if route not in CLIP_PREPROCESS_ROUTES:
+        return False
+    if _clip_preprocess_enabled(config_path):
+        return True
+    return _gpu_clips_available(ffmpeg_path)
+
+
 def _gpu_clips_available(ffmpeg_path: str) -> bool:
     """GPU para o pré-processamento: nvidia-smi presente E probe NVENC ok.
 
@@ -1077,9 +1106,14 @@ def _normalize_clip_with_ffmpeg(
 ) -> tuple[bool, str]:
     """Normaliza UM clipe para WxH exacto (duração preservada, web-safe).
 
-    Duas tentativas: GPU (``-hwaccel cuda`` + ``h264_nvenc``) quando
-    disponível e CPU (``libx264``) sempre. Falha qualquer uma delas → o
-    ficheiro ORIGINAL fica intacto (nunca se perde material). Devolve
+    1.0.54 — GPU usa ``-hwaccel cuda`` no DECODE (NVDEC) + ``scale`` do
+    FFmpeg (SIMD em C — 0,87 s por clipe de 5 s nesta máquina, contra 10,14 s
+    do resize numpy do MoviePy) + ``h264_nvenc`` no encode. ``scale_cuda``
+    FOI testado e PROVADO QUEBRADO nesta combinação (GTX 1050 Ti + ffmpeg
+    7.1: «Impossible to convert between … Parsed_scale_cuda_0 and
+    auto_scale_0» com ``-pix_fmt yuv420p``, rc -40) — documentado para
+    ninguém o "corrigir" de volta. CPU (``libx264``) como segunda
+    tentativa; falha de ambas → ORIGINAL intacto. Devolve
     ``(ok, codec_utilizado)``.
     """
     temporary = source.with_name(f"{source.stem}.prep-tmp.mp4")
@@ -1699,8 +1733,8 @@ def generate_video(
     # 1.0.41 — o toggle de pré-processamento fecha a fase de materiais do
     # motor: corre-se primeiro até «materials», normalizam-se os clipes com
     # FFmpeg e só depois se monta (ver _preprocess_task_clips).
-    preprocess_clips = _clip_preprocess_enabled(config_path) and (
-        selected_video_source(forwarded_args) in CLIP_PREPROCESS_ROUTES
+    preprocess_clips = _should_preprocess_clips(
+        config_path, render_ffmpeg, selected_video_source(forwarded_args)
     )
     materials_command = [*command[:-2], "--stop-at", CLIP_PREPROCESS_STAGE]
     # 1.0.36 — telemetria do codec exactamente antes de o motor arrancar:

@@ -64,6 +64,15 @@ MPT_TEMP_AUDIO_PREFIX = "TEMP_MPY_"
 MPT_TEMP_AUDIO_SUFFIX = "_wvf_snd"
 MPT_TEMP_AUDIO_GLOB = "*TEMP_MPY_*"
 ENGINE_TEMP_DIRNAME = "THUNDERBOLT"
+# 1.0.54 — codecs de hardware. Estes recebem sempre `-pix_fmt yuv420p`
+# (negociação de pixel format do MoviePy 2.x) e threads explícitos.
+HARDWARE_VIDEO_CODECS = ("h264_nvenc", "hevc_nvenc")
+DEFAULT_WRITE_THREADS = 4
+# 1.0.54 — `-hwaccel cuda` NÃO é injectado no write_videofile: o MoviePy
+# ALIMENTA o ffmpeg por pipe com frames raw (`proc.stdin.write(...)`), e o
+# hwaccel quebra a leitura do pipe — provado nesta máquina com
+# `OSError: [Errno 22] Invalid argument` exactamente nessa write. O decode
+# com CUDA acontece na Fase B (FFmpeg externo, antes do MoviePy).
 # Limpeza preventiva: temporários órfãos com mais de 24 h.
 ORPHAN_MAX_AGE_HOURS = 24
 # Retry da escrita em bloqueio: 3 tentativas, backoff 0,5/1 s.
@@ -200,6 +209,29 @@ def _audio_extension(audio_codec: Any) -> str:
         return "mp4"
 
 
+def _hardware_write_params(codec: Any, ffmpeg_params: Any) -> tuple[list[str], int]:
+    """Parâmetros seguros para um write com encoder de hardware (1.0.54).
+
+    Devolve ``(ffmpeg_params_normalizados, threads)``: garante
+    ``-pix_fmt yuv420p`` (família que todo o <video> e o NVENC aceitam) sem
+    duplicar um ``-pix_fmt`` QUE O CHAMADOR JÁ PASSOU — um valor explícito
+    do motor é sempre respeitado. O hwaccel NUNCA entra aqui (ver nota em
+    HARDWARE_VIDEO_CODECS: quebra o pipe raw do MoviePy).
+    """
+    normalized: list[str] = []
+    seen_pixel_format = False
+    if isinstance(ffmpeg_params, (list, tuple)):
+        normalized = [str(item) for item in ffmpeg_params]
+        for index, item in enumerate(normalized):
+            if item == "-pix_fmt" and index + 1 < len(normalized):
+                seen_pixel_format = True
+            if item.startswith("-pix_fmt="):
+                seen_pixel_format = True
+    if not seen_pixel_format:
+        normalized = ["-pix_fmt", "yuv420p", *normalized]
+    return normalized, DEFAULT_WRITE_THREADS
+
+
 def _supports_remove_temp(original: Callable[..., Any]) -> bool:
     """O ``write_videofile`` desta versão do MoviePy tem ``remove_temp``?"""
     try:
@@ -239,6 +271,15 @@ def patch_moviepy_write_videofile() -> bool:
         temp_path: Path | None = None
         for attempt in range(TEMP_AUDIO_ATTEMPTS):
             call_kwargs = dict(kwargs)
+            if str(call_kwargs.get("codec") or "").strip().lower() in HARDWARE_VIDEO_CODECS:
+                # 1.0.54 — encoder de hardware: pix_fmt negociado + threads
+                # explícitos (sem hwaccel — prova do Errno 22 no pipe raw).
+                params, threads = _hardware_write_params(
+                    call_kwargs.get("codec"), call_kwargs.get("ffmpeg_params")
+                )
+                call_kwargs["ffmpeg_params"] = params
+                if not call_kwargs.get("threads"):
+                    call_kwargs["threads"] = threads
             if managed:
                 temp_path = unique_temp_audiofile_path(
                     filename,
@@ -379,7 +420,7 @@ def apply(cleanup_orphans: bool = True) -> dict[str, bool]:
     Corre no processo do motor via bootstrap do mpt_agent. Uma falha de uma
     camada NUNCA impede o arranque — o motor segue a funcionar como antes.
     """
-    global _APPLIED
+    global _APPLIED, _APPLY_RESULTS
     if _APPLIED:
         return dict(_APPLY_RESULTS)
     results: dict[str, bool] = {}
