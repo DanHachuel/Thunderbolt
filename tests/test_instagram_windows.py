@@ -184,7 +184,13 @@ def test_bio_preserves_metric_words_and_real_text():
 
 def test_linux_html_path_remains_requests_based():
     response = Mock(status_code=200, text='<meta property="og:title" content="Creator"><meta property="og:description" content="Bio real">')
-    with patch.object(instagram_public.platform, "system", return_value="Linux"), patch.object(instagram_public.requests, "get", return_value=response) as request:
+    # 1.0.56 — `_fetch_web_profile_user` tem fallback via `curl` em subprocess
+    # (integrations/instagram_public.py): sem mock, um runner CI com rede faz
+    # o curl real bater no Instagram e devolve o perfil VERDADEIRO antes do
+    # `requests.get` mockado — o teste ficava dependente da rede (flaky).
+    with patch.object(instagram_public.platform, "system", return_value="Linux"), \
+         patch.object(instagram_public, "_fetch_web_profile_user", return_value=None), \
+         patch.object(instagram_public.requests, "get", return_value=response) as request:
         result = instagram_public.fetch_public_instagram_profile("@creator")
     assert result.ok is True
     assert result.data["bio"] == "Bio real"
