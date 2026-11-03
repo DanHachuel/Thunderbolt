@@ -11133,7 +11133,7 @@ def render_settings():
             key=f"settings_{key}",
         )
 
-    api_keys_tab, upload_api_keys_tab, subtitles_tab, motor_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab, browser_proxy_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "Motor", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz", "Navegador e Proxies"])
+    api_keys_tab, upload_api_keys_tab, subtitles_tab, motor_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab, browser_proxy_tab, documentation_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "Motor", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz", "Navegador e Proxies", "Documentação"])
 
     with api_keys_tab:
         with st.container(border=True):
@@ -11865,6 +11865,22 @@ def render_settings():
 
     with browser_proxy_tab:
         render_social_auto_upload_settings()
+    with documentation_tab:
+        # 1.0.52 — os tutoriais deixaram o menu lateral e passam a viver aqui,
+        # como aba interna das Configurações. Conteúdo e formato st.tabs
+        # intactos (apenas mudaram de sítio).
+        tutorial_subtabs = render_localized_tabs([
+            "Meta", "Supabase", "Kaggle", "Apify", "YouTube Video-Upload Frontend",
+            "OAuth do Google", "YouTube Data API Key (Public Data)",
+        ])
+        tutorial_renderers = [
+            render_models_ai_tutorial, render_supabase_tutorial, lambda: render_niche_tutorial("kaggle"),
+            lambda: render_niche_tutorial("apify"), render_youtube_frontend_upload_tutorial,
+            render_google_oauth_tutorial, render_youtube_data_api_key_tutorial,
+        ]
+        for tab, renderer in zip(tutorial_subtabs, tutorial_renderers):
+            with tab:
+                renderer()
 
 
 def _render_telegram_notification_settings() -> None:
@@ -12666,25 +12682,6 @@ def render_growth_pages() -> None:
                 renderer()
 
 
-def render_documentation_pages() -> None:
-    """Render Documentação and its requested real sub-tabs in the page content."""
-    st.title("Documentação")
-    tutorials_tab, = render_localized_tabs(["Tutoriais"])
-    with tutorials_tab:
-        tutorial_subtabs = render_localized_tabs([
-            "Meta", "Supabase", "Kaggle", "Apify", "YouTube Video-Upload Frontend",
-            "OAuth do Google", "YouTube Data API Key (Public Data)",
-        ])
-        tutorial_renderers = [
-            render_models_ai_tutorial, render_supabase_tutorial, lambda: render_niche_tutorial("kaggle"),
-            lambda: render_niche_tutorial("apify"), render_youtube_frontend_upload_tutorial,
-            render_google_oauth_tutorial, render_youtube_data_api_key_tutorial,
-        ]
-        for tab, renderer in zip(tutorial_subtabs, tutorial_renderers):
-            with tab:
-                renderer()
-
-
 def main():
     pipeline_video_items = [
         ("Criação de Vídeos", ":material/add_circle:", "Criação de Vídeos"),
@@ -12729,16 +12726,9 @@ def main():
         ("Growth Bilibili", ":material/analytics:", "Growth Bilibili"),
     ]
     growth_items = growth_analysis_items
-    tutorial_items = [
-        ("Meta", ":material/menu_book:", "Meta"),
-        ("Supabase", ":material/storage:", "Supabase"),
-        ("Kaggle", ":material/menu_book:", "Kaggle"),
-        ("Apify", ":material/menu_book:", "Apify"),
-        ("YouTube Video-Upload Frontend", ":material/video_library:", "YouTube Video-Upload Frontend"),
-        ("OAuth do Google", ":material/key:", "OAuth do Google"),
-        ("YouTube Data API Key (Public Data)", ":material/vpn_key:", "YouTube Data API Key (Public Data)"),
-    ]
-    documentation_items = tutorial_items
+    # 1.0.52 — os tutoriais (Meta, Supabase, Kaggle, ...) deixaram de ser
+    # itens do menu lateral: vivem agora como aba interna da página
+    # Configurações (render_settings → tab "Documentação").
     settings_items = [
         ("MCP", ":material/hub:", "MCP"),
         ("Notificações", ":material/notifications:", "Notificações"),
@@ -12780,7 +12770,6 @@ def main():
         ("Blueprints", ":material/library_books:", "Blueprints"),
         ("Edição", ":material/edit:", "Edição"),
         ("Growth", ":material/analytics:", "Growth"),
-        ("Documentação", ":material/menu_book:", "Documentação"),
         ("Configurações", ":material/settings:", "Configurações"),
     ]
     groups = {
@@ -12794,8 +12783,6 @@ def main():
         "Edição": edition_items,
         "Growth": growth_items,
         "Analise Growth": growth_analysis_items,
-        "Documentação": documentation_items,
-        "Tutoriais": tutorial_items,
         "Configurações": settings_items,
     }
     nav_paths = {
@@ -12807,7 +12794,6 @@ def main():
         "AI Influencers": "/ai-influencers", "Personagens": "/ai-influencers/personagens", "Geração de Conteúdo IA": "/ai-influencers/geracao-conteudo", "Motion Control": "/ai-influencers/motion-control", "UGC Products": "/ai-influencers/ugc-products",
         "Edição": "/edicao", "Limpador de Metadados": "/edicao/limpador-metadados", "Cortes": "/edicao/cortes", "Editor Python": "/edicao/editor-python", "Download Mídia": "/edicao/download-midia",
         "Growth": "/growth", "Analise Growth": "/growth/analise", "Growth Youtube": "/growth/analise/youtube", "Growth Tiktok": "/growth/analise/tiktok", "Growth Instagram": "/growth/analise/instagram", "Facebook Pages": "/growth/analise/facebook-pages", "Growth Bilibili": "/growth/analise/bilibili",
-        "Documentação": "/documentacao", "Tutoriais": "/documentacao/tutoriais", "Meta": "/documentacao/tutoriais/meta", "Supabase": "/documentacao/tutoriais/supabase", "Kaggle": "/documentacao/tutoriais/kaggle", "Apify": "/documentacao/tutoriais/apify", "YouTube Video-Upload Frontend": "/documentacao/tutoriais/youtube-video-upload-frontend", "OAuth do Google": "/documentacao/tutoriais/oauth-google", "YouTube Data API Key (Public Data)": "/documentacao/tutoriais/youtube-data-api-key",
         "Configurações": "/configuracoes", "MCP": "/configuracoes/mcp", "Notificações": "/configuracoes/notificacoes", "Logs": "/configuracoes/logs", "Configuração API": "/configuracoes/api", "Dependências": "/configuracoes/dependencias",
     }
 
@@ -12828,34 +12814,18 @@ def main():
         "Models AI": "AI Influencers",
         "Contas Google/YouTube — canais em lote": "Configuração API",
         "Contas Google": "Configuração API",
-        "Tutorial Meta": "Meta",
-        "Tutorial Supabase": "Supabase",
-        "Tutorial Kaggle": "Kaggle",
-        "Tutorial Apify": "Apify",
-        "Tutorial YouTube Video-Upload Frontend": "YouTube Video-Upload Frontend",
-        "Tutorial OAuth do Google": "OAuth do Google",
-        "Tutorial YouTube Data API Key (Public Data)": "YouTube Data API Key (Public Data)",
         "Analista Growth Youtube": "Growth Youtube",
         "Analista Growth Tiktok": "Growth Tiktok",
         "Analista Growth Instagram": "Growth Instagram",
         "Analista Facebook Pages": "Facebook Pages",
         "Analista Bilibili": "Growth",
         "Analise Growth": "Growth",
-        "Growth Youtube": "Growth",
-        "Growth Tiktok": "Growth",
-        "Growth Instagram": "Growth",
-        "Growth Bilibili": "Growth",
-        "Tutoriais": "Documentação",
-        "Meta": "Documentação",
-        "Supabase": "Documentação",
-        "Kaggle": "Documentação",
-        "Apify": "Documentação",
-        "YouTube Video-Upload Frontend": "Documentação",
-        "OAuth do Google": "Documentação",
-        "YouTube Data API Key (Public Data)": "Documentação",
+        # 1.0.50 — os aliases que colapsavam as sub-abas de Growth no pai
+        # (regressão da v0.8.21, commit 79a9f30) foram REMOVIDOS: o clique
+        # em "Growth Youtube/Tiktok/Instagram/Bilibili" resolve agora
+        # directamente para a página real, sem passar pelo pai.
     }
     all_children = [item for items in groups.values() for item in items]
-    all_children.extend(item for item in tutorial_items if item not in all_children)
     valid_targets = {item[0] for item in top_pages + all_children}
     # Session state is reset by a browser refresh or an application update. Keep
     # the canonical page in the URL so the open section can be restored.
@@ -12966,20 +12936,12 @@ def main():
         "Motion Control": lambda: render_motion_control(read_json("settings.json", {})),
         "UGC Products": lambda: render_ugc_products(read_json("settings.json", {})),
         "Contas Instagram": lambda: render_social_networks(read_json("settings.json", {})),
-        "Growth": lambda: render_edit_placeholder("Growth", "Seleccione uma subaba de Growth."),
+        "Growth": render_growth_pages,
         "Growth Youtube": render_growth_youtube,
         "Growth Tiktok": render_growth_tiktok,
         "Growth Instagram": render_growth_instagram,
         "Facebook Pages": render_growth_facebook_pages,
         "Growth Bilibili": render_growth_bilibili,
-        "Documentação": render_documentation_pages,
-        "Meta": render_models_ai_tutorial,
-        "Supabase": render_supabase_tutorial,
-        "Kaggle": lambda: render_niche_tutorial("kaggle"),
-        "Apify": lambda: render_niche_tutorial("apify"),
-        "YouTube Video-Upload Frontend": render_youtube_frontend_upload_tutorial,
-        "OAuth do Google": render_google_oauth_tutorial,
-        "YouTube Data API Key (Public Data)": render_youtube_data_api_key_tutorial,
         "Configurações": lambda: render_edit_placeholder("Configurações", "Seleccione uma opção no menu expansível."),
         "MCP": render_mcp,
         "Contas Google": render_google_accounts,

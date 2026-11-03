@@ -14,11 +14,17 @@ def test_growth_is_a_page_with_real_content_tabs():
 
 
 def test_documentation_is_a_page_with_real_content_tabs():
-    assert '"Documentação": documentation_items' in MAIN_SOURCE
-    assert 'documentation_items = tutorial_items' in MAIN_SOURCE
-    assert '"Meta": render_models_ai_tutorial' in MAIN_SOURCE
-    assert '"Supabase": render_supabase_tutorial' in MAIN_SOURCE
+    # 1.0.52 — «Documentação» deixou de ser página do menu lateral: os
+    # tutoriais passaram a aba INTERNA da página Configurações (render_settings),
+    # com as sub-tabs reais (Meta, Supabase, Kaggle, ...) intactas.
+    assert "with documentation_tab:" in MAIN_SOURCE
+    assert "render_documentation_pages" not in MAIN_SOURCE
+    assert '"Documentação": documentation_items' not in MAIN_SOURCE
+    assert "documentation_items" not in MAIN_SOURCE
+    assert "tutorial_items" not in MAIN_SOURCE
     assert '"Meta", "Supabase", "Kaggle", "Apify", "YouTube Video-Upload Frontend",' in MAIN_SOURCE.replace("\n", " ")
+    assert "render_models_ai_tutorial," in MAIN_SOURCE
+    assert "render_supabase_tutorial," in MAIN_SOURCE
 
 
 def test_growth_and_documentation_do_not_use_expandable_submenus():
@@ -34,8 +40,10 @@ def test_subtab_renderers_are_wired():
     assert '"Growth Instagram": render_growth_instagram' in MAIN_SOURCE
     assert '"Facebook Pages": render_growth_facebook_pages' in MAIN_SOURCE
     assert '"Growth Bilibili": render_growth_bilibili' in MAIN_SOURCE
-    assert '"Meta": render_models_ai_tutorial' in MAIN_SOURCE
-    assert '"Supabase": render_supabase_tutorial' in MAIN_SOURCE
+    # 1.0.52 — os tutoriais saíram do router e passaram a aba interna das
+    # Configurações; os renderers ficam na lista `tutorial_renderers`.
+    assert "render_models_ai_tutorial," in MAIN_SOURCE
+    assert "render_supabase_tutorial," in MAIN_SOURCE
 
 
 def test_existing_upload_music_reference_remains_tab_based():

@@ -21,7 +21,6 @@ class NavigationReorganizationTests(unittest.TestCase):
             '"AI Influencers"',
             '"Edição"',
             '"Growth"',
-            '"Documentação"',
             '"Configurações"',
         ]
         top_block = MAIN_SOURCE.split("    top_pages = [", 1)[1].split("    ]", 1)[0]
@@ -49,11 +48,13 @@ class NavigationReorganizationTests(unittest.TestCase):
         self.assertNotIn('"Contas TikTok": render_tiktok_accounts', MAIN_SOURCE)
 
     def test_niche_finder_tutorials_are_documentation_only(self):
+        # 1.0.52 — os tutoriais deixaram o menu lateral e são aba INTERNA das
+        # Configurações; Kaggle/Apify continuam exclusivamente nesses tutoriais.
         niche_block = MAIN_SOURCE.split("    niche_finder_items = [", 1)[1].split("    ]", 1)[0]
-        documentation_block = MAIN_SOURCE.split("    tutorial_items = [", 1)[1].split("    ]", 1)[0]
+        documentation_block = MAIN_SOURCE.split("with documentation_tab:", 1)[1].split("def _render_telegram_notification_settings", 1)[0]
         for label in ("Kaggle", "Apify"):
             self.assertNotIn(f'("{label}"', niche_block)
-            self.assertIn(f'("{label}"', documentation_block)
+            self.assertIn(f'"{label}"', documentation_block)
 
     def test_requested_groups_and_children_are_present(self):
         required = (
@@ -62,10 +63,14 @@ class NavigationReorganizationTests(unittest.TestCase):
             "AI Influencers", "Personagens", "Geração de Conteúdo IA", "UGC Products", "Contas Instagram",
             "Pipeline Música", "Criação de Músicas", "Upload Música",
             "Growth", "Analise Growth", "Growth Youtube", "Growth Tiktok", "Growth Instagram", "Facebook Pages", "Growth Bilibili",
-            "Documentação", "Tutoriais", "Meta", "Supabase", "Kaggle", "Apify",
+            "Documentação", "Meta", "Supabase", "Kaggle", "Apify",
         )
         for label in required:
             self.assertIn(f'"{label}"', MAIN_SOURCE)
+        # 1.0.52 — a página «Documentação» e os sub-itens saíram do menu lateral
+        self.assertNotIn('("Documentação", ":material/menu_book:", "Documentação")', MAIN_SOURCE)
+        self.assertNotIn('"Tutoriais":', MAIN_SOURCE)
+        self.assertNotIn('"/documentacao', MAIN_SOURCE)
 
     def test_channel_profile_children_match_requested_order(self):
         # Commit 28176b8 ("reorganizar blueprints e modelos instagram") moveu
@@ -145,7 +150,8 @@ class NavigationReorganizationTests(unittest.TestCase):
     def test_google_accounts_are_moved_to_api_settings_subtab(self):
         settings_block = MAIN_SOURCE.split("    settings_items = [", 1)[1].split("    ]", 1)[0]
         self.assertNotIn('("Contas Google",', settings_block)
-        self.assertIn('api_keys_tab, upload_api_keys_tab, subtitles_tab, motor_tab, ffmpeg_tab, ai_influencers_tab, test_upload_videos_tab, voice_test_tab, browser_proxy_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "Motor", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz", "Navegador e Proxies"])', MAIN_SOURCE)
+        # 1.0.52 — a lista de tabs ganhou a aba "Documentação" (tutoriais)
+        self.assertIn('browser_proxy_tab, documentation_tab = render_localized_tabs(["API Keys", "API Keys Upload", "Legendas", "Motor", "FFmpeg", "AI Influencers", "Test Upload Videos", "Teste de Voz", "Navegador e Proxies", "Documentação"])', MAIN_SOURCE)
         self.assertIn('with st.expander("API Instagram", expanded=False):', MAIN_SOURCE)
         self.assertIn('with st.expander("API Facebook Pages", expanded=False):', MAIN_SOURCE)
         self.assertIn('"Contas Google": "Configuração API"', MAIN_SOURCE)

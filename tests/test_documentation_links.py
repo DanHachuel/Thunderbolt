@@ -40,8 +40,14 @@ def test_documentation_renderers_keep_local_tutorial_content():
 
 
 def test_documentation_parent_page_uses_real_tutorial_renderer():
-    assert '"Documentação": render_documentation_pages,' in MAIN_SOURCE
-    assert '"Documentação": lambda: render_edit_placeholder' not in MAIN_SOURCE
+    # 1.0.52 — a página «Documentação» deixou o menu lateral; os tutoriais
+    # passaram a ser aba INTERNA da página Configurações (render_settings).
+    assert "with documentation_tab:" in MAIN_SOURCE
+    assert "render_documentation_pages" not in MAIN_SOURCE  # função morta removida
+    assert "top_pages" in MAIN_SOURCE and '("Documentação", ":material/menu_book:"' not in MAIN_SOURCE
+    # os 7 tutoriais continuam registados como sub-tabs da aba
+    assert '"Meta", "Supabase", "Kaggle", "Apify", "YouTube Video-Upload Frontend",' in MAIN_SOURCE.replace("\n", " ")
+    assert '"OAuth do Google", "YouTube Data API Key (Public Data)",' in MAIN_SOURCE.replace("\n", " ")
     for filename in (
         "guide-instagram.md",
         "guide-supabase.md",
