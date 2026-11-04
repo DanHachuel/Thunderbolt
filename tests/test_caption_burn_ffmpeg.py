@@ -13,6 +13,7 @@ encoder. Estes testes prendem o contrato novo:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -74,15 +75,27 @@ def test_srt_timestamp_formats_hours_and_millis():
 # ---------------------------------------------------------------------------
 
 
-def test_subtitles_filter_path_escapes_the_windows_drive(tmp_path: Path):
+def test_subtitles_filter_path_escapes_the_windows_drive():
+    # O escape do três-pontos aplica-se onde o caminho o tiver (unidade
+    # Windows; no Linux o componente embutido fica no meio do caminho).
     escaped = text_to_images._subtitles_filter_path(Path("C:/subs/cap.srt"))
-    assert escaped.startswith("C" + chr(92) * 2 + ":")
+    assert "C" + chr(92) * 2 + ":" in escaped  # duas barras antes dos dois-pontos
     assert "/subs/cap.srt" in escaped
+    # Nenhuma barra invertida solta além do par de escape.
+    assert escaped.count(chr(92)) == 2
+
+
+@pytest.mark.skipif(os.name != "nt", reason="prefixo de unidade Windows")
+def test_subtitles_filter_path_absolute_windows_prefix():
+    escaped = text_to_images._subtitles_filter_path(Path("C:/videos/cap.srt"))
+    assert escaped == "C" + chr(92) * 2 + ":/videos/cap.srt"
 
 
 def test_subtitles_filter_path_never_leaves_backslash_separators():
     escaped = text_to_images._subtitles_filter_path(Path(r"C:\videos\cap.srt"))
-    assert escaped == "C" + chr(92) * 2 + ":/videos/cap.srt"
+    assert "/videos/cap.srt" in escaped
+    assert "C" + chr(92) * 2 + ":/videos/" in escaped
+    assert escaped.count(chr(92)) == 2
 
 
 # ---------------------------------------------------------------------------
