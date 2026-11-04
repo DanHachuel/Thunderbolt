@@ -10,7 +10,25 @@ PROJECT_RULES_PATH = Path("/home/ubuntu/projects/youtube-project-53d03c85/Regras
 # de desenvolvimento, em Ubuntu). Ver investigação documentada no relatório da
 # tarefa: criado em 21024ad ("fix: remove preregistration gates") já com este
 # caminho absoluto. Fora dessa máquina o teste de regras é ignorado com justificação.
-PROJECT_RULES = PROJECT_RULES_PATH.read_text(encoding="utf-8") if PROJECT_RULES_PATH.exists() else ""
+
+
+def _load_external_project_rules() -> str:
+    """Lê o documento externo; QUALQUER falha de acesso = documento ausente.
+
+    Nos runners Linux o caminho pode existir sem permissão (EACCES) — o
+    ``Path.exists()`` só ignora ENOENT/ENOTDIR/EBADF/ELOOP, pelo que a
+    excepção escapava na COLETA do ficheiro e sujava o gate do publish com
+    dois «errors» ambientais. O skip continua a ser o comportamento certo.
+    """
+    try:
+        if not PROJECT_RULES_PATH.exists():
+            return ""
+        return PROJECT_RULES_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+PROJECT_RULES = _load_external_project_rules()
 
 
 def test_facebook_automation_keeps_empty_page_selector_and_does_not_return():
