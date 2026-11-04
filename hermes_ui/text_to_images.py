@@ -4,6 +4,7 @@ import json
 import math
 import os
 import re
+import subprocess
 import time
 import uuid
 from pathlib import Path
@@ -804,6 +805,179 @@ def assemble_text_to_images_video(
     return output_path
 
 
+# ---------------------------------------------------------------------------
+# 1.0.58 — queima de legendas por FFmpeg puro (adeus MoviePy na queima).
+#
+# O relato do utilizador (51 min num vídeo com codec=h264_nvenc no log)
+# provou que o gargalo NÃO era o encoder: era o MoviePy a compor os
+# TextClips frame a frame no Python antes de entregar ao GPU. A queima
+# passa a ser um subprocesso FFmpeg único com o filtro `subtitles` sobre
+# um .srt — o trabalho pesado fica no libass/FFmpeg (C) e no NVENC.
+# ---------------------------------------------------------------------------
+
+CAPTION_BURN_PREFIX = "[CAPTION-BURN]"
+# Alinhamento ASS em notação numpad: 1-2-3 base, 4-5-6 meio, 7-8-9 topo.
+_CAPTION_ASS_ALIGNMENTS = {"top": 8, "center": 5}
+
+
+def _probe_video_geometry(ffmpeg: str, path: Path | str) -> tuple[float, int]:
+    """Duração (s) e altura (px) do vídeo via `ffmpeg -i` — sem ffprobe/MoviePy.
+
+    Devolve ``(0.0, 0)`` quando o binário não consegue sondar (o chamador
+    não queima com tempos errados).
+    """
+    if not ffmpeg:
+        return 0.0, 0
+    import subprocess as _subprocess
+
+    try:
+        completed = _subprocess.run(
+            [ffmpeg, "-nostdin", "-hide_banner", "-i", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+            creationflags=getattr(_subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+        )
+        combined = f"{getattr(completed, 'stderr', '') or ''}\n{getattr(completed, 'stdout', '') or ''}"
+    except (OSError, _subprocess.TimeoutExpired):
+        return 0.0, 0
+    duration_match = re.search(r"Duration:\s*(\d+):(\d{2}):([\d.]+)", combined)
+    if not duration_match:
+        return 0.0, 0
+    duration = (
+        int(duration_match.group(1)) * 3600
+        + int(duration_match.group(2)) * 60
+        + float(duration_match.group(3))
+    )
+    height = 0
+    video_match = re.search(r"Video:[^\n]*?\b(\d{2,5})x(\d{2,5})\b", combined)
+    if video_match:
+        height = int(video_match.group(2))
+    return duration, height
+
+
+def _srt_timestamp(seconds: float) -> str:
+    """Segundos -> ``HH:MM:SS,mmm`` (formato SRT)."""
+    total_ms = max(0, int(round(seconds * 1000)))
+    hours, rest = divmod(total_ms, 3600_000)
+    minutes, rest = divmod(rest, 60_000)
+    secs, millis = divmod(rest, 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
+
+def _write_caption_srt(segments: list[dict], path: Path) -> int:
+    """Escreve o .srt com blocos sequenciais; devolve o número de cues."""
+    cursor = 0.0
+    blocks: list[str] = []
+    for index, item in enumerate(segments, start=1):
+        caption = " ".join(str(item.get("text") or "").split()).strip()
+        duration = max(0.4, float(item.get("duration") or 5.0))
+        start, end = cursor, cursor + duration
+        cursor = end
+        if not caption:
+            continue
+        blocks.append(
+            f"{index}\n{_srt_timestamp(start)} --> {_srt_timestamp(end)}\n{caption}\n"
+        )
+    path.write_text("\n".join(blocks), encoding="utf-8")
+    return len(blocks)
+
+
+def _subtitles_filter_path(path: Path | str) -> str:
+    """Caminho escapado para o valor do filtro FFmpeg (libass/subtitles).
+
+    Provado empiricamente nesta máquina (ffmpeg 7.1): o ``:`` do drive do
+    Windows precisa de DOIS barras invertidas antes do dois-pontos
+    (``C\\:/...``) — tanto ``C:/...`` como ``C\:/...`` falham o parse do
+    filtro ("No option name near ..."). As restantes barras seguem para a
+    frente e as aspas simples são escapadas.
+    """
+    resolved = str(Path(path).resolve()).replace("\\", "/")
+    return resolved.replace(":", "\\\\:").replace("'", "\\'")
+
+
+def _caption_ass_alignment(position: Any) -> int:
+    return _CAPTION_ASS_ALIGNMENTS.get(str(position or "").strip().casefold(), 2)
+
+
+def _caption_ass_color(value: Any, default: str = "#FFFFFF") -> str:
+    """``#RRGGBB`` -> ``&H00BBGGRR`` (ASS usa BGR; 00 = opaco)."""
+    raw = str(value or "").strip().lstrip("#")
+    if len(raw) == 3:
+        raw = "".join(char * 2 for char in raw)
+    if len(raw) != 6 or any(char not in "0123456789abcdefABCDEF" for char in raw):
+        raw = str(default).lstrip("#")
+    return f"&H00{raw[4:6]}{raw[2:4]}{raw[0:2]}"
+
+
+def _caption_font_name(font_path: str) -> str:
+    """Nome de família para o libass (stem do ficheiro; ``.ttc`` incluído)."""
+    stem = Path(font_path).stem.strip()
+    return stem or "Arial"
+
+
+def _caption_force_style(subtitle_config: dict, font_size: int) -> str:
+    """Config do canal -> ``force_style`` do filtro subtitles (ASS)."""
+    background = bool(subtitle_config.get("background"))
+    parts = [
+        f"FontName={_caption_font_name(str(subtitle_config.get('font_path') or ''))}",
+        f"FontSize={max(10, int(font_size))}",
+        f"PrimaryColour={_caption_ass_color(subtitle_config.get('color'))}",
+        f"OutlineColour={_caption_ass_color(subtitle_config.get('outline'), '#000000')}",
+        f"Outline={max(0, int(round(float(subtitle_config.get('outline_width') or 0))))}",
+        f"Alignment={_caption_ass_alignment(subtitle_config.get('position'))}",
+    ]
+    if background:
+        # BorderStyle=3 = caixa opaca hug-text (pedido da tarefa).
+        parts.append("BorderStyle=3")
+        parts.append(f"BackColour={_caption_ass_color(subtitle_config.get('background_color'), '#000000')}")
+    else:
+        parts.append("BorderStyle=1")
+    return ",".join(parts)
+
+
+def _caption_burn_command(
+    ffmpeg: str,
+    source: Path,
+    srt: Path,
+    target: Path,
+    subtitle_config: dict,
+    *,
+    gpu: bool,
+    font_size: int,
+) -> list[str]:
+    """Comando FFmpeg da queima: GPU (hwaccel cuda + h264_nvenc) ou CPU (libx264)."""
+    font_dir = Path(str(subtitle_config.get("font_path") or "")).parent
+    filter_value = (
+        f"subtitles={_subtitles_filter_path(srt)}"
+        f":force_style='{_caption_force_style(subtitle_config, font_size)}'"
+    )
+    if str(font_dir) and font_dir.is_dir():
+        filter_value += f":fontsdir={_subtitles_filter_path(font_dir)}"
+    command = [ffmpeg, "-nostdin", "-y", "-hide_banner", "-loglevel", "error"]
+    if gpu:
+        command.extend(["-hwaccel", "cuda"])
+    command.extend(["-i", str(source), "-vf", filter_value])
+    if gpu:
+        command.extend(["-c:v", NVENC_VIDEO_CODEC])
+    else:
+        command.extend(["-c:v", CPU_VIDEO_CODEC, "-preset", "veryfast"])
+    command.append("-c:a")
+    command.append("copy")
+    command.extend(WEB_SAFE_MP4_FFMPEG_PARAMS)  # +faststart + yuv420p (web)
+    command.append(str(target))
+    return command
+
+
+def _caption_font_size(subtitle_config: dict) -> int:
+    """Tamanho configurado do canal (a escala da altura é feita pelo chamador)."""
+    try:
+        return int(subtitle_config.get("font_size") or 40)
+    except (TypeError, ValueError):
+        return 40
+
+
 def burn_captions_on_video(
     video_path: Path | str,
     text: str,
@@ -812,106 +986,115 @@ def burn_captions_on_video(
     target_seconds: float = 5.0,
     wpm: int = 150,
     burn_report: dict | None = None,
+    ffmpeg_binary: str = "",
 ) -> Path:
     """Queima legendas aproximadas num vídeo final (rota Pexels/Pixabay do MPT).
 
     0.9.64: o MPT salta as legendas quando o áudio chega como ficheiro
-    customizado ("subtitle maker is missing") — o Thunderbolt divide o texto
+    customizado ("subtitle maker is missing") - o Thunderbolt divide o texto
     em segmentos com duração estimada, reescala para a duração real do vídeo
-    e queima as legendas com o mesmo motor/estilo das outras fontes. O
-    ficheiro original é substituído in-place (o artefacto da tarefa mantém-se
-    válido). Qualquer falha deixa o vídeo original intacto.
+    e queima as legendas com o mesmo estilo das outras fontes. O ficheiro
+    original é substituído in-place (o artefacto da tarefa mantém-se válido).
+    Qualquer falha deixa o vídeo original intacto.
 
-    1.0.38 — `burn_report` (REGISTRO DETERMINÍSTICO): quando fornecido,
+    1.0.58 - QUEIMA POR FFMPEG PURO (adeus MoviePy): o relato do utilizador
+    (51 min com codec=h264_nvenc no log) provou que o gargalo era o MoviePy,
+    não o encoder - compor TextClips frame a frame em Python custava ~5x o
+    tempo real. Agora o filtro `subtitles` (libass) do FFmpeg queima o .srt
+    num único subprocesso: GPU (h264_nvenc + -hwaccel cuda), uma repetição em
+    libx264 se a GPU falhar, `-c:a copy` e os parâmetros web-safe da 1.0.29
+    (+faststart + yuv420p) sempre presentes.
+
+    1.0.38 - `burn_report` (REGISTRO DETERMINÍSTICO): quando fornecido,
     preenche ``burn_report["subtitles_burned"]`` com True APENAS quando a
-    substituição in-place aconteceu (clips compostos + vídeo reescrito) e
-    False quando não havia clips para queimar — o worker carimba
+    substituição in-place aconteceu e False em qualquer saída antecipada
+    (sem fonte, sem segmentos, sem duração sondável) — o worker carimba
     ``has_subtitles`` a partir daqui, nunca de configurações.
     """
-    import os
-
-    from moviepy import CompositeVideoClip, VideoFileClip
+    import sys as _sys
 
     output = Path(video_path)
+    if not output.is_file() or output.stat().st_size <= 0:
+        raise FileNotFoundError(f"vídeo a legendar não encontrado: {output}")
+    font_path = str(subtitle_config.get("font_path") or "").strip()
     segments = split_script_into_scenes(str(text or ""), target_seconds=target_seconds, wpm=wpm)
     if not segments:
         segments = [{"index": 1, "text": str(text or "").strip()[:200], "duration": target_seconds}]
-    video = None
-    burned = None
-    temporary: Path | None = None
+    if not font_path or not segments or not "".join(str(item.get("text") or "") for item in segments).strip():
+        # determinístico: NADA foi queimado - o vídeo sai igual ao original
+        if burn_report is not None:
+            burn_report["subtitles_burned"] = False
+        return output
+    ffmpeg = str(ffmpeg_binary or "").strip() or _moviepy_ffmpeg_binary()
+    if not ffmpeg:
+        raise RuntimeError("nenhum binário FFmpeg disponível para queimar legendas")
+    duration, height = _probe_video_geometry(ffmpeg, output)
+    if duration <= 0:
+        # Sem duração sondável os tempos do .srt seriam errados - não queima.
+        if burn_report is not None:
+            burn_report["subtitles_burned"] = False
+        return output
+    total = max(1.0, duration)
+    estimated = sum(max(0.4, float(item.get("duration") or target_seconds)) for item in segments) or target_seconds
+    for item in segments:
+        item["duration"] = max(0.4, float(item.get("duration") or target_seconds) * total / estimated)
+    srt = output.with_name(f"{output.stem}.legendas-{os.getpid()}-{uuid.uuid4().hex[:8]}.srt")
+    temporary = output.with_name(f"{output.stem}.legendas-{os.getpid()}-{uuid.uuid4().hex[:8]}-tmp.mp4")
     try:
-        video = VideoFileClip(str(output))
-        total = max(1.0, float(video.duration or 0))
-        estimated = sum(max(0.4, float(item.get("duration") or target_seconds)) for item in segments) or target_seconds
-        for item in segments:
-            item["duration"] = max(0.4, float(item.get("duration") or target_seconds) * total / estimated)
-        subtitle_clips = _subtitle_clips_for_scenes(
-            segments,
-            int(video.size[0]),
-            int(video.size[1]),
-            subtitle_config,
-        )
-        if not subtitle_clips:
-            # determinístico: NADA foi queimado — o vídeo sai igual ao original
+        cues = _write_caption_srt(segments, srt)
+        if cues <= 0:
             if burn_report is not None:
                 burn_report["subtitles_burned"] = False
             return output
-        burned = CompositeVideoClip([video, *subtitle_clips]).with_duration(total)
-        # 1.0.43 — nome único por PID: dois workers a queimar em paralelo
-        # nunca partilham o ficheiro temporário (a colisão era uma das
-        # fontes do WinError 32 visto a 25/10). 1.0.57: o TEMP_MPY_wvf_snd
-        # DENTRO deste write passa a ser único por uuid (ver
-        # _write_web_safe_videofile) — o nome estático era o ficheiro do
-        # relato: final-1.legendas-27464-tmpTEMP_MPY_wvf_snd.mp4.
-        temporary = output.with_name(f"{output.stem}.legendas-{os.getpid()}-tmp.mp4")
-        # 1.0.36/1.0.57 — a queima vai para a GPU (h264_nvenc) e NÃO cai
-        # para a CPU: bloqueio do temporário repete com nome novo (3x) e
-        # aborta com GpuTempLockError em vez de horas de CPU surda.
-        burn_codec = _write_web_safe_videofile(
-            burned,
-            temporary,
-            fps=max(1, int(video.fps or 30)),
-            temp_audiofile_path=thunderbolt_temp_dir(),
+        font_size = max(12, int(subtitle_config.get("font_size") or 40) * max(1, height or 1080) // 1080)
+        gpu = _nvenc_encoder_available(ffmpeg)
+        attempts = [gpu, False] if gpu else [False]
+        last_detail = ""
+        for attempt_gpu in attempts:
+            command = _caption_burn_command(ffmpeg, output, srt, temporary, subtitle_config, gpu=attempt_gpu, font_size=font_size)
+            started = time.monotonic()
+            try:
+                completed = subprocess.run(
+                    command,
+                    capture_output=True,
+                    timeout=3600,
+                    check=False,
+                    creationflags=0 if os.name != "nt" else subprocess.CREATE_NO_WINDOW,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                last_detail = str(exc)
+                continue
+            elapsed = time.monotonic() - started
+            if completed.returncode == 0 and temporary.is_file() and temporary.stat().st_size > 0:
+                # Substituição in-place tolerante a bloqueio (WinError 32).
+                safe_replace(temporary, output)
+                burn_codec = NVENC_VIDEO_CODEC if attempt_gpu else CPU_VIDEO_CODEC
+                if burn_report is not None:
+                    burn_report["subtitles_burned"] = True
+                print(
+                    f"{CAPTION_BURN_PREFIX} FFmpeg {'GPU' if attempt_gpu else 'CPU'} levou "
+                    f"{elapsed:.1f}s para queimar {cues} legendas (codec={burn_codec})",
+                    file=_sys.stderr,
+                )
+                print(
+                    f"[pexels] legendas queimadas localmente em {output.name} (codec={burn_codec})",
+                    file=_sys.stderr,
+                )
+                return output
+            last_detail = str(getattr(completed, "stderr", "") or "").strip()[-300:]
+            try:
+                if temporary.exists():
+                    temporary.unlink()
+            except OSError:
+                pass
+        raise RuntimeError(
+            "a queima de legendas falhou no FFmpeg (GPU e CPU)"
+            + (f": {last_detail}" if last_detail else "")
         )
-        burned.close()
-        burned = None
-        # 1.0.00/1.0.43: o CompositeVideoClip.close() não fecha os clips
-        # membros e o moviepy pode manter o reader alguns instantes — o
-        # leitor do vídeo original é fechado EXPLICITAMENTE (reader + audio)
-        # antes do replace, que por sua vez tem retry em WinError 32.
-        _close_clip_reader(video)
-        video.close()
-        video = None
-        safe_replace(temporary, output)
-        # 1.0.38 — carimbo determinístico: a substituição in-place aconteceu,
-        # a legenda ESTÁ no ficheiro final.
-        if burn_report is not None:
-            burn_report["subtitles_burned"] = True
-        # 1.0.29 — telemetria de sucesso no stderr do worker: sem isto a
-        # queima local era invisível (apenas as falhas deixavam rasto) e não
-        # havia como confirmar no log que as legendas do canal foram aplicadas.
-        import sys as _sys
-
-        print(
-            f"[pexels] legendas queimadas localmente em {output.name} (codec={burn_codec})",
-            file=_sys.stderr,
-        )
-        return output
     finally:
-        # 1.0.43 — um write falhado não deixa lixo: o temporário único desta
-        # tentativa é removido com retry em WinError 32 (None no retorno
-        # antecipado — sem clips de legenda não há temporário).
-        if temporary is not None:
-            safe_unlink(temporary, missing_ok=True)
-        for clip in (burned, video):
-            if clip is not None:
-                close = getattr(clip, "close", None)
-                if close:
-                    try:
-                        close()
-                    except Exception:
-                        pass
-
+        # Nenhum ficheiro temporário fica para trás (SRL e mp4), com retry.
+        safe_unlink(srt, missing_ok=True)
+        safe_unlink(temporary, missing_ok=True)
 
 def synthesize_text_to_images_audio(text: str, settings: dict[str, Any], voice: str, output_path: Path) -> Path:
     """Synthesize narration in bounded chunks through the configured TTS provider."""

@@ -329,7 +329,7 @@ def test_apply_mpt_captions_burns_when_custom_audio(monkeypatch, tmp_path):
     script = {"content": "Narração do vídeo com ElevenLabs."}
     captured = {}
 
-    def fake_burn(video_path, narration, config, burn_report=None):
+    def fake_burn(video_path, narration, config, burn_report=None, **kwargs):
         captured["narration"] = narration
         captured["config"] = config
         # 1.0.38 — a queima real preenche o report determinístico
@@ -361,7 +361,7 @@ def test_burn_captions_failure_leaves_original_video(monkeypatch, tmp_path):
     video.write_bytes(b"mp4-original")
     script = {"content": "Narração."}
 
-    def fake_burn(video_path, narration, config, burn_report=None):
+    def fake_burn(video_path, narration, config, burn_report=None, **kwargs):
         raise RuntimeError("fonte em falta")
 
     monkeypatch.setattr("hermes_ui.text_to_images.burn_captions_on_video", fake_burn)

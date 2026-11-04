@@ -68,7 +68,9 @@ def test_text_to_images_write_contract_carries_faststart_params():
     # aplicados a CADA write que o helper executa (GPU e CPU) — a montagem e
     # a queima passam ambas por _write_web_safe_videofile (contrato 1.0.41).
     assert '"ffmpeg_params": WEB_SAFE_MP4_FFMPEG_PARAMS' in TEXT_TO_IMAGES_SOURCE
-    assert TEXT_TO_IMAGES_SOURCE.count("_write_web_safe_videofile(") == 3  # def + 2 chamadas
+    # 1.0.58: só a montagem de stills passa pelo helper (a queima de legendas
+    # saiu do MoviePy para o FFmpeg puro) — def + 1 chamada.
+    assert TEXT_TO_IMAGES_SOURCE.count("_write_web_safe_videofile(") == 2  # def + 1 chamada
     assert "temp_audiofile_path" in TEXT_TO_IMAGES_SOURCE
     assert "[text_to_images] legendas queimadas:" in TEXT_TO_IMAGES_SOURCE
     assert "[pexels] legendas queimadas localmente em" in TEXT_TO_IMAGES_SOURCE
@@ -206,7 +208,7 @@ def test_apply_mpt_captions_burns_and_logs_for_custom_audio(tmp_path: Path, monk
     video.write_bytes(b"mp4")
     burned_marker = tmp_path / "final-1.mp4"
 
-    def fake_burn(path, _text, _config, burn_report=None):
+    def fake_burn(path, _text, _config, burn_report=None, **kwargs):
         # 1.0.38 — a queima real preenche o report determinístico
         if burn_report is not None:
             burn_report["subtitles_burned"] = True

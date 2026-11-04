@@ -74,29 +74,34 @@ def test_apply_mpt_captions_returns_what_actually_happened(monkeypatch, tmp_path
     assert pipeline_worker._apply_mpt_captions(_task(generation_settings={"voiceover_mode": "none"}), video, script, {}) == (video, False)
 
 
-def test_burn_captions_reports_failure_when_clips_are_empty(tmp_path, monkeypatch):
-    """O report determinístico distingue queima real de saída antecipada:
-    sem clips para queimar => subtitles_burned False (nunca True às cegas)."""
-    from PIL import Image
-    from moviepy import ImageClip
+def test_burn_captions_reports_noop_when_there_is_nothing_to_write(tmp_path, monkeypatch):
+    """1.0.58 - o report determinista distingue queima real de saida antecipada.
 
+    No caminho FFmpeg puro, «nada a queimar» e: sem fonte, sem segmentos ou
+    sem cues no .srt (texto vazio) - em todos esses casos
+    ``subtitles_burned`` e False e o video original fica intacto.
+    """
     from hermes_ui.text_to_images import burn_captions_on_video
 
-    if not Path("C:/Windows/Fonts/arial.ttf").is_file() and not Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf").is_file():
-        pytest.skip("sem fonte para preparar o video base")
-    Image.new("RGB", (320, 180), (20, 20, 20)).save(tmp_path / "a.png")
     video = tmp_path / "final-1.mp4"
-    base = ImageClip(str(tmp_path / "a.png")).with_duration(1)
-    base.write_videofile(str(video), fps=10, codec="libx264", logger=None)
-    base.close()
-    monkeypatch.setattr(
-        "hermes_ui.text_to_images._subtitle_clips_for_scenes",
-        lambda *args, **kwargs: [],
-    )
+    video.write_bytes(b"mp4-original")
     report: dict = {}
-    result = burn_captions_on_video(video, "texto", {"font_path": "arial.ttf"}, burn_report=report)
+    # texto vazio: nenhum cue no SRT (o fallback de segmento tambem fica vazio)
+    result = burn_captions_on_video(
+        video, "   ", {"font_path": "C:/Windows/Fonts/arial.ttf"}, burn_report=report
+    )
     assert result == video
     assert report.get("subtitles_burned") is False
+    assert video.read_bytes() == b"mp4-original"
+    assert not list(tmp_path.glob("*.srt")), "sem cues nao se escreve SRT"
+    assert not list(tmp_path.glob("*.tmp.mp4")), "a queima nao correu"
+
+    # sem fonte configurada: mesma saida antecipada deterministica
+    report2: dict = {}
+    result2 = burn_captions_on_video(video, "Um texto qualquer.", {"font_path": ""}, burn_report=report2)
+    assert result2 == video
+    assert report2.get("subtitles_burned") is False
+    assert not list(tmp_path.glob("*.srt"))
 
 
 def test_worker_intercepts_burn_subtitles_only_action(tmp_path, monkeypatch):

@@ -2667,6 +2667,24 @@ def _mpt_subtitles_banner(task: dict[str, Any], settings: dict[str, Any]) -> str
     )
 
 
+def _log_mpt_captions_total(task: dict[str, Any], burn_started: float) -> None:
+    """1.0.58 — telemetria de tempo total: MPT vs legendas.
+
+    O utilizador auditava o render pelos minutos da etapa inteira sem saber
+    quanto do tempo era do motor (MPT) e quanto era da queima de legendas.
+    Agora o runtime log separa os dois explicitamente.
+    """
+    try:
+        captions_elapsed = max(0.0, time.monotonic() - burn_started)
+        mpt_elapsed = float(task.get("video_elapsed_seconds") or 0)
+    except (TypeError, ValueError):
+        return
+    mpt_text = f"{mpt_elapsed:.1f}s" if mpt_elapsed > 0 else "não medido"
+    _mpt_runtime_log(
+        f"[MPT-TOTAL] MPT levou {mpt_text}, Legendas levaram {captions_elapsed:.1f}s"
+    )
+
+
 def _apply_mpt_captions(
     task: dict[str, Any],
     video_path: Path,
@@ -2718,13 +2736,23 @@ def _apply_mpt_captions(
         _mpt_runtime_log(f"[MPT-SUBTITLES] [AVISO] queima local cancelada: o roteiro não tem narração (vídeo {Path(video_path).name} sem legendas)")
         return video_path, False
     burn_report: dict[str, Any] = {}
+    burn_started = time.monotonic()
     try:
         from hermes_ui.text_to_images import burn_captions_on_video
 
-        burned = burn_captions_on_video(video_path, narration, config, burn_report=burn_report)
+        # 1.0.58 — a queima é FFmpeg puro (filtro subtitles/libass): o binário
+        # resolvido das settings (o 7.1 escolhido no painel) garante NVENC.
+        burned = burn_captions_on_video(
+            video_path,
+            narration,
+            config,
+            burn_report=burn_report,
+            ffmpeg_binary=_resolve_local_ffmpeg(settings),
+        )
         burned_flag = bool(burn_report.get("subtitles_burned"))
         burned_font = re.split(r"[\\/]", str(config.get("font_path") or ""))[-1]
         _mpt_runtime_log(f"[MPT-SUBTITLES] queima local {'concluída' if burned_flag else 'sem clips'} em {Path(burned).name} (fonte={burned_font})")
+        _log_mpt_captions_total(task, burn_started)
         return burned, burned_flag
     except Exception as exc:
         # 1.0.57 — bloqueio do temporário da GPU (WinError 32, 3 tentativas
@@ -2735,6 +2763,7 @@ def _apply_mpt_captions(
 
         if isinstance(exc, GpuTempLockError):
             _mpt_runtime_log(f"[MPT-SUBTITLES] [ERRO] {exc}")
+            _log_mpt_captions_total(task, burn_started)
             raise
         import sys as _sys
 

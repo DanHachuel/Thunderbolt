@@ -154,10 +154,15 @@ def test_burn_captions_uses_the_unique_temp_path(tmp_path: Path, monkeypatch):
     Aqui confirma-se que a chamada da queima continua a passar o caminho
     isolado (sem ele o temporário cairia ao lado do output).
     """
-    burn_body = TEXT_TO_IMAGES_SOURCE.split("def burn_captions_on_video", 1)[1].split(
+    burn_body = TEXT_TO_IMAGES_SOURCE.split("def burn_captions_on_video(", 1)[1].split(
         "def synthesize_text_to_images_audio", 1
     )[0]
-    assert "temp_audiofile_path=thunderbolt_temp_dir()" in burn_body
+    # 1.0.58: a queima é FFmpeg puro — não existe TEMP_MPY_wvf_snd na queima
+    # (o subprocesso escreve directo no mp4 temporário único por uuid).
+    assert "temp_audiofile_path" not in burn_body
+    assert "legendas-{os.getpid()}-{uuid.uuid4().hex[:8]}" in burn_body
+    assert "safe_unlink(srt, missing_ok=True)" in burn_body
+    assert "safe_unlink(temporary, missing_ok=True)" in burn_body
     # 1.0.57: o nome único por uuid entrou no WRITOR (não apenas por PID).
     writer_body = TEXT_TO_IMAGES_SOURCE.split("def _write_web_safe_videofile", 1)[1].split(
         "def _close_clip_reader", 1

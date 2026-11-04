@@ -212,14 +212,22 @@ def test_worker_env_contract_isolates_temp_and_preserves_systemroot():
 
 
 def test_burn_contracts_for_winerror_32():
-    burn_body = TEXT_TO_IMAGES_SOURCE.split("def burn_captions_on_video", 1)[1].split(
+    """1.0.58 — a queima FFmega puro: sem temp de áudio do MoviePy (a causa
+    do WinError 32 de 2025 desapareceu), saída e SRT únicos por uuid e
+    mov/remoção sempre com retry."""
+    burn_source = TEXT_TO_IMAGES_SOURCE.split("def burn_captions_on_video(", 1)[1].split(
         "def synthesize_text_to_images_audio", 1
     )[0]
-    assert "temp_audiofile_path=thunderbolt_temp_dir()" in burn_body
-    assert "legendas-{os.getpid()}-tmp.mp4" in burn_body  # nome único por PID
-    assert "_close_clip_reader(video)" in burn_body      # reader fechado antes
-    assert "safe_replace(temporary, output)" in burn_body
-    assert "safe_unlink(temporary, missing_ok=True)" in burn_body
+    # Nenhum temporário do MoviePy na queima (sem TEMP_MPY_wvf_snd).
+    assert "temp_audiofile_path" not in burn_source
+    assert "CompositeVideoClip" not in burn_source
+    # Nomes únicos (PID + uuid) para SRT e mp4 — colisões deixam de existir.
+    assert "legendas-{os.getpid()}-{uuid.uuid4().hex[:8]}.srt" in burn_source
+    assert "legendas-{os.getpid()}-{uuid.uuid4().hex[:8]}-tmp.mp4" in burn_source
+    # Substituição e limpeza com retry em bloqueio.
+    assert "safe_replace(temporary, output)" in burn_source
+    assert "safe_unlink(srt, missing_ok=True)" in burn_source
+    assert "safe_unlink(temporary, missing_ok=True)" in burn_source
 
 
 def test_write_web_safe_videofile_accepts_temp_dir(tmp_path: Path, monkeypatch):
