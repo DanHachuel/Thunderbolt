@@ -542,6 +542,106 @@ def _update(task_id: str, **updates: Any) -> dict[str, Any]:
     return updated
 
 
+# 1.0.57 — relógio REAL da etapa de vídeo nas fases LOCAIS. O tick de 5 s
+# que escreve ``video_elapsed_seconds`` só existe no loop do helper MPT:
+# quando a tarefa passa para a queima de legendas local ou para a montagem
+# text_to_images/Remotion (tudo dentro do processo do worker), o timer do
+# card CONGELAVA no último valor (o falso «Tempo da etapa Vídeo: 8m 40s» do
+# relato) e uma queima de 1 h era invisível para o utilizador. Este timer
+# mantém o relógio da etapa a subir do início ao fim, com o mesmo formato
+# que a UI já lê — e NUNCA salta para trás (o valor persistido pelo loop do
+# helper pode estar mais à frente: a base dele é o spawn, não o step).
+VIDEO_STAGE_HEARTBEAT_INTERVAL_SECONDS = 5
+
+
+class _VideoStageTimer:
+    """Tick de 5 s com o tempo acumulado da etapa de vídeo (1.0.57)."""
+
+    def __init__(self, task_id: str, started_at: float):
+        self._task_id = task_id
+        self._started_at = started_at
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def _tick(self) -> None:
+        while not self._stop.wait(VIDEO_STAGE_HEARTBEAT_INTERVAL_SECONDS):
+            try:
+                current = _task_by_id(self._task_id) or {}
+                if str(current.get("state") or "") in {"blocked", "cancelled"}:
+                    return
+                elapsed = int(time.monotonic() - self._started_at)
+                persisted = current.get("video_elapsed_seconds")
+                if isinstance(persisted, int) and persisted > elapsed:
+                    elapsed = persisted  # relógio monótono: nunca retrocede
+                progress = current.get("progress")
+                updates: dict[str, Any] = {"video_elapsed_seconds": elapsed}
+                if isinstance(progress, int):
+                    updates["progress"] = progress
+                _update(self._task_id, **updates)
+                _worker_heartbeat(
+                    task_id=str(self._task_id),
+                    status="running",
+                    stage="video",
+                    progress=progress if isinstance(progress, int) else None,
+                    video_elapsed_seconds=elapsed,
+                )
+            except Exception:
+                return  # a telemetria nunca mata a etapa
+
+    def start(self) -> "_VideoStageTimer":
+        if self._thread is None:
+            self._thread = threading.Thread(
+                target=self._tick, name=f"video-stage-{self._task_id}", daemon=True
+            )
+            self._thread.start()
+        return self
+
+    def stop(self) -> None:
+        self._stop.set()
+        thread = self._thread
+        if thread is not None:
+            thread.join(timeout=VIDEO_STAGE_HEARTBEAT_INTERVAL_SECONDS + 2)
+        self._thread = None
+
+    def __enter__(self) -> "_VideoStageTimer":
+        return self.start()
+
+    def __exit__(self, *_exc: Any) -> None:
+        self.stop()
+
+
+def _purge_stale_engine_temp_files(max_age_hours: float = 1.0) -> int:
+    """Apaga temporários do MoviePy órfãos (> 1 h) antes de iniciar a etapa.
+
+    Um ``*TEMP_MPY_wvf_snd.mp4`` deixado por um render morto (ou por um
+    processo fantasma do Windows) mantém o caminho bloqueado e envenena o
+    «Refazer Vídeo» seguinte. A idade mínima de 1 h protege os temporários
+    dos renders a correr AGORA (o motor escreve-o logo no início do write).
+    Devolve quantos ficheiros foram removidos (telemetria).
+    """
+    try:
+        temp_dir = thunderbolt_temp_dir()
+        candidates = list(temp_dir.glob("*TEMP_MPY*"))
+    except OSError:
+        return 0
+    cutoff = time.time() - max_age_hours * 3600
+    removed = 0
+    for candidate in candidates:
+        try:
+            if not candidate.is_file() or candidate.stat().st_mtime >= cutoff:
+                continue
+            candidate.unlink(missing_ok=True)
+            removed += 1
+        except OSError:
+            continue
+    if removed:
+        print(
+            f"[TEMP-CLEAN] {removed} temporário(s) do motor com mais de {max_age_hours:.0f}h removido(s)",
+            file=sys.stderr,
+        )
+    return removed
+
+
 def _upload_with_heartbeat(task_id: str, upload_call: Any) -> Any:
     """Run a blocking upload while keeping the task and worker heartbeats alive."""
     result: list[Any] = []
@@ -2627,6 +2727,15 @@ def _apply_mpt_captions(
         _mpt_runtime_log(f"[MPT-SUBTITLES] queima local {'concluída' if burned_flag else 'sem clips'} em {Path(burned).name} (fonte={burned_font})")
         return burned, burned_flag
     except Exception as exc:
+        # 1.0.57 — bloqueio do temporário da GPU (WinError 32, 3 tentativas
+        # esgotadas) NUNCA é engolido: propagar aborta a tarefa com a
+        # mensagem clara em vez de entregar vídeo «sem legendas» depois de
+        # horas de CPU (relato: 2 vídeos 1 h travados em 75%).
+        from hermes_ui.text_to_images import GpuTempLockError
+
+        if isinstance(exc, GpuTempLockError):
+            _mpt_runtime_log(f"[MPT-SUBTITLES] [ERRO] {exc}")
+            raise
         import sys as _sys
 
         print(f"[pexels] legendas ignoradas por falha na queima: {exc}", file=_sys.stderr)
@@ -3368,6 +3477,10 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
     # de imagem. O artefacto fica persistido mesmo que a quota da thumbnail falhe.
     existing_video = _valid_artifact_path(artifacts.get("video"))
     if existing_video is None:
+        _video_stage_started_at = time.monotonic()
+        # 1.0.57 — limpeza preventiva: temporários órfãos (> 1 h) não podem
+        # bloquear o «Refazer Vídeo» que arranca agora.
+        _purge_stale_engine_temp_files()
         _update(task_id, stage="video", state="doing", progress=max(52, int(task.get("progress") or 0)), error=None)
         # 1.0.38 — REGISTRO DETERMINÍSTICO: `subtitles_burned` é o que
         # ACONTECEU DE FACTO na geração (report das funções de queima), nunca
@@ -3375,6 +3488,10 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
         # `has_subtitles` sai daqui.
         subtitles_burned = False
         burn_report: dict[str, Any] = {}
+        # 1.0.57 — relógio real da etapa: corre durante o helper MPT E
+        # durante as fases locais (queima de legendas, montagens), sem
+        # nunca saltar para trás.
+        _video_stage_timer = _VideoStageTimer(task_id, _video_stage_started_at).start()
         try:
             video_prompt = _append_generation_constraints(
                 f"Título: {title}\n\nRoteiro:\n{str(script.get('content') or '')[:12000]}",
@@ -3537,6 +3654,11 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                 message = f"Pipeline MoneyPrinterTurbo ({route}): {exc}"
             metadata = _failure_attribution(task, settings, "video", error=str(exc))
             raise PipelineError(_failure_message(message, metadata), failure_metadata=metadata) from exc
+        finally:
+            # 1.0.57 — o relógio da etapa pára em QUALQUER desfecho (sucesso,
+            # PipelineError, GpuTempLockError, cancelamento): nunca fica um
+            # tick a escrever heartbeat de uma etapa que já acabou.
+            _video_stage_timer.stop()
         # 1.0.29 — o artefacto final de vídeo sai SEMPRE pronto para o player
         # do navegador: moov no início (faststart) + yuv420p, em TODAS as
         # rotas (o MoviePy local, o fork MPT e o Remotion escrevem o moov no

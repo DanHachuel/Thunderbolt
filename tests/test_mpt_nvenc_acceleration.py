@@ -657,18 +657,22 @@ def test_write_web_safe_videofile_uses_nvenc_when_probe_passes(tmp_path: Path, m
     assert call["logger"] is None
 
 
-def test_write_web_safe_videofile_retries_once_on_cpu_when_nvenc_fails(
+def test_write_web_safe_videofile_never_falls_back_to_cpu_when_nvenc_fails(
     tmp_path: Path, monkeypatch, capsys
 ):
+    """1.0.57 — o fallback silencioso para libx264 MORREU.
+
+    Uma falha real do encoder NVENC propaga de imediato (não há segunda
+    escrita em CPU): o relato do utilizador provou que a repetição em CPU
+    repetia o mesmo caminho bloqueado e transformava 3 min de GPU em horas
+    de processamento surdo.
+    """
     monkeypatch.setattr(text_to_images, "_nvenc_encoder_available", lambda _ffmpeg: True)
     clip = _FakeClip(fail_codecs={"h264_nvenc"})
-    codec = text_to_images._write_web_safe_videofile(clip, tmp_path / "out.mp4", fps=30)
-    assert codec == "libx264"
-    assert [call["codec"] for call in clip.calls] == ["h264_nvenc", "libx264"]
-    # A compatibilidade web da 1.0.29 viaja em AMBAS as tentativas.
-    for call in clip.calls:
-        assert call["ffmpeg_params"] == text_to_images.WEB_SAFE_MP4_FFMPEG_PARAMS
-    assert "NVENC falhou na escrita" in capsys.readouterr().err
+    with pytest.raises(RuntimeError):
+        text_to_images._write_web_safe_videofile(clip, tmp_path / "out.mp4", fps=30)
+    assert [call["codec"] for call in clip.calls] == ["h264_nvenc"]
+    assert "a repetir no CPU (libx264)" not in capsys.readouterr().err
 
 
 def test_write_web_safe_videofile_is_pure_cpu_when_probe_fails(tmp_path: Path, monkeypatch):

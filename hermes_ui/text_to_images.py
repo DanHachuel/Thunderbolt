@@ -4,6 +4,8 @@ import json
 import math
 import os
 import re
+import time
+import uuid
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -42,6 +44,49 @@ CPU_VIDEO_CODEC = "libx264"
 NVENC_PROBE_TIMEOUT_SECONDS = 45
 NVENC_PROBE_SOURCE = "testsrc=duration=1:size=320x240:rate=15"
 _NVENC_PROBE_CACHE: dict[tuple[str, str], bool] = {}
+
+# 1.0.57 — falha de GPU por bloqueio de ficheiro do Windows (WinError 32 no
+# TEMP_MPY_wvf_snd). NÃO é falha de encoder e NUNCA pode cair silenciosamente
+# para a CPU: o relato do utilizador (dois vídeos 1 h travados em 75%) provou
+# que o «fallback para libx264» repete o MESMO caminho bloqueado, falha outra
+# vez e transforma 3 min de GPU em horas de CPU surda. A tarefa morre com
+# mensagem clara em vez disso.
+GPU_TEMP_LOCK_MESSAGE = "Falha na GPU: arquivo temporário bloqueado pelo Windows"
+TEMP_AUDIO_ATTEMPTS = 3
+
+
+class GpuTempLockError(RuntimeError):
+    """O write na GPU falhou 3x por bloqueio do temporário (WinError 32)."""
+
+
+def _unique_temp_audiofile(output_path: Path, temp_dir: Path | str) -> Path:
+    """Nome ÚNICO (uuid4) para o áudio temporário do MoviePy — 1.0.57.
+
+    ``final-1.legendas-tmp.mp4`` → ``…/final-1.legendas-tmpTEMP_MPY_<uuid>_
+    wvf_snd.mp4``: dois «Refazer Vídeo» (ou um retry da própria tentativa)
+    nunca partilham o caminho — a colisão de nomes deixa de existir na
+    origem, tal como no patch do motor MPT (1.0.51). O sufixo
+    ``TEMP_MPY_`` fica para a limpeza de órfãos o reconhecer.
+    """
+    output = Path(output_path)
+    directory = Path(str(temp_dir))
+    return directory / f"{output.stem}TEMP_MPY_{uuid.uuid4().hex}_wvf_snd.mp4"
+
+
+def _discard_temp_audiofile(path: Path | str | None) -> None:
+    """Limpeza BEST-EFFORT do temporário — nunca falha a tarefa (1.0.57).
+
+    Com ``remove_temp=False`` a limpeza é nossa. Um bloqueio persistente
+    ( Defender/outro handle) esgota o retry do ``safe_unlink``; se isso
+    propagasse, uma queima com o VÍDEO JÁ ESCRITO morreria na limpeza. O
+    ficheiro fica como lixo e a purga de órfãos (> 1 h) trata dele.
+    """
+    if path is None:
+        return
+    try:
+        safe_unlink(path, missing_ok=True)
+    except OSError:
+        pass
 
 
 def _moviepy_ffmpeg_binary() -> str:
@@ -120,12 +165,16 @@ def _write_web_safe_videofile(
 ) -> str:
     """Escreve o MP4 final web-safe (faststart + yuv420p), na GPU quando possível.
 
-    GPU (h264_nvenc) quando o probe REAL confirma o encoder; qualquer falha
-    do write repete UMA vez em libx264 (CPU) — o vídeo nunca fica por
-    produzir. Os ``WEB_SAFE_MP4_FFMPEG_PARAMS`` da 1.0.29 vão em ambas as
-    tentativas. ``temp_audiofile_path`` isola o TEMP_MPY_wvf_snd do MoviePy
-    (1.0.43): sem ele o temporário cai ao lado do output, onde o
-    Defender/FFmpeg o pode bloquear (WinError 32 — issue #217 do MPT).
+    1.0.57 — **sem fallback silencioso para a CPU**. Quando o probe REAL
+    confirma o NVENC, uma falha de bloqueio de ficheiro (WinError 32)
+    repete até 3x com um ``temp_audiofile`` NOVO a cada tentativa (nome
+    único por uuid) e o temporário é limpo por nós com retry; esgotado,
+    levanta ``GpuTempLockError`` — a tarefa falha com mensagem clara em vez
+    de converter 3 min de GPU em horas de CPU. Qualquer outra falha do
+    encoder propaga de imediato (também não há queda para CPU). Máquina
+    sem GPU nunca chega aqui com NVENC: o probe devolve libx264 desde o
+    início. Os ``WEB_SAFE_MP4_FFMPEG_PARAMS`` da 1.0.29 vão sempre.
+    ``temp_audiofile_path`` isola o TEMP_MPY_wvf_snd do MoviePy (1.0.43).
     Devolve o codec efectivo para a telemetria do chamador.
     """
     import sys as _sys
@@ -133,30 +182,80 @@ def _write_web_safe_videofile(
     binary = _moviepy_ffmpeg_binary()
     codec = NVENC_VIDEO_CODEC if _nvenc_encoder_available(binary) else CPU_VIDEO_CODEC
     write_kwargs: dict[str, object] = {"logger": None, "ffmpeg_params": WEB_SAFE_MP4_FFMPEG_PARAMS}
-    if temp_audiofile_path is not None:
+    manage_temp = temp_audiofile_path is not None
+    if manage_temp:
         write_kwargs["temp_audiofile_path"] = str(temp_audiofile_path)
 
-    def _write(with_codec: str) -> None:
+    def _write(with_codec: str, temp_audiofile: Path | None = None) -> None:
+        call_kwargs = dict(write_kwargs)
+        if temp_audiofile is not None:
+            # A limpeza passa a ser nossa (retry em WinError 32): o
+            # os.remove do MoviePy não tem retry e rebentava DEPOIS do
+            # vídeo estar escrito.
+            call_kwargs["temp_audiofile"] = str(temp_audiofile)
+            call_kwargs["remove_temp"] = False
         clip.write_videofile(
             str(output_path),
             fps=fps,
             codec=with_codec,
             audio_codec=audio_codec,
-            **write_kwargs,
+            **call_kwargs,
         )
 
-    try:
-        _write(codec)
-    except Exception as exc:
-        if codec == CPU_VIDEO_CODEC:
-            raise
-        print(
-            f"[text_to_images] [AVISO] NVENC falhou na escrita ({exc}) — a repetir no CPU (libx264)",
-            file=_sys.stderr,
+    for attempt in range(1, TEMP_AUDIO_ATTEMPTS + 1):
+        temp_audiofile = (
+            _unique_temp_audiofile(output_path, temp_audiofile_path) if manage_temp else None
         )
-        _write(CPU_VIDEO_CODEC)
-        return CPU_VIDEO_CODEC
+        try:
+            _write(codec, temp_audiofile)
+            if temp_audiofile is not None:
+                # Sucesso: o temporário é nosso (remove_temp=False) e sai com
+                # retry — sem isto ficaria lixo no TEMP a cada queima.
+                _discard_temp_audiofile(temp_audiofile)
+            return codec
+        except Exception as exc:
+            if temp_audiofile is not None:
+                _discard_temp_audiofile(temp_audiofile)
+            if not _is_temp_lock_error(exc, temp_audiofile):
+                raise
+            if attempt >= TEMP_AUDIO_ATTEMPTS:
+                # 3 falhas de bloqueio: aborta com mensagem própria — o
+                # worker NÃO pode engolir isto como «legenda falhou».
+                raise GpuTempLockError(f"{GPU_TEMP_LOCK_MESSAGE}: {exc}") from exc
+            print(
+                f"[text_to_images] [AVISO] NVENC: temporário bloqueado ({exc}) — "
+                f"tentativa {attempt}/{TEMP_AUDIO_ATTEMPTS} com nome novo",
+                file=_sys.stderr,
+            )
+            time.sleep(0.5 * (2 ** (attempt - 1)))
     return codec
+
+
+def _is_windows_lock_error(exc: BaseException) -> bool:
+    """WinError 32 (ERROR_SHARING_VIOLATION) — bloqueio do Windows, não GPU."""
+    if getattr(exc, "winerror", None) == 32:
+        return True
+    text = str(exc).casefold()
+    return "winerror 32" in text or "sendo usado por outro processo" in text or "being used by another process" in text
+
+
+def _is_temp_lock_error(exc: BaseException, temp_path: Path | str | None) -> bool:
+    """1.0.57 — o erro aponta AO NOSSO temporário? (prova real, não só o código).
+
+    O relato do utilizador trazia ``[WinError 32]``; uma sessão real do
+    FFmpeg com o caminho travado ao nível do SO devolve «Error opening input
+    file '…locked-temp.mp4'. Permission denied» — SEM ``winerror``. Nos dois
+    casos a causa é a mesma (bloqueio do ficheiro temporário) e a resposta
+    tem de ser a mesma: nome novo, nunca CPU.
+    """
+    if _is_windows_lock_error(exc):
+        return True
+    if not temp_path:
+        return False
+    text = str(exc).casefold()
+    if str(temp_path).lower() not in text:
+        return False
+    return "permission denied" in text or "being used by another process" in text or "sendo usado" in text
 
 
 def _close_clip_reader(clip) -> None:
@@ -760,10 +859,14 @@ def burn_captions_on_video(
         burned = CompositeVideoClip([video, *subtitle_clips]).with_duration(total)
         # 1.0.43 — nome único por PID: dois workers a queimar em paralelo
         # nunca partilham o ficheiro temporário (a colisão era uma das
-        # fontes do WinError 32 visto a 25/10).
+        # fontes do WinError 32 visto a 25/10). 1.0.57: o TEMP_MPY_wvf_snd
+        # DENTRO deste write passa a ser único por uuid (ver
+        # _write_web_safe_videofile) — o nome estático era o ficheiro do
+        # relato: final-1.legendas-27464-tmpTEMP_MPY_wvf_snd.mp4.
         temporary = output.with_name(f"{output.stem}.legendas-{os.getpid()}-tmp.mp4")
-        # 1.0.36 — a queima deixa de custar ~45 min na CPU: h264_nvenc na GPU
-        # com fallback libx264 e os mesmos parâmetros web-safe da 1.0.29.
+        # 1.0.36/1.0.57 — a queima vai para a GPU (h264_nvenc) e NÃO cai
+        # para a CPU: bloqueio do temporário repete com nome novo (3x) e
+        # aborta com GpuTempLockError em vez de horas de CPU surda.
         burn_codec = _write_web_safe_videofile(
             burned,
             temporary,
