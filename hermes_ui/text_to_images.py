@@ -811,20 +811,34 @@ def assemble_text_to_images_video(
 # O relato do utilizador (51 min num vídeo com codec=h264_nvenc no log)
 # provou que o gargalo NÃO era o encoder: era o MoviePy a compor os
 # TextClips frame a frame no Python antes de entregar ao GPU. A queima
-# passa a ser um subprocesso FFmpeg único com o filtro `subtitles` sobre
-# um .srt — o trabalho pesado fica no libass/FFmpeg (C) e no NVENC.
+# passa a ser um subprocesso FFmpeg único com o filtro `subtitles` — o
+# trabalho pesado fica no libass/FFmpeg (C) e no NVENC.
+#
+# 1.0.61 — o ficheiro passou de .srt para .ass (PlayResX/Y REAIS). Um
+# .srt obriga o libass à resolução virtual de origem (384x288): lá, um
+# FontSize=40 escala ~5x num 1080p e a legenda estoura a tela, cortada
+# nas laterais (relato com imagens). O .ass declara a resolução do
+# PRÓPRIO vídeo, pelo que FontSize=40 é 40px de verdade, e as margens
+# (60px) forçam a quebra de linha automática (WrapStyle 0).
 # ---------------------------------------------------------------------------
 
 CAPTION_BURN_PREFIX = "[CAPTION-BURN]"
 # Alinhamento ASS em notação numpad: 1-2-3 base, 4-5-6 meio, 7-8-9 topo.
 _CAPTION_ASS_ALIGNMENTS = {"top": 8, "center": 5}
+# Margens ASS em px da RESOLUÇÃO declarada: 60px de cada lado impedem o
+# texto de tocar as bordas e dão ao libass a linha de quebra automática.
+CAPTION_ASS_MARGIN_LR = 60
+CAPTION_ASS_MARGIN_V = 40
+# Geometria de recurso quando o ffmpeg não consegue sondar o tamanho.
+CAPTION_ASS_FALLBACK_WIDTH = 1920
+CAPTION_ASS_FALLBACK_HEIGHT = 1080
 
 
-def _probe_video_geometry(ffmpeg: str, path: Path | str) -> tuple[float, int]:
-    """Duração (s) e altura (px) do vídeo via `ffmpeg -i` — sem ffprobe/MoviePy.
+def _probe_video_geometry(ffmpeg: str, path: Path | str) -> tuple[float, int, int]:
+    """Duração (s), largura e altura (px) do vídeo via ``ffmpeg -i``.
 
-    Devolve ``(0.0, 0)`` quando o binário não consegue sondar (o chamador
-    não queima com tempos errados).
+    Sem ffprobe/MoviePy. Devolve ``(0.0, 0, 0)`` quando o binário não
+    consegue sondar (o chamador não queima com tempos errados).
     """
     if not ffmpeg:
         return 0.0, 0
@@ -844,44 +858,129 @@ def _probe_video_geometry(ffmpeg: str, path: Path | str) -> tuple[float, int]:
         return 0.0, 0
     duration_match = re.search(r"Duration:\s*(\d+):(\d{2}):([\d.]+)", combined)
     if not duration_match:
-        return 0.0, 0
+        return 0.0, 0, 0
     duration = (
         int(duration_match.group(1)) * 3600
         + int(duration_match.group(2)) * 60
         + float(duration_match.group(3))
     )
-    height = 0
+    width = height = 0
     video_match = re.search(r"Video:[^\n]*?\b(\d{2,5})x(\d{2,5})\b", combined)
     if video_match:
-        height = int(video_match.group(2))
-    return duration, height
+        width, height = int(video_match.group(1)), int(video_match.group(2))
+    return duration, width, height
 
 
-def _srt_timestamp(seconds: float) -> str:
-    """Segundos -> ``HH:MM:SS,mmm`` (formato SRT)."""
-    total_ms = max(0, int(round(seconds * 1000)))
-    hours, rest = divmod(total_ms, 3600_000)
-    minutes, rest = divmod(rest, 60_000)
-    secs, millis = divmod(rest, 1000)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+def _ass_timestamp(seconds: float) -> str:
+    """Segundos -> ``H:MM:SS.cc`` (centésimas, formato ASS)."""
+    total_cs = max(0, int(round(seconds * 100)))
+    hours, rest = divmod(total_cs, 3_600_00)
+    minutes, rest = divmod(rest, 6_000)
+    secs, centis = divmod(rest, 100)
+    return f"{hours}:{minutes:02d}:{secs:02d}.{centis:02d}"
 
 
-def _write_caption_srt(segments: list[dict], path: Path) -> int:
-    """Escreve o .srt com blocos sequenciais; devolve o número de cues."""
+def _caption_ass_style_line(
+    subtitle_config: dict,
+    font_size: int,
+    *,
+    with_background: bool,
+) -> str:
+    """Linha ``Style:`` completa do .ass — o config do canal, sem force_style.
+
+    O ``FontSize`` é o valor EXACTO da UI porque o PlayRes do cabeçalho é
+    a resolução real do vídeo (1.0.61); ``MarginL/R`` de 60px dão a quebra
+    automática. ``BorderStyle=3`` (caixa hug-text) quando o canal pede
+    fundo; ``1`` (contorno) caso contrário.
+    """
+    parts = [
+        "Default",
+        _caption_font_name(str(subtitle_config.get("font_path") or "")),
+        str(max(10, int(font_size))),
+        _caption_ass_color(subtitle_config.get("color")),
+        _caption_ass_color(subtitle_config.get("color")),  # secundária (karaoke)
+        _caption_ass_color(subtitle_config.get("outline"), "#000000"),
+        _caption_ass_color(subtitle_config.get("background_color"), "#000000")
+        if with_background
+        else "&H00000000",
+        "0",  # Bold
+        "0",  # Italic
+        "0",  # Underline
+        "0",  # StrikeOut
+        "100",  # ScaleX
+        "100",  # ScaleY
+        "0",  # Spacing
+        "0",  # Angle
+        "3" if with_background else "1",  # BorderStyle
+        f"{float(subtitle_config.get('outline_width') or 0):.2f}".rstrip("0").rstrip(".")
+        or "0",
+        "0",  # Shadow
+        str(_caption_ass_alignment(subtitle_config.get("position"))),
+        str(CAPTION_ASS_MARGIN_LR),  # MarginL
+        str(CAPTION_ASS_MARGIN_LR),  # MarginR
+        str(CAPTION_ASS_MARGIN_V),  # MarginV
+        "1",  # Encoding
+    ]
+    return "Style: " + ",".join(parts)
+
+
+def _write_caption_ass(
+    segments: list[dict],
+    path: Path,
+    *,
+    width: int,
+    height: int,
+    subtitle_config: dict,
+    font_size: int,
+) -> int:
+    """Escreve o .ass completo (cabeçalho dinâmico + eventos); devolve as cues.
+
+    ``PlayResX/PlayResY`` são a resolução REAL do vídeo: lá dentro,
+    ``FontSize`` da UI é pixéis verdadeiros e as margens de 60px impedem o
+    texto de tocar as bordas. ``WrapStyle: 0`` deixa a quebra de linha para
+    o libass — o texto NÃO leva ``\\N`` manual. Devolve 0 sem cues (o
+    chamador não queima).
+    """
+    play_width = int(width) if int(width or 0) > 0 else CAPTION_ASS_FALLBACK_WIDTH
+    play_height = int(height) if int(height or 0) > 0 else CAPTION_ASS_FALLBACK_HEIGHT
+    with_background = bool(subtitle_config.get("background"))
+    header = "\n".join(
+        [
+            "[Script Info]",
+            "; Thunderbolt 1.0.61 — gerado dinamicamente com a resolucao real do video",
+            "ScriptType: v4.00+",
+            f"PlayResX: {play_width}",
+            f"PlayResY: {play_height}",
+            "WrapStyle: 0",
+            "ScaledBorderAndShadow: yes",
+            "YCbCr Matrix: None",
+            "",
+            "[V4+ Styles]",
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+            _caption_ass_style_line(subtitle_config, font_size, with_background=with_background),
+            "",
+            "[Events]",
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+        ]
+    )
     cursor = 0.0
-    blocks: list[str] = []
-    for index, item in enumerate(segments, start=1):
+    lines: list[str] = []
+    for item in segments:
         caption = " ".join(str(item.get("text") or "").split()).strip()
         duration = max(0.4, float(item.get("duration") or 5.0))
         start, end = cursor, cursor + duration
         cursor = end
         if not caption:
             continue
-        blocks.append(
-            f"{index}\n{_srt_timestamp(start)} --> {_srt_timestamp(end)}\n{caption}\n"
+        # Sem \N: a quebra é do libass (WrapStyle 0 + margens).
+        lines.append(
+            "Dialogue: 0,"
+            f"{_ass_timestamp(start)},{_ass_timestamp(end)},Default,,0,0,0,,{caption}"
         )
-    path.write_text("\n".join(blocks), encoding="utf-8")
-    return len(blocks)
+    if not lines:
+        return 0
+    path.write_text(header + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
+    return len(lines)
 
 
 def _subtitles_filter_path(path: Path | str) -> str:
@@ -917,42 +1016,23 @@ def _caption_font_name(font_path: str) -> str:
     return stem or "Arial"
 
 
-def _caption_force_style(subtitle_config: dict, font_size: int) -> str:
-    """Config do canal -> ``force_style`` do filtro subtitles (ASS)."""
-    background = bool(subtitle_config.get("background"))
-    parts = [
-        f"FontName={_caption_font_name(str(subtitle_config.get('font_path') or ''))}",
-        f"FontSize={max(10, int(font_size))}",
-        f"PrimaryColour={_caption_ass_color(subtitle_config.get('color'))}",
-        f"OutlineColour={_caption_ass_color(subtitle_config.get('outline'), '#000000')}",
-        f"Outline={max(0, int(round(float(subtitle_config.get('outline_width') or 0))))}",
-        f"Alignment={_caption_ass_alignment(subtitle_config.get('position'))}",
-    ]
-    if background:
-        # BorderStyle=3 = caixa opaca hug-text (pedido da tarefa).
-        parts.append("BorderStyle=3")
-        parts.append(f"BackColour={_caption_ass_color(subtitle_config.get('background_color'), '#000000')}")
-    else:
-        parts.append("BorderStyle=1")
-    return ",".join(parts)
-
-
 def _caption_burn_command(
     ffmpeg: str,
     source: Path,
-    srt: Path,
+    captions: Path,
     target: Path,
     subtitle_config: dict,
     *,
     gpu: bool,
-    font_size: int,
 ) -> list[str]:
-    """Comando FFmpeg da queima: GPU (hwaccel cuda + h264_nvenc) ou CPU (libx264)."""
+    """Comando FFmpeg da queima: GPU (hwaccel cuda + h264_nvenc) ou CPU (libx264).
+
+    1.0.61 — o estilo vem TODO do cabeçalho do .ass (PlayRes real,
+    margens, cores): ``force_style`` foi removido porque não controla
+    resolução nem quebra de linha.
+    """
     font_dir = Path(str(subtitle_config.get("font_path") or "")).parent
-    filter_value = (
-        f"subtitles={_subtitles_filter_path(srt)}"
-        f":force_style='{_caption_force_style(subtitle_config, font_size)}'"
-    )
+    filter_value = f"subtitles={_subtitles_filter_path(captions)}"
     if str(font_dir) and font_dir.is_dir():
         filter_value += f":fontsdir={_subtitles_filter_path(font_dir)}"
     command = [ffmpeg, "-nostdin", "-y", "-hide_banner", "-loglevel", "error"]
@@ -1000,10 +1080,16 @@ def burn_captions_on_video(
     1.0.58 - QUEIMA POR FFMPEG PURO (adeus MoviePy): o relato do utilizador
     (51 min com codec=h264_nvenc no log) provou que o gargalo era o MoviePy,
     não o encoder - compor TextClips frame a frame em Python custava ~5x o
-    tempo real. Agora o filtro `subtitles` (libass) do FFmpeg queima o .srt
-    num único subprocesso: GPU (h264_nvenc + -hwaccel cuda), uma repetição em
+    tempo real. Agora o filtro `subtitles` (libass) do FFmpeg queima num
+    único subprocesso: GPU (h264_nvenc + -hwaccel cuda), uma repetição em
     libx264 se a GPU falhar, `-c:a copy` e os parâmetros web-safe da 1.0.29
     (+faststart + yuv420p) sempre presentes.
+
+    1.0.61 - O ficheiro passou a ser .ass com `PlayResX/PlayResY` REAIS
+    (resolução sondada do vídeo): o FontSize da UI é pixéis verdadeiros e as
+    margens de 60px dão a quebra automática. O .srt + `force_style` deixava
+    o libass escalar a fonte a partir de 384x288 e a legenda estourava o
+    ecrã, cortada nas laterais (relato com imagens).
 
     1.0.38 - `burn_report` (REGISTRO DETERMINÍSTICO): quando fornecido,
     preenche ``burn_report["subtitles_burned"]`` com True APENAS quando a
@@ -1028,9 +1114,9 @@ def burn_captions_on_video(
     ffmpeg = str(ffmpeg_binary or "").strip() or _moviepy_ffmpeg_binary()
     if not ffmpeg:
         raise RuntimeError("nenhum binário FFmpeg disponível para queimar legendas")
-    duration, height = _probe_video_geometry(ffmpeg, output)
+    duration, width, height = _probe_video_geometry(ffmpeg, output)
     if duration <= 0:
-        # Sem duração sondável os tempos do .srt seriam errados - não queima.
+        # Sem duração sondável os tempos do .ass seriam errados - não queima.
         if burn_report is not None:
             burn_report["subtitles_burned"] = False
         return output
@@ -1038,20 +1124,31 @@ def burn_captions_on_video(
     estimated = sum(max(0.4, float(item.get("duration") or target_seconds)) for item in segments) or target_seconds
     for item in segments:
         item["duration"] = max(0.4, float(item.get("duration") or target_seconds) * total / estimated)
-    srt = output.with_name(f"{output.stem}.legendas-{os.getpid()}-{uuid.uuid4().hex[:8]}.srt")
+    captions = output.with_name(f"{output.stem}.legendas-{os.getpid()}-{uuid.uuid4().hex[:8]}.ass")
     temporary = output.with_name(f"{output.stem}.legendas-{os.getpid()}-{uuid.uuid4().hex[:8]}-tmp.mp4")
     try:
-        cues = _write_caption_srt(segments, srt)
+        # 1.0.61 — .ass com PlayResX/Y da resolução REAL: FontSize=40 da UI
+        # é 40px de verdade (o .srt deixava o libass escalar ~5x a partir de
+        # 384x288 e a legenda estourava o ecrã).
+        cues = _write_caption_ass(
+            segments,
+            captions,
+            width=width,
+            height=height,
+            subtitle_config=subtitle_config,
+            font_size=_caption_font_size(subtitle_config),
+        )
         if cues <= 0:
             if burn_report is not None:
                 burn_report["subtitles_burned"] = False
             return output
-        font_size = max(12, int(subtitle_config.get("font_size") or 40) * max(1, height or 1080) // 1080)
         gpu = _nvenc_encoder_available(ffmpeg)
         attempts = [gpu, False] if gpu else [False]
         last_detail = ""
         for attempt_gpu in attempts:
-            command = _caption_burn_command(ffmpeg, output, srt, temporary, subtitle_config, gpu=attempt_gpu, font_size=font_size)
+            command = _caption_burn_command(
+                ffmpeg, output, captions, temporary, subtitle_config, gpu=attempt_gpu
+            )
             started = time.monotonic()
             try:
                 completed = subprocess.run(
@@ -1092,8 +1189,8 @@ def burn_captions_on_video(
             + (f": {last_detail}" if last_detail else "")
         )
     finally:
-        # Nenhum ficheiro temporário fica para trás (SRL e mp4), com retry.
-        safe_unlink(srt, missing_ok=True)
+        # Nenhum ficheiro temporário fica para trás (.ass e mp4), com retry.
+        safe_unlink(captions, missing_ok=True)
         safe_unlink(temporary, missing_ok=True)
 
 def synthesize_text_to_images_audio(text: str, settings: dict[str, Any], voice: str, output_path: Path) -> Path:
