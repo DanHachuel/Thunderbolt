@@ -232,7 +232,10 @@ def test_script_generation_regenerates_when_the_llm_uses_meditation_language(mon
             content = ("Breathe in deeply and relax as we begin this meditation. " * 30)[:9000]
         else:
             # oração de intercessão dentro de 7.000–9.000 caracteres
-            content = ("Lord, I lift up this listener to You in faith. " * 160)[:9000]
+            # 1.0.61 - a 2ª resposta tem de cumprir o tamanho do canal (20:00
+            # = 3.000 palavras); a versão curta seria rejeitada pela validação
+            # rigida de tamanho e o teste nunca chegaria ao 2º accepted.
+            content = ("Lord, I lift up this listener to You in faith and hope. " * 500)[:30000]
         return {"title": "Christ In You Is Greater", "summary": "s", "content": content}
 
     monkeypatch.setattr(script_generation, "_chat_json", fake_chat)

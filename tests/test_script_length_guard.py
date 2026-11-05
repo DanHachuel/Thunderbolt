@@ -24,6 +24,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import json
+
 import pytest
 
 from hermes_ui.blueprint_governance import script_governance, validate_script_content
@@ -33,10 +35,13 @@ from hermes_ui.blueprint_length_guard import (
     sanitize_blueprint_for_prompt,
     strip_length_governance,
 )
+from hermes_ui.creative_generation import CreativeGenerationError
 from hermes_ui.script_generation import generate_script_document
 
 
 ROOT = Path(__file__).resolve().parents[1]
+MAIN_SOURCE = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+AGENTS_SOURCE = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
 
 RIGID_BLUEPRINT = {
     "id": "bp-finance-usa",
@@ -74,10 +79,13 @@ def _capture_prompt(monkeypatch, *, channel, blueprint, brief="Como sair das dí
     def fake_chat(_settings, system, user_prompt):
         captured["system"] = system
         captured["user"] = user_prompt
+        # 1.0.61 - o conte�do ter�? de cumprir o alvo do canal (20:00 = 3.000
+        # palavras) senao a validacao rigida rejeita-o e estes testes - que
+        # verificam o PROMPT - acabariam a levantar CreativeGenerationError.
         return {
             "title": "A matemática escondida das dívidas",
             "summary": "Um plano simples para sair das dívidas.",
-            "content": "A maioria das pessoas paga caro sem perceber. " * 40,
+            "content": "A maioria das pessoas paga caro sem perceber do que assina. " * 600,
         }
 
     monkeypatch.setattr("hermes_ui.script_generation._chat_json", fake_chat)
@@ -263,3 +271,186 @@ def test_generate_script_document_without_channel_falls_back_to_default_time(mon
     system, _user = _capture_prompt(monkeypatch, channel=None, blueprint=RIGID_BLUEPRINT)
     assert "3,000 palavras" in system
     assert "STRICTLY" not in system
+
+
+# ---------------------------------------------------------------------------
+# 1.0.61 - DEFAULT GLOBAL DE 20 MINUTOS + VALIDACAO RIGIDA DE TAMANHO
+# ---------------------------------------------------------------------------
+
+
+def test_channel_without_time_assumes_twenty_minutes_in_the_prompt(monkeypatch):
+    """Teste A - canal com average_video_time ausente/None/vazio o prompt assume
+    20 minutos (3.000 palavras) - NUNCA as regras do blueprint."""
+    for empty_time in (None, "", "00:00"):
+        channel = {"id": "c", "name": "Canal sem tempo"}
+        if empty_time is not None:
+            channel["average_video_time"] = empty_time
+        system, user = _capture_prompt(
+            monkeypatch,
+            channel=channel,
+            blueprint={**RIGID_BLUEPRINT, "metadata": {**RIGID_BLUEPRINT["metadata"], "strict_character_range": [7000, 9000]}},
+        )
+        assert "3,000 palavras" in system, f"alvo de 20 min para {empty_time!r}"
+        assert "exatamente 20 minutos" in system
+        # A range do blueprint NUNCA aparece (sanitizacao mantida).
+        assert "9,000 e 11,000" not in user
+        assert "STRICTLY" not in user
+
+
+def test_short_script_is_rejected_and_the_retry_reports_the_counts(monkeypatch):
+    """Teste B - a LLM devolve 500 palavras para um canal de 20 min (3.000): o
+    roteiro e REJEITADO em codigo, o retry leva a contagem real no feedback e a
+    segunda resposta (cumprida) e aceite."""
+    calls: list[dict] = []
+
+    def fake_chat(_settings, _system, user):
+        calls.append({"system": _system, "user": json.loads(user)})
+        if len(calls) == 1:
+            return {"title": "t", "summary": "s", "content": "palavra curta " * 100}  # 300 palavras
+        return {"title": "t", "summary": "s", "content": "palavra cumprida " * 2600}  # 5200 palavras
+
+    monkeypatch.setattr("hermes_ui.script_generation._chat_json", fake_chat)
+    result = generate_script_document(
+        {},
+        document_type="Roteiro de vídeo",
+        title="Dívidas",
+        brief="Um tema qualquer",
+        language="pt",
+        channel={"id": "c", "name": "Canal"},
+        blueprint={"id": "bp", "name": "BP"},
+    )
+
+    assert len(calls) == 2, "a resposta curta dispara exactamente um retry"
+    feedback = calls[1]["user"]["system_feedback"]
+    assert "Roteiro muito curto" in feedback
+    assert "3,000 palavras" in feedback, "o feedback traz o alvo do canal"
+    assert "Expanda as seccoes" in feedback
+    assert "Expanda as se" in feedback, "o feedback manda expandir"
+    assert "palavra cumprida" in result["content"]
+
+
+def test_short_script_after_three_attempts_fails_with_explicit_error(monkeypatch):
+    """A LLM insiste em 500 palavras: ao fim de 3 tentativas a geracao FALHA com
+    a contagem real - em vez de entregar um video com metade do tempo."""
+    calls: list[dict] = []
+
+    def fake_chat(_settings, _system, _user):
+        calls.append(1)
+        return {"title": "t", "summary": "s", "content": "palavra curta " * 100}
+
+    monkeypatch.setattr("hermes_ui.script_generation._chat_json", fake_chat)
+    with pytest.raises(CreativeGenerationError) as excinfo:
+        generate_script_document(
+            {},
+            document_type="Roteiro de vídeo",
+            title="T",
+            brief="Um tema",
+            language="pt",
+            channel={"id": "c", "name": "Canal"},
+            blueprint={"id": "bp", "name": "BP"},
+        )
+
+    assert len(calls) == 3
+    message = str(excinfo.value)
+    assert "Roteiro muito curto" in message
+    assert "Esperado: 3,000 palavras" in message
+    assert "20:00 de narracao" in message
+    assert "minimo 2,400" in message
+
+
+def test_script_length_violation_counts_only_spoken_words():
+    """A contagem e do texto FALADO: markdown, tags e links nao contam."""
+    from hermes_ui.blueprint_length_guard import narration_word_count
+
+    assert narration_word_count("# Título\n\n**Gancho** com ~enfase~ e - lista") == 6
+    assert narration_word_count("[Visual: cena] texto falado [SFX]") == 2
+    assert narration_word_count("ver https://exemplo.com/x agora") == 2
+    assert narration_word_count("") == 0
+
+
+def test_new_youtube_channel_is_born_with_twenty_minutes(tmp_path, monkeypatch):
+    """Teste C - o canal novo do YouTube nasce com 20:00 (e 3.000 palavras)."""
+    import hermes_ui.domain as domain
+    from hermes_ui import storage
+
+    root = tmp_path / "storage"
+    monkeypatch.setattr(storage, "STORAGE", root)
+    monkeypatch.setattr(storage, "STATE", root / "state")
+    monkeypatch.setattr(domain.storage_module, "STORAGE", root)
+    storage.ensure_storage()
+
+    channel = domain.create_channel("Canal Novo", "https://youtube.com/@novo")
+    assert channel["average_video_time"] == "20:00"
+    assert channel["average_video_word_count"] == 3000
+
+
+def test_new_channel_forces_twenty_minutes_even_when_metadata_is_blank(tmp_path, monkeypatch):
+    """Metadata com ""/"00:00" nao pode furar o default: o canal nasce em 20:00."""
+    import hermes_ui.domain as domain
+    from hermes_ui import storage
+
+    root = tmp_path / "storage"
+    monkeypatch.setattr(storage, "STORAGE", root)
+    monkeypatch.setattr(storage, "STATE", root / "state")
+    monkeypatch.setattr(domain.storage_module, "STORAGE", root)
+    storage.ensure_storage()
+
+    for blank in ("", "00:00"):
+        channel = domain.create_channel(f"Canal {blank or 'vazio'}", "", {"average_video_time": blank})
+        assert channel["average_video_time"] == "20:00", blank
+        assert channel["average_video_word_count"] == 3000, blank
+
+
+def test_remake_revalidates_the_word_target_from_the_channel(tmp_path, monkeypatch):
+    """"Refazer Video" de uma tarefa antiga adopta o alvo ACTUAL do canal - o
+    target_word_count congelado da epoca deixa de mandar."""
+    import hermes_ui.domain as domain
+    from hermes_ui import storage
+
+    root = tmp_path / "storage"
+    monkeypatch.setattr(storage, "STORAGE", root)
+    monkeypatch.setattr(storage, "STATE", root / "state")
+    monkeypatch.setattr(domain.storage_module, "STORAGE", root)
+    storage.ensure_storage()
+    storage.write_json("channels.json", [{
+        "id": "channel-20",
+        "name": "Canal 20",
+        "platform": "youtube",
+        "average_video_time": "20:00",
+        "average_video_word_count": 3000,
+    }])
+    storage.write_json("tasks.json", [{
+        "id": "video-old",
+        "state": "done",
+        "stage": "edit",
+        "channel_id": "channel-20",
+        "generation_settings": {"target_word_count": 500},  # alvo da epoca
+        "script": "roteiro preservado",
+    }])
+
+    task = next(item for item in storage.read_json("tasks.json") if item.get("id") == "video-old")
+    domain._refresh_task_channel_video_settings(task)
+
+    assert task["generation_settings"]["target_word_count"] == 3000
+    assert task["generation_settings"]["target_video_duration"] == "20:00"
+    assert task["generation_settings"]["target_word_count_source"] == "canal"
+
+
+def test_ui_time_fields_show_the_twenty_minute_placeholder():
+    """Os campos 'Tempo Medio de Video' mostram 20:00 (YouTube) quando vazios."""
+    from hermes_ui.video_length import DEFAULT_AVERAGE_VIDEO_TIME
+
+    main_source = MAIN_SOURCE
+    assert main_source.count("placeholder=DEFAULT_AVERAGE_VIDEO_TIME") >= 2
+    for key in ("youtube_channel_average_video_time_", "average_video_time_"):
+        block = main_source.split(key, 1)[1].split("help=", 1)[0]
+        assert "placeholder=" in block, f"placeholder no campo {key}"
+    assert "Vazio ou 00:00 assume" in main_source
+    assert DEFAULT_AVERAGE_VIDEO_TIME == "20:00"
+
+
+def test_agents_md_rule_stays_declared_and_locked():
+    source = AGENTS_SOURCE
+    assert "average_video_time" in source
+    assert "NICA fonte de verdade" in source, "a regra do AGENTS.md continua declarada"
+    assert "sanitize_blueprint_for_prompt" in source

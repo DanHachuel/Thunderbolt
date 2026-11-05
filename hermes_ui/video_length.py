@@ -110,7 +110,26 @@ def explicit_word_count(blueprint: Any = None, prompt_master: str = "") -> int:
 
 
 def channel_video_length(channel: dict[str, Any], blueprint: Any = None, prompt_master: str = "") -> tuple[int, str, str]:
-    """Return (word_count, mm:ss, source), preferring channel override over defaults."""
+    """Return (word_count, mm:ss, source), preferring channel override over defaults.
+
+    1.0.61 - REGRA INVIOLAVEL (AGENTS.md) aplicada A LETRA. Ate aqui um canal
+    com o tempo vazio/``00:00`` caía nas regras de contagem do BLUEPRINT
+    (``strict_character_range``/``character_length`` convertidos em palavras)
+    ou do Prompt Master - era essa a origem real do relato do utilizador
+    ("os videos saem com o tamanho errado, a LLM obedece ao Blueprint"): o
+    alvo efectivo nao era o do canal. A resolucao passa a ser, por ordem:
+
+    1. tempo do canal (MM:SS > 0);
+    2. contagem explicita de palavras do canal;
+    3. padrao da PLATAFORMA (20:00 YouTube / 01:20 TikTok) - o canal nasce
+       ou assume 20:00 quando o campo esta vazio ou ``00:00``.
+
+    O Blueprint e o Prompt Master NUNCA definem o tamanho (continuam a mandar
+    em tom, estrutura, must_include/must_avoid e CTA). ``blueprint`` e
+    ``prompt_master`` ficam na assinatura por compatibilidade - o alvo ignora-os
+    de proposito; ``explicit_word_count`` permanece apenas como referencia de
+    diagnostico para a UI mostrar.
+    """
     raw_configured_time = str(channel.get(AVERAGE_VIDEO_TIME_KEY) or "").strip()
     configured_words = int(channel.get(AVERAGE_VIDEO_WORD_COUNT_KEY) or 0) if str(channel.get(AVERAGE_VIDEO_WORD_COUNT_KEY) or "0").isdigit() else 0
     if raw_configured_time == "00:12" and configured_words in {0, 1800}:
@@ -120,9 +139,6 @@ def channel_video_length(channel: dict[str, Any], blueprint: Any = None, prompt_
         return round(configured_time * WORDS_PER_MINUTE), hhmm_from_minutes(configured_time), "canal"
     if configured_words:
         return configured_words, hhmm_from_minutes(round(configured_words / WORDS_PER_MINUTE)), "canal"
-    words = explicit_word_count(blueprint, prompt_master)
-    if words:
-        return words, hhmm_from_minutes(round(words / WORDS_PER_MINUTE)), "Blueprint/Prompt Master"
     default_time = default_average_video_time(channel)
     default_minutes = minutes_from_hhmm(default_time)
     return round(default_minutes * WORDS_PER_MINUTE), default_time, "padrão do canal"

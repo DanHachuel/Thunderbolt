@@ -25,9 +25,10 @@ Cocomelon, História, Universo, …).
 from __future__ import annotations
 
 import copy
+import re
 from typing import Any
 
-from .video_length import WORDS_PER_MINUTE, channel_video_length, minutes_from_hhmm
+from .video_length import WORDS_PER_MINUTE, channel_video_length, hhmm_from_minutes, minutes_from_hhmm
 
 
 # Chaves terminantemente proibidas no prompt (a qualquer profundidade).
@@ -167,11 +168,81 @@ def channel_length_instruction(channel: dict[str, Any] | None) -> tuple[str, int
     return length_instruction_for_words(words, duration)
 
 
+# ---------------------------------------------------------------------------
+# 1.0.61 - VALIDACAO RIGIDA DO TAMANHO GERADO (a regressao acaba aqui)
+#
+# A 1.0.45 injectava a instrucao de tamanho no prompt e RETIRAVA as regras de
+# caracteres do blueprint - o que esta certo (AGENTS.md). Mas nao havia NENHUMA
+# verificacao do texto devolvido: a LLM ignorava a instrucao e o roteiro curto
+# seguia para o video (relato do utilizador: "os videos continuam a sair com o
+# tamanho errado"). Agora o tamanho e conferido EM CODIGO contra o alvo do
+# canal - a UNICA fonte de verdade - e o roteiro que nao cumpre 80% do alvo e
+# rejeitado, com retry e feedback accionavel.
+# ---------------------------------------------------------------------------
+
+# Piso de aceitacao: 80% do alvo (o TTS/legendas nao precisam de exactidao,
+# mas um roteiro com metade das palavras daria metade do video).
+SCRIPT_LENGTH_MINIMUM_RATIO = 0.8
+
+
+def narration_word_count(content: Any) -> int:
+    """Palavras FALADAS do roteiro (sem markdown, sem tags de producao, sem links).
+
+    Conta o que o TTS leriam de facto: linhas de titulo/enfase do Markdown sao
+    removidas, tags entre parenteses rectos tambem (defensivo - o prompt ja as
+    proibe) e URLs nao contam como narracao.
+    """
+    text = str(content or "")
+    text = re.sub(r"\[[^\]]*\]", " ", text)  # tags de producao (defensivo)
+    text = re.sub(r"https?://\S+", " ", text)  # links nao sao narrados
+    text = re.sub(r"[#*_>`|~=-]+", " ", text)  # markdown: titulos, enfase, citacoes
+    return len([token for token in text.split() if any(character.isalnum() for character in token)])
+
+
+def minimum_words_for_target(target_words: Any) -> int:
+    """Piso de aceitacao para um alvo (80%, arredondado)."""
+    try:
+        target = int(target_words or 0)
+    except (TypeError, ValueError):
+        return 0
+    if target <= 0:
+        return 0
+    return max(1, round(target * SCRIPT_LENGTH_MINIMUM_RATIO))
+
+
+def script_length_violation(content: Any, target_words: Any) -> tuple[bool, str]:
+    """(True, motivo) quando o roteiro nao cumpre 80% do alvo do canal.
+
+    Sem alvo (letras de musica, chamadas sem contexto de canal) nao ha violacao.
+    O motivo traz as contagens reais - e o feedback que a LLM recebe no retry.
+    """
+    try:
+        target = int(target_words or 0)
+    except (TypeError, ValueError):
+        target = 0
+    if target <= 0:
+        return False, ""
+    words = narration_word_count(content)
+    floor = minimum_words_for_target(target)
+    if words >= floor:
+        return False, ""
+    duration = hhmm_from_minutes(round(target / WORDS_PER_MINUTE))
+    return True, (
+        f"Roteiro muito curto: {words:,} palavras. Esperado: {target:,} palavras "
+        f"({duration} de narracao; minimo {floor:,}). Expanda as seccoes detalhando "
+        "mais os argumentos, exemplos e transicoes ate cumprir o tempo do canal."
+    )
+
+
 __all__ = [
     "LENGTH_INSTRUCTION_KEYS",
+    "SCRIPT_LENGTH_MINIMUM_RATIO",
     "channel_length_instruction",
     "length_instruction_for_words",
+    "minimum_words_for_target",
+    "narration_word_count",
     "sanitize_blueprint_for_prompt",
+    "script_length_violation",
     "strip_length_governance",
     "WORDS_PER_MINUTE",
 ]

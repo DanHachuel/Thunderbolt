@@ -6,11 +6,28 @@ from hermes_ui.video_length import DEFAULT_AVERAGE_VIDEO_TIME, channel_video_len
 MAIN_SOURCE = (Path(__file__).parents[1] / "app" / "main.py").read_text(encoding="utf-8")
 
 
-def test_blueprint_character_range_becomes_word_reference():
+def test_blueprint_character_range_never_defines_the_target():
+    """1.0.61 - REGRA INVIOLAVEL (AGENTS.md): o canal e a UNICA fonte de verdade.
+
+    Ate a 1.0.60 um canal sem tempo caia na range de caracteres do BLUEPRINT
+    (1333 palavras = metade de um video de 20 min) - era essa a origem real do
+    relato "os videos saem com o tamanho errado, a LLM obedece ao Blueprint".
+    A partir daqui o blueprint NUNCA define o tamanho: o canal assume o padrao
+    da plataforma (20:00).
+    """
     words, duration, source = channel_video_length({}, {"strict_character_range": [7000, 9000]})
-    assert words == 1333
-    assert duration == "09:00"
-    assert source == "Blueprint/Prompt Master"
+    assert (words, duration, source) == (3000, "20:00", "padrão do canal")
+    # ... mesmo quando o canal tem o tempo explicitamente vazio ou 00:00.
+    for empty in ({"average_video_time": ""}, {"average_video_time": "00:00"}, {"average_video_time": None}):
+        words, duration, source = channel_video_length(empty, {"strict_character_range": [7000, 9000]})
+        assert (words, duration, source) == (3000, "20:00", "padrão do canal"), empty
+
+
+def test_explicit_word_count_stays_a_diagnostic_reference_only():
+    """A conversao blueprint->palavras continua existindo para a UI MOSTRAR a
+    referencia - mas nunca entra no alvo do canal."""
+    assert explicit_word_count({"strict_character_range": [7000, 9000]}) == 1333
+    assert explicit_word_count({}, "Escreva aproximadamente 600 palavras por roteiro.") == 600
 
 
 def test_channel_time_overrides_blueprint_reference():
@@ -20,10 +37,19 @@ def test_channel_time_overrides_blueprint_reference():
     assert settings["target_word_count_source"] == "canal"
 
 
-def test_zero_channel_time_falls_back_to_prompt_master():
-    assert explicit_word_count({}, "Escreva aproximadamente 600 palavras por roteiro.") == 600
-    words, duration, source = channel_video_length({"average_video_time": "00:00"}, {}, "Escreva aproximadamente 600 palavras por roteiro.")
-    assert (words, duration, source) == (600, "04:00", "Blueprint/Prompt Master")
+def test_zero_channel_time_assumes_the_platform_default():
+    """1.0.61 - canal com 00:00 ASSUME 20:00 (o Prompt Master nao manda no tamanho)."""
+    prompt = "Escreva aproximadamente 600 palavras por roteiro."
+    assert explicit_word_count({}, prompt) == 600
+    words, duration, source = channel_video_length({"average_video_time": "00:00"}, {}, prompt)
+    assert (words, duration, source) == (3000, "20:00", "padrão do canal")
+
+
+def test_tiktok_channel_keeps_its_short_platform_default():
+    """A excepcao de proposito: canais TikTok mantem o padrao curto da plataforma
+    (01:20) - o default global de 20:00 e para o YouTube/longa-forma."""
+    words, duration, source = channel_video_length({"platform": "tiktok"}, {"word_count": 900})
+    assert (words, duration, source) == (200, "01:20", "padrão do canal")
 
 
 def test_empty_channel_uses_twenty_minute_default():

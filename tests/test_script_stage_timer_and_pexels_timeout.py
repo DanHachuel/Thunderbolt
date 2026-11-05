@@ -229,10 +229,13 @@ def test_script_prompt_forbids_brackets_instead_of_ordering_marker_lines():
 def test_generate_script_document_reports_progress_via_on_attempt(monkeypatch):
     from hermes_ui import script_generation
 
+    # 1.0.62 - a 2a resposta tem de cumprir o alvo do canal (20:00 = 3.000
+    # palavras, piso 2.400): a versao curta seria rejeitada pela validacao
+    # rigida de tamanho e esgotaria o iterador.
     responses = iter(
         [
             {"title": "T", "summary": "S", "content": "[Visual: cena] narracao com tag"},
-            {"title": "T", "summary": "S", "content": "apenas narracao falada, sem tags"},
+            {"title": "T", "summary": "S", "content": "apenas narracao falada, sem tags. " * 900},
         ]
     )
     events: list[tuple[int, int, str]] = []

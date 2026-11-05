@@ -325,7 +325,15 @@ def test_script_length_guardrail_retries_until_compliant(monkeypatch):
 
     def fake_chat(settings, system, user):
         calls.append({"system": system, "user": json.loads(user)})
-        return {"title": "Christ In You Is Greater", "summary": "s", "content": "x" * 500}
+        # 1.0.61 - 1ª resposta CURTA (rejeitada pela validacao rigida de
+        # tamanho), 2ª cumpre os 1.200 palavras do canal.
+        if len(calls) == 1:
+            return {"title": "Christ In You Is Greater", "summary": "s", "content": "x" * 500}
+        return {
+            "title": "Christ In You Is Greater",
+            "summary": "s",
+            "content": "identity in Christ is the anchor of every decision " * 150,
+        }
 
     monkeypatch.setattr(script_generation, "_chat_json", fake_chat)
     result = generate_script_document(
@@ -339,9 +347,11 @@ def test_script_length_guardrail_retries_until_compliant(monkeypatch):
         generation_settings={"target_word_count": 1200},
     )
 
-    # Sem retry por caracteres: uma chamada basta (o validador deixou de
-    # impor a range do blueprint).
-    assert len(calls) == 1
+    # 1.0.61 - com validacao RIGIDA de tamanho a 1ª resposta (1 palavra) e
+    # rejeitada e a 2ª (1.350 palavras) cumpre os 1.200 do canal: 2 chamadas,
+    # com o motivo do tamanho no feedback da segunda.
+    assert len(calls) == 2
+    assert "Roteiro muito curto" in calls[1]["user"]["system_feedback"]
     system = calls[0]["system"]
     # O alvo do canal (settings do canal ou tempo médio) está no prompt…
     assert "1,200 palavras" in system
@@ -352,11 +362,21 @@ def test_script_length_guardrail_retries_until_compliant(monkeypatch):
     assert "STRICTLY" not in system
     # A lei do canal que não é de tamanho permanece intacta.
     assert "This is Daniel" in system
-    assert len(result["content"]) == 500
+    # 1.0.61 - o conteudo aceite e o LONGO (a versao curta de 1 palavra foi
+    # rejeitada pela validacao rigida e o retry trouxe o roteiro completo).
+    assert len(result["content"]) > 7000
+    assert "identity in Christ is the anchor of every decision" in result["content"]
 
 
 def test_script_length_guardrail_hard_fails(monkeypatch):
-    """1.0.45 — o roteiro curto NUNCA mais falha por contagem de caracteres."""
+    """1.0.61 - o roteiro curto FALHA em codigo (fim da regressao).
+
+    O prompt deixou de ser a unica defesa: com o alvo do canal (20:00 = 3.000
+    palavras por omissao), um roteiro de 1 palavra e REJEITADO em cada tentativa
+    e a geracao falha com a contagem real no erro - em vez de entregar um video
+    com uma fracao do tempo do canal. As regras de caracteres do blueprint
+    continuam de fora do prompt (AGENTS.md).
+    """
     blueprint = _blueprint("BlueprintOração.json")
     calls = []
 
@@ -366,16 +386,21 @@ def test_script_length_guardrail_hard_fails(monkeypatch):
 
     monkeypatch.setattr(script_generation, "_chat_json", fake_chat)
     # Sem canal explícito: o padrão do canal (20:00) é a fonte única.
-    result = generate_script_document(
-        _settings(),
-        document_type="Roteiro de vídeo",
-        title="Christ In You Is Greater",
-        brief="identity",
-        language="en",
-        blueprint=blueprint,
-    )
-    assert result["content"] == "x" * 500
-    assert len(calls) == 1
+    with pytest.raises(CreativeGenerationError) as excinfo:
+        generate_script_document(
+            _settings(),
+            document_type="Roteiro de vídeo",
+            title="Christ In You Is Greater",
+            brief="identity",
+            language="en",
+            blueprint=blueprint,
+        )
+
+    assert len(calls) == 3, "o loop tenta 3 vezes antes de falhar"
+    message = str(excinfo.value)
+    assert "Roteiro muito curto" in message
+    assert "Esperado: 3,000 palavras" in message
+    assert "minimo 2,400" in message
     # A range de caracteres do blueprint não chega ao prompt.
     assert "EXTENSÃO OBRIGATÓRIA" not in calls[0]["system"]
     assert "7000" not in calls[0]["system"]
@@ -387,7 +412,8 @@ def test_script_without_blueprint_range_keeps_word_count_reference(monkeypatch):
 
     def fake_chat(settings, system, user):
         captured["system"] = system
-        return {"title": "t", "summary": "s", "content": "# Roteiro"}
+        # 1.0.61 - conteúdo com tamanho suficiente para o alvo (900 palavras).
+        return {"title": "t", "summary": "s", "content": "# Roteiro\n\n" + "As muralhas guardam historias esquecidas ha seculos. " * 160}
 
     monkeypatch.setattr(script_generation, "_chat_json", fake_chat)
     generate_script_document(

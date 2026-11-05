@@ -3502,7 +3502,7 @@ def render_tiktok_channels():
                         prompt_file = TIKTOK_PROMPT_MASTERS / str(channel.get("default_prompt_master") or channel.get("prompt_master") or "")
                         prompt_content = load_prompt_master_file(prompt_file) if prompt_file.is_file() else ""
                         calculated_time, calculated_source, calculated_words = _channel_average_video_time(channel, prompt_master=prompt_content)
-                        average_video_time = st.text_input("Tempo Medio de Video", value=channel_video_time_value(channel), key=f"tiktok_channel_average_video_time_{channel_id}", help=f"Referência: {calculated_words or 0} palavras · {calculated_source}.")
+                        average_video_time = st.text_input("Tempo Medio de Video", value=channel_video_time_value(channel), key=f"tiktok_channel_average_video_time_{channel_id}", placeholder=default_average_video_time(channel), help=f"Referência: {calculated_words or 0} palavras · {calculated_source}. Vazio ou 00:00 assume {default_average_video_time(channel)}.")
                         if st.button("Guardar tempo", key=f"save_tiktok_channel_average_video_time_{channel_id}", width="stretch"):
                             if not valid_hhmm(average_video_time):
                                 st.error("Use o formato MM:SS, por exemplo 12:00.")
@@ -4366,7 +4366,7 @@ def render_channels():
             with st.expander("Detalhes e configuração do canal", expanded=False):
                 calculated_time, calculated_source, calculated_words = _channel_average_video_time(channel)
                 with st.expander("Tempo Medio de Video", expanded=False):
-                    average_video_time = st.text_input("Tempo Medio de Video", value=channel_video_time_value(channel), key=f"youtube_channel_average_video_time_{channel_id}", help=f"Referência: {calculated_words or 0} palavras · {calculated_source}.")
+                    average_video_time = st.text_input("Tempo Medio de Video", value=channel_video_time_value(channel), key=f"youtube_channel_average_video_time_{channel_id}", placeholder=DEFAULT_AVERAGE_VIDEO_TIME, help=f"Referência: {calculated_words or 0} palavras · {calculated_source}. Vazio ou 00:00 assume {DEFAULT_AVERAGE_VIDEO_TIME}.")
                     if st.button("Guardar Tempo Medio de Video", key=f"save_youtube_channel_average_video_time_{channel_id}", type="primary", width="stretch"):
                         if not valid_hhmm(average_video_time):
                             st.error("Use o formato MM:SS, por exemplo 12:00.")
@@ -7713,7 +7713,7 @@ def render_tiktok_automation():
                     prompt_file = TIKTOK_PROMPT_MASTERS / str(channel.get("default_prompt_master") or channel.get("prompt_master") or "")
                     prompt_content = load_prompt_master_file(prompt_file) if prompt_file.is_file() else ""
                     calculated_time, calculated_source, calculated_words = _channel_average_video_time(channel, prompt_master=prompt_content)
-                    average_video_time = st.text_input("Tempo Medio de Video", value=channel_video_time_value(channel), key=f"tiktok_average_video_time_{channel_id}", help=f"Referência média: {calculated_words or 0} palavras · fonte: {calculated_source}.")
+                    average_video_time = st.text_input("Tempo Medio de Video", value=channel_video_time_value(channel), key=f"tiktok_average_video_time_{channel_id}", placeholder=default_average_video_time(channel), help=f"Referência média: {calculated_words or 0} palavras · fonte: {calculated_source}. Vazio ou 00:00 assume {default_average_video_time(channel)}.")
                 default_cols = st.columns([1.0, 1.0, 1.35, 1.45, 1.55, 1.0], gap="small")
                 with default_cols[0]:
                     st.markdown("**Idioma do roteiro**")
@@ -8286,7 +8286,7 @@ def _render_youtube_automation_channel_cards():
                     schedule_time = st.text_input("Horário (HH:MM)", value=channel.get("automation_time", "00:00"), key=f"automation_time_{channel_id}")
                 with header_cols[7]:
                     calculated_time, calculated_source, calculated_words = _channel_average_video_time(channel)
-                    average_video_time = st.text_input("Tempo Medio de Video", value=channel_video_time_value(channel), key=f"average_video_time_{channel_id}", help=f"Referência média: {calculated_words or 0} palavras · fonte: {calculated_source}.")
+                    average_video_time = st.text_input("Tempo Medio de Video", value=channel_video_time_value(channel), key=f"average_video_time_{channel_id}", placeholder=DEFAULT_AVERAGE_VIDEO_TIME, help=f"Referência média: {calculated_words or 0} palavras · fonte: {calculated_source}. Vazio ou 00:00 assume {DEFAULT_AVERAGE_VIDEO_TIME}.")
 
                 control_cols = st.columns([1.8, 1.8, 1.35, 1.2], gap="small")
                 with control_cols[0]:

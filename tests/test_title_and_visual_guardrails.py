@@ -138,7 +138,15 @@ def test_topic_flow_injects_the_blueprint_title_rules(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def _script_result(title, content="x" * 7500):
+def _script_result(title, content=None, long_content=False):
+    """Faux de resposta da LLM.
+
+    1.0.62 - por omissao o conteudo cumpre o tamanho do canal (20:00 = 3.000
+    palavras; piso 2.400) para que a validacao RIGIDA de tamanho nao interfira
+    nos testes de TITULO/guardrails; ``long_content`` forca a versao longa.
+    """
+    if content is None:
+        content = "narracao de teste com palavras suficientes para o canal " * 700
     return {"title": title, "summary": "s", "content": content}
 
 

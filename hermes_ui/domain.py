@@ -11,6 +11,7 @@ from .material_sources import selected_material_source
 from .notifications import record_notification
 from .storage import StorageIntegrityError, append_json, now, read_json, update_json, write_json
 from .thumbnail_blueprints import thumbnail_blueprint_for_channel
+from .video_length import length_generation_settings, words_from_channel_time
 
 STAGES = ["niche", "blueprint", "brand", "topic", "script", "title", "keywords", "video", "thumbnail_prompt", "thumbnail", "upload"]
 # Ordem executada pelo worker. Cada etapa só é executada quando o seu artefacto
@@ -115,6 +116,15 @@ def create_channel(name: str, url: str = "", metadata: dict[str, Any] | None = N
         channel.setdefault("default_enable_subtitles", True)
         channel.setdefault("default_background_music_source", "Sem música")
         channel.setdefault("average_video_time", "20:00")
+        # 1.0.61 - DEFAULT GLOBAL DE 20 MINUTOS: o setdefault acima so cobre a
+        # chave AUSENTE; um metadata com ""/"00:00" passava por ele e o canal
+        # nascia sem tempo - a partir dai o tamanho do roteiro caia no blueprint
+        # (a regressao do relato). Vazio ou "00:00" = 20:00, sem excepcao.
+        if str(channel.get("average_video_time") or "").strip() in {"", "00:00"}:
+            channel["average_video_time"] = "20:00"
+        # 1.0.61 - a contagem de palavras acompanha SEMPRE o tempo: o alvo do
+        # roteiro deriva dela e um canal novo nasce com 3.000 palavras (20:00).
+        channel["average_video_word_count"] = words_from_channel_time(channel["average_video_time"])
     channels = read_json("channels.json", [])
     channels.append(channel)
     write_json("channels.json", channels)
@@ -835,6 +845,17 @@ def _refresh_task_channel_video_settings(task: dict[str, Any]) -> None:
     # deixava TikTok/Bilibili e canais legados sem platform a repetir os
     # valores antigos). Aplica-se apenas quando o canal define o default,
     # para não sobrescrever escolhas explícitas da tarefa com 5 s/16:9.
+    # 1.0.61 - o ALVO DE TAMANHO tambem e controlado pelo canal e tem de ser
+    # revalidado no "Refazer Video": tarefas antigas gravaram o
+    # ``target_word_count`` da epoca (ou nenhum) e a remontagem repetia esse
+    # valor congelado, ignorando o Tempo Medio actual do cartao. A resolucao
+    # actual usa o tempo do canal como UNICA fonte de verdade (20:00 por
+    # omissao quando vazio) - ver hermes_ui/video_length.channel_video_length.
+    length_settings = length_generation_settings(channel)
+    if length_settings:
+        generation_settings["target_word_count"] = length_settings["target_word_count"]
+        generation_settings["target_video_duration"] = length_settings["target_video_duration"]
+        generation_settings["target_word_count_source"] = length_settings["target_word_count_source"]
     if channel.get("default_maximum_clip_duration") is not None:
         generation_settings["maximum_clip_duration"] = channel.get("default_maximum_clip_duration")
     aspect_ratio = channel.get("default_video_aspect_ratio") or channel.get("video_aspect_ratio")

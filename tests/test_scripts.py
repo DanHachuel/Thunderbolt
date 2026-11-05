@@ -23,7 +23,9 @@ def test_generate_video_script_includes_blueprint_context(monkeypatch):
         captured["settings"] = settings
         captured["system"] = system
         captured["user"] = json.loads(user)
-        return {"title": "As muralhas esquecidas", "summary": "Um roteiro documental", "content": "# Gancho\n\n## Cena 1"}
+        # 1.0.61 - o canal sem tempo explicito assume 20:00 (3.000 palavras); o
+        # roteiro faux tem de cumprir o alvo para passar na validacao rigida.
+        return {"title": "As muralhas esquecidas", "summary": "Um roteiro documental", "content": "# Gancho\n\n## Cena 1\n\n" + "A cidade antiga esconde um misterio por baixo da poeira. " * 500}
 
     monkeypatch.setattr(script_generation, "_chat_json", fake_chat)
     result = script_generation.generate_script_document(

@@ -17,6 +17,7 @@ from .blueprint_length_guard import (
     channel_length_instruction,
     length_instruction_for_words,
     sanitize_blueprint_for_prompt,
+    script_length_violation,
     strip_length_governance,
 )
 from .creative_generation import CreativeGenerationError, _chat_json, channel_context, target_language
@@ -103,10 +104,16 @@ def generate_script_document(
         # (derivado do Tempo Médio do cartão) vence o padrão; NUNCA suprimido
         # por regra de blueprint.
         target_word_count = int(generation_settings_payload.get("target_word_count") or 0)
-        length_instruction, _instruction_words, _instruction_duration = channel_length_instruction(channel)
+        # 1.0.61 - o alvo injectado no prompt e guardado: a validacao rigida
+        # confere o texto gerado contra O MESMO numero que a LLM recebeu.
+        length_instruction, instruction_words, instruction_duration = channel_length_instruction(channel)
         if target_word_count:
-            length_instruction, _words, _duration = length_instruction_for_words(
-                target_word_count, _instruction_duration
+            # 1.0.61 - os MINUTOS derivam do alvo de palavras (words / 150): um
+            # canal de 20:00 com um alvo explicito de 1.200 palavras nao pode
+            # receber "exatamente 20 minutos ... 1.200 palavras" (contradicao que
+            # a LLM usava para ignorar a instrucao).
+            length_instruction, instruction_words, _duration = length_instruction_for_words(
+                target_word_count, ""
             )
         output_requirements = {
             "content": "roteiro completo em Markdown: título, gancho e narração integral; APENAS texto falado - zero parenteses rectos (o validador rejeita tags de producao como [Visual]/[AUDIO])",
@@ -188,6 +195,16 @@ def generate_script_document(
         if normalized_type != "video_script":
             break
         valid, reason = validate_script_content(content, governance)
+        if valid:
+            # 1.0.61 - VALIDACAO RIGIDA DE TAMANHO: o prompt nao basta (a LLM
+            # desobedece e entregava roteiros com metade do tempo do canal). O
+            # texto gerado e conferido EM CODIGO contra o alvo do canal (80% de
+            # tolerancia); curto = rejeitado, com retry e feedback accionavel.
+            # ATENCAO A POLARIDADE: ``script_length_violation`` devolve True
+            # quando HA violacao (o motivo traz as contagens reais).
+            too_short, length_reason = script_length_violation(content, instruction_words)
+            if too_short:
+                valid, reason = False, length_reason
         _emit_attempt(
             on_attempt,
             attempt,
@@ -207,7 +224,11 @@ def generate_script_document(
             feedback = (
                 f"AVISO DO SISTEMA: O roteiro anterior foi REJEITADO pelo validador do blueprint. "
                 f"Motivo: {reason}. Reescreve o roteiro integralmente, cumprindo a extensão obrigatória "
-                "e todas as regras do blueprint (incluindo as regras de TÍTULO)."
+                "e todas as regras do blueprint (incluindo as regras de TÍTULO). "
+                # 1.0.61 - quando o motivo e o TAMANHO, a ordem e explicita:
+                # sem cortes, o roteiro completo ate ao tempo do canal.
+                "Se o motivo for o tamanho, escreve o roteiro COMPLETO - sem cortes, "
+                "sem resumir seções - até cumprir o tempo médio de vídeo do canal."
             )
     if normalized_type == "video_script" and not valid:
         raise CreativeGenerationError(
