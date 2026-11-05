@@ -99,6 +99,29 @@ def test_video_stage_timer_stops_when_the_task_is_no_longer_doing(monkeypatch):
     )
 
 
+def test_video_stage_timer_writes_immediately_on_start(monkeypatch):
+    """1.0.60 - o card mostra "0m 00s" de imediato, nao ao fim de 5 s."""
+    import threading as real_threading
+
+    writes: list[dict] = []
+    monkeypatch.setattr(
+        pipeline_worker,
+        "_task_by_id",
+        lambda _tid: {"state": "doing", "stage": "script", "progress": 18},
+    )
+    monkeypatch.setattr(pipeline_worker, "_update", lambda _tid, **updates: writes.append(dict(updates)))
+    monkeypatch.setattr(pipeline_worker, "_worker_heartbeat", lambda **updates: writes.append(dict(updates)))
+
+    # intervalo default (5 s): so a escrita IMEDIATA pode aparecer nesta janela
+    timer = pipeline_worker._VideoStageTimer("task-imediato", pipeline_worker.time.monotonic()).start()
+    real_threading.Event().wait(0.4)
+    timer.stop()
+
+    elapsed_writes = [w["video_elapsed_seconds"] for w in writes if "video_elapsed_seconds" in w]
+    assert elapsed_writes, "o relogio escreve no arranque, sem esperar 5 s"
+    assert elapsed_writes[0] == 0, "a primeira escrita e o minuto zero"
+
+
 def test_step_clock_is_wired_from_the_script_stage():
     assert (
         "_VideoStageTimer(\n        task_id, _step_started_at, status_provider=_step_activity\n    ).start()"
@@ -474,3 +497,104 @@ def test_interrupted_worker_keeps_tasks_adopted_by_a_live_worker(tmp_path, monke
 
     task = storage.read_json("tasks.json")[0]
     assert task["state"] == "doing", "tarefa adoptada por instancia viva fica intacta"
+
+
+# ---------------------------------------------------------------------------
+# 1.0.60 - fila JA pausada nao pode deixar orfas "doing" para sempre
+# ---------------------------------------------------------------------------
+
+
+def test_paused_pump_recovers_stale_doing_tasks_instead_of_freezing_them(
+    tmp_path, monkeypatch
+):
+    """Cenario REAL do utilizador: fila auto-pausada + tarefa presa em 18% ha
+    horas. Enquanto a fila esta pausada o pump nao executa nada - mas o card
+    nao pode ficar "doing" para sempre: o watchdog de heartbeat recupera-a com
+    erro claro (e uma tarefa com vida recente fica intacta)."""
+    _isolate_storage(tmp_path, monkeypatch)
+    stale = "2026-11-04T22:55:16.383379+00:00"
+    fresh = pipeline_worker._now()
+    storage.write_json(
+        "tasks.json",
+        [
+            {
+                "id": "video-stuck-old",
+                "state": "doing",
+                "stage": "script",
+                "progress": 18,
+                "task_heartbeat_at": stale,
+                "updated_at": stale,
+            },
+            {
+                "id": "video-alive",
+                "state": "doing",
+                "stage": "video",
+                "task_heartbeat_at": fresh,
+                "updated_at": fresh,
+            },
+        ],
+    )
+    storage.write_json(
+        pipeline_worker.PIPELINE_LOG_FILENAME,
+        {"status": "paused", "auto_paused": True, "pause_reason": "interrompido"},
+    )
+    monkeypatch.setattr(
+        pipeline_worker, "_run_task", lambda _task: pytest.fail("fila pausada nao executa")
+    )
+
+    result = pipeline_worker.run_once()
+
+    assert result["status"] == "paused", "a pausa de seguranca mantem-se"
+    tasks = {task["id"]: task for task in storage.read_json("tasks.json")}
+    assert tasks["video-stuck-old"]["state"] == "failed"
+    assert "heartbeat" in str(tasks["video-stuck-old"].get("error") or "")
+    assert tasks["video-alive"]["state"] == "doing", "tarefa com vida recente fica intacta"
+
+
+def test_paused_pump_recovers_stale_tasks_through_the_parallel_path(tmp_path, monkeypatch):
+    """O pump paralelo (usado pelo worker em execucao) tem a mesma garantia."""
+    _isolate_storage(tmp_path, monkeypatch)
+    stale = "2026-11-04T22:55:17.974830+00:00"
+    storage.write_json(
+        "tasks.json",
+        [
+            {
+                "id": "video-stuck-parallel",
+                "state": "doing",
+                "stage": "script",
+                "progress": 18,
+                "task_heartbeat_at": stale,
+                "updated_at": stale,
+            }
+        ],
+    )
+    storage.write_json(
+        pipeline_worker.PIPELINE_LOG_FILENAME,
+        {"status": "paused", "auto_paused": True, "pause_reason": "interrompido"},
+    )
+
+    result = pipeline_worker._pump_once()
+
+    assert result.get("status") == "paused"
+    task = storage.read_json("tasks.json")[0]
+    assert task["state"] == "failed"
+    assert "heartbeat" in str(task.get("error") or "")
+
+
+def test_paused_pump_keeps_healthy_tasks_untouched(tmp_path, monkeypatch):
+    """Sem tarefa orfa, a pausa nao mexe em nada."""
+    _isolate_storage(tmp_path, monkeypatch)
+    fresh = pipeline_worker._now()
+    storage.write_json(
+        "tasks.json",
+        [{"id": "video-ok", "state": "doing", "stage": "video", "task_heartbeat_at": fresh, "updated_at": fresh}],
+    )
+    storage.write_json(
+        pipeline_worker.PIPELINE_LOG_FILENAME,
+        {"status": "paused", "auto_paused": True, "pause_reason": "interrompido"},
+    )
+
+    result = pipeline_worker.run_once()
+
+    assert result["status"] == "paused"
+    assert storage.read_json("tasks.json")[0]["state"] == "doing"

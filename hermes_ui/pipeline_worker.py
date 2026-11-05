@@ -622,41 +622,51 @@ class _VideoStageTimer:
         # escrita no card enquanto o worker trabalha dentro do passo.
         self._status_provider = status_provider
 
-    def _tick(self) -> None:
-        while not self._stop.wait(VIDEO_STAGE_HEARTBEAT_INTERVAL_SECONDS):
+    def _emit(self) -> None:
+        """Um batimento: relogio + actividade da fase no tasks.json e no heartbeat."""
+        current = _task_by_id(self._task_id) or {}
+        state = str(current.get("state") or "")
+        if state and state != "doing":
+            # 1.0.59 - o relogio para quando o passo acabou (falha, sucesso,
+            # cancelamento): nunca fica um tick a escrever heartbeat de uma
+            # etapa terminada.
+            return
+        elapsed = int(time.monotonic() - self._started_at)
+        persisted = current.get("video_elapsed_seconds")
+        if isinstance(persisted, int) and persisted > elapsed:
+            elapsed = persisted  # relogio monotonico: nunca retrocede
+        progress = current.get("progress")
+        updates: dict[str, Any] = {"video_elapsed_seconds": elapsed}
+        if self._status_provider is not None:
             try:
-                current = _task_by_id(self._task_id) or {}
-                state = str(current.get("state") or "")
-                if state and state != "doing":
-                    # 1.0.59 - o relogio para quando o passo acabou (falha,
-                    # sucesso, cancelamento): nunca fica um tick a escrever
-                    # heartbeat de uma etapa terminada.
-                    return
-                elapsed = int(time.monotonic() - self._started_at)
-                persisted = current.get("video_elapsed_seconds")
-                if isinstance(persisted, int) and persisted > elapsed:
-                    elapsed = persisted  # relogio monotonico: nunca retrocede
-                progress = current.get("progress")
-                updates: dict[str, Any] = {"video_elapsed_seconds": elapsed}
-                if self._status_provider is not None:
-                    try:
-                        activity = self._status_provider()
-                    except Exception:
-                        activity = ""
-                    if activity:
-                        updates["video_helper_status"] = str(activity)[-500:]
-                if isinstance(progress, int):
-                    updates["progress"] = progress
-                _update(self._task_id, **updates)
-                _worker_heartbeat(
-                    task_id=str(self._task_id),
-                    status="running",
-                    stage=str(current.get("stage") or "") or "video",
-                    progress=progress if isinstance(progress, int) else None,
-                    video_elapsed_seconds=elapsed,
-                )
+                activity = self._status_provider()
+            except Exception:
+                activity = ""
+            if activity:
+                updates["video_helper_status"] = str(activity)[-500:]
+        if isinstance(progress, int):
+            updates["progress"] = progress
+        _update(self._task_id, **updates)
+        _worker_heartbeat(
+            task_id=str(self._task_id),
+            status="running",
+            stage=str(current.get("stage") or "") or "video",
+            progress=progress if isinstance(progress, int) else None,
+            video_elapsed_seconds=elapsed,
+        )
+
+    def _tick(self) -> None:
+        # 1.0.60 - escreve JA no arranque (o card mostra "0m 00s" de imediato,
+        # nao ao fim de 5 s) e depois a cada intervalo.
+        while True:
+            if self._stop.is_set():
+                return
+            try:
+                self._emit()
             except Exception:
                 return  # a telemetria nunca mata a etapa
+            if self._stop.wait(VIDEO_STAGE_HEARTBEAT_INTERVAL_SECONDS):
+                return
 
     def start(self) -> "_VideoStageTimer":
         if self._thread is None:
@@ -4257,6 +4267,11 @@ def run_once() -> dict[str, Any]:
         worker_state = read_json(PIPELINE_LOG_FILENAME, {})
         if isinstance(worker_state, dict) and worker_state.get("auto_paused"):
             pause_reason = str(worker_state.get("pause_reason") or "Fila pausada por segurança após interrupção do worker.")
+            # 1.0.60 - fila pausada NAO pode deixar tarefas orfas "doing" para
+            # sempre (o card ficaria congelado em 18%, sem erro e sem timer): o
+            # watchdog de heartbeat recupera-as AGORA, com erro claro, antes do
+            # retorno - o utilizador ve a falha e pode refazer, nao um card morto.
+            _recover_stale_tasks()
             _worker_heartbeat(status="paused", stage="paused", progress=0, last_error=pause_reason)
             return {"ok": True, "status": "paused", "pause_reason": pause_reason}
         _worker_heartbeat(status="starting", stage="idle", progress=0, last_error="")
@@ -4428,6 +4443,10 @@ def _pump_once() -> dict[str, Any]:
             _worker_lock_path = lock
     try:
         if _recover_interrupted_pipeline_worker():
+            # 1.0.60 - tambem quando a pausa JA estava marcada no estado: o
+            # watchdog de heartbeat recupera as tarefas orfas agora (o card
+            # nunca fica "doing" congelado em 18% sem erro nem timer).
+            _recover_stale_tasks()
             _release_worker_lock_if_idle()
             worker_state = read_json(PIPELINE_LOG_FILENAME, {})
             pause_reason = str(worker_state.get("pause_reason") or "Fila pausada por segurança após interrupção do worker.")
@@ -4435,6 +4454,11 @@ def _pump_once() -> dict[str, Any]:
         worker_state = read_json(PIPELINE_LOG_FILENAME, {})
         if isinstance(worker_state, dict) and worker_state.get("auto_paused"):
             pause_reason = str(worker_state.get("pause_reason") or "Fila pausada por segurança após interrupção do worker.")
+            # 1.0.60 - fila pausada NAO pode deixar tarefas orfas "doing" para
+            # sempre (o card ficaria congelado em 18%, sem erro e sem timer): o
+            # watchdog de heartbeat recupera-as AGORA, com erro claro, antes do
+            # retorno - o utilizador ve a falha e pode refazer, nao um card morto.
+            _recover_stale_tasks()
             _worker_heartbeat(status="paused", stage="paused", progress=0, last_error=pause_reason)
             _release_worker_lock_if_idle()
             return {"ok": True, "status": "paused", "pause_reason": pause_reason}
