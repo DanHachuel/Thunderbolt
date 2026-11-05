@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Callable
 
 from .blueprint_governance import (
     MAX_SCRIPT_GENERATION_ATTEMPTS,
@@ -29,6 +29,21 @@ DOCUMENT_TYPES = {
 }
 
 
+def _emit_attempt(
+    on_attempt: Callable[[int, int, str], None] | None,
+    attempt: int,
+    attempts: int,
+    phase: str,
+) -> None:
+    """Notifica o progresso de uma tentativa; falhas do callback sao ignoradas."""
+    if on_attempt is None:
+        return
+    try:
+        on_attempt(attempt, attempts, phase)
+    except Exception:
+        return
+
+
 def generate_script_document(
     settings: dict[str, Any],
     *,
@@ -40,8 +55,16 @@ def generate_script_document(
     blueprint: dict[str, Any] | None = None,
     structure_notes: str = "",
     generation_settings: dict[str, Any] | None = None,
+    on_attempt: Callable[[int, int, str], None] | None = None,
 ) -> dict[str, Any]:
     """Generate an editable Markdown document from the configured LLM.
+
+    1.0.59 - ``on_attempt(attempt, attempts, phase)`` (opcional): chamado em
+    cada tentativa e em cada resultado de validacao. O worker usa-o para
+    escrever heartbeat + telemetria ``[SCRIPT]`` durante a fase de roteiro -
+    a etapa deixou de ser um buraco silencioso de muitos minutos (causa real
+    do «18% congelado» do relato). Falhas do callback NUNCA afectam a
+    geracao.
 
     The function deliberately returns text only. It never writes to storage; the UI
     decides whether the generated draft should be saved after the user reviews it.
@@ -86,7 +109,7 @@ def generate_script_document(
                 target_word_count, _instruction_duration
             )
         output_requirements = {
-            "content": "roteiro completo em Markdown: título, gancho e narração integral; directivas visuais/sonoras apenas em linhas de marcação próprias ([VISUAL]/[ÁUDIO] isoladas)",
+            "content": "roteiro completo em Markdown: título, gancho e narração integral; APENAS texto falado - zero parenteses rectos (o validador rejeita tags de producao como [Visual]/[AUDIO])",
             "summary": "resumo editorial em uma frase",
         }
         system = (
@@ -100,9 +123,15 @@ def generate_script_document(
             # nas legendas. A regra aplica-se a TODOS os canais; o
             # script_format_rules do blueprint pode agravá-la (100% falado).
             "O texto falado é lido DIRECTAMENTE por um TTS e vira legendas: NUNCA escrevas tags de produção "
-            "inline («[Visual: ...]», «[Audio: ...]», «[SFX]», «SCENE 1», «NARRATOR:») no meio das frases — "
-            "se incluíres directivas visuais/sonoras, usa linhas de marcação isoladas ([VISUAL]/[ÁUDIO]); "
-            "todo o restante é apenas narração falada. "
+            "inline («[Visual: ...]», «[Audio: ...]», «[SFX]», «SCENE 1», «NARRATOR:») no meio das frases. "
+            # 1.0.59 - o prompt ORDENAVA linhas de marcacao isoladas
+            # ([VISUAL]/[AUDIO]) que o validador 1.0.17 REJEITA: o LLM obedecia
+            # e era reprovado 3 vezes (falhas reais a 18% no tasks.json do
+            # utilizador). Os parenteses rectos passam a ser PROIBIDOS.
+            "Os parenteses rectos '[' e ']' estão PROIBIDOS em qualquer lugar do "
+            "roteiro - o validador rejeita qualquer tag entre parenteses rectos e a "
+            "tentativa é perdida. NUNCA uses linhas de marcacao [VISUAL]/[ÁUDIO] "
+            "nem «SCENE 1»: escreve APENAS o texto falado. "
         )
         # 1.0.45 — a instrução de tamanho do canal vai no TOPO do prompt:
         # antes de tudo, com a ordem explícita de ignorar restrições
@@ -151,6 +180,7 @@ def generate_script_document(
         payload = dict(user_payload)
         if feedback:
             payload["system_feedback"] = feedback
+        _emit_attempt(on_attempt, attempt, attempts, "a chamar o LLM")
         result = _chat_json(settings, system, json.dumps(payload, ensure_ascii=False))
         content = str(result.get("content") or "").strip()
         if not content:
@@ -158,6 +188,12 @@ def generate_script_document(
         if normalized_type != "video_script":
             break
         valid, reason = validate_script_content(content, governance)
+        _emit_attempt(
+            on_attempt,
+            attempt,
+            attempts,
+            "resposta validada" if valid else f"rejeitada: {reason[:120]}",
+        )
         if valid:
             title_valid, title_reason = validate_title_with_governance(
                 str(result.get("title") or ""), title_governance_value

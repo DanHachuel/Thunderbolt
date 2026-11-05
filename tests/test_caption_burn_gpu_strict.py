@@ -279,10 +279,24 @@ def test_video_stage_timer_stops_promptly():
 
 
 def test_worker_source_contracts_for_the_stage_clock():
-    assert "_VideoStageTimer(task_id, _video_stage_started_at).start()" in WORKER_SOURCE
+    # 1.0.59: o relógio do PASSO arranca no ROTEIRO (não só na etapa de
+    # vídeo) - é o que faz o timer do card subir desde o minuto 0 e mostra a
+    # actividade da fase em video_helper_status.
+    assert (
+        "_VideoStageTimer(\n        task_id, _step_started_at, status_provider=_step_activity\n    ).start()"
+        in WORKER_SOURCE
+    )
+    # A etapa de vídeo CONTINUA o mesmo relógio (nunca salta para trás):
+    # um só cronómetro por passo, sem dois ticks a escrever o mesmo campo.
+    assert "_video_stage_timer = _step_timer" in WORKER_SOURCE
     assert "_video_stage_timer.stop()" in WORKER_SOURCE
-    assert "finally:" in WORKER_SOURCE.split("_video_stage_timer = ", 1)[1].split("def ", 1)[0]
+    assert "finally:" in WORKER_SOURCE.split("_video_stage_timer = _step_timer", 1)[1].split("def ", 1)[0]
+    # Falha do roteiro também para o relógio (nunca fica um tick a escrever
+    # heartbeat de uma etapa terminada).
+    script_block = WORKER_SOURCE.split("def _step_activity", 1)[1].split("_step_timer = ", 1)[1]
+    assert "_step_timer.stop()" in WORKER_SOURCE
     assert "_purge_stale_engine_temp_files()" in WORKER_SOURCE
     assert 'glob("*TEMP_MPY*")' in WORKER_SOURCE
     # O relógio é monótono por construção.
     assert "nunca retrocede" in WORKER_SOURCE
+    assert script_block is not None

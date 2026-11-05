@@ -28,7 +28,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from integrations.moneyprinter_config import sync_moneyprinter_config
 from integrations.session_info_health import check_all_accounts_session_info_health, emit_session_info_health_alerts
@@ -141,6 +141,19 @@ DEFAULT_MAX_PARALLEL_MPT_RUNTIMES = 2
 STALE_TASK_SECONDS = VIDEO_TIMEOUT_SECONDS + 5 * 60
 WORKER_HEARTBEAT_TIMEOUT_SECONDS = 15
 TASK_HEARTBEAT_INTERVAL_SECONDS = 5
+# 1.0.59 - TETO DURO da fase de ROTEIRO. O relato do utilizador (preso em 18%
+# mais de 20 minutos) apontava o download do Pexels, mas a investigacao provou
+# que a fase presa e a de ROTEIRO: 3 tentativas de LLM x varios cartoes do pool
+# (cada chamada com timeout de 120 s) corriam SEM heartbeat e SEM limite
+# temporal - o card ficava em 18% sem timer e sem noticia. Este teto encerra a
+# fase com erro claro. Configuravel em motor.script_timeout_seconds.
+SCRIPT_STAGE_TIMEOUT_SECONDS = 10 * 60
+# 1.0.59 - TETO DURO da fase de MATERIAIS (download de clipes Pexels/Pixabay
+# dentro do motor MPT). O motor ja tem timeout POR CLIPE (60 s conecta / 240 s
+# le) e salta clipes com falha, mas nada limitava a SOMA da fase: este watchdog
+# mede do primeiro marcador de materiais no log do motor e encerra com erro
+# claro. Configuravel em motor.material_download_timeout_seconds.
+MATERIAL_PHASE_TIMEOUT_SECONDS = 10 * 60
 UPLOAD_HEARTBEAT_INTERVAL_SECONDS = 5
 CASCADE_STAGE_ORDER = ("topic", "script", "title", "keywords", "video", "thumbnail_prompt", "thumbnail", "upload")
 
@@ -418,6 +431,28 @@ def _task_by_id(task_id: str) -> dict[str, Any] | None:
     return next((task for task in load_tasks() if isinstance(task, dict) and task.get("id") == task_id), None)
 
 
+def _task_owned_by_dead_worker(
+    task: dict[str, Any], reference: datetime | None
+) -> bool:
+    """1.0.59 - True quando nenhum worker VIVO adoptou a tarefa.
+
+    Compara o heartbeat da tarefa com o ultimo batimento do worker morto: se a
+    tarefa tem sinais de vida MAIS recentes, outra instancia adoptou-a e fica
+    intacta; sem heartbeat (ou worker morto sem referencia) e orfa.
+    """
+    stamps = [
+        parsed
+        for parsed in (
+            _parse_timestamp(task.get("task_heartbeat_at")),
+            _parse_timestamp(task.get("updated_at")),
+        )
+        if parsed is not None
+    ]
+    if not stamps or reference is None:
+        return True
+    return max(stamps).astimezone(timezone.utc) <= reference.astimezone(timezone.utc)
+
+
 def _recover_interrupted_pipeline_worker() -> bool:
     """Pause automatic processing if the previous worker died mid-task."""
     previous = read_json(PIPELINE_LOG_FILENAME, {})
@@ -437,22 +472,38 @@ def _recover_interrupted_pipeline_worker() -> bool:
         "O worker de vídeo foi interrompido durante a execução. "
         "A fila foi pausada por segurança; consulte o log do worker e clique em Start para retomar."
     )
-    task = _task_by_id(task_id) if task_id else None
-    if task and str(task.get("state") or "") == "doing":
-        from hermes_ui.domain import update_task
+    from hermes_ui.domain import load_tasks, update_task
 
-        failed_stage = str(task.get("stage") or "pipeline")
-        update_task(task_id, {
+    # 1.0.59 - o pump PARALELO nao escreve ``last_task_id`` (fica None na fase
+    # idle), por isso a recuperacao anterior cobria UMA tarefa e deixava as
+    # restantes "doing" PARA SEMPRE - exactamente o "18% congelado" do relato
+    # (duas tarefas presas, sem erro, sem timer, fila pausada). Agora recupera
+    # TODAS as tarefas doing orfas: as que nao tem batimento mais recente que o
+    # do worker morto (as adoptadas por uma instancia viva ficam intactas).
+    reference_heartbeat = _parse_timestamp(previous.get("last_heartbeat_at"))
+    recovered_ids: list[str] = []
+    for candidate in load_tasks():
+        if not isinstance(candidate, dict) or str(candidate.get("state") or "") != "doing":
+            continue
+        candidate_id = str(candidate.get("id") or "")
+        if not candidate_id:
+            continue
+        if candidate_id != task_id and not _task_owned_by_dead_worker(
+            candidate, reference_heartbeat
+        ):
+            continue
+        update_task(candidate_id, {
             "state": "failed",
             "error": message,
-            "failed_stage": failed_stage,
+            "failed_stage": str(candidate.get("stage") or "pipeline"),
             "worker_interrupted": True,
             "worker_interrupted_at": _now(),
         })
+        recovered_ids.append(candidate_id)
     _write_worker_state(
         auto_paused=True,
         pause_reason=message,
-        crash_task_id=task_id or None,
+        crash_task_id=task_id or (recovered_ids[0] if recovered_ids else None),
         status="paused",
         stage="paused",
         progress=0,
@@ -557,31 +608,50 @@ VIDEO_STAGE_HEARTBEAT_INTERVAL_SECONDS = 5
 class _VideoStageTimer:
     """Tick de 5 s com o tempo acumulado da etapa de vídeo (1.0.57)."""
 
-    def __init__(self, task_id: str, started_at: float):
+    def __init__(
+        self,
+        task_id: str,
+        started_at: float,
+        status_provider: Callable[[], str] | None = None,
+    ):
         self._task_id = task_id
         self._started_at = started_at
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        # 1.0.59 - actividade corrente da fase (ex.: "[SCRIPT] tentativa 2/3"),
+        # escrita no card enquanto o worker trabalha dentro do passo.
+        self._status_provider = status_provider
 
     def _tick(self) -> None:
         while not self._stop.wait(VIDEO_STAGE_HEARTBEAT_INTERVAL_SECONDS):
             try:
                 current = _task_by_id(self._task_id) or {}
-                if str(current.get("state") or "") in {"blocked", "cancelled"}:
+                state = str(current.get("state") or "")
+                if state and state != "doing":
+                    # 1.0.59 - o relogio para quando o passo acabou (falha,
+                    # sucesso, cancelamento): nunca fica um tick a escrever
+                    # heartbeat de uma etapa terminada.
                     return
                 elapsed = int(time.monotonic() - self._started_at)
                 persisted = current.get("video_elapsed_seconds")
                 if isinstance(persisted, int) and persisted > elapsed:
-                    elapsed = persisted  # relógio monótono: nunca retrocede
+                    elapsed = persisted  # relogio monotonico: nunca retrocede
                 progress = current.get("progress")
                 updates: dict[str, Any] = {"video_elapsed_seconds": elapsed}
+                if self._status_provider is not None:
+                    try:
+                        activity = self._status_provider()
+                    except Exception:
+                        activity = ""
+                    if activity:
+                        updates["video_helper_status"] = str(activity)[-500:]
                 if isinstance(progress, int):
                     updates["progress"] = progress
                 _update(self._task_id, **updates)
                 _worker_heartbeat(
                     task_id=str(self._task_id),
                     status="running",
-                    stage="video",
+                    stage=str(current.get("stage") or "") or "video",
                     progress=progress if isinstance(progress, int) else None,
                     video_elapsed_seconds=elapsed,
                 )
@@ -1262,6 +1332,28 @@ def _video_helper_start_timeout_seconds(settings: dict[str, Any] | None = None) 
     except (TypeError, ValueError):
         return DEFAULT_VIDEO_HELPER_START_TIMEOUT_SECONDS
     return value if value > 0 else DEFAULT_VIDEO_HELPER_START_TIMEOUT_SECONDS
+
+
+def _script_timeout_seconds(settings: dict[str, Any] | None = None) -> int:
+    """1.0.59 - teto da fase de ROTEIRO (motor.script_timeout_seconds)."""
+    effective = settings if isinstance(settings, dict) else _settings()
+    motor = effective.get("motor") if isinstance(effective.get("motor"), dict) else {}
+    try:
+        value = int(motor.get("script_timeout_seconds"))
+    except (TypeError, ValueError):
+        return SCRIPT_STAGE_TIMEOUT_SECONDS
+    return value if value > 0 else SCRIPT_STAGE_TIMEOUT_SECONDS
+
+
+def _material_phase_timeout_seconds(settings: dict[str, Any] | None = None) -> int:
+    """1.0.59 - teto da fase de MATERIAIS (motor.material_download_timeout_seconds)."""
+    effective = settings if isinstance(settings, dict) else _settings()
+    motor = effective.get("motor") if isinstance(effective.get("motor"), dict) else {}
+    try:
+        value = int(motor.get("material_download_timeout_seconds"))
+    except (TypeError, ValueError):
+        return MATERIAL_PHASE_TIMEOUT_SECONDS
+    return value if value > 0 else MATERIAL_PHASE_TIMEOUT_SECONDS
 
 
 def _task_stale_timeout_seconds(task: dict[str, Any]) -> int:
@@ -2026,6 +2118,10 @@ def _run_video_helper_once(
         # worker — o motor não escreve no log durante elas).
         video_progress = VIDEO_STAGE_FLOOR_PROGRESS
         video_phase_state: dict[str, float] = {}
+        # 1.0.59 - estado + telemetria da fase de MATERIAIS (download de clipes
+        # Pexels/Pixabay dentro do motor): conta clipes, mede tempos e alimenta
+        # o watchdog de 10 min da fase.
+        material_state: dict[str, Any] = {}
         try:
             while True:
                 try:
@@ -2065,10 +2161,22 @@ def _run_video_helper_once(
                     if current_task and str(current_task.get("state") or "") in {"blocked", "cancelled"}:
                         _stop_process(process, reason="cancel")
                         raise PipelineStopped("A tarefa foi parada pelo utilizador.")
+                    # 1.0.59 - fase de materiais: telemetria [PEXELS] + actividade
+                    # "[Pexels] Baixando clipe X/Y" no card (o timer da UI sobe e
+                    # prova que o sistema esta a trabalhar, nao morto).
+                    material_state, material_status = _pexels_material_progress(
+                        _read_engine_log_text(helper_log_path),
+                        material_state,
+                        task_id=str(task.get("id") or ""),
+                    )
+                    helper_status = (
+                        material_status
+                        or (last_output_line[-500:] if last_output_line else "")
+                    )
                     _update(
                         task_id,
                         progress=video_progress,
-                        video_helper_status=last_output_line[-500:] if last_output_line else "",
+                        video_helper_status=helper_status,
                         video_elapsed_seconds=int(elapsed),
                     )
                     _worker_heartbeat(
@@ -2076,12 +2184,34 @@ def _run_video_helper_once(
                         status="running",
                         stage="video",
                         progress=video_progress,
-                        video_helper_status=last_output_line[-500:] if last_output_line else "",
+                        video_helper_status=helper_status,
                         video_elapsed_seconds=int(elapsed),
                     )
                     last_heartbeat = elapsed
                 if process.poll() is not None and output_finished:
                     break
+                # 1.0.59 - watchdog da fase de MATERIAIS: nada pode deixar o
+                # download de clipes correr sem limite. Mede do primeiro
+                # marcador de materiais no log do motor; passa de 10 min ->
+                # encerra com erro claro (o motor salta clipes travados, mas a
+                # SOMA da fase ficava sem tecto).
+                material_started_at = material_state.get("phase_started_at")
+                if material_started_at and material_state.get("materials_running"):
+                    material_timeout_seconds = _material_phase_timeout_seconds(settings)
+                    if time.monotonic() - float(material_started_at) > material_timeout_seconds:
+                        _stop_process(process, reason="material_timeout")
+                        message = (
+                            "Timeout ao baixar materiais do Pexels: a fase de download de "
+                            f"clipes passou de {material_timeout_seconds // 60} minutos e foi "
+                            "encerrada. A tarefa pode ser repetida."
+                        )
+                        metadata = _failure_attribution(task, settings, "video", error=message)
+                        _mpt_runtime_log(f"[PEXELS] [ERRO] {message}")
+                        raise PipelineError(
+                            _failure_message(message, metadata),
+                            failure_metadata=metadata,
+                            fallback_eligible=True,
+                        )
                 if elapsed >= timeout_seconds:
                     _stop_process(process, reason="timeout")
                     message = f"A etapa Vídeo excedeu o limite de {timeout_seconds // 60} minutos e foi encerrada."
@@ -3277,6 +3407,240 @@ def _run_burn_subtitles_only(task: dict[str, Any], settings: dict[str, Any]) -> 
     ) or task
 
 
+_MATERIAL_TOTAL_PATTERN = re.compile(
+    r"found total(?: ordered)? videos?(?: candidates)?: (\d+)", re.IGNORECASE
+)
+_MATERIAL_CLIP_START_PATTERN = re.compile(
+    r"downloading(?: ordered)? ([a-z]+) video", re.IGNORECASE
+)
+_MATERIAL_CLIP_SAVED_PATTERN = re.compile(r"video saved:", re.IGNORECASE)
+_MATERIAL_CLIP_FAILED_PATTERN = re.compile(
+    r"failed to download(?: ordered)? material video", re.IGNORECASE
+)
+_MATERIAL_PHASE_DONE_PATTERN = re.compile(
+    r"downloaded (\d+)(?: ordered)? videos", re.IGNORECASE
+)
+# Loguru do motor: "2026-11-04 11:22:43 | INFO | ..." (as vezes com ANSI antes
+# do timestamps e milissegundos a seguir).
+_MATERIAL_LOG_TIMESTAMP_PATTERN = re.compile(
+    r"(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})(?:[.,](\d{1,6}))?"
+)
+
+
+def _material_log_epoch(line: str) -> float | None:
+    """Epoch (segundos) do timestamp de uma linha do log do motor, se existir."""
+    match = _MATERIAL_LOG_TIMESTAMP_PATTERN.search(line)
+    if not match:
+        return None
+    fraction = match.group(2) or ""
+    try:
+        stamp = datetime.strptime(match.group(1), "%Y-%m-%d %H:%M:%S")
+        return stamp.replace(tzinfo=timezone.utc).timestamp() + float(f"0.{fraction}")
+    except (ValueError, OSError):
+        return None
+
+
+def _material_phases(engine_log_text: str) -> list[dict[str, Any]]:
+    """Fases de materiais do log do motor, na ordem em que aconteceram.
+
+    Devolve uma lista de ditos ``{"total", "clips", "failed", "finished"}`` onde
+    ``clips`` traz a duracao real de cada clipe (timestamps do log, quando
+    disponiveis). Provado contra logs reais: o motor corre uma fase por
+    ``download_videos`` (duas por geracao) e conta cache hits como clipes
+    obtidos ("video saved:" apos "video already exists").
+    """
+    phases: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    pending_started_at: float | None = None
+    for line in str(engine_log_text or "").splitlines():
+        total_match = _MATERIAL_TOTAL_PATTERN.search(line)
+        if total_match:
+            current = {
+                "total": int(total_match.group(1)),
+                "clips": [],
+                "failed": 0,
+                "finished": False,
+            }
+            phases.append(current)
+            pending_started_at = None
+            continue
+        if current is None:
+            continue
+        if _MATERIAL_CLIP_START_PATTERN.search(line):
+            pending_started_at = _material_log_epoch(line)
+            continue
+        if _MATERIAL_CLIP_SAVED_PATTERN.search(line):
+            saved_at = _material_log_epoch(line)
+            duration = (
+                max(0.0, saved_at - pending_started_at)
+                if saved_at is not None and pending_started_at is not None
+                else None
+            )
+            current["clips"].append(duration)
+            pending_started_at = None
+            continue
+        if _MATERIAL_CLIP_FAILED_PATTERN.search(line):
+            current["failed"] += 1
+            pending_started_at = None
+            continue
+        if _MATERIAL_PHASE_DONE_PATTERN.search(line):
+            current["finished"] = True
+    return phases
+
+
+def _pexels_material_progress(
+    engine_log_text: str,
+    state: dict[str, Any],
+    *,
+    task_id: str = "",
+) -> tuple[dict[str, Any], str]:
+    """1.0.59 - telemetria e estado da fase de MATERIAIS lida do log do motor.
+
+    O download de clipes (Pexels/Pixabay/coverr) acontece DENTRO do motor
+    MoneyPrinterTurbo (fork externa, fora deste repositorio). A investigacao do
+    "preso em 18%" provou que essa fase nem era a culpada - e que o motor JA
+    tem timeout por clipe (60 s conecta / 240 s le) e SALTA clipes com falha.
+    O que faltava era o Thunderbolt SABER o que se passa: este parser conta
+    clipes, mede o tempo REAL de cada um (timestamps do log) e emite no runtime
+    log
+
+        [PEXELS] Iniciando download de N clipes...
+        [PEXELS] Clipe X/N baixado com sucesso (tempo: Ys)
+        [PEXELS] Timeout no clipe X. Pulando...
+
+    e devolve o estado (para o watchdog de 10 min da fase) mais a actividade
+    corrente para o card: ``[Pexels] Baixando clipe X/Y``. Cada evento sai UMA
+    vez (o estado guarda o que ja foi anunciado entre leituras de 5 s).
+    """
+    phases = _material_phases(engine_log_text)
+    if not phases:
+        return state, ""
+    announced_phases = int(state.get("announced_phases") or 0)
+    announced_saves = int(state.get("announced_saves") or 0)
+    announced_fails = int(state.get("announced_fails") or 0)
+    announced_done = int(state.get("announced_done") or 0)
+    saves_total = 0
+    fails_total = 0
+    if "phase_started_at" not in state:
+        state["phase_started_at"] = time.monotonic()
+    for index, phase in enumerate(phases):
+        total = int(phase.get("total") or 0)
+        if index >= announced_phases:
+            announced_phases = index + 1
+            announced_saves = saves_total
+            announced_fails = fails_total
+            announced_done = index
+            _mpt_runtime_log(f"[PEXELS] Iniciando download de {total} clipes...")
+        saves_total += len(phase.get("clips") or [])
+        fails_total += int(phase.get("failed") or 0)
+        phase_saves = saves_total
+        while announced_saves < phase_saves:
+            clip_index = announced_saves - (saves_total - len(phase.get("clips") or []))
+            duration = (phase.get("clips") or [])[clip_index]
+            announced_saves += 1
+            seconds = f"{duration:.1f}s" if duration is not None else "tempo nao registado"
+            _mpt_runtime_log(
+                f"[PEXELS] Clipe {clip_index + 1}/{total} baixado com sucesso (tempo: {seconds})"
+            )
+        while announced_fails < fails_total:
+            announced_fails += 1
+            index_failed = announced_saves + announced_fails
+            _mpt_runtime_log(f"[PEXELS] Timeout no clipe {index_failed}. Pulando...")
+        if phase.get("finished") and index >= announced_done:
+            announced_done = index + 1
+            _mpt_runtime_log(
+                f"[PEXELS] Download concluido: {len(phase.get('clips') or [])}/{total} clipe(s) "
+                f"obtidos ({int(phase.get('failed') or 0)} falharam e foram saltados)"
+            )
+    last_phase = phases[-1]
+    state.update({
+        "announced_phases": announced_phases,
+        "announced_saves": announced_saves,
+        "announced_fails": announced_fails,
+        "announced_done": announced_done,
+        # Contagens CORRENTES (ultima fase): e delas que o card e o watchdog
+        # falam - o motor corre varias fases por geracao.
+        "clips_total": int(last_phase.get("total") or 0),
+        "clips_done": len(last_phase.get("clips") or []),
+        "clips_failed": int(last_phase.get("failed") or 0),
+        "materials_running": not bool(last_phase.get("finished")),
+    })
+    total = int(phases[-1].get("total") or 0)
+    if total and not phases[-1].get("finished"):
+        status = (
+            f"[Pexels] Baixando clipe {state['clips_done']}/{total}"
+            f" ({state['clips_failed']} falharam)"
+        )
+        return state, status
+    return state, ""
+
+
+def _generate_script_with_heartbeat(
+    task: dict[str, Any],
+    settings: dict[str, Any],
+    *,
+    status: dict[str, str],
+    **generation_kwargs: Any,
+) -> dict[str, Any]:
+    """1.0.59 - gera o roteiro com TETO temporal e telemetria por tentativa.
+
+    A fase de roteiro era o buraco negro do pipeline: o card ficava em 18% sem
+    timer e sem noticia enquanto 3 tentativas de LLM (x varios cartoes do pool,
+    cada uma com timeout de 120 s) corriam em silencio - a causa real do
+    "travamento em 18%" do relato (NAO era o download do Pexels). Agora:
+
+    * cada tentativa notifica o callback -> ``[SCRIPT] tentativa X/N`` no
+      runtime log e ``video_helper_status`` no tasks.json (o timer da UI sobe);
+    * a fase inteira tem um teto duro (motor.script_timeout_seconds, 10 min por
+      omissao) - passa a existir erro claro em vez de espera eterna.
+    """
+    from hermes_ui.blueprint_governance import MAX_SCRIPT_GENERATION_ATTEMPTS
+    from hermes_ui.script_generation import generate_script_document
+
+    task_id = str(task.get("id") or "")
+    timeout_seconds = _script_timeout_seconds(settings)
+    status["status"] = (
+        f"[SCRIPT] a gerar roteiro (max. {MAX_SCRIPT_GENERATION_ATTEMPTS} tentativas)"
+    )
+    _mpt_runtime_log(
+        f"[SCRIPT] tarefa {task_id}: inicio da geracao do roteiro "
+        f"(teto de {timeout_seconds // 60} min)"
+    )
+
+    def _on_attempt(attempt: int, attempts: int, phase: str) -> None:
+        status["status"] = (
+            f"[SCRIPT] a gerar roteiro (tentativa {attempt}/{attempts}): {phase}"
+        )[-500:]
+        _mpt_runtime_log(f"[SCRIPT] tarefa {task_id}: tentativa {attempt}/{attempts} - {phase}")
+
+    outcome: dict[str, Any] = {}
+    finished = threading.Event()
+
+    def _run() -> None:
+        try:
+            outcome["value"] = generate_script_document(
+                settings, on_attempt=_on_attempt, **generation_kwargs
+            )
+        except BaseException as exc:  # noqa: BLE001 - propagado ao chamador
+            outcome["error"] = exc
+        finally:
+            finished.set()
+
+    worker_thread = threading.Thread(
+        target=_run, name=f"script-{task_id or 'task'}", daemon=True
+    )
+    worker_thread.start()
+    if not finished.wait(timeout_seconds):
+        raise PipelineError(
+            f"A geracao do roteiro excedeu {timeout_seconds // 60} minutos e foi encerrada. "
+            "O provider LLM demorou demasiado; a tarefa pode ser repetida."
+        )
+    error = outcome.get("error")
+    if isinstance(error, BaseException):
+        raise error
+    return outcome["value"]
+
+
 def _run_task(task: dict[str, Any]) -> dict[str, Any]:
     """Run one resumable local-cascade task, reusing valid persisted artefacts."""
     task_id = str(task.get("id") or "")
@@ -3412,6 +3776,25 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
             generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else generation_settings
             artifacts = dict(task.get("artifacts") or blueprint_artifacts)
 
+    # 1.0.59 - o relogio da etapa comeca no INICIO do passo (roteiro), nao so
+    # na etapa de video: eram muitos minutos em 18% SEM timer e sem actividade
+    # enquanto o LLM trabalhava (causa real do "timer desapareceu" do relato).
+    # O card passa a mostrar "Tempo da etapa Video" a subir desde o minuto 0 e
+    # a actividade corrente da fase em ``video_helper_status``.
+    _step_started_at = time.monotonic()
+    _step_status: dict[str, str] = {}
+
+    def _step_activity() -> str:
+        # So o roteiro manda no estado: a partir da etapa de video, quem manda
+        # e o loop do helper (actividade real do motor + fase de materiais).
+        current = _task_by_id(task_id) or {}
+        if str(current.get("stage") or "") != "script":
+            return ""
+        return str(_step_status.get("status") or "")
+
+    _step_timer = _VideoStageTimer(
+        task_id, _step_started_at, status_provider=_step_activity
+    ).start()
     script = _read_persisted_script(task, channel, blueprint, topic)
     if script is None:
         _update(task_id, stage="script", state="doing", progress=18, error=None)
@@ -3431,17 +3814,24 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                 "generated_by": "video_creation_form",
             }
         else:
-            script = generate_script_document(
-                settings,
-                document_type="Roteiro de vídeo",
-                title=str(task.get("title") or topic),
-                brief=topic,
-                language=str(task.get("language") or channel.get("language") or "Português"),
-                channel=channel,
-                blueprint=blueprint,
-                structure_notes=str(generation_settings.get("script_structure_notes") or ""),
-                generation_settings=generation_settings,
-            )
+            try:
+                script = _generate_script_with_heartbeat(
+                    task,
+                    settings,
+                    status=_step_status,
+                    document_type="Roteiro de v\u00eddeo",
+                    title=str(task.get("title") or topic),
+                    brief=topic,
+                    language=str(task.get("language") or channel.get("language") or "Portugu\u00eas"),
+                    channel=channel,
+                    blueprint=blueprint,
+                    structure_notes=str(generation_settings.get("script_structure_notes") or ""),
+                    generation_settings=generation_settings,
+                )
+            except BaseException:
+                # o relogio do passo para em qualquer desfecho do roteiro
+                _step_timer.stop()
+                raise
         script_record = save_script_document(script)
         artifacts["script"] = script_record.get("path", "")
         # 1.0.08: carimbar o id do documento no artefacto — o sync de roteiros
@@ -3520,7 +3910,10 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
         # 1.0.57 — relógio real da etapa: corre durante o helper MPT E
         # durante as fases locais (queima de legendas, montagens), sem
         # nunca saltar para trás.
-        _video_stage_timer = _VideoStageTimer(task_id, _video_stage_started_at).start()
+        # 1.0.59 - o relogio do PASSO ja corre desde o roteiro (`_step_timer`);
+        # a etapa de video continua o MESMO relogio (nunca salta para tras) em
+        # vez de arrancar um segundo cronometro a escrever o mesmo campo.
+        _video_stage_timer = _step_timer
         try:
             video_prompt = _append_generation_constraints(
                 f"Título: {title}\n\nRoteiro:\n{str(script.get('content') or '')[:12000]}",
