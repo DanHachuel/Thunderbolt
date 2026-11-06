@@ -76,11 +76,26 @@ def test_launcher_module_check_imports_for_real():
     assert "importlib.util, sys" not in block
 
 
-def test_launcher_reports_missing_worker_modules_with_the_install_command():
+def test_launcher_auto_heals_missing_worker_modules_instead_of_asking_for_install():
+    """1.0.65 - AUTO-CURA: o launcher repara sozinho (pip silencioso sobre o
+    requirements) e so depois arranca os workers. A mensagem que ordenava
+    "npx install" ao utilizador morreu no arranque - o instalador manual fica
+    para o --check, quando a reposicao automatica falha por falta de rede."""
     assert 'const requiredWorkerModules = ["psutil", "serpapi", "playwright", "patchright"];' in LAUNCHER_SOURCE
     block = LAUNCHER_SOURCE.split("function checkWorkerDependencies(label)", 1)[1].split("function configuredMoneyPrinterPath", 1)[0]
-    assert "imports obrigatórios ausentes" in block
-    assert "npx.cmd --yes --prefer-online @danhachuel/thunderbolt install" in block
+    assert "[SISTEMA] A actualizar dependencias internas. Por favor, aguarde..." in block
+    assert "[SISTEMA] Dependencias actualizadas. A iniciar os trabalhadores..." in block
+    assert "installWorkerDependencies()" in block
+    assert "clearDependencyBlocks();" in block
+    # Silencio absoluto do pip (regra do repositorio).
+    install_block = LAUNCHER_SOURCE.split("function installWorkerDependencies()", 1)[1].split("\nfunction ", 1)[0]
+    assert '"--quiet"' in install_block
+    assert 'stdio: "ignore"' in install_block
+    # Regra de ouro: NENHUMA ordem de comando manual no arranque.
+    assert "npx" not in block
+    # O caminho de diagnostico (--check) mantem a instrucao como ultimo recurso.
+    check_block = LAUNCHER_SOURCE.split("function check()", 1)[1].split('if (args[0] === "install"', 1)[0]
+    assert "npx.cmd --yes --prefer-online @danhachuel/thunderbolt install" in check_block
 
 
 # ---------------------------------------------------------------------------
@@ -98,17 +113,19 @@ def test_launcher_detects_dependency_deaths_from_worker_stderr():
     assert "rememberWorkerStderr(child, chunk);" in attach
 
 
-def test_queue_workers_stop_instead_of_restarting_on_dependency_deaths():
+def test_queue_workers_self_heal_on_dependency_deaths():
+    """1.0.65 - morte por dependencias dispara a AUTO-CURA em vez de travar:
+    o bloqueio permanente sai da guarda e o handler limpa-o (a reposicao corre
+    no tick seguinte). O circuit breaker de falha rapida (1.0.52) mantem-se."""
     block = LAUNCHER_SOURCE.split("function startQueueWorkers()", 1)[1].split("function stopQueueWorkers()", 1)[0]
-    assert "queueWorkersDependencyFailureReported" in LAUNCHER_SOURCE.split("function startQueueWorkers()", 1)[0].split("function attachQueueWorkerLog(", 1)[0] or True
-    # 1.0.52 (circuit breaker): a guarda passou a incluir queueWorkersFastFailDisabled
-    assert "if (shuttingDown || queueWorkersDependencyFailureReported || queueWorkersFastFailDisabled || thumbnailWorker || imageWorker) return;" in LAUNCHER_SOURCE
+    assert "if (shuttingDown || queueWorkersFastFailDisabled || thumbnailWorker || imageWorker) return;" in LAUNCHER_SOURCE
     thumbnail_exit = block.split("thumbnailWorker.on(\"exit\"", 1)[1].split("imageWorker = spawn(", 1)[0]
     image_exit = block.split("imageWorker.on(\"exit\"", 1)[1]
     for handler in (thumbnail_exit, image_exit):
         assert "workerDiedFromDependencies" in handler
-        assert "reportFatalDependencyFailure" in handler
-        assert "queueWorkersDependencyFailureReported = true;" in handler
+        assert "queueWorkersDependencyFailureReported = false;" in handler
+        assert "dependencyHealResult = null;" in handler
+        assert "a repor automaticamente" in handler
         # o reinício de 5s fica DEPOIS do guard de dependências
         assert handler.index("workerDiedFromDependencies") < handler.index("a reiniciar em 5s")
 
@@ -121,15 +138,18 @@ def test_pipeline_worker_uses_safe_pipes_and_stops_on_dependency_deaths():
     assert 'stdio: "inherit"' not in LAUNCHER_SOURCE.split("function startPipelineWorker()", 1)[1].split("function attachQueueWorkerLog(", 1)[0]
     exit_handler = block.split("pipelineWorker.on(\"exit\"", 1)[1]
     assert "workerDiedFromDependencies" in exit_handler
-    assert "pipelineDependencyFailureReported = true;" in exit_handler
+    # 1.0.65 - a morte por dependencias dispara a auto-cura (limpa o bloqueio).
+    assert "pipelineDependencyFailureReported = false;" in exit_handler
+    assert "dependencyHealResult = null;" in exit_handler
 
 
 def test_automation_worker_stops_on_dependency_deaths():
     block = LAUNCHER_SOURCE.split("function startAutomationWorker()", 1)[1].split("function stopPipelineWorker()", 1)[0]
     exit_handler = block.split("worker.on(\"exit\"", 1)[1]
     assert "dependencyFailurePattern.test(dependencyTail)" in exit_handler
-    assert "reportFatalDependencyFailure" in exit_handler
-    assert "workerDependencyFailureReported = true;" in exit_handler
+    # 1.0.65 - a morte por dependencias dispara a auto-cura (limpa o bloqueio).
+    assert "workerDependencyFailureReported = false;" in exit_handler
+    assert "dependencyHealResult = null;" in exit_handler
 
 
 def test_fatal_message_is_red_and_cancels_the_restart_loop():

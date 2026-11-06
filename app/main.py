@@ -6229,6 +6229,28 @@ def _render_pipeline_worker_banner(worker_status: dict[str, Any], active_count: 
         st.success(f"Worker de vídeo activo · {active_count} tarefa(s) em execução · {stage} · {progress}%")
     else:
         st.warning("Worker de vídeo sem heartbeat recente. O launcher deve estar aberto para processar as tarefas.")
+        # 1.0.65 - FALLBACK DA INTERFACE (zero comandos manuais): o launcher ja
+        # repara as dependencias sozinho no arranque; se o worker continuar
+        # morto, este botao pede o reinicio IMEDIATO ao launcher (que o le no
+        # tick de 2 s) - o utilizador nao precisa de fechar e abrir o terminal.
+        if st.button(
+            "Forçar Reinício do Sistema",
+            key="force_worker_restart",
+            type="primary",
+            help="Pede ao launcher para reinstalar dependencias em falta e reiniciar os workers agora.",
+        ):
+            try:
+                write_json(
+                    "force_restart.json",
+                    {
+                        "requested_at": datetime.now(timezone.utc).isoformat(),
+                        "reason": "botao Forcar Reinicio do Sistema",
+                        "worker_status": str(worker_status.get("status") or ""),
+                    },
+                )
+                st.success("Reinício pedido. O launcher vai reiniciar os workers dentro de segundos — atualize daqui a momentos.")
+            except Exception as exc:  # noqa: BLE001 - a UI nunca morre por isto
+                st.error(f"Não foi possível pedir o reinício: {exc}")
     heartbeat = worker_status.get("last_heartbeat_at") or worker_status.get("updated_at")
     if heartbeat:
         st.caption(f"{_pipeline_time_age(heartbeat)} · vídeo: até 10 min com watchdog de inactividade de 5 min")

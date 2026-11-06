@@ -216,7 +216,7 @@ def test_pipeline_worker_remains_available_for_progress_updates():
     end = source.index("function monitorWorkers()", start)
     block = source[start:end]
     assert "pipelineDependencyFailureReported" in block
-    assert "if (!checkWorkerDependencies(\"o worker do pipeline de vídeos\"))" in block
+    assert "if (!checkWorkerDependencies(\"o worker do pipeline de videos\"))" in block
     assert "pipelineRestartTimer = setTimeout" in block
     assert "pipelineFailureCount >= 5" in block
     assert "Math.min(2 ** pipelineFailureCount, 32) * 1000" in block

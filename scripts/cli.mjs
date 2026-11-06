@@ -208,18 +208,66 @@ function camoufoxWorkerReady() {
   return { ready: moduleAvailable("camoufox"), message: "" };
 }
 
-function checkWorkerDependencies(label) {
+// 1.0.65 - pip SILENCIOSO (regra do repositorio: o terminal mostra APENAS as
+// mensagens do Thunderbolt; a barra de progresso do pip nunca aparece).
+function installWorkerDependencies() {
+  const requirements = join(root, "requirements.txt");
+  if (!existsSync(requirements)) return false;
+  const result = spawnSync(
+    python,
+    ["-m", "pip", "install", "-r", requirements, "--quiet", "--no-input", "--disable-pip-version-check"],
+    // stdio ignore + timeout de 30 min: a cura nunca fica a meio sem resposta.
+    { stdio: "ignore", env: pythonEnvironment, timeout: 30 * 60 * 1000, windowsHide: true },
+  );
+  return result.status === 0;
+}
+
+function missingWorkerModules() {
+  // IMPORT REAL (licao 1.0.20): find_spec dava falso positivo com pacote
+  // parcial/corrompido - o check passava e o worker morria no boot.
   const missing = requiredWorkerModules.filter((moduleName) => !moduleAvailable(moduleName));
-  // 1.0.42: o Camoufox sai da lista de opcionais — obrigatório, pela mesma
-  // checagem central que a UI usa (fim da discórdia terminal × interface).
   const camoufox = camoufoxWorkerReady();
   if (!camoufox.ready) missing.push("camoufox");
+  return { missing, camoufoxMessage: camoufox.message || "" };
+}
+
+// 1.0.65 - limpa os bloqueios permanentes de dependencia: a auto-cura altera a
+// pre-condicao que os causou, por isso deixam de fazer sentido.
+function clearDependencyBlocks() {
+  workerDependencyFailureReported = false;
+  pipelineDependencyFailureReported = false;
+  queueWorkersDependencyFailureReported = false;
+}
+
+function checkWorkerDependencies(label) {
+  const { missing, camoufoxMessage } = missingWorkerModules();
   if (!missing.length) return true;
-  console.error(`Thunderbolt: ${label} não iniciado; imports obrigatórios ausentes: ${missing.join(", ")}.`);
-  if (camoufox.message) console.error(`Thunderbolt: ${camoufox.message}`);
-  console.error("Execute: npx.cmd --yes --prefer-online @danhachuel/thunderbolt install");
-  console.error("Depois confirme com: npx.cmd --yes --prefer-online @danhachuel/thunderbolt --check");
-  return false;
+  // 1.0.65 - AUTO-CURA: instala e volta a verificar. Enquanto a cura corre (ou
+  // vai tentar de novo dentro do backoff) o arranque NAO fica travado.
+  if (dependencyHealInFlight) return false;
+  if (dependencyHealResult && Date.now() - dependencyHealResult.at < 60000) return false;
+  dependencyHealInFlight = true;
+  try {
+    console.log("[SISTEMA] A actualizar dependencias internas. Por favor, aguarde...");
+    if (installWorkerDependencies()) {
+      const after = missingWorkerModules();
+      if (!after.missing.length) {
+        console.log("[SISTEMA] Dependencias actualizadas. A iniciar os trabalhadores...");
+        clearDependencyBlocks();
+        dependencyHealResult = { ok: true, at: Date.now() };
+        return true;
+      }
+      console.error(`Thunderbolt: dependencias ainda em falta apos a reposicao: ${after.missing.join(", ")}.`);
+      if (after.camoufoxMessage) console.error(`Thunderbolt: ${after.camoufoxMessage}`);
+    } else {
+      // Falhou (rede/offline): nao se culpa a internet sem primeiro tentar.
+      console.error("Thunderbolt: nao foi possivel instalar as dependencias automaticamente. Verifique a ligacao a internet e o Thunderbolt tentara de novo.");
+    }
+    dependencyHealResult = { ok: false, at: Date.now() };
+    return false;
+  } finally {
+    dependencyHealInFlight = false;
+  }
 }
 
 function configuredMoneyPrinterPath() {
@@ -346,13 +394,19 @@ function check() {
     process.exit(1);
   }
   const requiredModules = ["streamlit", "requests", "pandas", "toml", "imageio_ffmpeg", "edge_tts", "sklearn", "mlxtend", "plotly", "seaborn", "kagglehub", "composio", "playwright"];
-  const missing = requiredModules.filter((moduleName) => !moduleAvailable(moduleName));
+  let missing = requiredModules.filter((moduleName) => !moduleAvailable(moduleName));
   const ffmpeg = moduleAvailable("imageio_ffmpeg");
   const mptPath = configuredMoneyPrinterPath();
   const mptReady = existsSync(join(mptPath, "requirements.txt")) || existsSync(join(mptPath, "pyproject.toml"));
   console.log(`Thunderbolt: ${thunderboltHome}`);
   console.log(`Python: ${version.stdout.trim()}`);
   console.log(`Dependências da aplicação: ${missing.length ? `em falta (${missing.join(", ")})` : "OK"}`);
+  // 1.0.65 - o diagnostico TAMBEM repara: pip silencioso sobre o requirements e
+  // nova verificacao. So se a reposicao falhar (rede) e que o check acusa falta.
+  if (missing.length && installWorkerDependencies()) {
+    missing = requiredModules.filter((moduleName) => !moduleAvailable(moduleName));
+    if (!missing.length) console.log("[SISTEMA] Dependencias reparadas automaticamente pelo check.");
+  }
   console.log(`FFmpeg: ${ffmpeg ? "OK via imageio-ffmpeg" : "em falta"}`);
   console.log(`Motor de vídeo: ${mptReady ? `OK (${mptPath})` : `não encontrado (${mptPath})`}`);
   // 1.0.21: o binário do Camoufox é a peça que o `pip install` NÃO traz —
@@ -373,7 +427,7 @@ function check() {
     console.error("Uploaders (social-auto-upload/sau_cli): em falta — dependências obrigatórias do upload automático.");
   }
   if (missing.length || !ffmpeg || !uploadersReady) {
-    console.error("Instalação incompleta. Execute `npx.cmd --yes @danhachuel/thunderbolt install`; dependências já válidas serão reutilizadas.");
+    console.error("Instalacao incompleta e a reposicao automatica falhou (verifique a ligacao a internet). Execute: npx.cmd --yes --prefer-online @danhachuel/thunderbolt install");
     process.exit(1);
   }
 }
@@ -804,6 +858,14 @@ let streamlitAutoRestartDisabled = false;
 let workerDependencyFailureReported = false;
 let pipelineDependencyFailureReported = false;
 let queueWorkersDependencyFailureReported = false;
+// 1.0.65 - AUTO-CURA DE DEPENDENCIAS (zero comandos manuais). Regra de ouro do
+// utilizador: "eu NAO devo correr install". Quando um import obrigatorio falta no
+// .venv (ex.: psutil apos um npx que trouxe um venv incompleto), o launcher corre
+// o pip SILENCIOSO sobre o requirements.txt e so depois arranca os workers. A
+// mensagem que ordenava "npx install" ao utilizador morreu no arranque normal.
+let dependencyHealInFlight = false;
+// { ok, at } - resultado da ultima cura (backoff de 60 s entre tentativas).
+let dependencyHealResult = null;
 
 // 1.0.20: morte por dependências (ImportError/ModuleNotFoundError) NÃO volta
 // a arrancar. Antes, os workers de fila reiniciavam incondicionalmente a cada
@@ -915,9 +977,16 @@ function scheduleAutomationWorkerRestart() {
 }
 
 function startAutomationWorker() {
-  if (shuttingDown || worker || automationAutoRestartDisabled || automationFastFailDisabled || !hasScheduledAutomation() || workerDependencyFailureReported) return;
-  if (!checkWorkerDependencies("o worker de automação")) {
-    workerDependencyFailureReported = true;
+  // 1.0.65 - AUTO-START POR DEMANDA: canal com automacao ligada OU qualquer
+  // tarefa na fila (to_do/doing) forcammao o arranque do worker de automacao -
+  // o cenario real do utilizador (tarefas em doing, canal activo, worker morto).
+  if (shuttingDown || worker || automationAutoRestartDisabled || automationFastFailDisabled) return;
+  if (!hasScheduledAutomation() && !hasPendingPipelineWork()) return;
+  if (!checkWorkerDependencies("o worker de automacao")) {
+    // 1.0.65 - so trava DEPOIS de a auto-cura falhar (nunca enquanto cura).
+    if (!dependencyHealInFlight && dependencyHealResult && !dependencyHealResult.ok) {
+      workerDependencyFailureReported = true;
+    }
     return;
   }
   const startedAt = Date.now();
@@ -940,16 +1009,19 @@ function startAutomationWorker() {
     const diedFromDependencies = dependencyFailurePattern.test(dependencyTail);
     worker = null;
     if (shuttingDown) return;
-    console.error(`Thunderbolt worker: terminou (código ${code ?? "-"}, sinal ${signal ?? "-"}).`);
+    console.error(`Thunderbolt worker: terminou (codigo ${code ?? "-"}, sinal ${signal ?? "-"}).`);
     if (diedFromDependencies) {
-      reportFatalDependencyFailure("O worker de automação", dependencyTail);
-      workerDependencyFailureReported = true;
+      // 1.0.65 - morte por dependencias dispara a AUTO-CURA em vez de deixar o
+      // worker morto: a reposicao corre no tick seguinte (2 s).
+      console.error("Thunderbolt: o worker morreu por falta de dependencias; a repor automaticamente.");
+      workerDependencyFailureReported = false;
+      dependencyHealResult = null;
       return;
     }
-    // 1.0.52 — circuit breaker: morte instantânea repetida (< 10 s) cancelo o
-    // loop do worker de automação (antes: 5 mortes em 60 s e depois insistia).
+    // 1.0.52 - circuit breaker: morte instantanea repetida (< 10 s) cancela o
+    // loop do worker de automacao (antes: 5 mortes em 60 s e depois insistia).
     if (workerBootFailedForGood("automation")) {
-      reportFastFailLoop("worker de automação", "automation", code, signal);
+      reportFastFailLoop("worker de automacao", "automation", code, signal);
       automationFastFailDisabled = true;
       automationAutoRestartDisabled = true;
       return;
@@ -961,7 +1033,7 @@ function startAutomationWorker() {
     const runtimeMs = Date.now() - startedAt;
     if (code !== 0 && runtimeMs < 5000 && hasScheduledAutomation()) {
       scheduleAutomationWorkerRestart();
-    } else if (hasScheduledAutomation()) {
+    } else if (hasScheduledAutomation() || hasPendingPipelineWork()) {
       workerRestartTimer = setTimeout(() => {
         workerRestartTimer = null;
         startAutomationWorker();
@@ -990,17 +1062,30 @@ function stopPipelineWorker() {
 }
 
 function startPipelineWorker() {
-  if (shuttingDown || pipelineWorker || pipelineRestartTimer || pipelineAutoRestartDisabled || pipelineFastFailDisabled || pipelineDependencyFailureReported) return;
-  if (!checkWorkerDependencies("o worker do pipeline de vídeos")) {
-    pipelineDependencyFailureReported = true;
+  if (shuttingDown || pipelineWorker || pipelineRestartTimer) return;
+  // 1.0.65 - DEMANDA manda: se ha tarefas na fila e o arranque estava travado
+  // (falha rapida ou dependencias), a auto-cura/demanda nova rearma o worker.
+  if (hasPendingPipelineWork()) {
+    if (pipelineDependencyFailureReported) {
+      clearDependencyBlocks();
+      if (checkWorkerDependencies("o worker do pipeline de videos")) pipelineDependencyFailureReported = false;
+    }
+    if (pipelineFastFailDisabled && dependencyHealResult?.ok) pipelineFastFailDisabled = false;
+  }
+  if (pipelineAutoRestartDisabled || pipelineFastFailDisabled || pipelineDependencyFailureReported) return;
+  if (!checkWorkerDependencies("o worker do pipeline de videos")) {
+    // 1.0.65 - so trava DEPOIS de a auto-cura falhar (nunca enquanto cura).
+    if (!dependencyHealInFlight && dependencyHealResult && !dependencyHealResult.ok) {
+      pipelineDependencyFailureReported = true;
+    }
     return;
   }
   const startedAt = Date.now();
   pipelineWorker = spawn(python, ["-m", "hermes_ui.pipeline_worker"], {
     cwd: root,
-    // 1.0.20: pipes + log próprio (storage/logs/pipeline_worker.log) — o mesmo
-    // padrão stdio-seguro da 1.0.18 para os workers de fila (o «inherit» era o
-    // gatilho documentado do «Fatal Python error: init_sys_streams» no
+    // 1.0.20: pipes + log proprio (storage/logs/pipeline_worker.log) - o mesmo
+    // padrao stdio-seguro da 1.0.18 para os workers de fila (o "inherit" era o
+    // gatilho documentado do "Fatal Python error: init_sys_streams" no
     // Windows) E permite ao launcher detectar morte por ImportError.
     stdio: ["ignore", "pipe", "pipe"],
     env: runtimeEnv,
@@ -1019,20 +1104,23 @@ function startPipelineWorker() {
     const dependencyTail = workerStderrTails.get(pipelineWorker) || "";
     pipelineWorker = null;
     if (shuttingDown) return;
-    console.error(`Thunderbolt pipeline worker: terminou (código ${code ?? "-"}, sinal ${signal ?? "-"}).`);
+    console.error(`Thunderbolt pipeline worker: terminou (codigo ${code ?? "-"}, sinal ${signal ?? "-"}).`);
     if (pipelineStableTimer) {
       clearTimeout(pipelineStableTimer);
       pipelineStableTimer = null;
     }
     if (diedFromDependencies) {
-      reportFatalDependencyFailure("O worker do pipeline de vídeos", dependencyTail);
-      pipelineDependencyFailureReported = true;
+      // 1.0.65 - morte por dependencias dispara a AUTO-CURA em vez de deixar o
+      // worker morto: a reposicao corre no tick seguinte (2 s).
+      console.error("Thunderbolt: o worker do pipeline morreu por falta de dependencias; a repor automaticamente.");
+      pipelineDependencyFailureReported = false;
+      dependencyHealResult = null;
       return;
     }
-    // 1.0.52 — circuit breaker: 3 mortes instantâneas (< 10 s) cancelam o
-    // loop de reinício do pipeline.
+    // 1.0.52 - circuit breaker: 3 mortes instantaneas (< 10 s) cancelam o
+    // loop de reinicio do pipeline.
     if (workerBootFailedForGood("pipeline")) {
-      reportFastFailLoop("worker do pipeline de vídeos", "pipeline", code, signal, pipelineLog);
+      reportFastFailLoop("worker do pipeline de videos", "pipeline", code, signal, pipelineLog);
       pipelineFastFailDisabled = true;
       return;
     }
@@ -1043,7 +1131,7 @@ function startPipelineWorker() {
     pipelineFailureCount += 1;
     if (pipelineFailureCount >= 5) {
       pipelineAutoRestartDisabled = true;
-      console.error("O worker de vídeo falhou 5 vezes antes de permanecer estável. A fila foi deixada intacta; reinicie o Thunderbolt após verificar os logs.");
+      console.error("O worker de video falhou 5 vezes antes de permanecer estavel. A fila foi deixada intacta; use \"Forcar Reinicio do Sistema\" na interface ou reinicie o Thunderbolt apos verificar os logs.");
       return;
     }
     const delay = Math.min(2 ** pipelineFailureCount, 32) * 1000;
@@ -1092,9 +1180,14 @@ function attachQueueWorkerLog(child, filename, label) {
 function startQueueWorkers() {
   // 1.0.11: filas paralelas do Motor — thumbnails e imagens de produção são
   // workers independentes com pools próprios (motor.max_parallel_*).
-  if (shuttingDown || queueWorkersDependencyFailureReported || queueWorkersFastFailDisabled || thumbnailWorker || imageWorker) return;
+  // 1.0.65 - o bloqueio permanente de dependencias sai da guarda: a auto-cura
+  // (checkWorkerDependencies) e que decide quando parar de tentar.
+  if (shuttingDown || queueWorkersFastFailDisabled || thumbnailWorker || imageWorker) return;
   if (!checkWorkerDependencies("os workers de filas do Motor")) {
-    queueWorkersDependencyFailureReported = true;
+    // 1.0.65 - so trava DEPOIS de a auto-cura falhar (nunca enquanto cura).
+    if (!dependencyHealInFlight && dependencyHealResult && !dependencyHealResult.ok) {
+      queueWorkersDependencyFailureReported = true;
+    }
     return;
   }
   thumbnailWorker = spawn(python, ["-m", "hermes_ui.thumbnail_worker"], {
@@ -1114,8 +1207,11 @@ function startQueueWorkers() {
     thumbnailWorker = null;
     if (shuttingDown) return;
     if (diedFromDependencies) {
-      reportFatalDependencyFailure("O thumbnail worker", dependencyTail);
-      queueWorkersDependencyFailureReported = true;
+      // 1.0.65 - morte por dependencias dispara a AUTO-CURA (nao deixa o
+      // worker morto): a reposicao corre no tick seguinte.
+      console.error("Thunderbolt: o thumbnail worker morreu por falta de dependencias; a repor automaticamente.");
+      queueWorkersDependencyFailureReported = false;
+      dependencyHealResult = null;
       return;
     }
     // 1.0.52 — circuit breaker: 3 mortes instantâneas (< 10 s) cancelam o
@@ -1146,8 +1242,9 @@ function startQueueWorkers() {
     imageWorker = null;
     if (shuttingDown) return;
     if (diedFromDependencies) {
-      reportFatalDependencyFailure("O image worker", dependencyTail);
-      queueWorkersDependencyFailureReported = true;
+      console.error("Thunderbolt: o image worker morreu por falta de dependencias; a repor automaticamente.");
+      queueWorkersDependencyFailureReported = false;
+      dependencyHealResult = null;
       return;
     }
     // 1.0.52 — circuit breaker (mesmo travão do thumbnail worker).
@@ -1170,8 +1267,47 @@ function stopQueueWorkers() {
   imageWorker = null;
 }
 
+// 1.0.65 - FORCAR REINICIO DO SISTEMA (botao da interface). A UI escreve
+// storage/state/force_restart.json quando o worker esta morto e a auto-cura ja
+// correu; o launcher consome o pedido no tick de 2 s - o utilizador nao precisa
+// de fechar e abrir o terminal.
+const forceRestartPath = join(diagnosticsDir, "force_restart.json");
+
+function consumeForceRestartRequest() {
+  if (!existsSync(forceRestartPath)) return false;
+  let reason = "pedido da interface";
+  try {
+    const request = JSON.parse(readFileSync(forceRestartPath, "utf8"));
+    reason = String(request?.reason || reason);
+  } catch {
+    // pedido ilegivel consome-se na mesma (nao pode ficar a repetir para sempre)
+  }
+  try { rmSync(forceRestartPath, { force: true }); } catch { /* ficheiro ja removido */ }
+  console.log(`[SISTEMA] Reinicio forcado pedido (${reason}); a reiniciar os trabalhadores...`);
+  // Rearme COMPLETO: auto-cura, travoes de falha repetida e contadores.
+  clearDependencyBlocks();
+  automationAutoRestartDisabled = false;
+  automationFastFailDisabled = false;
+  automationFailureCount = 0;
+  automationFailureWindowStartedAt = 0;
+  pipelineAutoRestartDisabled = false;
+  pipelineFastFailDisabled = false;
+  pipelineFailureCount = 0;
+  queueWorkersFastFailDisabled = false;
+  dependencyHealResult = null;
+  if (workerRestartTimer) { clearTimeout(workerRestartTimer); workerRestartTimer = null; }
+  if (pipelineRestartTimer) { clearTimeout(pipelineRestartTimer); pipelineRestartTimer = null; }
+  startPipelineWorker();
+  startAutomationWorker();
+  startQueueWorkers();
+  return true;
+}
+
 function monitorWorkers() {
   if (shuttingDown) return;
+  // 1.0.65 - o pedido de reinicio da interface tem prioridade sobre o arranque
+  // normal:Rearma tudo e volta a lancar os workers no proprio tick.
+  consumeForceRestartRequest();
   startPipelineWorker();
   startAutomationWorker();
   startQueueWorkers();

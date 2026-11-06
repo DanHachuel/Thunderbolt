@@ -36,12 +36,13 @@ class NpxCacheCompatibilityTests(unittest.TestCase):
         source = (ROOT / "scripts" / "cli.mjs").read_text(encoding="utf-8")
         start_block = source.split("function startPipelineWorker()", 1)[1].split("function monitorWorkers()", 1)[0]
         monitor_block = source.split("function monitorWorkers()", 1)[1].split("function startStreamlit()", 1)[0]
-        # A guarda ganhou o flag de falha de dependências (f698584,
-        # "instalar e validar dependências dos workers"): se as dependências
-        # falharam, o worker não arranca em loop; continua disponível manualmente.
-        # 1.0.52 (circuit breaker): a guarda passou a incluir pipelineFastFailDisabled
-        self.assertIn('if (shuttingDown || pipelineWorker || pipelineRestartTimer || pipelineAutoRestartDisabled || pipelineFastFailDisabled || pipelineDependencyFailureReported) return;', start_block)
-        self.assertNotIn('!hasPendingPipelineWork()', start_block)
+        # 1.0.65 - AUTO-CURA: o bloqueio permanente de dependencias saiu da
+        # guarda (a reposicao automatica e que decide quando parar de tentar);
+        # o arranque passa a ser POR DEMANDA (hasPendingPipelineWork) e o
+        # circuit breaker de falha rapida (1.0.52) mantem-se.fg
+        self.assertIn('if (shuttingDown || pipelineWorker || pipelineRestartTimer) return;', start_block)
+        self.assertIn("if (hasPendingPipelineWork())", start_block)
+        self.assertIn("pipelineFastFailDisabled", start_block)
         self.assertIn('startPipelineWorker();', monitor_block)
         self.assertNotIn('stopPipelineWorker();', monitor_block)
 

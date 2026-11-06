@@ -130,10 +130,20 @@ def test_boot_probes_camoufox_through_the_shared_helper():
 
 
 def test_missing_camoufox_is_a_real_error_not_a_warning():
-    handler = LAUNCHER_SOURCE.split("function checkWorkerDependencies", 1)[1].split("function configuredMoneyPrinterPath", 1)[0]
-    assert 'missing.push("camoufox")' in handler
-    assert "imports obrigatórios ausentes" in handler
-    assert "install --with-uploaders" in handler or "thunderbolt install" in handler
+    """1.0.65 - o Camoufox continua OBRIGATORIO (nunca um aviso de opcional):
+    entrou na lista de modulos verificados com import REAL e, quando falta, a
+    falta dispara a AUTO-CURA como qualquer outra dependencia."""
+    # A verificacao central (import REAL + integridade do binario) inclui o
+    # camoufox na lista de quem pode faltar.
+    modules_block = LAUNCHER_SOURCE.split("function missingWorkerModules()", 1)[1].split("\nfunction ", 1)[0]
+    assert 'if (!camoufox.ready) missing.push("camoufox");' in modules_block
+    boot_block = LAUNCHER_SOURCE.split("function camoufoxWorkerReady()", 1)[1].split("function missingWorkerModules", 1)[0]
+    assert "camoufox_environment_ready" in boot_block
+    # O remedio e a AUTO-CURA (pip sobre o requirements), nao uma ordem manual.
+    handler = LAUNCHER_SOURCE.split("function checkWorkerDependencies(label)", 1)[1].split("function configuredMoneyPrinterPath", 1)[0]
+    assert "[SISTEMA] A actualizar dependencias internas" in handler
+    assert "installWorkerDependencies()" in handler
+    assert "npx" not in handler
     # quando tudo está presente, o boot não imprime NADA sobre o Camoufox
     assert "if (!missing.length) return true;" in handler
 
