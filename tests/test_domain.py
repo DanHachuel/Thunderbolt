@@ -140,8 +140,12 @@ def test_remake_refreshes_current_channel_video_defaults(tmp_path, monkeypatch):
     assert remade["thumbnail_blueprint_id"] == "thumb-modern"
     assert remade["voice"] == "voice-current"
     assert remade["artifacts"] == {"script": "/tmp/script.md"}
-    assert remade["audio_regeneration_requested"] is True
-    assert "audio_regeneration_requested_at" in remade
+    # 1.0.66 - REGRA DE OURO: o "Refazer Video" reaproveita a narracao audio
+    # VALIDA; a flag morta `audio_regeneration_requested` (escrita e nunca lida
+    # pelo worker) foi removida.
+    assert "audio_regeneration_requested" not in remade
+    assert remade["artifacts"].get("video") is None
+    assert remade["stage"] == "video"
     # 0.9.69: a remontagem revalida também a duração máxima do clip (em
     # qualquer plataforma, não só YouTube), a proporção, a concatenação, a
     # transição e a correspondência visual-roteiro com os defaults do canal.

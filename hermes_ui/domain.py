@@ -897,12 +897,21 @@ def remake_video_task(task_id: str) -> dict[str, Any] | None:
 
     The persisted script, blueprint, keywords/tags, voice, thumbnail prompt/image
     and any non-video creative artefacts are intentionally kept. The rendered
-    video, generated narration/audio and publication result are invalidated so
-    the worker rebuilds both audio and video from the script. All
-    channel-controlled generation inputs (subtitles, max clip duration, aspect
-    ratio, concatenation/transition, material source) are revalidated from the
-    channel's current defaults so the remake honours settings changed after
-    the original render instead of repeating the frozen values.
+    video and publication result are invalidated so the worker rebuilds the
+    video from the script.
+
+    1.0.66 - REGRA DE OURO DO REAPROVEITAMENTO: o audio existente e VALIDO
+    tambem e mantido. O "Refazer Video" so apaga mesmo o artefacto de video
+    (``artifacts.pop("video")``) para forcar a remontagem visual; a narracao
+    audio so e refeita quando o utilizador troca a voz do canal (o worker
+    detecta a diferenca e gera de novo) ou quando o ficheiro desapareceu. Antes
+    desta versao o remake descartava TODOS os artefactos de audio, o que
+    forçava uma ressintese Azure completa a cada clique - tempo, dinheiro e a
+    causa do WinError 32 na pasta azure-v2-chunks do relato. Todos os campos de
+    geracao controlados pelo canal (legendas, duracao do clip, proporcao,
+    concatenacao/transicao, fonte de materiais) sao revalidados a partir dos
+    valores actuais do canal, para que a remontagem honre alteracoes feitas
+    depois da geracao original em vez de repetir os valores congelados.
     """
     normalized_id = str(task_id or "").strip()
 
@@ -924,23 +933,26 @@ def remake_video_task(task_id: str) -> dict[str, Any] | None:
             task.update(migrated)
             _refresh_task_channel_video_settings(task)
             artifacts = dict(task.get("artifacts") or {})
+            # 1.0.66 - so o VIDEO e o UPLOAD saem: a remontagem visual e
+            # obrigatoria, mas a narracao audio VALIDA e reaproveitada.
             artifacts.pop("video", None)
             artifacts.pop("upload", None)
             for audio_key in ("audio", "narration", "voiceover", "voiceover_audio", "audio_path", "narration_audio"):
-                artifacts.pop(audio_key, None)
+                audio_value = artifacts.get(audio_key)
+                if audio_value and not Path(str(audio_value)).expanduser().is_file():
+                    artifacts.pop(audio_key, None)  # ficheiro desaparecido: gera de novo
             try:
                 remake_count = int(task.get("remake_count") or 0)
             except (TypeError, ValueError):
                 remake_count = 0
+            # 1.0.66 - `audio_path`/`narration_path`/`generated_audio` deixam de
+            # ser apagados: o worker usa-os para reaproveitar a narracao.
             for field in (
                 "video_log",
                 "video_result",
                 "video_helper_status",
                 "video_elapsed_seconds",
                 "audio_result",
-                "audio_path",
-                "narration_path",
-                "generated_audio",
                 "error",
             ):
                 task.pop(field, None)
@@ -950,8 +962,11 @@ def remake_video_task(task_id: str) -> dict[str, Any] | None:
                 "state": "to_do",
                 "progress": 50,
                 "video_ready": False,
-                "audio_regeneration_requested": True,
-                "audio_regeneration_requested_at": now(),
+                # 1.0.66 - `audio_regeneration_requested` saiu: era escrita aqui
+                # e NUNCA lida pelo worker (codigo morto que sugeria uma
+                # regeneracao obrigatoria que ninguem cumpria). A decisao real
+                # de gerar ou reaproveitar audio vive no worker
+                # (`_task_audio_for_reuse` + verificacao de voz).
                 "remake_requested_at": now(),
                 "remake_count": remake_count + 1,
                 "error": None,

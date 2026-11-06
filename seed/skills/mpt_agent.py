@@ -1242,6 +1242,37 @@ def _voice_rate(cli_args: list[str]) -> float:
         return 1.0
 
 
+def _reusable_azure_v2_audio(task_dir: Path, voice: str, rate: float) -> Path | None:
+    """1.0.66 - REAPROVEITAMENTO: devolve o azure-v2-audio.mp3 da tarefa quando
+    ele e VALIDO (existe, tamanho > 0) e a voz/velocidade actuais batem com as
+    que o geraram. Regra de ouro do "Refazer Video": o audio so e refeito se o
+    utilizador trocar a voz (ou se o ficheiro nao existir) - cada ressintese
+    gasta tempo, dinheiro e foi a causa do WinError 32 nos azure-v2-chunks.
+    """
+    audio_file = task_dir / "azure-v2-audio.mp3"
+    if not audio_file.is_file() or audio_file.stat().st_size <= 0:
+        return None
+    metadata_file = audio_file.with_suffix(".json")
+    if not metadata_file.is_file():
+        # Sem metadados nao ha como provar que a voz bate: nao arriscar.
+        return None
+    try:
+        metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if str(metadata.get("status") or "") != "completed":
+        return None
+    if str(metadata.get("voice") or "").strip() != str(voice or "").strip():
+        return None
+    try:
+        recorded_rate = float(metadata.get("rate") or 0)
+    except (TypeError, ValueError):
+        return None
+    if abs(recorded_rate - float(rate or 0)) > 0.001:
+        return None
+    return audio_file.resolve()
+
+
 def _prepare_azure_v2_chunked_audio(
     root: Path,
     config_path: Path,
@@ -1254,6 +1285,11 @@ def _prepare_azure_v2_chunked_audio(
     text = _forwarded_option_value(cli_args, "--video-script")
     if not voice or not text.strip():
         return None
+    # 1.0.66 - audiovalido da mesma voz: reaproveita (zero chamadas ao Azure).
+    reusable = _reusable_azure_v2_audio(task_dir, voice, _voice_rate(cli_args))
+    if reusable is not None:
+        log(f"Azure Speech V2: audio existente reaproveitado ({reusable.name}); nenhuma chamada ao Azure")
+        return reusable
     speech_key = _toml_section_value(config_path, "azure", "speech_key")
     speech_region = _toml_section_value(config_path, "azure", "speech_region")
     if not speech_key or not speech_region:
@@ -1325,6 +1361,10 @@ def _prepare_azure_v2_chunked_audio(
                 "status": "completed",
                 "audio_file": str(audio_file.resolve()),
                 "chunk_count": chunk_count,
+                # 1.0.66 - voz e velocidade ficam registadas para o
+                # reaproveitamento saber quando o audio ainda serve.
+                "voice": voice,
+                "rate": float(_voice_rate(cli_args)),
             },
             ensure_ascii=False,
             indent=2,
@@ -1951,6 +1991,25 @@ def generate_video(
     return videos, task_dir.resolve(), log_path.resolve(), result_path
 
 
+def _protocol_audio_file(task_dir: Path, cli_args: list[str]) -> str:
+    """1.0.66 - caminho do AUDIO customizado usado nesta execucao (ou "").
+
+    Publicado no protocolo (AUDIO_FILE=) para o worker persistir o caminho nos
+    artefactos da tarefa: no proximo "Refazer Video" o worker passa-o como
+    --custom-audio-file e a ressintese Azure (tempo, dinheiro, WinError 32 nos
+    azure-v2-chunks) deixa de acontecer sem necessidade.
+    """
+    custom = _forwarded_option_value(cli_args, "--custom-audio-file")
+    if custom:
+        candidate = Path(custom).expanduser()
+        if candidate.is_file() and candidate.stat().st_size > 0:
+            return str(candidate.resolve())
+    azure_audio = Path(task_dir) / "azure-v2-audio.mp3"
+    if azure_audio.is_file() and azure_audio.stat().st_size > 0:
+        return str(azure_audio.resolve())
+    return ""
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     root = args.root.expanduser().resolve()
@@ -2002,6 +2061,11 @@ def main(argv: list[str] | None = None) -> int:
     print("MPT_RESULT")
     for video in videos:
         print(f"VIDEO_FILE={video}")
+    # 1.0.66 - o audio customizado tambem viaja no protocolo: o worker grava-o
+    # nos artefactos e o remake seguinte reaproveita-o sem chamar o Azure.
+    audio_file = _protocol_audio_file(task_dir, args.cli_args)
+    if audio_file:
+        print(f"AUDIO_FILE={audio_file}")
     print(f"TASK_DIR={task_dir}")
     print(f"LOG_FILE={log_path}")
     print(f"RESULT_FILE={result_path}")

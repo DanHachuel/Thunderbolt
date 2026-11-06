@@ -25,6 +25,34 @@ from xml.sax.saxutils import escape
 MAX_CHUNK_CHARACTERS = 900
 MIN_CHUNK_CHARACTERS = 180
 RETRY_COUNT = 3
+# 1.0.66 - WinError 32 ("arquivo usado por outro processo"): no Windows o
+# antivirus/ffmpeg/moviepy seguram o handle dos ficheiros temporarios dos
+# segmentos e da exportacao. Toda operacao de ficheiro passa a ter retry com
+# espera curva, em vez de estoirar a sintese completa.
+FILE_RETRY_COUNT = 4
+FILE_RETRY_BASE_SECONDS = 0.5
+
+
+def _retry_file_operation(operation, description: str):
+    """1.0.66 - executa uma operacao de ficheiro com retry (WinError 32).
+
+    Usada na escrita/remocao dos segmentos e na exportacao final: um handle
+    retido no Windows nao pode mais estoirar uma sintese inteira.
+    """
+    last_error: OSError | None = None
+    for attempt in range(1, FILE_RETRY_COUNT + 1):
+        try:
+            return operation()
+        except OSError as exc:
+            last_error = exc
+            if attempt < FILE_RETRY_COUNT:
+                time.sleep(FILE_RETRY_BASE_SECONDS * (2 ** (attempt - 1)))
+    raise RuntimeError(f"{description} falhou apos {FILE_RETRY_COUNT} tentativas: {last_error}")
+
+
+def _remove_with_retry(path: Path) -> None:
+    """Remove um ficheiro com retry - o handle do Windows e lento a soltar."""
+    _retry_file_operation(lambda: path.unlink(missing_ok=True), f"remover {path.name}")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -202,7 +230,7 @@ def generate(text: str, voice: str, rate: float, output: Path) -> int:
             last_error: Exception | None = None
             for attempt in range(1, RETRY_COUNT + 1):
                 try:
-                    segment_path.unlink(missing_ok=True)
+                    _remove_with_retry(segment_path)
                     _synthesise_chunk(
                         speechsdk, chunk, voice, normalized_rate, segment_path
                     )
@@ -222,7 +250,20 @@ def generate(text: str, voice: str, rate: float, output: Path) -> int:
         combined = AudioSegment.empty()
         for segment_path in segment_paths:
             combined += AudioSegment.from_file(segment_path, format="mp3")
-        combined.export(output, format="mp3", bitrate="192k")
+        # 1.0.66 - exporta para um temporario unico e move com retry: se o
+        # destino estiver retido (WinError 32) a operacao insiste em vez de
+        # perder a sintese inteira.
+        staged_output = output.with_name(
+            f"{output.stem}.export-{os.getpid()}-{int(time.time() * 1000)}.mp3"
+        )
+        try:
+            _remove_with_retry(staged_output)
+            combined.export(staged_output, format="mp3", bitrate="192k")
+            _retry_file_operation(
+                lambda: os.replace(staged_output, output), f"mover {output.name}"
+            )
+        finally:
+            _remove_with_retry(staged_output)
 
     if not output.is_file() or output.stat().st_size <= 0:
         raise RuntimeError("A concatenação Azure Speech V2 não produziu áudio válido.")

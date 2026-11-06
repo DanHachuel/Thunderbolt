@@ -1574,6 +1574,34 @@ def _mpt_edge_narration_blocked_reason(task: dict[str, Any], settings: dict[str,
     )
 
 
+def _task_audio_for_reuse(task: dict[str, Any]) -> Path | None:
+    """1.0.66 - audio VALIDO da tarefa para reaproveitar no "Refazer Video".
+
+    Regra de ouro: o audio so e refeito se o utilizador trocar a voz do canal ou
+    se o ficheiro deixou de existir. Cada ressintese Azure gasta tempo, dinheiro
+    e foi a causa do WinError 32 na pasta azure-v2-chunks do relato. Devolve o
+    caminho quando existe um artefacto de audio valido em disco.
+    """
+    artifacts = task.get("artifacts") if isinstance(task.get("artifacts"), dict) else {}
+    generation_settings = task.get("generation_settings") if isinstance(task.get("generation_settings"), dict) else {}
+    candidates = [
+        artifacts.get("audio"),
+        artifacts.get("narration"),
+        artifacts.get("voiceover"),
+        artifacts.get("voiceover_audio"),
+        artifacts.get("audio_path"),
+        artifacts.get("narration_audio"),
+        task.get("audio_path"),
+        task.get("narration_path"),
+        generation_settings.get("voiceover_file"),
+    ]
+    for candidate in candidates:
+        path = _valid_audio_artifact(candidate)
+        if path is not None and path.is_file() and path.stat().st_size > 0:
+            return path
+    return None
+
+
 def _mpt_uses_custom_audio(task: dict[str, Any], settings: dict[str, Any] | None = None) -> bool:
     """Detecta quando o áudio chega ao MPT como ficheiro customizado.
 
@@ -2009,6 +2037,18 @@ def _run_video_helper_once(
         command.extend(["--custom-audio-file", str(voiceover_file.resolve())])
     elif generated_elevenlabs_audio is not None:
         command.extend(["--custom-audio-file", str(generated_elevenlabs_audio.resolve())])
+    else:
+        # 1.0.66 - REAPROVEITAMENTO: rota Azure Speech SDK V2 com audio ja gerado
+        # e VALIDO passa o ficheiro como customizado - o motor salta a sintese
+        # (zero chamadas ao Azure, zero azure-v2-chunks, zero WinError 32) e vai
+        # directo para a montagem. Sem audio valido, o fluxo normal gera-o.
+        reusable_audio = _task_audio_for_reuse(task)
+        if reusable_audio is not None:
+            command.extend(["--custom-audio-file", str(reusable_audio.resolve())])
+            _mpt_runtime_log(
+                f"[MPT-AUDIO] audio existente reaproveitado: {reusable_audio.name} "
+                "(nenhuma chamada ao Azure TTS)"
+            )
     output_lines: deque[str] = deque()
     output_chars = 0
     dropped_output_lines = [0]
@@ -2316,6 +2356,8 @@ def _run_video_helper_once(
             failure_metadata=metadata,
             fallback_eligible=True,
         )
+    audio_match = re.search(r"(?m)^AUDIO_FILE=(.+)$", output)
+    helper_audio_path = Path(audio_match.group(1).strip()).expanduser() if audio_match else None
     match = re.search(r"(?m)^VIDEO_FILE=(.+)$", output)
     video_path = Path(match.group(1).strip()).expanduser() if match else None
     if not video_path or not video_path.is_file() or video_path.stat().st_size <= 0:
@@ -2335,6 +2377,13 @@ def _run_video_helper_once(
             failure_metadata=metadata,
             fallback_eligible=True,
         )
+    # 1.0.66 - o audio customizado volta nos artefactos da tarefa: o proximo
+    # "Refazer Video" reaproveita-o ( _task_audio_for_reuse ) sem ressintetizar.
+    if helper_audio_path and helper_audio_path.is_file() and helper_audio_path.stat().st_size > 0:
+        task_artifacts = task.get("artifacts") if isinstance(task.get("artifacts"), dict) else {}
+        task_artifacts["audio"] = str(helper_audio_path)
+        task_artifacts["narration"] = str(helper_audio_path)
+        _update(str(task.get("id") or ""), artifacts=task_artifacts)
     return video_path
 
 
