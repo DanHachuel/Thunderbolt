@@ -133,7 +133,15 @@ def test_niche_anchor_terms_are_derived_from_the_niche_or_blueprint():
     assert anchors[:4] == ["finance", "money", "business", "investment"]
     rental = keyword_context.niche_anchor_terms("real estate", limit=2)
     assert rental == ["real estate", "property"]
-    assert keyword_context.niche_anchor_terms("nichо desconhecido", limit=2) == ["business", "office"]
+    # Nicho desconhecido NÃO leva âncoras genéricas a poluir a busca.
+    assert keyword_context.niche_anchor_terms("nicho desconhecido", limit=2) == []
+    assert keyword_context.niche_anchor_terms("", "") == []
+
+
+def test_queries_without_niche_context_are_not_padded_with_anchors():
+    queries = keyword_context.keyword_queries_enriched(["economia", "mercado"])
+    assert queries == ["economia", "mercado"]
+    assert keyword_context.keyword_queries_enriched(["economia"], "", "") == ["economia"]
 
 
 def test_generate_video_keywords_sanitizes_the_llm_answer():
@@ -241,5 +249,6 @@ def test_keyword_context_module_contracts():
     assert hasattr(keyword_context, "NICHE_METAPHOR_BLOCKLIST")
     assert "bleeding" in keyword_context.NICHE_METAPHOR_BLOCKLIST
     assert "arteries" in keyword_context.NICHE_METAPHOR_BLOCKLIST
-    assert hasattr(keyword_context, "GENERIC_ANCHORS")
+    assert keyword_context.has_niche_context("finanças", "") is True
+    assert keyword_context.has_niche_context("", "") is False
     assert inspect.signature(keyword_context.sanitize_visual_keywords).parameters["minimum"].default == 6

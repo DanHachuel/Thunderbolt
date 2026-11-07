@@ -198,7 +198,7 @@ NICHE_ANCHOR_TERMS: dict[str, tuple[str, ...]] = {
     "meio ambiente": ("environment", "nature", "forest", "ocean", "earth"),
 }
 
-GENERIC_ANCHORS = ("business", "office", "money", "data", "success", "city")
+GENERIC_ANCHORS: tuple[str, ...] = ()  # reservado: nicho desconhecido NÃO leva âncoras
 
 
 def _normalise(text: Any) -> str:
@@ -229,8 +229,9 @@ def is_health_niche(*values: Any) -> bool:
 def niche_anchor_terms(*values: Any, limit: int = 4) -> list[str]:
     """Termos-âncora do nicho para ENRIQUECER a busca ([keyword] + [nicho]).
 
-    Casa o nicho/blueprint com ``NICHE_ANCHOR_TERMS``; sem correspondência
-    devolve os genéricos (ordenados, sem duplicados).
+    Casa o nicho/blueprint com ``NICHE_ANCHOR_TERMS``. Sem nicho conhecido
+    devolve lista VAZIA (nada a adicionar) — quem não tem nicho declarado
+    não recebe âncoras genéricas a poluir a busca.
     """
     for value in values:
         normalised = _normalise(value)
@@ -245,7 +246,12 @@ def niche_anchor_terms(*values: Any, limit: int = 4) -> list[str]:
                     if len(result) >= limit:
                         return result
                 return result
-    return list(GENERIC_ANCHORS[:limit])
+    return []
+
+
+def has_niche_context(*values: Any) -> bool:
+    """Verdadeiro quando há nicho/blueprint conhecido (para ancorar a busca)."""
+    return any(_normalise(value) for value in values)
 
 
 def sanitize_visual_keywords(
@@ -294,9 +300,13 @@ def keyword_queries_enriched(
 
     É o que o Pexels/Pixabay recebe: ``finance``, ``money``,
     ``investment``… ANTES de qualquer keyword extraída — um termo
-    metafórico que sobreviva vem sempre DEPOIS do contexto do nicho.
+    metafórico que sobreviva vem sempre DEPOIS do contexto do nicho. Sem
+    nicho conhecido não há âncoras: a busca segue só com as keywords
+    saneadas (nada de genéricos a poluir um canal sem nicho declarado).
     """
     cleaned = sanitize_visual_keywords(keywords, *niche_values)
+    if not has_niche_context(*niche_values):
+        return cleaned[:limit]
     ordered: list[str] = []
     seen: set[str] = set()
 
