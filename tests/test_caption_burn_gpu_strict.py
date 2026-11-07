@@ -161,7 +161,8 @@ def test_burn_captions_uses_the_unique_temp_path(tmp_path: Path, monkeypatch):
     # (o subprocesso escreve directo no mp4 temporário único por uuid).
     assert "temp_audiofile_path" not in burn_body
     assert "legendas-{os.getpid()}-{uuid.uuid4().hex[:8]}" in burn_body
-    assert "safe_unlink(srt, missing_ok=True)" in burn_body
+    # 1.0.61/1.0.67 - o ficheiro de legendas chama-se `captions` (e um .ass).
+    assert "safe_unlink(captions, missing_ok=True)" in burn_body
     assert "safe_unlink(temporary, missing_ok=True)" in burn_body
     # 1.0.57: o nome único por uuid entrou no WRITOR (não apenas por PID).
     writer_body = TEXT_TO_IMAGES_SOURCE.split("def _write_web_safe_videofile", 1)[1].split(

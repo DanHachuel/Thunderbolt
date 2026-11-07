@@ -222,11 +222,13 @@ def test_burn_contracts_for_winerror_32():
     assert "temp_audiofile_path" not in burn_source
     assert "CompositeVideoClip" not in burn_source
     # Nomes únicos (PID + uuid) para SRT e mp4 — colisões deixam de existir.
-    assert "legendas-{os.getpid()}-{uuid.uuid4().hex[:8]}.srt" in burn_source
+    # 1.0.61/1.0.67 - .ass com resolucao real (o .srt escalava a fonte a
+    # partir de 384x288 e a legenda estourava o ecra).
+    assert "legendas-{os.getpid()}-{uuid.uuid4().hex[:8]}.ass" in burn_source
     assert "legendas-{os.getpid()}-{uuid.uuid4().hex[:8]}-tmp.mp4" in burn_source
     # Substituição e limpeza com retry em bloqueio.
     assert "safe_replace(temporary, output)" in burn_source
-    assert "safe_unlink(srt, missing_ok=True)" in burn_source
+    assert "safe_unlink(captions, missing_ok=True)" in burn_source
     assert "safe_unlink(temporary, missing_ok=True)" in burn_source
 
 
