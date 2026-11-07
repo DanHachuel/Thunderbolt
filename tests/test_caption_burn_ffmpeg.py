@@ -460,3 +460,50 @@ def test_caption_burn_command_has_no_force_style():
     assert "force_style" not in burn_source.split('"""', 2)[-1]
     assert "_write_caption_ass(" in burn_source
     assert "_write_caption_srt" not in burn_source
+
+
+def test_probe_video_geometry_always_returns_three_values(tmp_path, monkeypatch):
+    """1.0.67 - TODOS os caminhos devolvem (duracao, largura, altura).
+
+    O gate do CI (Linux) reprovou porque dois `return 0.0, 0` (DOIS valores)
+    sobreviveram no restore: sem o binario `ffmpeg` no PATH do runner, a sonda
+    caia nesses caminos e o unpacking estourava. O contrato passa a ser explicito
+    para os tres desfechos.
+    """
+    import subprocess as real_subprocess
+
+    class _Boom:
+        returncode = 1
+        stderr = ""
+        stdout = ""
+
+    def raise_oserror(*args, **kwargs):
+        raise FileNotFoundError("ffmpeg nao encontrado")
+
+    monkeypatch.setattr(text_to_images.subprocess, "run", raise_oserror)
+    assert text_to_images._probe_video_geometry("ffmpeg-inexistente", tmp_path / "x.mp4") == (0.0, 0, 0)
+
+    # sem duracao no output -> tambem tres valores
+    monkeypatch.setattr(text_to_images.subprocess, "run", lambda *a, **k: _Boom())
+    assert text_to_images._probe_video_geometry("ffmpeg", tmp_path / "x.mp4") == (0.0, 0, 0)
+
+    # binario vazio -> tres valores
+    assert text_to_images._probe_video_geometry("", tmp_path / "x.mp4") == (0.0, 0, 0)
+
+
+def test_probe_video_geometry_parses_real_output(monkeypatch, tmp_path):
+    """Sondagem com output real do ffmpeg: duracao + largura + altura."""
+
+    class _Probe:
+        returncode = 1
+        stderr = (
+            "Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'video.mp4':\n"
+            "  Duration: 00:01:30.50, start: 0.000000, bitrate: 5000 kb/s\n"
+            "    Stream #0:0: Video: h264 (High), yuv420p, 1920x1080, 30 fps\n"
+        )
+        stdout = ""
+
+    monkeypatch.setattr(text_to_images.subprocess, "run", lambda *a, **k: _Probe())
+    duration, width, height = text_to_images._probe_video_geometry("ffmpeg", tmp_path / "video.mp4")
+    assert duration == 90.5
+    assert (width, height) == (1920, 1080)
