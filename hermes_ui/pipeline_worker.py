@@ -2003,7 +2003,7 @@ _MATERIAL_KEY_HEALTH_TTL_SECONDS = 300.0
 _material_key_health_cache: dict[str, tuple[float, bool]] = {}
 
 
-def _material_key_is_healthy(api_key: str) -> bool:
+def _material_key_is_healthy(api_key: str, route: str = "pexels") -> bool:
     """1.0.69 - sonda REAL da chave (com cache de 5 min por processo).
 
     O motor MPT roda as chaves por round-robin sem retry: se a chave sorteada
@@ -2019,10 +2019,12 @@ def _material_key_is_healthy(api_key: str) -> bool:
     if cached and now - cached[0] < _MATERIAL_KEY_HEALTH_TTL_SECONDS:
         return cached[1]
     try:
-        from hermes_ui.api_key_tests import test_media_provider_card
+        from hermes_ui.api_key_tests import test_material_source_credentials
 
-        result = test_media_provider_card({"provider": "pexels", "api_key": key})
-        healthy = str(result.get("status") or "").strip().casefold() == "ok"
+        # 1.0.69 - o probe das fontes de materiais responde "success"
+        # ("API Key OK"); "ok" fica aceite para tolerar outros provedores.
+        result = test_material_source_credentials(route, key)
+        healthy = str(result.get("status") or "").strip().casefold() in {"ok", "success"}
     except Exception:
         healthy = False
     _material_key_health_cache[key] = (now, healthy)
@@ -2037,7 +2039,7 @@ def _order_material_keys_by_health(keys: list[str], route: str) -> list[str]:
     """
     if route not in {"pexels", "pixabay"} or len(keys) < 2:
         return keys
-    healthy = [key for key in keys if _material_key_is_healthy(key)]
+    healthy = [key for key in keys if _material_key_is_healthy(key, route)]
     broken = [key for key in keys if key not in healthy]
     for position, key in enumerate(broken, start=len(healthy) + 1):
         _mpt_runtime_log(

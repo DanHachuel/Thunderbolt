@@ -135,16 +135,35 @@ def test_plain_route_failure_keeps_the_standard_attribution():
 
 
 def test_worker_orders_material_keys_by_health(monkeypatch):
+    """1.0.70 - o probe usado é o das FONTES DE MATERIAIS (responde "success")."""
     import hermes_ui.api_key_tests as akt
 
     from hermes_ui import pipeline_worker
 
-    # A função importa o probe dentro do corpo — monkeypatchar o módulo de origem.
     monkeypatch.setattr(
-        akt, "test_media_provider_card", lambda card: {"status": "ok" if card["api_key"] == "B" else "error"}
+        akt,
+        "test_material_source_credentials",
+        lambda provider, api_key: {"status": "success" if api_key == "B" else "error"},
     )
     ordered = pipeline_worker._order_material_keys_by_health(["A", "B"], "pexels")
     assert ordered == ["B"], "a chave válida vai primeiro"
+
+
+def test_material_key_probe_accepts_the_real_success_status(monkeypatch):
+    """1.0.70 - o probe do Pexels devolve "success" ("API Key OK"), não "ok".
+
+    A primeira versão comparava com "ok" e usava o probe dos cartões de media
+    (que exige base_url) — marcava as 3 chaves reais do utilizador como
+    falhadas. Este teste impede a regressão.
+    """
+    import hermes_ui.api_key_tests as akt
+
+    from hermes_ui import pipeline_worker
+
+    monkeypatch.setattr(akt, "test_material_source_credentials", lambda provider, key: {"status": "success"})
+    assert pipeline_worker._material_key_is_healthy("chave-valida", "pexels") is True
+    monkeypatch.setattr(akt, "test_material_source_credentials", lambda provider, key: {"status": "error"})
+    assert pipeline_worker._material_key_is_healthy("chave-morta", "pexels") is False
 
 
 def test_worker_keeps_original_order_without_enough_keys():
