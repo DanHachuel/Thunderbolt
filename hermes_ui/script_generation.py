@@ -7,8 +7,10 @@ from typing import Any, Callable
 
 from .blueprint_governance import (
     MAX_SCRIPT_GENERATION_ATTEMPTS,
+    restrict_blueprint_to_subniches,
     script_governance,
     script_rules_prompt_section,
+    subniche_prompt_section,
     title_governance,
     validate_script_content,
     validate_title_with_governance,
@@ -90,6 +92,15 @@ def generate_script_document(
     # chegam à LLM (a qualquer profundidade). O original fica intacto para
     # títulos/visuais; tudo o que segue usa a cópia limpa.
     blueprint_payload = sanitize_blueprint_for_prompt(blueprint or {})
+    # 1.0.67 - SUBNICHOS POR CANAL: se o canal restringiu as categorias do
+    # rotation_mandate (ecra Canais Youtube > Editar), o blueprint que segue
+    # para o prompt e para o PAYLOAD do LLM leva apenas as categorias
+    # escolhidas — a LLM nem vê as proibidas. Seleccao vazia = blueprint
+    # intacto (comportamento padrão de sempre).
+    selected_subniches = [
+        str(item).strip() for item in (channel or {}).get("selected_subniches") or [] if str(item).strip()
+    ]
+    blueprint_payload, subniche = restrict_blueprint_to_subniches(blueprint_payload, selected_subniches)
     channel_context_value = channel_context(channel, blueprint_payload)
     requested_language = language or channel_context_value["language"]
     language_code, language_name = target_language(requested_language)
@@ -100,6 +111,11 @@ def generate_script_document(
         # 1.0.45 — a governança de roteiro perde as regras de comprimento
         # (sem secção «EXTENSÃO OBRIGATÓRIA», sem validação dura de caracteres).
         governance = strip_length_governance(script_governance(blueprint_payload))
+        # 1.0.67 - o validador passa a conhecer os subnichos PROIBIDOS do
+        # canal: um roteiro que fuja da seleccao é rejeitado e volta ao LLM
+        # como feedback (ate 3 tentativas), em vez de virar vídeo errado.
+        if subniche["active"]:
+            governance["subniche_forbidden_terms"] = subniche["forbidden_terms"]
         # 1.0.45 — o tamanho vem do canal: o ``target_word_count`` explícito
         # (derivado do Tempo Médio do cartão) vence o padrão; NUNCA suprimido
         # por regra de blueprint.
@@ -145,6 +161,12 @@ def generate_script_document(
         # residuais de tamanho do Blueprint (regra imutável).
         if length_instruction:
             system = length_instruction + "\n\n" + system
+        # 1.0.67 - a restrição de subnichos entra ANTES das regras do
+        # blueprint: é a lei mais específica do canal e a mais facilmente
+        # ignorada pela LLM se ficar enterrada no JSON do mandate.
+        subniche_section = subniche_prompt_section(subniche)
+        if subniche_section:
+            system += "\n\n" + subniche_section
         governance_section = script_rules_prompt_section(governance)
         if governance_section:
             system += "\n\n" + governance_section

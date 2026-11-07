@@ -5,7 +5,6 @@ O motor de geração deixa de usar um system prompt estático e genérico
 regras de título, palavras proibidas, extensão obrigatória e tom saem do
 próprio JSON, e o output do LLM é VALIDADO em código antes de ser aceite
 (o LLM falha em seguir regras negativas; o validador força-as).
-
 Campos explícitos (opcionais — quando o blueprint os tiver, ganham sempre):
 - ``SYSTEM_PROMPT_OVERRIDE`` (topo ou metadata): injectado verbatim no prompt.
 - ``GLOBAL_BLACKLIST_WORDS`` (topo ou metadata): palavras proibidas no output.
@@ -26,6 +25,7 @@ hardcoding.
 """
 from __future__ import annotations
 
+import copy
 import json
 import re
 from typing import Any
@@ -583,7 +583,144 @@ def script_governance(blueprint: dict[str, Any] | None) -> dict[str, Any]:
         "must_include": _string_items(instructions.get("must_include"))[:12],
         "must_avoid": _string_items(instructions.get("must_avoid"))[:14],
         "mandatory_cta": mandatory_cta,
+        # 1.0.67 - subnichos por canal: quando o canal restringe as categorias
+        # do rotation_mandate, os termos das categorias PROIBIDAS são lei dura
+        # no validador (o LLM falha em seguir restrições de tema). Preenchido
+        # por ``subniche_restriction`` no ponto de uso (script_generation);
+        # ausente/vazio = sem verificação (comportamento pré-1.0.67 intacto).
+        "subniche_forbidden_terms": [],
     }
+
+
+# ---------------------------------------------------------------------------
+# Subnichos por canal (1.0.67)
+# ---------------------------------------------------------------------------
+
+
+def rotation_categories(blueprint: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Categorias do ``rotation_mandate`` do blueprint, normalizadas.
+
+    O formato das categorias varia entre blueprints de autor: os exemplos
+    vivem em ``example_themes`` (Oração) ou ``example_topics`` (FINANCE USA) —
+    as duas chaves são aceites. A lista devolvida tem sempre ``id``, ``label``,
+    ``description`` e ``example_themes``.
+    """
+    rotation = _dict(_dict(blueprint).get("rotation_mandate"))
+    categories: list[dict[str, Any]] = []
+    for category in rotation.get("categories") or []:
+        if not isinstance(category, dict):
+            continue
+        identifier = str(category.get("id") or "").strip()
+        if not identifier:
+            continue
+        categories.append({
+            "id": identifier,
+            "label": str(category.get("label") or identifier).strip(),
+            "description": str(category.get("description") or "").strip(),
+            "example_themes": _string_items(category.get("example_themes") or category.get("example_topics")),
+        })
+    return categories
+
+
+def _subniche_terms(categories: list[dict[str, Any]]) -> list[str]:
+    """Termos de correspondência (rótulo + exemplos) de um conjunto de categorias."""
+    terms: list[str] = []
+    for category in categories:
+        label = str(category.get("label") or "").strip()
+        if label:
+            terms.append(label)
+        for example in category.get("example_themes") or []:
+            value = str(example).strip()
+            if value:
+                terms.append(value)
+    return [term for term in _dedupe(terms) if len(term) >= 4]
+
+
+def subniche_restriction(
+    blueprint: dict[str, Any] | None,
+    selected_subniches: list[str] | tuple[str, ...] | None,
+) -> dict[str, Any]:
+    """Resolve a restrição de subnichos de um canal contra um blueprint.
+
+    Devolve um dicionário com ``active`` (a restrição aplica-se?), ``selected``
+    (ids válidos), ``labels`` (rótulos permitidos, para o prompt), ``categories``
+    (categorias permitidas) e ``forbidden_terms`` (termos das categorias NÃO
+    escolhidas, usados pelo validador).
+
+    Regra de ouro: selecção vazia (ou só com ids que não existem no blueprint)
+    = ``active: False`` = usar TODAS as categorias — o comportamento pré-1.0.67
+    fica intacto e um blueprint novo nunca deixa o canal sem conteúdo.
+    """
+    requested = [str(item).strip() for item in (selected_subniches or []) if str(item).strip()]
+    categories = rotation_categories(blueprint)
+    inactive: dict[str, Any] = {
+        "active": False,
+        "selected": [],
+        "labels": [],
+        "categories": categories,
+        "forbidden_terms": [],
+    }
+    if not requested or not categories:
+        return inactive
+    known = {category["id"] for category in categories}
+    resolved = [item for item in _dedupe(requested) if item in known]
+    if not resolved:
+        return inactive
+    allowed_ids = set(resolved)
+    allowed = [category for category in categories if category["id"] in allowed_ids]
+    forbidden = [category for category in categories if category["id"] not in allowed_ids]
+    return {
+        "active": True,
+        "selected": resolved,
+        "labels": [category["label"] for category in allowed],
+        "categories": allowed,
+        "forbidden_terms": _subniche_terms(forbidden),
+    }
+
+
+def restrict_blueprint_to_subniches(
+    blueprint: dict[str, Any] | None,
+    selected_subniches: list[str] | tuple[str, ...] | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Cópia profunda do blueprint com as categorias filtradas + a restrição.
+
+    O blueprint original NUNCA é mutado (o índice em processo é partilhado).
+    Sem restrição activa, devolve a cópia intacta — o pipeline vê exactamente
+    o mesmo blueprint de antes.
+    """
+    payload = copy.deepcopy(_dict(blueprint))
+    restriction = subniche_restriction(payload, selected_subniches)
+    if not restriction["active"]:
+        return payload, restriction
+    rotation = payload.get("rotation_mandate")
+    if not isinstance(rotation, dict):
+        rotation = {}
+        payload["rotation_mandate"] = rotation
+    allowed_ids = set(restriction["selected"])
+    rotation["categories"] = [
+        category
+        for category in (rotation.get("categories") or [])
+        if isinstance(category, dict) and str(category.get("id") or "").strip() in allowed_ids
+    ]
+    return payload, restriction
+
+
+def subniche_prompt_section(restriction: dict[str, Any]) -> str:
+    """Secção EXPLÍCITA de restrição de subnichos para o system prompt."""
+    if not restriction or not restriction.get("active"):
+        return ""
+    labels = [str(label).strip() for label in restriction.get("labels") or [] if str(label).strip()]
+    if not labels:
+        return ""
+    return (
+        "[RESTRIÇÃO DE SUBNICHOS DESTE CANAL — PRIORIDADE MÁXIMA]\n"
+        f"Este canal está configurado para produzir APENAS conteúdo destes subnichos: {', '.join(labels)}.\n"
+        "Está ESTRITAMENTEMENTE PROIBIDO escrever sobre qualquer outra categoria do "
+        "rotation_mandate — as categorias não selecionadas foram removidas do mandate "
+        "que recebeste e qualquer referência a elas reprova o roteiro no validador.\n"
+        "Se o tema pedido roçar um subnicho proibido, escolhe um ângulo diferente "
+        "DENTRO dos subnichos permitidos."
+    )
 
 
 def validate_script_content(content: str, governance: dict[str, Any]) -> tuple[bool, str]:
@@ -613,6 +750,18 @@ def validate_script_content(content: str, governance: dict[str, Any]) -> tuple[b
         _SCENE_LABEL.match(line) for line in text.splitlines() if line.strip()
     ):
         return False, "O roteiro só contém rótulos de cena ('SCENE 1', ...), sem narração falada."
+    # 1.0.67 - subnichos por canal: o canal pode restringir o rotation_mandate
+    # a algumas categorias; qualquer menção a uma categoria PROIBIDA reprova o
+    # roteiro (com motivo accionável para o loop de regeneração). Só activo
+    # quando o canal tem selecção — sem selecção, nenhum termo é proibido.
+    forbidden_terms = [str(term) for term in (governance or {}).get("subniche_forbidden_terms") or []]
+    if forbidden_terms:
+        for term in forbidden_terms:
+            if _contains_pattern(term).search(text):
+                return False, (
+                    f"O roteiro fala de «{term}», que NÃO é um dos subnichos selecionados para este "
+                    "canal. Reescreve o roteiro INTEGRALMENTE sobre um dos subnichos permitidos."
+                )
     if not governance.get("length_compliance_mandatory"):
         return True, "Válido"
     character_range = governance.get("strict_character_range")

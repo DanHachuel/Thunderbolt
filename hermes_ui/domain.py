@@ -64,6 +64,10 @@ def create_channel(name: str, url: str = "", metadata: dict[str, Any] | None = N
         "description_source": "",
         "niche": "",
         "reference_channels": [],
+        # 1.0.67 - subnichos por canal: ids das categorias do
+        # ``rotation_mandate`` do blueprint do canal que o pipeline pode usar.
+        # Lista VAZIA = usar todas as categorias (comportamento padrão).
+        "selected_subniches": [],
         "thumbnail_url": "",
         "avatar_url": "",
         "subscriber_count": None,

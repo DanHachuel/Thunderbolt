@@ -301,6 +301,7 @@ from app.social_auto_upload_ui import render_sau_accounts, render_social_auto_up
 from app.social_networks_ui import render_instagram_automation, render_meta_api_cards, render_social_networks
 from hermes_ui.social_auto_upload_backend import confirm_sau_upload_not_published, get_sau_upload_checkpoint, reconcile_uncertain_uploads, sau_upload_checkpoint_id, upload_video_via_sau
 from hermes_ui.blueprints import create_blueprint_from_link, list_branding_files, save_generated_blueprint
+from hermes_ui.blueprint_governance import rotation_categories
 from hermes_ui.thumbnail_blueprints import generate_thumbnail_blueprint, list_thumbnail_blueprint_documents, resolve_thumbnail_blueprint, save_thumbnail_blueprint, save_thumbnail_blueprint_pair, save_thumbnail_blueprint_pairs, thumbnail_blueprint_associations, thumbnail_blueprint_catalog, thumbnail_blueprint_for_blueprint, thumbnail_blueprint_for_channel
 from hermes_ui.metadata_cleaner import build_description, clean_video_metadata, list_edit_records, metadata_manifest, normalize_tags, save_edit_record, store_external_video
 from hermes_ui.python_editor import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, PythonEditorError, change_speed, editor_manifest, extract_audio, list_edit_records as list_python_editor_records, list_generated_videos, list_scripts, list_video_files, read_script, remove_audio, replace_audio, resize_video, save_edit_record as save_python_editor_record, save_script, store_uploaded_asset, trim_video
@@ -2019,6 +2020,31 @@ def channel_default_options(channel: dict) -> tuple[list[str], dict[str, str], s
     return blueprint_ids, blueprint_labels, current_blueprint, voice_options, current_voice
 
 
+def channel_subniche_options(channel: dict) -> tuple[list[str], dict[str, str], list[str]]:
+    """Subnichos disponíveis e selecionados para o editor de canal (1.0.67).
+
+    Lê o blueprint do canal e devolve as categorias do
+    ``rotation_mandate`` como opções do multiselect. A selecção guardada é
+    intersectada com as categorias actuais: um blueprint novo (sem os ids
+    antigos) faz a selecção cair para vazia = «usar todos», em vez de deixar
+    o canal preso a categorias que já não existem.
+    """
+    categories = rotation_categories(blueprint_for_channel(channel))
+    subniche_ids = [category["id"] for category in categories]
+    subniche_labels = {category["id"]: category["label"] for category in categories}
+    stored = [str(item).strip() for item in (channel.get("selected_subniches") or []) if str(item).strip()]
+    selected = [item for item in subniche_ids if item in set(stored)]
+    return subniche_ids, subniche_labels, selected
+
+
+def channel_subniche_summary(channel: dict) -> str:
+    """Rótulos dos subnichos activos do canal (vazio = usa todos)."""
+    _ids, labels, selected = channel_subniche_options(channel)
+    if not selected:
+        return ""
+    return ", ".join(labels[item] for item in selected)
+
+
 def channel_niche_label(channel: dict) -> str:
     """Return the channel niche/reference label shown under the channel name."""
     niche = str(channel.get("niche") or "").strip()
@@ -2341,6 +2367,24 @@ def render_channel_edit_form(channel: dict, youtube_account_ids: list[str], yout
             edited_views = st.text_input("Visualizações", value=_channel_count_text(channel.get("view_count")))
         with edit_cols[1]:
             edited_blueprint = st.selectbox("Blueprint Padrão", blueprint_ids, index=blueprint_ids.index(current_blueprint) if current_blueprint in blueprint_ids else 0, format_func=lambda item: blueprint_labels.get(item, item or "Sem Blueprint padrão"))
+            # 1.0.67 - subnichos por canal: filtra as categorias do
+            # Rotation Mandate do blueprint deste canal. Vazio = usar todas.
+            subniche_ids, subniche_labels, current_subniches = channel_subniche_options(channel)
+            if subniche_ids:
+                edited_subniches = st.multiselect(
+                    "Filtrar Subnichos (deixe vazio para usar todos)",
+                    options=subniche_ids,
+                    default=current_subniches,
+                    format_func=lambda item: subniche_labels.get(item, item),
+                    help=(
+                        "Categorias do Rotation Mandate que este canal pode usar. "
+                        "Vazio = todas as categorias (comportamento padrão). "
+                        "Ao trocar de Blueprint, guarde e reabra «Editar» para ver as categorias novas."
+                    ),
+                )
+            else:
+                edited_subniches = []
+                st.caption("Este blueprint não tem categorias de Rotation Mandate — a filtragem por subnicho não se aplica.")
             edited_voice = st.selectbox("Narrador/Voz Padrão", voice_options, index=voice_options.index(current_voice) if current_voice in voice_options else 0, format_func=lambda item: item or "Sem voz padrão")
             edited_account = st.selectbox("Conta Google para Upload directo", account_ids, index=account_ids.index(current_account) if current_account in account_ids else 0, format_func=lambda item: youtube_account_labels.get(item, item or "Sem conta Google associada"))
             composio_data = channel.get("composio") if isinstance(channel.get("composio"), dict) else {}
@@ -2365,6 +2409,9 @@ def render_channel_edit_form(channel: dict, youtube_account_ids: list[str], yout
                 "style_wide": channel_video_source_storage(edited_style), "video_aspect_ratio": edited_aspect,
                 "niche": edited_niche.strip(), "reference_channels": [item.strip() for item in re.split(r"[,|]", edited_niche) if item.strip()], "country": edited_country.strip(),
                 "default_blueprint_id": edited_blueprint.strip(), "blueprint_id": edited_blueprint.strip(),
+                # 1.0.67 - intersecta com as categorias actuais do blueprint:
+                # selecção velha + blueprint novo = vazio («usar todos»).
+                "selected_subniches": [item for item in edited_subniches if item in subniche_ids],
                 "default_voice": edited_voice.strip(), "voice": edited_voice.strip(),
                 "google_account_id": edited_account.strip(), "google_account_email": str(youtube_accounts_by_id.get(edited_account, {}).get("email", "")),
                 "composio_connected_account_id": edited_composio_account_id.strip() if edited_composio_account_id.strip().startswith("ca_") else "",
@@ -4341,6 +4388,12 @@ def render_channels():
                 country_label = str(channel.get("country") or "").strip()
                 st.write(f"**{channel.get('name', 'Sem nome')}**{f' · {country_label}' if country_label else ''}")
                 st.caption(channel_niche_label(channel))
+                # 1.0.67 - subnichos: o cartão mostra a restricção activa para
+                # o utilizador ver, sem abrir o editor, que o canal está preso
+                # a categorias específicas do Rotation Mandate.
+                selected_labels = channel_subniche_summary(channel)
+                if selected_labels:
+                    st.caption(f"Subnichos: {selected_labels}")
                 st.caption(f"{channel.get('handle') or channel.get('url') or 'sem URL'} · {channel.get('metrics_source', 'manual')}")
             with header_cols[2]:
                 if channel_url:

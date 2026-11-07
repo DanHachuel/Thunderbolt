@@ -30,6 +30,7 @@ CHANNEL_TEMPLATE_COLUMNS: tuple[str, ...] = (
     "Narrador/ voz padrão",
     "Idioma",
     "Nicho",
+    "Subnichos",
     "Blueprint Padrão",
     "Estilo Wide",
     "Activo ",
@@ -49,6 +50,8 @@ _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "voice": ("narrador voz padrão", "narrador voz padrao", "narrador", "voz padrão", "voz padrao", "voz", "voice"),
     "language": ("idioma", "lingua", "language", "lang"),
     "niche": ("nicho", "niche", "tema", "categoria", "category"),
+    # 1.0.67 - subnichos por canal (ids das categorias do rotation_mandate).
+    "selected_subniches": ("subnichos", "subnicho", "subniches", "selected_subniches", "subnichos selecionados"),
     "blueprint": ("blueprint padrão", "blueprint padrao", "blueprint", "modelo blueprint", "blueprint name"),
     "style_wide": ("estilo wide", "estilo", "wide style", "video style", "style"),
     "active": ("activo", "ativo", "activa", "ativa", "active", "enabled"),
@@ -269,6 +272,11 @@ def normalize_channel_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "voice": _text(row.get("voice")),
         "language": _text(row.get("language")),
         "niche": _text(row.get("niche")),
+        # 1.0.67 - subnichos: lista de ids separada por virgula/ponto e
+        # virgula/pipe ("" = usar todas as categorias do blueprint).
+        "selected_subniches": [
+            item.strip() for item in re.split(r"[,|;]", _text(row.get("selected_subniches"))) if item.strip()
+        ],
         "blueprint": _text(row.get("blueprint")),
         "style_wide": _normalise_style(row.get("style_wide")),
         "active": _normalise_boolean(row.get("active")),
