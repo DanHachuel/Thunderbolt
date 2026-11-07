@@ -21,6 +21,7 @@ Este módulo concentra a defesa em três camadas:
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any, Iterable
 
 
@@ -97,6 +98,16 @@ NICHE_METAPHOR_BLOCKLIST = (
     "tumor",
     "stroke",
     "bleeding out",
+    # 1.0.69 - formas flexionadas: "bleeds cash" sobrevivia ao bloqueio porque
+    # a lista só tinha "bleeding" (relato do vídeo do canal de finanças).
+    "bleed",
+    "bleeds",
+    "bled",
+    "bleeding",
+    "bloodstream",
+    "hemorrhage",
+    "haemorrhage",
+    "drains blood",
 )
 
 # Marcas de nicho de SAÚDE: só aí os termos acima são legítimos.
@@ -201,9 +212,76 @@ NICHE_ANCHOR_TERMS: dict[str, tuple[str, ...]] = {
 GENERIC_ANCHORS: tuple[str, ...] = ()  # reservado: nicho desconhecido NÃO leva âncoras
 
 
+# Palavras de ligação que não descrevem NADA para um banco de imagens: o
+# extractor de keywords àixa-as passar quando a LLM falha e o Pexels devolve
+# lixo (relato: "your, rental, property, bleeds, cash, even, great, tenants").
+SEARCH_STOPWORDS = frozenset(
+    {
+        "a", "o", "as", "os", "um", "uma", "uns", "umas", "de", "do", "da", "dos", "das",
+        "the", "this", "that", "these", "those", "your", "you", "my", "our", "their", "his", "her", "its",
+        "and", "or", "but", "if", "then", "than", "so", "because", "while", "when", "where", "why", "how",
+        "with", "without", "for", "from", "into", "about", "over", "under", "between", "during", "after",
+        "before", "even", "just", "only", "also", "very", "much", "more", "most", "some", "any", "all",
+        "not", "no", "yes", "is", "are", "was", "were", "be", "been", "being", "am",
+        "in", "on", "at", "by", "to", "of", "off", "out", "up", "down", "as",
+        # 1.0.69 - adjectivos genéricos que não descrevem nada para um banco de
+        # imagens (sobreviveram ao primeiro relato: "great tenants").
+        "great", "good", "bad", "big", "small", "large", "little", "new", "old", "best", "worst",
+        "bom", "boa", "mau", "ma", "grande", "pequeno", "pequena", "novo", "nova", "velho", "velha", "melhor", "pior",
+        "e", "ou", "mas", "se", "entao", "então", "porque", "enquanto", "quando", "onde", "por que", "como",
+        "com", "sem", "para", "pelo", "pela", "entre", "durante", "depois", "antes", "apos", "após",
+        "nao", "não", "sim", "muito", "mais", "menos", "todo", "toda", "todos", "todas", "cada",
+    }
+)
+
+
+def _is_search_stopword(term: str) -> bool:
+    """Verdadeiro quando o termo é só uma palavra de ligação (lixo de busca)."""
+    return _ascii_fold(term) in SEARCH_STOPWORDS
+
+
+def safe_search_string(terms: Iterable[Any], *, limit: int = 15, separator: str = ",") -> str:
+    """String final para o Pexels/Pixabay: ESTRITAMENTE alfanumérica.
+
+    1.0.69 - relato: a busca seguiu com ``your,rental,property,bleeds,cash,
+    even,great,tenants,finanças`` — palavras soltas do título, metáfora viva e
+    cedilha. Esta função deixa passar só letras/dígitos e espaços internos,
+    remove as palavras de ligação e garante um fallback do nicho quando a
+    lista fica vazia (a busca nunca sai vazia nem poluída).
+    """
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in terms:
+        value = _ascii_fold(item)
+        # estritamente alfanumérico (espaços internos preservados)
+        value = " ".join(re.findall(r"[a-z0-9]+", value))
+        value = " ".join(value.split())
+        if len(value) < 2 or value in seen:
+            continue
+        if _is_search_stopword(value):
+            continue
+        cleaned.append(value)
+        seen.add(value)
+    return separator.join(cleaned[:limit])
+
+
+def _ascii_fold(text: Any) -> str:
+    """Minúsculas sem diacríticos (ç -> c, ã -> a…) para comparações.
+
+    1.0.69 - A RAIZ do relato: o canal do utilizador chama-se "Finanças" (com
+    ç) e a chave do dicionário é ``"financ"`` (ASCII). ``"financ" in
+    "finanças"`` é FALSO em Python — as âncoras de nicho nunca apareciam e a
+    busca seguia apenas com as palavras do título. Com o folding, "finanças"
+    vira "financas" e o nicho casa.
+    """
+    decomposed = unicodedata.normalize("NFD", str(text or ""))
+    stripped = "".join(char for char in decomposed if unicodedata.category(char) != "Mn")
+    return " ".join(stripped.casefold().split())
+
+
 def _normalise(text: Any) -> str:
-    """Casefold + compacta espaços (comparações tolerantes)."""
-    return " ".join(str(text or "").casefold().split())
+    """Casefold + folding de diacríticos + compacta espaços (comparações)."""
+    return _ascii_fold(text)
 
 
 def _has_blocked_term(term: str) -> str | None:
@@ -296,28 +374,41 @@ def keyword_queries_enriched(
     *niche_values: Any,
     limit: int = 15,
 ) -> list[str]:
-    """Queries de busca saneadas + âncoras do nicho à frente (1.0.62).
+    """Queries de busca saneadas + âncoras do nicho à frente (1.0.62/1.0.69).
 
     É o que o Pexels/Pixabay recebe: ``finance``, ``money``,
     ``investment``… ANTES de qualquer keyword extraída — um termo
     metafórico que sobreviva vem sempre DEPOIS do contexto do nicho. Sem
     nicho conhecido não há âncoras: a busca segue só com as keywords
     saneadas (nada de genéricos a poluir um canal sem nicho declarado).
+
+    1.0.69 - três endirecções do relato (busca com palavras soltas do título):
+    as palavras de ligação (``your``, ``even``, ``great`` …) saem; se a lista
+    ficar VAZIA depois da limpeza, os âncoras do nicho entram sozinhos (a
+    busca nunca fica sem contexto); e cada termo fica estritamente
+    alfanumérico (sem cedilhas/aspas a poluir a query).
     """
     cleaned = sanitize_visual_keywords(keywords, *niche_values)
+    anchors = niche_anchor_terms(*niche_values, limit=4)
     if not has_niche_context(*niche_values):
-        return cleaned[:limit]
-    ordered: list[str] = []
-    seen: set[str] = set()
-
-    def _add(term: str) -> None:
-        normalised = term.casefold()
-        if term and normalised not in seen:
-            ordered.append(term)
-            seen.add(normalised)
-
-    for anchor in niche_anchor_terms(*niche_values, limit=4):
-        _add(anchor)
-    for term in cleaned:
-        _add(term)
+        ordered = _dedupe(cleaned)
+    else:
+        ordered = _dedupe([*anchors, *cleaned])
+    # fallback: lista vazia (só stopwords/metáforas) -> o nicho assume a busca
+    if not ordered and anchors:
+        ordered = _dedupe(anchors)
     return ordered[:limit]
+
+
+def _dedupe(terms: Iterable[Any]) -> list[str]:
+    """Remove duplicados e palavras de ligação, preservando a ordem."""
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in terms:
+        value = " ".join(_ascii_fold(item).split())
+        value = " ".join(re.findall(r"[a-z0-9]+", value))
+        if len(value) < 2 or value in seen or _is_search_stopword(value):
+            continue
+        result.append(value)
+        seen.add(value)
+    return result

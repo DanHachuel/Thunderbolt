@@ -50,7 +50,7 @@ from hermes_ui.storage import (
 from hermes_ui.fs_safe import safe_replace, safe_unlink
 from hermes_ui.llm_providers import active_llm_card, provider_definition
 from hermes_ui.media_generation import MediaGenerationError, _append_generation_constraints, generate_image_from_pool, generate_video_from_pool, web_images_search
-from hermes_ui.keyword_context import keyword_queries_enriched, sanitize_visual_keywords
+from hermes_ui.keyword_context import keyword_queries_enriched, safe_search_string, sanitize_visual_keywords
 from hermes_ui.media_providers import FULL_IA_VIDEO_PROVIDER_CODES, media_cards_for_pool, media_provider_definition
 from hermes_ui.material_sources import material_api_keys, material_source_cards, selected_material_source
 from hermes_ui.thumbnail_generation import ThumbnailGenerationError, generate_thumbnail_image, infer_thumbnail_aspect_ratio
@@ -930,6 +930,53 @@ def _is_azure_long_audio_error(text: str) -> bool:
     return speech_marker and (duration_marker or code_marker)
 
 
+_GPU_FAILURE_MARKERS = (
+    "falha na gpu",
+    "nvenc indispon",
+    "createinputbuffer failed",
+    "out of memory (10)",
+    "cannot allocate memory",
+    "error while opening encoder",
+    "broken pipe",
+    "caiu para libx264",
+    "fallback to libx264",
+    "disabled after a runtime failure",
+)
+
+_MATERIAL_KEY_FAILURE_MARKERS = (
+    "401",
+    "unauthorized",
+    "invalid api key",
+    "api key is invalid",
+    "429",
+    "too many requests",
+    "quota",
+    "rate limit",
+    "exceeded",
+)
+
+
+def _is_gpu_render_failure(combined: str) -> bool:
+    """1.0.69 - falha de RENDER na GPU (NVENC), não do provider de materiais.
+
+    Relato: o vídeo falhou a 55% e o Thunderbolt atribuiu ao
+    "Pexels API; configuração: pexels_api_keys" — mas o motor tinha acabado
+    por NVENC OOM (CreateInputBuffer failed: out of memory) com dois renders
+    em paralelo. A atribuição errada fez o utilizador culpar as chaves.
+    """
+    return any(marker in combined for marker in _GPU_FAILURE_MARKERS)
+
+
+def _is_material_key_failure(combined: str) -> bool:
+    """1.0.69 - falha de AUTENTICAÇÃO/COTA das chaves do provider de materiais."""
+    return any(marker in combined for marker in _MATERIAL_KEY_FAILURE_MARKERS)
+
+
+def _all_material_keys_failed(combined: str) -> bool:
+    """Todas as chaves falharam (o motor valida e rejeita antes de buscar)."""
+    return "pexels_api_keys" in combined and _is_material_key_failure(combined)
+
+
 def _failure_attribution(
     task: dict[str, Any],
     settings: dict[str, Any],
@@ -1015,7 +1062,30 @@ def _failure_attribution(
             "failure_stage": stage,
         }
 
+    if stage == "video" and _is_gpu_render_failure(combined):
+        # 1.0.69 - render local (NVENC/GPU) falhou: NÃO é o provider de materiais.
+        return {
+            "failure_api": "GPU / NVENC (render local)",
+            "failure_provider": "local_gpu",
+            "failure_service": "Render de vídeo (GPU)",
+            "failure_route": route,
+            "failure_config_fields": "",
+            "failure_stage": stage,
+        }
+
     if stage == "video" and route in {"pexels", "pixabay"}:
+        if _is_material_key_failure(combined):
+            # 1.0.69 - falha de AUTENTICAÇÃO/COTA: a API é a do provider, mas a
+            # causa são as chaves (a mensagem amigável entra no _failure_message).
+            return {
+                "failure_api": _provider_api_label(route),
+                "failure_provider": route,
+                "failure_service": "MoneyPrinterTurbo",
+                "failure_route": route,
+                "failure_config_fields": f"{route}_api_keys",
+                "failure_stage": stage,
+                "material_keys_failed": True,
+            }
         return {
             "failure_api": _provider_api_label(route),
             "failure_provider": route,
@@ -1097,6 +1167,15 @@ def _failure_message(message: str, metadata: dict[str, Any]) -> str:
     api = str(metadata.get("failure_api") or "API não identificada").strip()
     provider = str(metadata.get("failure_provider") or "").strip()
     fields = str(metadata.get("failure_config_fields") or "").strip()
+    if metadata.get("material_keys_failed"):
+        # 1.0.69 - todas as chaves do provider falharam ou estão sem cota: o
+        # cartão não pode mostrar "configuração: pexels_api_keys" (mensagem de
+        # sistema, não de utilizador). Fica explícito o que fazer.
+        friendly = (
+            "Todas as chaves do Pexels falharam ou estão sem cota. "
+            "Verifique em Configurações API."
+        )
+        return f"{message.rstrip('.')} — {friendly} API/provider: {api}."
     suffix = f" API/provider: {api}"
     if provider and provider.casefold() not in api.casefold():
         suffix += f" (provider: {provider})"
@@ -1644,7 +1723,15 @@ def _moneyprinter_cli_args(task: dict[str, Any], route: str, settings: dict[str,
             str(task.get("blueprint_name") or generation_settings.get("blueprint_name") or ""),
         )
         if terms:
-            args.extend(["--video-terms", ",".join(terms[:15])])
+            # 1.0.69 - a string final e ESTRITAMENTE alfanumerica (sem cedilhas,
+            # aspas ou caracteres especiais que fazem o Pexels devolver 400) e
+            # sem palavras de ligacao. Se a limpeza esvaziar tudo, os termos
+            # enriquecidos seguem como estao (nunca uma busca vazia).
+            search_string = safe_search_string(terms)
+            if search_string:
+                args.extend(["--video-terms", search_string])
+            elif terms:
+                args.extend(["--video-terms", ",".join(terms[:15])])
 
     language = _mpt_video_language(task.get("language"))
     if language:
@@ -1912,6 +1999,55 @@ def _mpt_spawn_command_summary(command: list[str]) -> str:
     return _redact_helper_output(" ".join(parts))[:2000]
 
 
+_MATERIAL_KEY_HEALTH_TTL_SECONDS = 300.0
+_material_key_health_cache: dict[str, tuple[float, bool]] = {}
+
+
+def _material_key_is_healthy(api_key: str) -> bool:
+    """1.0.69 - sonda REAL da chave (com cache de 5 min por processo).
+
+    O motor MPT roda as chaves por round-robin sem retry: se a chave sorteada
+    estiver morta, a busca falha e a tarefa morre sem tentar as restantes. O
+    Thunderbolt agora conhece a saúde de cada chave antes do spawn e ordena as
+    válidas primeiro — e registra a rotação no log.
+    """
+    key = str(api_key or "").strip()
+    if not key:
+        return False
+    now = time.monotonic()
+    cached = _material_key_health_cache.get(key)
+    if cached and now - cached[0] < _MATERIAL_KEY_HEALTH_TTL_SECONDS:
+        return cached[1]
+    try:
+        from hermes_ui.api_key_tests import test_media_provider_card
+
+        result = test_media_provider_card({"provider": "pexels", "api_key": key})
+        healthy = str(result.get("status") or "").strip().casefold() == "ok"
+    except Exception:
+        healthy = False
+    _material_key_health_cache[key] = (now, healthy)
+    return healthy
+
+
+def _order_material_keys_by_health(keys: list[str], route: str) -> list[str]:
+    """1.0.69 - chaves válidas primeiro; loga a rotação para o utilizador ver.
+
+    ``[PEXELS] Chave 1 falhou (motivo). Tentando chave 2...`` — a falha deixa
+    de ser silenciosa e a tarefa só morre se TODAS as chaves falharem.
+    """
+    if route not in {"pexels", "pixabay"} or len(keys) < 2:
+        return keys
+    healthy = [key for key in keys if _material_key_is_healthy(key)]
+    broken = [key for key in keys if key not in healthy]
+    for position, key in enumerate(broken, start=len(healthy) + 1):
+        _mpt_runtime_log(
+            f"[PEXELS] Chave {position} falhou (inválida ou sem cota). Tentando a próxima chave..."
+        )
+    if healthy:
+        return healthy
+    return keys
+
+
 def _run_video_helper_once(
     task: dict[str, Any],
     *,
@@ -1955,6 +2091,8 @@ def _run_video_helper_once(
     source_keys = material_api_keys(settings, route) if route in {"pexels", "pixabay"} else []
     if api_key_override and route in {"pexels", "pixabay"}:
         source_keys = [str(api_key_override).strip()]
+    # 1.0.69 - rotação explícita: chaves saudáveis primeiro, com log.
+    source_keys = _order_material_keys_by_health([str(key).strip() for key in source_keys if str(key).strip()], route)
     if route in {"pexels", "pixabay"} and not source_keys:
         source_label = "Pexels" if route == "pexels" else "Pixabay"
         message = f"Configure pelo menos uma API key de {source_label} em Configurações > Configuração API > Fontes de materiais."
