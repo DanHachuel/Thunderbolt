@@ -10,6 +10,10 @@ from typing import Any
 
 from .languages import LANGUAGE_BY_CODE, language_code
 from .llm_providers import active_llm_card, provider_definition
+from .keyword_context import (
+    keyword_queries_enriched,
+    sanitize_visual_keywords,
+)
 from .blueprint_governance import (
     MAX_TITLE_GENERATION_ATTEMPTS,
     TITLE_REFERENCE_KEYS,
@@ -288,8 +292,18 @@ def generate_video_keywords(
         raise CreativeGenerationError("É necessário um roteiro antes de gerar palavras-chave.")
 
     context = channel_context(channel, blueprint)
+    # 1.0.62 — o relato «bleeding cash» → imagens de artérias/hemáceias num
+    # canal de finanças provou que um prompt genérico de SEO deixa a LLM
+    # extrair a METÁFORA literal. O nicho do canal passa a ser a ÂNCORA e o
+    # literalismo fica proibido por escrito, com o exemplo do utilizador.
+    niche = context["blueprint_niche"] or channel.get("niche") or context["blueprint_name"]
     system = (
-        "És um especialista de SEO para vídeos faceless e pesquisa de materiais. "
+        "You are a visual researcher for stock footage search on a "
+        f"[{niche or context['blueprint_name']}] channel. "
+        "Extract 5 to 10 English keywords for stock video search based on the CORE TOPIC of the script. "
+        "NEVER extract literal words that are used as metaphors. "
+        "If the script says 'bleeding cash', extract 'finance, business, money, investment' — NEVER 'blood' or 'arteries'. "
+        "The images must match the channel's niche, not the literal metaphor. "
         "Extrai entre 8 e 15 palavras-chave curtas, concretas e úteis para o vídeo. "
         "Devolve as palavras-chave em inglês, sem hashtags, sem frases longas, sem duplicados "
         "e sem comentários adicionais. Responde apenas com JSON válido na chave keywords."
@@ -324,7 +338,12 @@ def generate_video_keywords(
                 seen.add(normalized)
     if not keywords:
         keywords = _keywords_from_text(topic, script)
-    return keywords[:15]
+    # 1.0.62 — rede pós-LLM: mesmo que o prompt não baste, uma metáfora
+    # corporal (blood/arteries/…) num canal que não é de saúde NUNCA chega
+    # ao Pexels; a lista curta é preenchida com os termos do nicho.
+    return sanitize_visual_keywords(
+        keywords, context["blueprint_niche"], channel.get("niche"), context["blueprint_name"]
+    )[:15]
 
 
 def _score(value: Any) -> int:
@@ -649,6 +668,11 @@ def generate_creative_package(
         selected_title = titles[0]["title"]
     if not keywords:
         keywords = _keywords_from_text(topic, selected_title)
+    # 1.0.62 — mesma rede pós-LLM do generate_video_keywords: metáfora
+    # corporal fora de um canal de saúde nunca chega à busca de materiais.
+    keywords = sanitize_visual_keywords(
+        keywords, context["blueprint_niche"], channel.get("niche"), context["blueprint_name"]
+    )
 
     variants_raw = result.get("thumbnail_variants")
     if not isinstance(variants_raw, list) or len(variants_raw) < 3:

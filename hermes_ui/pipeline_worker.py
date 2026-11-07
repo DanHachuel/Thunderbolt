@@ -50,6 +50,7 @@ from hermes_ui.storage import (
 from hermes_ui.fs_safe import safe_replace, safe_unlink
 from hermes_ui.llm_providers import active_llm_card, provider_definition
 from hermes_ui.media_generation import MediaGenerationError, _append_generation_constraints, generate_image_from_pool, generate_video_from_pool, web_images_search
+from hermes_ui.keyword_context import keyword_queries_enriched, sanitize_visual_keywords
 from hermes_ui.media_providers import FULL_IA_VIDEO_PROVIDER_CODES, media_cards_for_pool, media_provider_definition
 from hermes_ui.material_sources import material_api_keys, material_source_cards, selected_material_source
 from hermes_ui.thumbnail_generation import ThumbnailGenerationError, generate_thumbnail_image, infer_thumbnail_aspect_ratio
@@ -1631,7 +1632,17 @@ def _moneyprinter_cli_args(task: dict[str, Any], route: str, settings: dict[str,
     if isinstance(keywords, str):
         keywords = [part.strip() for part in re.split(r"[,;|\n]+", keywords) if part.strip()]
     if isinstance(keywords, list):
-        terms = [str(item).strip() for item in keywords if str(item).strip()]
+        # 1.0.62 — as terms que vão para o Pexels/Pixabay passam pela rede
+        # de contexto: metáforas corporais removidas (fora de saúde) e os
+        # termos-âncora do NICHO à frente da lista, para a busca trazer
+        # sempre material do nicho do canal (relato: «bleeding cash» num
+        # canal de finanças devolveu artérias/hemáceias).
+        channel_for_terms = _channel_for_task(task)
+        terms = keyword_queries_enriched(
+            keywords,
+            str(channel_for_terms.get("niche") or ""),
+            str(task.get("blueprint_name") or generation_settings.get("blueprint_name") or ""),
+        )
         if terms:
             args.extend(["--video-terms", ",".join(terms[:15])])
 
@@ -3937,6 +3948,11 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
             title,
             str(channel.get("niche") or ""),
         )
+        # 1.0.62 — a lista persistida (e usada depois na busca Pexels via
+        # --video-terms) sai saneada: sem metáforas corporais fora de saúde.
+        keywords = sanitize_visual_keywords(
+            keywords, str(channel.get("niche") or ""), str(task.get("blueprint_name") or "")
+        )
         title_candidates = editorial.get("title_candidates") if isinstance(editorial.get("title_candidates"), list) else title_candidates
         title_artifact = _save_json_artifact(
             task_id,
@@ -4001,7 +4017,16 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
                 web_dir = STORAGE / "web-images" / task_id
                 web_dir.mkdir(parents=True, exist_ok=True)
                 for scene_index, scene in enumerate(scenes, start=1):
-                    query = str(scene.get("text") or topic).strip()[:300]
+                    # 1.0.62 — a query da cena leva o CONTEXTO do nicho à
+                    # frente ([nicho] + texto): uma metáfora corporal no
+                    # roteiro não pode puxar anatomia para um canal de
+                    # finanças (mesma defesa do --video-terms).
+                    scene_terms = keyword_queries_enriched(
+                        [str(scene.get("text") or topic).strip()[:300]],
+                        str(channel.get("niche") or ""),
+                        limit=8,
+                    )
+                    query = " ".join(scene_terms[:4]).strip()[:300]
                     results = web_images_search(settings, query, num_results=1, rights="sur:cl")
                     image_url = str(results[0].get("url") or "")
                     if not image_url:

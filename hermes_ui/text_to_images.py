@@ -842,7 +842,7 @@ def _probe_video_geometry(ffmpeg: str, path: Path | str) -> tuple[float, int, in
     consegue sondar (o chamador não queima com tempos errados).
     """
     if not ffmpeg:
-        return 0.0, 0
+        return 0.0, 0, 0
     import subprocess as _subprocess
 
     try:
@@ -856,7 +856,7 @@ def _probe_video_geometry(ffmpeg: str, path: Path | str) -> tuple[float, int, in
         )
         combined = f"{getattr(completed, 'stderr', '') or ''}\n{getattr(completed, 'stdout', '') or ''}"
     except (OSError, _subprocess.TimeoutExpired):
-        return 0.0, 0
+        return 0.0, 0, 0
     duration_match = re.search(r"Duration:\s*(\d+):(\d{2}):([\d.]+)", combined)
     if not duration_match:
         return 0.0, 0, 0
