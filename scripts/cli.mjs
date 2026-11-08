@@ -1562,6 +1562,13 @@ function startStreamlit() {
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...runtimeEnv, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", PYTHONLEGACYWINDOWSSTDIO: "1", CLICK_NO_WIN_CONSOLE: "1", THUNDERBOLT_LAUNCHER_RESTART: "1" },
     windowsHide: false,
+    // 1.0.75: grupo próprio também para o servidor da interface — era o único
+    // filho supervisionado que continuava no grupo do launcher, por isso um
+    // Ctrl+C no terminal (MobaXterm/PowerShell) chegava-lhe pela consola e
+    // matava-o (a interface piscava e o launcher tinha de a repor). Com o
+    // grupo próprio, o sinal do consola não o alcança; o encerramento continua
+    // a ser o nosso (child.kill()/stopStackComponents, que usa TerminateProcess).
+    creationFlags: workerCreationFlags(),
   });
   noteWorkerStarted("streamlit");
   child.stdout?.on("data", (chunk) => {
@@ -1595,9 +1602,16 @@ function startStreamlit() {
       const replacement = spawn(executable, ["--yes", "--prefer-online", "@danhachuel/thunderbolt"], {
         cwd: userHome,
         env: process.env,
+        // 1.0.75 - REGRA INVIOLAVEL (AGENTS.md): nenhuma versao pode abrir
+        // telas de CMD no computador do utilizador. O respawn destacado precisa
+        // de `detached` para sobreviver ao pai (job object do libuv, provado na
+        // 1.0.74), mas `windowsHide: true` suprime a consola que o Windows
+        // criaria para o successor - sem ela o utilizador via uma janela CMD a
+        // pairar por segundos a cada actualizacao. Crave:
+        // tests/test_no_detached_process.py.
         detached: true,
         stdio: "ignore",
-        windowsHide: false,
+        windowsHide: true,
       });
       replacement.unref();
       launcherExiting("update");
