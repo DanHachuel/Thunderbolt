@@ -47,6 +47,81 @@ function diagnostic(event, payload = {}) {
   } catch { /* logging never changes launcher behaviour */ }
 }
 
+// ---------------------------------------------------------------------------
+// 1.0.74 — CONSOLA DESVINCULADA (terminal fechado, minimizado, leitor do pipe
+// morto). A primeira escrita num stream sem leitor emite EPIPE NA STREAM: sem
+// ouvinte de "error", o Node transforma esse evento em uncaughtException — e o
+// launcher saía sozinho (launcherExiting "crash"), devolvendo o prompt ao
+// terminal com a stack ainda viva. A partir daqui as streams da consola são
+// guardadas: o erro é registado, a saída passa a ser espelhada em ficheiro e o
+// launcher NUNCA morre por causa do terminal.
+// ---------------------------------------------------------------------------
+let launcherConsoleDetached = false;
+const launcherConsoleMirrorPath = join(storageDir, "logs", "launcher_console.log");
+// O launcher nunca morre por um terminal que fechou: só estes códigos de
+// escrita contam como "falha da consola" (e não como bug do launcher).
+const consoleWriteFailurePattern = /EPIPE|ERR_STREAM_(DESTROYED|WRITE_AFTER_END)|EBADF|write after end|stream was destroyed/i;
+
+function consoleWriteFailureCode(error) {
+  return String((error && (error.code || error.message)) || error || "");
+}
+
+function isConsoleWriteFailure(error) {
+  return consoleWriteFailurePattern.test(consoleWriteFailureCode(error));
+}
+
+function mirrorConsoleOutput(chunk) {
+  // Espelho: depois de a consola morrer, o que o Streamlit e os workers dizem
+  // continua disponível para diagnóstico — nunca se perde em silêncio.
+  try {
+    mkdirSync(join(storageDir, "logs"), { recursive: true });
+    if (existsSync(launcherConsoleMirrorPath) && statSync(launcherConsoleMirrorPath).size > 5_000_000) writeFileSync(launcherConsoleMirrorPath, "");
+    appendFileSync(launcherConsoleMirrorPath, typeof chunk === "string" ? chunk : String(chunk), "utf8");
+  } catch { /* espelhar nunca muda o comportamento do launcher */ }
+}
+
+function noteConsoleDetached(event, detail = "") {
+  // Só a PRIMEIRA evidência conta (as escritas seguintes já caem no espelho);
+  // a partir daqui o launcher vive sem consola, como um daemon.
+  if (launcherConsoleDetached) return;
+  launcherConsoleDetached = true;
+  diagnostic("launcher_console_detached", { pid: process.pid, event, detail: consoleWriteFailureCode(detail).slice(0, 200), uptime_seconds: Math.round(process.uptime()) });
+  try {
+    mkdirSync(join(storageDir, "logs"), { recursive: true });
+    appendFileSync(launcherConsoleMirrorPath, `\n--- consola desvinculada (${event}) em ${new Date().toISOString()} ---\n`, "utf8");
+  } catch { /* idem */ }
+  announceDetachedConsole();
+}
+
+function guardConsoleStream(stream, name) {
+  if (!stream || typeof stream.write !== "function" || typeof stream.on !== "function") return;
+  const originalWrite = stream.write.bind(stream);
+  stream.write = (chunk, encoding, callback) => {
+    if (launcherConsoleDetached) {
+      mirrorConsoleOutput(chunk);
+      if (typeof encoding === "function") encoding();
+      else if (typeof callback === "function") callback();
+      return true;
+    }
+    try {
+      return originalWrite(chunk, encoding, callback);
+    } catch (error) {
+      // escrita síncrona falhou (a consola já fechou): registar e seguir.
+      noteConsoleDetached(`${name}_write_threw`, error);
+      mirrorConsoleOutput(chunk);
+      return true;
+    }
+  };
+  stream.on("error", (error) => {
+    // EPIPE: o leitor do pipe (consola) morreu. O launcher sobrevive — a
+    // interface e os workers não têm culpa do terminal que fechou.
+    noteConsoleDetached(`${name}_stream_error`, error);
+  });
+}
+
+guardConsoleStream(process.stdout, "stdout");
+guardConsoleStream(process.stderr, "stderr");
+
 function runKillTreeHelper(modeArgs) {
   // O venv do Thunderbolt tem sempre psutil (os workers dependem dele); o
   // Python de sistema pode não ter, por isso é tentado primeiro o venv.
@@ -158,10 +233,59 @@ function runningInsidePowerShell() {
   return false;
 }
 
+// 1.0.74 — AVISO DE TERMINAL NO ARRANQUE (PowerShell/MobaXterm). O comando do
+// utilizador está correcto; o que falha é o terminal, que dispara sinais de
+// console contra o processo de arranque (npx) e devolve o prompt sozinho. A
+// nota aparece UMA vez, só quando o terminal É detectado, e recomenda o CMD
+// clássico (`npx.cmd`) — nunca culpa o utilizador nem bloqueia o arranque.
+// Mantida separada de runningInsidePowerShell: o ramo do install tem contrato
+// próprio, e aqui a caminhada devolve os NOMES dos pais (para reconhecer
+// também o MobaXterm, não só o PowerShell).
+const LAUNCH_TERMINAL_NAMES = /^(pwsh|powershell|mobaxterm|mobaxterm_ptysrv)(\.exe)?$/i;
+
+function launchTerminalAncestry() {
+  try {
+    const result = spawnSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `$id = ${process.ppid}; for ($i = 0; $i -lt 10 -and $id -gt 0; $i++) { $p = Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction SilentlyContinue; if (-not $p) { break }; $p.Name; $id = $p.ParentProcessId }`,
+      ],
+      { encoding: "utf8", timeout: 15000, windowsHide: true },
+    );
+    if (result && !result.error) {
+      return String(result.stdout || "").split("\n").map((line) => line.trim()).filter(Boolean);
+    }
+  } catch {
+    // detecção indisponível: silêncio (nunca falhar o arranque por isto)
+  }
+  return [];
+}
+
+function launchingFromSignalHeavyTerminal() {
+  if (platform() !== "win32") return false;
+  if (process.env.PSHOME) return true; // marcador rápido do PowerShell
+  // O MobaXterm expõe o próprio tmp (a repo já conhece o padrão: o TEMP do
+  // MobaXterm é instável e foi isolado do launcher nos testes de winerror32).
+  const inheritedTemp = `${process.env.TEMP || ""} ${process.env.TMP || ""}`.toLowerCase();
+  if (inheritedTemp.includes("mobaxterm")) return true;
+  return launchTerminalAncestry().some((name) => LAUNCH_TERMINAL_NAMES.test(name));
+}
+
+let terminalAdvisoryShown = false;
+function launchTerminalAdvisory() {
+  if (terminalAdvisoryShown) return;
+  terminalAdvisoryShown = true;
+  if (platform() !== "win32") return; // a nota é do console do Windows
+  if (!launchingFromSignalHeavyTerminal()) return; // CMD/MSYS normais: silêncio
+  console.log("Thunderbolt: nota de terminal — o PowerShell/MobaXterm pode devolver o prompt sozinho quando sinais do console chegam ao arranque (npx). Se isso acontecer, a interface continua activa em http://localhost:3030/ (Terminal desvinculado); para um arranque sempre em primeiro plano use o CMD classico: npx.cmd --yes @danhachuel/thunderbolt");
+}
+
 function pythonVersion() {
   return spawnSync(python, ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"], { encoding: "utf8", env: pythonEnvironment });
 }
-
 function moduleAvailable(moduleName) {
   // 1.0.20: IMPORT REAL em vez de importlib.util.find_spec — o find_spec dava
   // falso positivo com pacote parcial/corrompido: o check passava, o worker
@@ -901,6 +1025,21 @@ const workerBootTracker = new Map();
 // (child.kill()/stopStackComponents), que usa TerminateProcess e não
 // depende de grupos. O stdin já é "ignore" e a saída vai por pipes: nada
 // muda no funcionamento normal.
+// 1.0.74 — JOB OBJECT: investigado e REJEITADO como solução.
+// O launcher é filho do Node do npm/npx, e o libuv coloca cada filho de um
+// processo Node num job object com JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: quando
+// o processo de arranque morre, o job fecha e o Windows TERMINA o launcher com
+// TerminateProcess — sem diagnóstico e sem encerramento graceful. Provado nesta
+// máquina: um filho Node não sobrevive ao pai que sai.
+// A fuga existe (`detached: true` → DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP),
+// mas foi MEDIDA e rejeitada: DETACHED_PROCESS tira a consola ao worker, e todos
+// os subprocessos que ele cria a seguir (bootstrap do Streamlit, pip, browsers,
+// ffmpeg) passam a abrir a sua PRÓPRIA consola — o utilizador viu dezenas de
+// janelas CMD a aparecer. É exactamente a regressão que o repositório já crava
+// em tests/test_no_detached_process.py: a stack tem de ficar com a consola que
+// tem. A sobrevivência ao terminal fechado vem, portanto, da ABSORÇÃO dos
+// sinais + keep-alive + arranque dos filhos pelo launcher (que fica vivo), não
+// da fuga do job.
 const WINDOWS_CREATE_NEW_PROCESS_GROUP = 0x00000200;
 function workerCreationFlags() {
   return process.platform === "win32" ? WINDOWS_CREATE_NEW_PROCESS_GROUP : 0;
@@ -1397,6 +1536,10 @@ function monitorWorkers() {
   if (shuttingDown) return;
   // 1.0.65 - o pedido de reinicio da interface tem prioridade sobre o arranque
   // normal:Rearma tudo e volta a lancar os workers no proprio tick.
+  // 1.0.74 - a consola desvinculada (npx morto, terminal fechado) NÃO pode
+  // derrubar a stack: detecta-se a orfandade e avisa-se o utilizador.
+  detectDetachedLauncher();
+  launchTerminalAdvisory();
   consumeForceRestartRequest();
   startPipelineWorker();
   // 1.0.72 - arranque ESCALONADO no Windows: 4 interpretadores Python a nascer
@@ -1542,17 +1685,81 @@ const stopWorker = (reason = "unknown") => {
 // No Linux/macOS, Ctrl+C continua funcionando normalmente.
 const STOP_FILE = join(userHome, ".thunderbolt.stop");
 
+// 1.0.74 — SINAL DO TERMINAL ABSORVIDO: o launcher NÃO encerra. O sintoma
+// corrigido: o terminal (PowerShell/MobaXterm) devolvia o prompt sozinho
+// porque o sinal chegava ao processo de arranque. A stack continua viva e o
+// aviso diz isso ao utilizador, em vez de o deixar acreditar que fechou.
+let lastAbsorbedSignalLogAt = 0;
+let detachedConsoleNoticeShown = false;
+
+function absorbTerminalSignal(signal) {
+  diagnostic("terminal_signal_absorbed", { signal, pid: process.pid, uptime_seconds: Math.round(process.uptime()) });
+  // Uma linha por rajada: o MobaXterm dispara dezenas de sinais por segundo e
+  // encher a consola seria pior do que o silêncio.
+  if (Date.now() - lastAbsorbedSignalLogAt >= 30000) {
+    lastAbsorbedSignalLogAt = Date.now();
+    console.log(`[LAUNCHER] Sinal ${signal} ignorado. Mantendo processo activo.`);
+  }
+  // Nada de aviso de "terminal desvinculado" aqui: um sinal absorvido ainda não
+  // é prova de desvinculação — a prova chega pela escrita (EPIPE) ou pelo
+  // monitor de orfandade, e é ela que dispara o aviso.
+}
+
+function announceDetachedConsole() {
+  // O aviso sai UMA vez e apenas quando há PROVA de desvinculação (escrita
+  // falhada ou pai morto) — nunca por um sinal que o terminal dispara sozinho.
+  if (detachedConsoleNoticeShown) return;
+  detachedConsoleNoticeShown = true;
+  console.log(`Thunderbolt: A interface continua ativa em http://localhost:${publicPort}/ (Terminal desvinculado).`);
+  console.log("Thunderbolt: para encerrar use Ctrl+Break nesta janela, o arquivo .thunderbolt.stop na pasta do utilizador ou o Gerenciador de Tarefas.");
+  diagnostic("terminal_detached_notice", { pid: process.pid, uptime_seconds: Math.round(process.uptime()) });
+}
+
+// 1.0.74 — DETECÇÃO DE ORFANDADE. Quando a rajada de sinais mata a cadeia
+// npx/cmd (que não absorve o sinal), o prompt do terminal volta e o utilizador
+// pensa que fechou — mas o launcher sobrevive órfão com a interface activa.
+// O monitor de 2 s detecta a morte do pai: `process.kill(ppid, 0)` lança
+// ESRCH no Windows quando o processo já não existe (comportamento comprovado
+// nesta máquina). EPERM não é orfandade: o pai está vivo, mas inacessível.
+let launcherParentGone = false;
+
+function detectDetachedLauncher() {
+  if (shuttingDown || launcherParentGone) return;
+  const parentPid = Number(process.ppid);
+  if (!parentPid || parentPid === process.pid) return;
+  try {
+    process.kill(parentPid, 0);
+    return; // pai vivo: nada a fazer
+  } catch (error) {
+    if (String(error && error.code) === "EPERM") return;
+  }
+  launcherParentGone = true;
+  diagnostic("launcher_parent_gone", { pid: process.pid, ppid: parentPid, uptime_seconds: Math.round(process.uptime()) });
+  announceDetachedConsole();
+}
+
 if (platform() === "win32") {
   process.on("SIGINT", () => {
     diagnostic("ctrl_c_absorbed_windows", { pid: process.pid, uptime_seconds: Math.round(process.uptime()) });
   });
+  // 1.0.74 — SIGHUP no Windows NÃO é "janela fechada" de confiança: a
+  // telemetria do launcher registou 82 encerramentos com motivo
+  // console_closed, vários apenas 5 SEGUNDOS depois do arranque, com o
+  // terminal aberto e o utilizador a trabalhar noutra aplicação. O sinal é
+  // derivado do console (CTRL_CLOSE/LOGOFF) e chega sem que ninguém tenha
+  // fechado nada. Um SIGHUP recebido com a consola viva é espúrio: absorver e
+  // continuar. A consola que morre de verdade é detectada pela escrita (EPIPE)
+  // e pelo monitor de orfandade — nunca por este sinal.
+  process.on("SIGHUP", () => absorbTerminalSignal("SIGHUP"));
 } else {
   process.on("SIGINT", () => stopWorker("ctrl+c"));
+  // No Linux/macOS o fecho do terminal é um sinal real e fiável: encerrar a
+  // stack continua a ser o comportamento correcto (nada de workers órfãos).
+  process.on("SIGHUP", () => stopWorker("console_closed"));
 }
 // Ctrl+Break (Windows) e SIGTERM (Unix) são paragens legítimas em todas as
-// plataformas. O fecho da janela (SIGHUP) também.
+// plataformas — nunca são absorvidos.
 process.on("SIGBREAK", () => stopWorker("ctrl+break"));
-process.on("SIGHUP", () => stopWorker("console_closed"));
 process.on("SIGTERM", () => stopWorker("external_kill"));
 
 // Watcher do arquivo .thunderbolt.stop — encerramento sem depender de sinais.
@@ -1569,6 +1776,13 @@ const stopFileWatcher = setInterval(() => {
 stopFileWatcher.unref();
 process.on("uncaughtException", (error) => {
   diagnostic("launcher_uncaught_exception", { error: String((error && (error.stack || error.message)) || error).slice(-500) });
+  // 1.0.74: com a consola desvinculada, um ERRO DE ESCRITA (EPIPE, stream
+  // destruída, EBADF) não é falha do launcher — é o terminal que morreu. A
+  // stack continua activa; o resto dos erros continua a ser crash real.
+  if (launcherConsoleDetached && isConsoleWriteFailure(error)) {
+    mirrorConsoleOutput(`[launcher] excepção de escrita absorvida: ${consoleWriteFailureCode(error)}\n`);
+    return;
+  }
   launcherExiting("crash");
   process.exit(1);
 });
@@ -1579,3 +1793,16 @@ monitorWorkers();
 // O pipeline worker permanece disponível para recolher imediatamente tarefas
 // colocadas em `doing` pelo botão Start, mesmo quando a fila estava vazia.
 workerMonitorTimer = setInterval(monitorWorkers, 2000);
+// ---------------------------------------------------------------------------
+// 1.0.74 — KEEP-ALIVE EXPLÍCITO. O Node termina — e devolve o prompt ao
+// terminal — quando o event loop fica sem handles activos. Foi exactamente o
+// sintoma do PowerShell/MobaXterm: os logs do Streamlit apareciam, o prompt
+// voltava sozinho e a aplicação continuava (ou morria) sem ninguém perceber.
+// O intervalo vazio, NUNCA em unref, mantém o launcher em primeiro plano
+// enquanto a interface existe; o encerramento continua a ser deliberado
+// (Ctrl+Break, SIGTERM, .thunderbolt.stop), nunca um acidente do terminal.
+// ---------------------------------------------------------------------------
+const keepAliveTimer = setInterval(() => {}, 1000);
+// `unref` NÃO é chamado de propósito: um handle referenciado é o que impede o
+// Node de esvaziar o event loop e de devolver o prompt ao terminal.
+void keepAliveTimer;
