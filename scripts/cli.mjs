@@ -905,6 +905,22 @@ const WINDOWS_CREATE_NEW_PROCESS_GROUP = 0x00000200;
 function workerCreationFlags() {
   return process.platform === "win32" ? WINDOWS_CREATE_NEW_PROCESS_GROUP : 0;
 }
+// 1.0.72 - MORTE DE INICIALIZACAO DO PROCESSO (nao é falta de pacote).
+// 0xC0000142 = STATUS_DLL_INIT_FAILED (a DLL de sistema não arrancou) e
+// 0xC000013A = STATUS_CONTROL_C_EXIT (sinal do console). Em ambos os casos o
+// processo morre ANTES de qualquer import: correr `pip install` não cura nada
+// — o launcher apenas respira e volta a lançar, e avisa o utilizador quando
+// insiste.
+const WORKER_INIT_FAILURE_CODES = new Set([3221225786, 3221225794]); // 0xC000013A, 0xC0000142
+function isWorkerInitFailure(code) {
+  return WORKER_INIT_FAILURE_CODES.has(Number(code));
+}
+// Respiro entre spawns: o Windows pode falhar a inicializar vários
+// interpretadores Python na mesma sessão de console ao mesmo tempo.
+const WORKER_SPAWN_STAGGER_MS = process.platform === "win32" ? 500 : 0;
+let secondaryWorkerInitFailures = 0;
+const SECONDARY_WORKER_INIT_LIMIT = 3;
+
 let queueWorkersFastFailDisabled = false;
 let pipelineFastFailDisabled = false;
 let automationFastFailDisabled = false;
@@ -1196,6 +1212,34 @@ function attachQueueWorkerLog(child, filename, label) {
   return logPath;
 }
 
+// 1.0.72 - morte de INICIALIZACAO de um worker secundário (thumbnail/imagem):
+// não é falta de pacote (pip não cura), por isso o launcher respira 2 s, volta
+// a lançar e, se insistir, avisa o utilizador — o vídeo principal continua.
+function handleSecondaryWorkerInitFailure(label, key, code) {
+  secondaryWorkerInitFailures += 1;
+  console.error(
+    `Thunderbolt: o ${label} falhou na inicializacao do processo (codigo ${code ?? "-"}). ` +
+      "Nao e falta de dependencia - a repor automaticamente."
+  );
+  if (secondaryWorkerInitFailures < SECONDARY_WORKER_INIT_LIMIT) {
+    setTimeout(() => {
+      if (!shuttingDown && !queueWorkersFastFailDisabled) startQueueWorkers();
+    }, 2000).unref?.();
+    return;
+  }
+  queueWorkersFastFailDisabled = true;
+  console.error(
+    "\x1b[33m[AVISO] Falha na inicializacao dos workers secundarios. " +
+      "O video principal continuara funcionando.\x1b[0m"
+  );
+  diagnostic("secondary_worker_init_failure", {
+    worker: key,
+    exit_code: code ?? null,
+    failures: secondaryWorkerInitFailures,
+  });
+}
+
+
 function startQueueWorkers() {
   // 1.0.11: filas paralelas do Motor — thumbnails e imagens de produção são
   // workers independentes com pools próprios (motor.max_parallel_*).
@@ -1228,6 +1272,10 @@ function startQueueWorkers() {
     const dependencyTail = workerStderrTails.get(thumbnailWorker) || "";
     thumbnailWorker = null;
     if (shuttingDown) return;
+    if (isWorkerInitFailure(code)) {
+      handleSecondaryWorkerInitFailure("thumbnail worker", "thumbnail", code);
+      return;
+    }
     if (diedFromDependencies) {
       // 1.0.65 - morte por dependencias dispara a AUTO-CURA (nao deixa o
       // worker morto): a reposicao corre no tick seguinte.
@@ -1248,6 +1296,19 @@ function startQueueWorkers() {
       if (!shuttingDown && !queueWorkersFastFailDisabled) startQueueWorkers();
     }, 5000).unref?.();
   });
+  // 1.0.72 - respiro entre os dois workers de fila: no Windows, dois
+  // interpretadores Python a nascer no mesmo instante na mesma sessao de
+  // console era uma das causas do STATUS_DLL_INIT_FAILED (0xC0000142).
+  if (WORKER_SPAWN_STAGGER_MS) {
+    setTimeout(() => {
+      if (!shuttingDown) spawnImageWorker();
+    }, WORKER_SPAWN_STAGGER_MS).unref?.();
+    return;
+  }
+  spawnImageWorker();
+}
+
+function spawnImageWorker() {
   imageWorker = spawn(python, ["-m", "hermes_ui.image_worker"], {
     cwd: root,
     // 1.0.18: pipes + log próprio (storage/logs/image_worker.log).
@@ -1266,6 +1327,10 @@ function startQueueWorkers() {
     const dependencyTail = workerStderrTails.get(imageWorker) || "";
     imageWorker = null;
     if (shuttingDown) return;
+    if (isWorkerInitFailure(code)) {
+      handleSecondaryWorkerInitFailure("image worker", "image", code);
+      return;
+    }
     if (diedFromDependencies) {
       console.error("Thunderbolt: o image worker morreu por falta de dependencias; a repor automaticamente.");
       queueWorkersDependencyFailureReported = false;
@@ -1334,6 +1399,14 @@ function monitorWorkers() {
   // normal:Rearma tudo e volta a lancar os workers no proprio tick.
   consumeForceRestartRequest();
   startPipelineWorker();
+  // 1.0.72 - arranque ESCALONADO no Windows: 4 interpretadores Python a nascer
+  // ao mesmo tempo na mesma sessão de console era uma das causas do
+  // STATUS_DLL_INIT_FAILED (0xC0000142) nos workers secundários.
+  if (WORKER_SPAWN_STAGGER_MS) {
+    setTimeout(() => { if (!shuttingDown) startAutomationWorker(); }, WORKER_SPAWN_STAGGER_MS / 2).unref?.();
+    setTimeout(() => { if (!shuttingDown) startQueueWorkers(); }, WORKER_SPAWN_STAGGER_MS).unref?.();
+    return;
+  }
   startAutomationWorker();
   startQueueWorkers();
 }

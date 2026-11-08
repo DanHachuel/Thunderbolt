@@ -81,7 +81,9 @@ def test_circuit_breaker_contract_in_source():
 def test_every_supervised_process_has_the_breaker():
     for start_fn, worker_key in (
         ("startQueueWorkers", "thumbnail"),
-        ("startQueueWorkers", "image"),
+        # 1.0.73: o image worker passou a nascer em spawnImageWorker (respiro
+        # de 500 ms depois do thumbnail) — a supervisão viajou com ele.
+        ("spawnImageWorker", "image"),
         ("startPipelineWorker", "pipeline"),
         ("startAutomationWorker", "automation"),
         ("startStreamlit", "streamlit"),
