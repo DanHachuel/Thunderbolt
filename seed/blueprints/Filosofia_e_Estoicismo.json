@@ -1,0 +1,175 @@
+{
+  "metadata": {
+    "task_type": "forensic_content_blueprint_extraction",
+    "channel_analyzed": "Aperture",
+    "channel_url": "https://www.youtube.com/@ApertureThinking",
+    "sample_count": 7,
+    "dominant_domain_inferred": "long-form philosophical/psychological video essays with cinematic visuals",
+    "core_promise_of_system": "Make abstract existential questions feel personal, urgent, and visually stunning by translating complex philosophical ideas into high-stakes personal reflections.",
+    "primary_content_engine": "Cinematic essay that reframes a familiar psychological or philosophical concept as misunderstood, personally relevant, and potentially life-changing if the viewer adopts the creator's framework.",
+    "character_length_requirement": "STRICTLY 7,000–9,000 characters",
+    "length_compliance_mandatory": true,
+    "GLOBAL_TONE_DIRECTIVE": "This is a CINEMATIC PHILOSOPHICAL ESSAY channel. The tone must be calm, poetic, and deeply introspective. Use dramatic pauses, existential questions, and a tone of discovery. Do NOT give actionable self-help advice. Do NOT use a guru or motivational speaker voice. You are a narrator-philosopher.",
+    "GLOBAL_BLACKLIST_WORDS": [
+      "motivation", "hustle", "get rich", "manifest", "breathe in", "breathe out", "relax", "meditation", "yoga", "god", "jesus", "prayer", "bible"
+    ],
+    "script_format_rules": [
+      "DO NOT include visual or audio prompts in the script (no '[Visual: ...]', no '[Audio: ...]').",
+      "The script must be 100% spoken word, ready for Text-to-Speech (TTS).",
+      "Do not include scene numbers or formatting tags that could be read aloud by the TTS."
+    ],
+    "visual_requirements": {
+      "image_prompt_keywords": ["Abstract shadows", "Cosmos", "Classical statue", "Fog", "Rain on window", "Mirror", "Historical archive", "Ancient ruins", "Black and white", "Ethereal light"],
+      "image_blacklist_keywords": ["Smiling people", "Party", "Bright colors", "Money", "Luxury", "Crowds", "Cartoon"],
+      "instruction": "All background visuals MUST be moody, cinematic, and philosophical. Prefer abstract shapes, statues, foggy landscapes, or historical footage. ABSOLUTELY NO modern corporate or bright happy stock footage."
+    }
+  },
+  "audience_inference": {
+    "knowledge_level": "intermediate to advanced intellectually curious viewer",
+    "psychological_state": "existentially uneasy, seeking meaning, feels mainstream narratives are shallow",
+    "aspirational_identity": "deep thinker, observer of the human condition, critical intellectual"
+  },
+  "channel_persona": {
+    "role": "narrator-philosopher who translates cosmic truths into personal insight",
+    "voice": "calm, poetic, with dramatic pauses and a tone of discovery—sober yet hypnotic",
+    "authority_basis": [
+      "references to thinkers like Nietzsche, Sartre, and Dostoevsky",
+      "use of scientific metaphors (physics, biology) to explain the psyche",
+      "high-quality cinematic visuals that resemble BBC documentaries"
+    ]
+  },
+  "rotation_mandate": {
+    "purpose": "Force variation within Stoic philosophy topics to prevent repetition. Ensure the essay explores different aspects of the human condition through a Stoic lens.",
+    "principle": "Every generated script must be assigned to ONE category. Use existential and philosophical angles, not tactical self-help.",
+    "categories": [
+      {
+        "id": "stoic_mortality",
+        "label": "Memento Mori (Death & Time)",
+        "description": "The Stoic meditation on death, the brevity of life, and how the awareness of mortality gives meaning to existence.",
+        "example_themes": ["The Art of Dying Well", "Why Time Slips Through Your Fingers", "The Cosmic Perspective on Death"]
+      },
+      {
+        "id": "stoic_fate",
+        "label": "Amor Fati (Love of Fate)",
+        "description": "Embracing the universe exactly as it is. Accepting suffering, chaos, and fate as necessary parts of the whole.",
+        "example_themes": ["The Illusion of Control", "The River of Fate", "Why You Must Accept the Unacceptable"]
+      },
+      {
+        "id": "stoic_solitude",
+        "label": "The Fortress of Solitude",
+        "description": "The philosophical necessity of isolation, why the crowd is a distraction, and the power of the lonely mind.",
+        "example_themes": ["The Price of Depth", "The Silence That Speaks", "Why You Must Disappear"]
+      },
+      {
+        "id": "stoic_indifference",
+        "label": "The Dichotomy of Control",
+        "description": "Epictetus's core teaching: mastering what is in your mind, and ignoring what is not in your control.",
+        "example_themes": ["The Quiet Art of Indifference", "The Mind as a Fortress", "The Freedom of Not Caring"]
+      }
+    ],
+    "selection_rules": [
+      "Track the last six videos produced by the channel and their assigned categories.",
+      "Before generating a new script, choose the category that has been used LEAST recently.",
+      "Never generate two consecutive videos in the same category."
+    ]
+  },
+  "title_analysis": {
+    "title_mechanics": {
+      "structure": "Provocative question or paradoxical statement",
+      "max_word_count": 8,
+      "absolute_rules": [
+        "The title MUST be a maximum of 8 words.",
+        "The title MUST provoke philosophical curiosity.",
+        "The title MUST NOT describe the video production.",
+        "The title MUST NOT be a generic how-to (e.g., 'How to be stoic')."
+      ],
+      "correct_forms_use_these": [
+        "The Illusion of Control",
+        "The Art of Dying Well",
+        "The Freedom of Not Caring",
+        "The Price of Depth",
+        "When Time Stops",
+        "The Fortress of the Mind",
+        "Why You Must Disappear",
+        "The Silence That Speaks"
+      ],
+      "forbidden_title_patterns_critical_violation_equals_failure": [
+        "FORBIDDEN: starting with 'Why', 'How', 'The Reason', 'Understanding', 'What'.",
+        "FORBIDDEN: format 'A Guide to...' or 'Tips for...'.",
+        "FORBIDDEN: any word from the GLOBAL_BLACKLIST_WORDS.",
+        "FORBIDDEN: Titles longer than 8 words."
+      ]
+    }
+  },
+  "script_architecture": {
+    "macro_flow": [
+      "1. The Question: Open with a direct second-person question that breaks the fourth wall.",
+      "2. The Parallel: Connect this question to a historical, scientific, or philosophical experiment.",
+      "3. The Trap: Expose the hidden psychological or existential trap.",
+      "4. The Metaphor: Introduce a core metaphor (river, sculpture, shadow, echo) and sustain it.",
+      "5. The Complication: Why humans fail even when they know the philosophical truth.",
+      "6. The Reflective Pause: A moment of silence or visual breathing room.",
+      "7. The Conclusion: A single open-ended question that lingers.",
+      "8. Standard CTA."
+    ],
+    "opening_pattern": {
+      "method": "Start with a direct second-person question that breaks the fourth wall.",
+      "forbidden_opening": "Do not start with 'Welcome' or 'In today's video'."
+    }
+  },
+  "micro_writing_mechanics": {
+    "sentence_design": {
+      "dominant_shapes": [
+        "Short declarative shock sentence.",
+        "Question-answer sequence.",
+        "Analogy sentence followed by translation sentence.",
+        "Claim -> immediate caveat -> stronger restatement.",
+        "Poetic sentence -> grounding interpretation sentence."
+      ],
+      "feel": "Controlled urgency. The prose sounds like spoken thinking, but it is tightly engineered.",
+      "cadence_trick": "Uses short punch lines after data-heavy passages to reset attention."
+    },
+    "word_choice": {
+      "preferred_lexicon": [
+        "consciousness", "identity", "illusion", "fragility", "continuity", 
+        "the self", "meaning", "structure", "perception", "the void", "fate", "mortality"
+      ],
+      "language_behavior": "Abstract philosophical terms are almost always paired with tangible metaphors: river, sculpture, ripple, echo, mirror.",
+      "credibility_words": "specific dates, named experiments, exact percentages, historical names, concrete scientific details"
+    }
+  },
+  "psychological_and_persuasive_mechanisms": {
+    "core_psychology": [
+      "Uses existential fear, but not random fear; fear is tied to identity, making it feel intellectual rather than sensational.",
+      "Creates relief by converting vague anxiety into understandable structure.",
+      "Makes viewer feel smarter than the passive majority if they keep watching.",
+      "Uses reflective disclaimers to increase trust before making strong claims.",
+      "Frames reflection as self-defense, not self-indulgence."
+    ],
+    "emotional_sequence": [
+      "curiosity", "recognition", "intrigue", "clarity", "introspection", "identity reinforcement"
+    ]
+  },
+  "generation_instructions_for_another_model": {
+    "step_zero": "Read rotation_mandate and select a category. Do not default to the same theme.",
+    "must_include": [
+      "One strong metaphor (river, sculpture, echo).",
+      "One historical or scientific parallel (Milgram, Stanford, etc).",
+      "One explicit false belief being corrected.",
+      "One psychological or existential trap.",
+      "One reflective pause.",
+      "One identity-level takeaway.",
+      "Standard CTA."
+    ],
+    "must_avoid": [
+      "ANY word from the GLOBAL_BLACKLIST_WORDS.",
+      "ANY formatting tags like '[Visual]' or '[Audio]'.",
+      "Generic optimism.",
+      "Surface-level explanations.",
+      "Purely academic teaching without tension.",
+      "Guru posturing.",
+      "Actionable self-help steps (this is a philosophical essay, not a tutorial)."
+    ],
+    "cta_pattern": "If this reflection resonated with you, subscribe to explore the deeper questions of the human condition. Remember, the unexamined life is not worth living. See you in the next one."
+  }
+}

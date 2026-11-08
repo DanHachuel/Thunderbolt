@@ -1,0 +1,122 @@
+{
+  "metadata": {
+    "task_type": "forensic_content_blueprint_extraction",
+    "channel_analyzed": "Dark Psychology & Human Behavior",
+    "dominant_domain_inferred": "long-form psychological essays, dark psychology, behavioral analysis and modern stoicism",
+    "core_promise_of_system": "Expose the hidden mechanics of human behavior, emotional manipulation, and social dynamics, providing the viewer with psychological armor and deep introspection.",
+    "primary_content_engine": "Analytical, slightly cynical, and deeply introspective essay that reframes familiar social dynamics as hidden psychological traps and offers strategic detachment.",
+    "character_length_requirement": "STRICTLY 7,000–9,000 characters",
+    "length_compliance_mandatory": true,
+    "GLOBAL_TONE_DIRECTIVE": "This is a DARK PSYCHOLOGY and INTROSPECTIVE channel. NOT a self-help motivational channel, and NOT a clinical therapy session. The tone must be analytical, sober, slightly cynical, and highly observant. Do not use overly optimistic language. Speak to the viewer as an equal who is about to learn the rules of a rigged game.",
+    "GLOBAL_BLACKLIST_WORDS": [
+      "meditation", "yoga", "mindfulness", "breathe in", "breathe out", "god", "jesus", "prayer", "bible", "amen", "hallelujah", "manifest", "vibrate", "universe will provide"
+    ],
+    "script_format_rules": [
+      "DO NOT include visual or audio prompts in the script (no '[Visual: ...]', no '[Audio: ...]').",
+      "The script must be 100% spoken word, ready for Text-to-Speech (TTS).",
+      "Do not include scene numbers or formatting tags that could be read aloud by the TTS."
+    ],
+    "visual_requirements": {
+      "image_prompt_keywords": ["Abstract shadows", "Fog in forest", "Lonely person silhouette", "Classical statue", "Chess board", "Mirror reflection", "Empty room", "Rain on window", "Dark alley", "Black and white portrait"],
+      "image_blacklist_keywords": ["Smiling people", "Party", "Bright colors", "Money", "Luxury cars", "Crowds", "Cartoon", "Children"],
+      "instruction": "All background visuals MUST be moody, cinematic, and psychological. Prefer abstract shadows, silhouettes, statues, or foggy landscapes. ABSOLUTELY NO bright, happy, or overly corporate stock footage."
+    }
+  },
+  "rotation_mandate": {
+    "purpose": "Force thematic diversity across psychological videos. Prevent the model from collapsing into repetitive relationship advice.",
+    "principle": "Every generated script must be assigned to ONE category.",
+    "categories": [
+      {
+        "id": "gaslighting",
+        "label": "Gaslighting & Emotional Manipulation",
+        "description": "The mechanics of psychological manipulation, narcissism, reality distortion, and how to identify and disarm emotional predators.",
+        "example_themes": ["The Anatomy of Gaslighting", "Why Empaths Attract Narcissists", "The Silent Treatment", "How They Rewrite Your Reality"]
+      },
+      {
+        "id": "cult_psychology",
+        "label": "Cult Psychology & Groupthink",
+        "description": "Why smart people join cults, the psychology of mass compliance, blind obedience, cognitive dissonance, and social isolation.",
+        "example_themes": ["The Machinery of Blind Obedience", "How Cults Break the Mind", "The Psychology of the Mob", "When The Group Becomes The Prison"]
+      },
+      {
+        "id": "stoicism",
+        "label": "Stoicism & Emotional Detachment",
+        "description": "Ancient stoic philosophy applied to modern chaos. Controlling what you can, ignoring what you can't, and building an unbreakable internal fortress.",
+        "example_themes": ["The Art of Not Caring", "The Fortress of the Mind", "Mastering the Indifferent", "The Power of Emotional Detachment"]
+      },
+      {
+        "id": "silence_solitude",
+        "label": "The Power of Silence & Solitude",
+        "description": "Why silence is power, the dangers of over-sharing, the strategic advantage of being underestimated, and finding strength in isolation.",
+        "example_themes": ["The Weaponization of Silence", "The Power of the Lonely Path", "Why You Must Disappear For A While", "The Cost of Speaking Too Much"]
+      }
+    ],
+    "selection_rules": [
+      "Track the last six videos produced by the channel and their assigned categories.",
+      "Before generating a new script, choose the category that has been used LEAST recently.",
+      "Never generate two consecutive videos in the same category."
+    ]
+  },
+  "title_analysis": {
+    "title_mechanics": {
+      "structure": "INTRIGUING PSYCHOLOGICAL TRUTH / DARK TRUTH / STRATEGIC REALISM.",
+      "max_word_count": 8,
+      "absolute_rules": [
+        "The title MUST be a maximum of 8 words.",
+        "The title MUST provoke curiosity or a sense of hidden danger/knowledge.",
+        "The title MUST NOT describe the video production.",
+        "The title MUST NOT be a generic how-to (e.g., 'How to be happy')."
+      ],
+      "correct_forms_use_these": [
+        "The Anatomy of Gaslighting",
+        "Why Smart People Join Cults",
+        "The Art of Not Caring",
+        "The Weaponization of Silence",
+        "The Psychology of the Crowd",
+        "When They Rewrite Your Reality",
+        "The Power of the Lonely Path",
+        "The Fortress of the Mind"
+      ],
+      "forbidden_title_patterns_critical_violation_equals_failure": [
+        "FORBIDDEN: starting with 'Why', 'How', 'The Reason', 'Understanding', 'What'.",
+        "FORBIDDEN: format 'A Guide to...' or 'Tips for...'.",
+        "FORBIDDEN: any word from the GLOBAL_BLACKLIST_WORDS.",
+        "FORBIDDEN: Titles longer than 8 words.",
+        "FORBIDDEN: overly emotional or victim-mentality titles (e.g., 'Why they hurt you')."
+      ]
+    }
+  },
+  "script_architecture": {
+    "macro_flow": [
+      "1. The Hook: A cold, hard truth about human behavior that contradicts popular belief.",
+      "2. The Mechanism: Deconstruct the psychology behind the behavior (e.g., the ego, cognitive dissonance, dopamine).",
+      "3. The Evidence: Use historical, philosophical (e.g., Marcus Aurelius), or sociological examples (not just personal anecdotes).",
+      "4. The Mirror: Turn the analysis onto the viewer — how do they participate in this dynamic?",
+      "5. The Protocol: Actionable psychological armor (e.g., detachment, boundary setting, silence).",
+      "6. The Doctrine: A sobering closing statement that re-frames the viewer's reality.",
+      "7. Standard CTA."
+    ],
+    "opening_pattern": {
+      "method": "Start with a stark, provocative statement about human nature or a specific psychological dynamic.",
+      "forbidden_opening": "Do not start with 'Welcome' or 'In today's video'."
+    }
+  },
+  "generation_instructions_for_another_model": {
+    "step_zero": "Read rotation_mandate and select a category. Do not default to gaslighting.",
+    "must_include": [
+      "A title under 8 words.",
+      "A cold open hook.",
+      "Psychological or historical evidence (e.g., stoic quotes, behavioral studies).",
+      "The 'Mirror' section (introspection).",
+      "A 'Protocol' or ruleset for psychological defense.",
+      "The standard CTA."
+    ],
+    "must_avoid": [
+      "ANY word from the GLOBAL_BLACKLIST_WORDS.",
+      "ANY formatting tags like '[Visual]' or '[Audio]'.",
+      "Religious or spiritual overtones.",
+      "Overly optimistic or preachy conclusions."
+    ],
+    "cta_pattern": "If this analysis gave you the clarity you needed, subscribe to arm your mind for the next one. The game is rigged, but you don't have to lose. See you in the next one."
+  }
+}

@@ -1,0 +1,116 @@
+{
+  "metadata": {
+    "task_type": "forensic_content_blueprint_extraction",
+    "channel_analyzed": "Historical Disasters & Mysteries",
+    "dominant_domain_inferred": "long-form documentary essays, historical disasters, unsolved mysteries, and economic collapses",
+    "core_promise_of_system": "Reveal the hidden chain of events, human errors, and systemic failures behind history's greatest catastrophes, turning the past into a suspenseful warning for the present.",
+    "primary_content_engine": "Suspense-driven documentary narration that reconstructs historical disasters minute-by-minute, exposing the overlooked warnings and the psychological traps that led to the point of no return.",
+    "character_length_requirement": "STRICTLY 7,000–9,000 characters",
+    "length_compliance_mandatory": true,
+    "GLOBAL_TONE_DIRECTIVE": "This is a HISTORICAL DOCUMENTARY channel. The tone must be investigative, suspenseful, and slightly ominous. Speak like a forensic investigator reconstructing a crime scene. Do NOT be overly academic. Do NOT use a cheerful or motivational tone. The goal is to make the viewer feel the gravity of the impending disaster and the tension of the people involved.",
+    "GLOBAL_BLACKLIST_WORDS": [
+      "breathe in", "breathe out", "relax", "meditation", "yoga", "prayer", "jesus", "bible", "god", "manifest", "universe", "motivation", "hustle", "financial freedom", "get rich"
+    ],
+    "script_format_rules": [
+      "DO NOT include visual or audio prompts in the script (no '[Visual: ...]', no '[Audio: ...]').",
+      "The script must be 100% spoken word, ready for Text-to-Speech (TTS).",
+      "Do not include scene numbers or formatting tags that could be read aloud by the TTS."
+    ],
+    "visual_requirements": {
+      "image_prompt_keywords": ["Old documents", "Abandoned buildings", "Fog in forest", "Volcano", "Dark ocean", "Ruins", "Black and white historical photos", "Overgrown railways", "Empty factories", "Storm clouds"],
+      "image_blacklist_keywords": ["Smiling people", "Party", "Bright colors", "Luxury", "Modern smartphones", "Cartoon", "Children playing", "Sunny beach"],
+      "instruction": "All background visuals MUST be moody, historical, abandoned, or atmospheric. Use ruins, old documents, storms, or fog. ABSOLUTELY NO bright, modern, or happy stock footage."
+    }
+  },
+  "rotation_mandate": {
+    "purpose": "Force thematic diversity across historical documentaries. Prevent the model from focusing only on wars or repeating the same era.",
+    "principle": "Every generated script must be assigned to ONE category.",
+    "categories": [
+      {
+        "id": "economic_collapses",
+        "label": "Economic Collapses",
+        "description": "Stock market crashes, hyperinflation, bank runs, and the systemic failures that wiped out generations of wealth (e.g., 1929 Wall Street Crash, 2008 Housing Bubble, Tulip Mania, Zimbabwe hyperinflation).",
+        "example_themes": ["The Day Wall Street Died", "How Money Evaporated Overnight", "The Silent Bank Run", "The Anatomy of a Bubble"]
+      },
+      {
+        "id": "natural_catastrophes",
+        "label": "Natural Catastrophes",
+        "description": "Volcanic eruptions, tsunamis, earthquakes, and extreme weather events that reshaped the world (e.g., Pompeii, Chernobyl, Mount St. Helens, the 1755 Lisbon Earthquake).",
+        "example_themes": ["The Earth That Swallowed Pompeii", "The Invisible Killer at Chernobyl", "When The Ocean Rose", "The Day The Sky Turned Black"]
+      },
+      {
+        "id": "human_error_mysteries",
+        "label": "Human Error & Unsolved Mysteries",
+        "description": "Engineering disasters, lost expeditions, maritime mysteries, and the terrifying consequences of human arrogance or miscalculation (e.g., Titanic, the Dyatlov Pass Incident, the Roanoke Colony, MH370).",
+        "example_themes": ["The Ship They Said Was Unsinkable", "The Last Days of the Dyatlov Pass", "The Ghost Colony", "The Final Transmission"]
+      }
+    ],
+    "selection_rules": [
+      "Track the last six videos produced by the channel and their assigned categories.",
+      "Before generating a new script, choose the category that has been used LEAST recently.",
+      "Never generate two consecutive videos in the same category."
+    ]
+  },
+  "title_analysis": {
+    "title_mechanics": {
+      "structure": "SUSPENSEFUL HOOK / HISTORICAL EVENT / HIDDEN TRUTH.",
+      "max_word_count": 8,
+      "absolute_rules": [
+        "The title MUST be a maximum of 8 words.",
+        "The title MUST evoke a sense of doom, mystery, or historical weight.",
+        "The title MUST NOT describe the video production.",
+        "The title MUST NOT be a generic history lesson (e.g., 'History of the Titanic')."
+      ],
+      "correct_forms_use_these": [
+        "The Day Wall Street Died",
+        "The Anatomy of a Bubble",
+        "The Last Days of Pompeii",
+        "The Invisible Killer at Chernobyl",
+        "The Final Transmission",
+        "The Ship They Said Was Unsinkable",
+        "The Ghost Colony",
+        "When the Ocean Rose"
+      ],
+      "forbidden_title_patterns_critical_violation_equals_failure": [
+        "FORBIDDEN: starting with 'Why', 'How', 'The Reason', 'Understanding', 'What'.",
+        "FORBIDDEN: format 'A Documentary about...' or 'The History of...'.",
+        "FORBIDDEN: any word from the GLOBAL_BLACKLIST_WORDS.",
+        "FORBIDDEN: Titles longer than 8 words.",
+        "FORBIDDEN: Titles that sound like a school textbook."
+      ]
+    }
+  },
+  "script_architecture": {
+    "macro_flow": [
+      "1. The Point of No Return: Start with the climax of the disaster (e.g., the exact moment the ship hit the iceberg, or the moment the market crashed).",
+      "2. The Ticking Clock: Rewind to show the hours, days, or weeks before the disaster. What were the warnings?",
+      "3. The Mechanism: Explain the systemic failure, the engineering flaw, or the economic bubble that made the disaster inevitable.",
+      "4. The Human Element: Focus on the psychological denial or the greed of the people involved. Why did they ignore the signs?",
+      "5. The Fallout: The immediate aftermath and the long-term historical consequences.",
+      "6. The Doctrine: A sobering closing statement connecting the past disaster to modern vulnerabilities.",
+      "7. Standard CTA."
+    ],
+    "opening_pattern": {
+      "method": "Start directly in the action — the moment the event went out of control. Do not start with an introduction.",
+      "forbidden_opening": "Do not start with 'Welcome back' or 'Today we are looking at'."
+    }
+  },
+  "generation_instructions_for_another_model": {
+    "step_zero": "Read rotation_mandate and select a category. Do not default to Titanic or 1929.",
+    "must_include": [
+      "A title under 8 words.",
+      "A 'Point of No Return' cold open.",
+      "Historical facts, dates, and specific names.",
+      "An analysis of the human/systemic failure.",
+      "A modern parallel or warning.",
+      "The standard CTA."
+    ],
+    "must_avoid": [
+      "ANY word from the GLOBAL_BLACKLIST_WORDS.",
+      "ANY formatting tags like '[Visual]' or '[Audio]'.",
+      "A boring chronological list of events.",
+      "Overly heroic or patriotic framing."
+    ],
+    "cta_pattern": "If this story kept you on the edge of your seat, hit that subscribe button. History doesn't repeat, but it rhymes. Stay sharp, and I'll see you in the next documentary."
+  }
+}

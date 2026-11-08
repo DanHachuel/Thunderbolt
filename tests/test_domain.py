@@ -256,9 +256,13 @@ def test_seed_blueprints_are_initialized_without_overwrite(tmp_path, monkeypatch
     storage.BLUEPRINTS = storage.STORAGE / "blueprints"
     storage.ensure_storage()
     imported = sorted((storage.BLUEPRINTS / "importados").glob("*.json"))
-    assert len(imported) == 34
+    # 1.0.71: 34 seed + Dark_Psychology + Historical_Disasters +
+    # Filosofia_e_Estoicismo - BlueprintFilosofiaeEstoicismo = 36.
+    assert len(imported) == 36
     assert (storage.BLUEPRINTS / "importados" / "FINANCE USA.json").is_file()
     assert not (storage.BLUEPRINTS / "importados" / "blueprintcanalfinanças.json").exists()
+    assert (storage.BLUEPRINTS / "importados" / "Dark_Psychology.json").is_file()
+    assert not (storage.BLUEPRINTS / "importados" / "BlueprintFilosofiaeEstoicismo.json").exists()
 
     preserved = imported[0]
     preserved.write_text('{"name": "personalizado"}\n', encoding="utf-8")
@@ -282,7 +286,8 @@ def test_seed_blueprints_do_not_duplicate_legacy_finance_file(tmp_path, monkeypa
     assert legacy.read_text(encoding="utf-8") == '{"name": "personalizado"}\n'
     assert not (legacy.parent / "FINANCE USA.json").exists()
     # 0.9.80: as 15 versões FINANCE melhoradas entraram como .json (19 + 15 = 34).
-    assert len(list(legacy.parent.glob("*.json"))) == 34
+    # 1.0.71: 34 - Filosofia antigo + 3 novos (Dark, Disasters, Filosofia novo) = 36.
+    assert len(list(legacy.parent.glob("*.json"))) == 36
 
 
 def test_seed_blueprints_avoid_duplicate_when_legacy_file_is_in_blueprint_root(tmp_path, monkeypatch):
@@ -302,7 +307,8 @@ def test_seed_blueprints_avoid_duplicate_when_legacy_file_is_in_blueprint_root(t
     assert legacy.read_text(encoding="utf-8") == '{"name": "personalizado"}\n'
     assert not (imported / "FINANCE USA.json").exists()
     # 0.9.80: as 15 versões FINANCE melhoradas entraram como .json (18 + 15 = 33).
-    assert len(list(imported.glob("*.json"))) == 33
+    # 1.0.71: com o legacy na raiz, o FINANCE USA.json não é copiado — 36 - 1 = 35.
+    assert len(list(imported.glob("*.json"))) == 35
 
 
 def test_blueprint_creation_modes(tmp_path, monkeypatch):
