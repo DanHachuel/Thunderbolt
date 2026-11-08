@@ -1,4 +1,9 @@
 # Changelog
+## 1.0.76 - 2026-11-08
+- **Afinação de redacção da regra inviolável das telas de CMD** (`AGENTS.md`). A regra escrita na 1.0.75 dizia "Esta proibido, sem excepcao" — ambíguo (lê-se como o pronome "esta"); passa a **"Fica proibido, sem excepcao"**. Nenhuma mudança de comportamento: os mesmos testes, o mesmo cravar, a mesma proibição (`detached`, `windowsHide: false` em destacado, `stdio` inherit em destacado).
+- **Nota de release (regra 7):** bump para **1.0.76** — registry `latest`=1.0.75 confirmado antes do bump; master sincronizado por fetch.
+
+# Changelog
 ## 1.0.75 - 2026-11-08
 - **REGRA INVIOLAVEL: PROIBIDO ABRIR TELAS DE CMD NO COMPUTADOR DO UTILIZADOR** (`AGENTS.md`, `scripts/cli.mjs`, `tests/test_no_detached_process.py`). Pedido directo do utilizador: escrever nas regras do projeto que nenhuma versao pode deixar janelas de consola a pairar no ecra do computador.
   - **A regra (ponto 5 da arquitectura do launcher):** fica proibido, sem excepcao, `detached: true` (Node) ou `DETACHED_PROCESS` (Python) em qualquer spawn - a fuga tira a consola ao processo e todos os subprocessos seguintes (bootstrap do Streamlit, `pip`, browsers, ffmpeg, `npx`) passam a abrir a sua PROPRIA consola; `windowsHide: false` num processo destacado; e `stdio` de tipo inherit num processo destacado. A unica excepcao, ja medida, e o respawn do launcher depois de uma actualizacao (precisa de `detached` para sobreviver ao job object do libuv) - e esse caso tem obrigacao de levar `windowsHide: true` + `stdio: "ignore"`.
