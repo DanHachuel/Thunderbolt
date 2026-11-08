@@ -6810,6 +6810,14 @@ def _video_task_source(task: dict[str, Any]) -> str:
 
 
 def _video_task_progress(task: dict[str, Any]) -> int:
+    state = str(task.get("state") or "").strip().lower()
+    # 1.0.78 - FILA = ZERO: uma tarefa to_do NUNCA mostra progresso herdado
+    # da tentativa anterior (o retry/remake voltavam com a barra em 18%/50%
+    # e a tarefa ainda na fila). A regra vem antes da derivação por
+    # artefactos — com vídeo+thumbnail em disco uma tarefa re-enfileirada
+    # também tem de mostrar 0%.
+    if state == "to_do":
+        return 0
     try:
         progress = max(0, min(100, int(task.get("progress") or 0)))
     except (TypeError, ValueError):
@@ -6834,7 +6842,12 @@ def _render_video_task_state(task: dict[str, Any], state_override: str | None = 
     else:
         st.write(state or "—")
         st.caption(VIDEO_TASK_STATE_LABELS.get(state, state.replace("_", " ").capitalize() or "Desconhecido"))
-    st.progress(progress, text=f"{progress}%")
+    # 1.0.78 - na fila (to_do): barra vazia + texto explícito, ignorando
+    # qualquer progress antigo que ainda venha do JSON.
+    if state == "to_do":
+        st.progress(0, text="Aguardando na fila")
+    else:
+        st.progress(progress, text=f"{progress}%")
     task_id = str(task.get("id") or "unknown")
     if state == "blocked" and task.get("stop_reason") == "upload_uncertain":
         st.warning("O resultado do upload é incerto. Verifique manualmente a plataforma antes de retentar; não haverá retry automático.")

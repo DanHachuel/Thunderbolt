@@ -778,6 +778,15 @@ def retry_task_with_current_settings(task_id: str, *, confirm_upload_uncertain: 
             task.clear()
             task.update(migrated)
             task["state"] = "to_do"
+            # 1.0.78 - FILA = ZERO: o retry voltava a tarefa para to_do
+            # HERDANDO o progresso da tentativa anterior (a barra mostrava
+            # 18% com a tarefa ainda na fila). Nada de progresso, actividade
+            # parcial ou tempo decorrido sobrevivem à re-fila; o worker
+            # reescreve estes campos quando a tarefa começa a rodar (doing).
+            task["progress"] = 0
+            task["video_helper_status"] = "Aguardando na fila"
+            task["video_elapsed_seconds"] = 0
+            task["upload_elapsed_seconds"] = 0
             task["error"] = None
             task["retry_count"] = retry_count + 1
             task["retry_requested_at"] = now()
@@ -964,7 +973,14 @@ def remake_video_task(task_id: str) -> dict[str, Any] | None:
                 "artifacts": artifacts,
                 "stage": "video",
                 "state": "to_do",
-                "progress": 50,
+                # 1.0.78 - FILA = ZERO: era 50 — a barra pulava para metade
+                # com a tarefa ainda em to_do (regressão do relato do
+                # utilizador). A remontagem recomeça em 0% e o worker
+                # actualiza o progresso à medida que executa.
+                "progress": 0,
+                "video_helper_status": "Aguardando na fila",
+                "video_elapsed_seconds": 0,
+                "upload_elapsed_seconds": 0,
                 "video_ready": False,
                 # 1.0.66 - `audio_regeneration_requested` saiu: era escrita aqui
                 # e NUNCA lida pelo worker (codigo morto que sugeria uma
