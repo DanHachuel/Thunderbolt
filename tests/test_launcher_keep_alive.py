@@ -255,6 +255,178 @@ def test_launcher_source_is_valid_javascript():
 
 
 # ---------------------------------------------------------------------------
+# 8. BLINDAGEM CONSTITUCIONAL (AGENTS.md — "ARQUITETURA DO LAUNCHER")
+#
+# O objectivo destes testes é impedir que uma sessão futura APAGUE as linhas
+# da 1.0.74 por as parecer gambiarras. Cada um prende uma peça da regra
+# constitucional; quem alterar a arquitectura tem de actualizar a regra E
+# estes testes na mesma PR (é o que a própria regra exige).
+# ---------------------------------------------------------------------------
+
+# Os arranques supervisionados, pela função que os lanca.
+WORKER_SPAWN_BLOCKS = (
+    ("startAutomationWorker", "automation"),
+    ("startPipelineWorker", "pipeline"),
+    ("startQueueWorkers", "thumbnail"),
+    ("spawnImageWorker", "image"),
+)
+
+# Os spawns supervisionados, pelo comando que lançam. A chave é o início da
+# chamada; o bloco de opções vai até ao `});` que a fecha — assim o teste vê
+# SÓ as opções daquele spawn e não o resto da função.
+SUPERVISED_SPAWNS = (
+    ("automation", 'spawn(python, ["-m", "hermes_ui.automation_worker"]'),
+    ("pipeline", 'spawn(python, ["-m", "hermes_ui.pipeline_worker"]'),
+    ("thumbnail", 'spawn(python, ["-m", "hermes_ui.thumbnail_worker"]'),
+    ("image", 'spawn(python, ["-m", "hermes_ui.image_worker"]'),
+    ("streamlit", "spawn(python, [streamlitBootstrap"),
+)
+
+
+def _cli_code_without_comments() -> str:
+    """O cli.mjs sem comentários de linha (para não haver falsos positivos)."""
+    return "\n".join(line.split("//")[0] for line in CLI.splitlines())
+
+
+def _spawn_options(code: str, marker: str) -> str:
+    """Bloco de opções de um spawn (do início da chamada até ao `});`)."""
+    return code.split(marker, 1)[1].split("});", 1)[0]
+
+
+# --- A regra constitucional tem de existir (não pode ser apagada em paz) ----
+
+
+def test_agents_md_declares_the_launcher_architecture_rule():
+    rules = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    assert "REGRA INVIOLÁVEL: ARQUITETURA DO LAUNCHER (WINDOWS/MOBAXTERM)" in rules
+    for marker in (
+        "setInterval(() => {}, 1000)",
+        "SIGINT",
+        "SIGHUP",
+        "guardConsoleStream",
+        "launcher_console.log",
+        "CREATE_NEW_PROCESS_GROUP",
+        "tests/test_launcher_keep_alive.py",
+    ):
+        assert marker in rules, f"a regra constitucional perdeu o marcador: {marker}"
+
+
+# --- Blindagem 1: keep-alive ------------------------------------------------
+
+
+def test_keep_alive_is_the_last_thing_the_launcher_sets_up():
+    """O keep-alive existe e é o handle final do ficheiro.
+
+    Se alguém o mover para o meio do ficheiro (ou o puser antes dos spawns),
+    a garantia deixa de valer para toda a vida do launcher.
+    """
+    assert "const keepAliveTimer = setInterval(() => {}, 1000);" in CLI
+    code = _cli_code_without_comments()
+    tail = code.rsplit("const keepAliveTimer = setInterval(() => {}, 1000);", 1)[-1]
+    # nada de handler/servidor/spawn DEPOIS do keep-alive: ele é o último
+    for marker in ('process.on("SIG', "setInterval(", "proxy.listen(", "spawn("):
+        assert marker not in tail, f"'{marker}' aparece depois do keep-alive"
+    assert "keepAliveTimer.unref" not in code
+
+
+# --- Blindagem 2: sinais absorvidos (sem exagero) ---------------------------
+
+
+def test_windows_absorbs_both_terminal_signals():
+    """No Windows o SIGINT e o SIGHUP são absorvidos, num só bloco."""
+    win_block = CLI.split('if (platform() === "win32")', 1)[1].split("} else {", 1)[0]
+    assert 'process.on("SIGINT"' in win_block
+    assert 'process.on("SIGHUP", () => absorbTerminalSignal("SIGHUP"));' in win_block
+    assert "ctrl_c_absorbed_windows" in win_block  # telemetria 0.9.86 intacta
+    absorb = _code_block("function absorbTerminalSignal(")
+    assert "stopWorker" not in absorb
+    assert "process.exit" not in absorb
+    assert "[LAUNCHER] Sinal ${signal} ignorado. Mantendo processo activo." in absorb
+
+
+def test_deliberate_shutdowns_are_never_absorbed():
+    """O outro lado da regra: SIGTERM/SIGBREAK continuam paragens reais.
+
+    A regra manda absorver SIGINT e SIGHUP no Windows; absorver SIGTERM ou
+    SIGBREAK quebraria o encerramento deliberado do utilizador.
+    """
+    code = _cli_code_without_comments()
+    assert 'process.on("SIGBREAK", () => stopWorker("ctrl+break"));' in code
+    assert 'process.on("SIGTERM", () => stopWorker("external_kill"));' in code
+    assert 'stopWorker("stop-file")' in code
+
+
+# --- Blindagem 3: guarda da consola (EPIPE) --------------------------------
+
+
+def test_console_guard_covers_both_streams():
+    """A guarda da consola envolve stdout E stderr, com espelho em ficheiro."""
+    code = _cli_code_without_comments()
+    assert "function guardConsoleStream(" in code
+    assert 'guardConsoleStream(process.stdout, "stdout");' in code
+    assert 'guardConsoleStream(process.stderr, "stderr");' in code
+    guard = _code_block("function guardConsoleStream(")
+    assert "stream.write = (chunk, encoding, callback) =>" in guard
+    assert 'stream.on("error"' in guard  # o EPIPE chega como evento na stream
+    assert "mirrorConsoleOutput" in guard  # e a saída não desaparece
+    assert 'join(storageDir, "logs", "launcher_console.log")' in code
+    # o crash por EPIPE deixa de ser possível com a consola desvinculada
+    uncaught = code.split('process.on("uncaughtException"', 1)[1]
+    assert "launcherConsoleDetached && isConsoleWriteFailure(error)" in uncaught
+    assert 'launcherExiting("crash");' in uncaught
+
+
+# --- Blindagem 4: isolamento dos filhos ------------------------------------
+
+
+def test_every_worker_spawn_uses_create_new_process_group():
+    """CREATE_NEW_PROCESS_GROUP em todos os spawns supervisionados."""
+    code = _cli_code_without_comments()
+    assert "const WINDOWS_CREATE_NEW_PROCESS_GROUP = 0x00000200;" in code
+    assert "function workerCreationFlags()" in code
+    for start_fn, worker_key in WORKER_SPAWN_BLOCKS:
+        body = code.split(f"function {start_fn}(", 1)[1].split("\nfunction ", 1)[0]
+        assert "creationFlags: workerCreationFlags()," in body, f"{worker_key} perdeu o grupo próprio"
+        assert "env: runtimeEnv" in body, f"{worker_key} perdeu o env completo"
+    # e o próprio spawn carrega a flag (não basta a função existir)
+    for worker_key, marker in SUPERVISED_SPAWNS:
+        assert "creationFlags: workerCreationFlags()," in _spawn_options(code, marker), (
+            f"o spawn do {worker_key} não usa o grupo próprio"
+        )
+
+
+def test_no_worker_spawn_escapes_the_console_with_detached():
+    """`detached`/DETACHED_PROCESS NÃO pode voltar aos filhos (janelas CMD).
+
+    `detached` resolveria a morte pelo job object, mas tira a consola ao filho:
+    cada subprocesso seguinte (bootstrap do Streamlit, pip, browsers, ffmpeg)
+    abriria a sua PRÓPRIA consola — dezenas de janelas CMD. A stack fica com a
+    consola que tem; a sobrevivência vem dos sinais absorvidos + keep-alive.
+
+    A excepção conhecida é o substituto do auto-update (`spawn(executable ...)`),
+    que nasce já sem stdio e tem de sobreviver ao launcher que o lança — e, pela
+    regra 5 do AGENTS.md, é obrigado a vir com `windowsHide: true` +
+    `stdio: "ignore"`, para nenhuma janela de CMD aparecer.
+    """
+    code = _cli_code_without_comments()
+    for worker_key, marker in SUPERVISED_SPAWNS:
+        options = _spawn_options(code, marker)
+        assert "detached" not in options, f"o spawn do {worker_key} voltou a usar detached (janelas CMD)"
+    assert "DETACHED_PROCESS" not in code
+    for block in code.split('spawn(executable, ["--yes"')[1:]:
+        options = block.split("});", 1)[0]
+        assert "detached: true" in options, "o substituto do auto-update perdeu o seu detached"
+        assert "windowsHide: true" in options, "o substituto do auto-update voltou a abrir consola visível"
+        assert 'stdio: "ignore"' in options, "o substituto do auto-update voltou a usar a consola"
+
+
+def _code_block(function_header: str) -> str:
+    """Corpo de uma função do launcher (até à próxima função)."""
+    code = _cli_code_without_comments()
+    return code.split(function_header, 1)[1].split("\nfunction ", 1)[0]
+
+
+# ---------------------------------------------------------------------------
 # 7. provas reais: o pai morre, a consola morre — o launcher continua
 # ---------------------------------------------------------------------------
 
@@ -554,3 +726,80 @@ def test_console_detach_never_kills_the_launcher(tmp_path: Path):
     )
 
 
+@pytest.mark.skipif(not shutil.which("node"), reason="node necessário para arrancar o launcher")
+@pytest.mark.skipif(sys.platform != "win32", reason="CTRL_C_EVENT/CTRL_BREAK_EVENT só existem no Windows")
+def test_ctrl_c_keeps_the_terminal_and_the_interface_alive(tmp_path: Path):
+    """O pedido do utilizador: apertar Ctrl+C NÃO devolve o prompt.
+
+    O launcher nasce com grupo de processos próprio (o mesmo mecanismo dos
+    workers) e o teste entrega-lhe eventos de console REAIS:
+
+    - CONTROL0: `CTRL_BREAK_EVENT` tem de encerrar (paragem legítima). Sem esta
+      prova não se distinguiria "o Ctrl+C foi absorvido" de "o evento nunca
+      chegou" — a injecção de eventos de consola é provada pelo controlo.
+    - TESTE: `CTRL_C_EVENT` (o que o MobaXterm envia) NÃO pode encerrar: o
+      launcher fica em primeiro plano, a interface continua acessível e o
+      terminal não recebe o prompt de volta.
+    """
+    venv = _venv_python()
+    if venv is None:
+        pytest.skip("venv do Thunderbolt indisponível neste ambiente")
+    if _thunderbolt_stack_running():
+        pytest.skip("há uma instância real do Thunderbolt a correr neste ambiente")
+
+    import signal
+
+    port = _free_tcp_port()
+    environment = _launcher_environment(tmp_path, venv, port)
+
+    def boot():
+        return subprocess.Popen(
+            ["node", str(ROOT / "scripts" / "cli.mjs")],
+            cwd=str(ROOT),
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+        )
+
+    def wait_for_banner(process):
+        console = ""
+        deadline = time.monotonic() + BOOT_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            line = process.stdout.readline()
+            if not line:
+                break
+            console += line.decode("utf-8", errors="replace")
+            if "interface disponível em http://localhost:" in console:
+                break
+        assert "interface disponível em http://localhost:" in console, "arranque falhou:\n" + console[-2000:]
+        return console
+
+    # --- controlo: o Ctrl+Break continua a ser paragem legítima -------------
+    control = boot()
+    try:
+        wait_for_banner(control)
+        os.kill(control.pid, signal.CTRL_BREAK_EVENT)
+        deadline = time.monotonic() + STOP_TIMEOUT_SECONDS
+        while time.monotonic() < deadline and control.poll() is None:
+            time.sleep(1)
+        assert control.poll() is not None, "o Ctrl+Break deixou de encerrar (paragem deliberada quebrada)"
+    finally:
+        _kill_pid(control.pid)
+        _kill_leftover_stack(tmp_path)
+    time.sleep(2)
+
+    # --- teste: o Ctrl+C não encerra --------------------------------------
+    process = boot()
+    try:
+        wait_for_banner(process)
+        os.kill(process.pid, signal.CTRL_C_EVENT)
+        time.sleep(8)
+        assert process.poll() is None, "o launcher encerrou com o Ctrl+C — o terminal voltaria a receber o prompt"
+        # uma rajada (o MobaXterm dispara vários sinais seguidos)
+        os.kill(process.pid, signal.CTRL_C_EVENT)
+        time.sleep(8)
+        assert process.poll() is None, "o launcher encerrou na rajada de Ctrl+C"
+    finally:
+        _kill_pid(process.pid)
+        _kill_leftover_stack(tmp_path)
