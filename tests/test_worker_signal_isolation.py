@@ -1,4 +1,4 @@
-"""1.0.68 — isolamento dos workers dos sinais do console (fim do 0xC000013A).
+"""1.0.71 — isolamento dos workers dos sinais do console (fim do 0xC000013A).
 
 O relato: `image_worker` e `thumbnail_worker` a morrerem repetidamente com o
 código **3221225786** (= 0xC000013A, `STATUS_CONTROL_C_EXIT`) e o loop de
@@ -83,15 +83,33 @@ def test_worker_isolation_does_not_break_the_stdin_contract():
 # ---------------------------------------------------------------------------
 
 
-def test_render_spawn_flags_combine_new_group_and_no_window(monkeypatch):
+def _fake_os(name: str):
+    """Namespace mínimo com ``name`` — evita corromper o ``os`` global.
+
+    Patchar ``pipeline_worker.os.name`` mexia no módulo ``os`` REAL e o
+    ``pathlib`` dos fixtures seguintes passava a instalar ``PosixPath`` em
+    Windows (INTERNALERROR no gate). O helper só lê ``os.name``.
+    """
+    from types import SimpleNamespace
+
+    return SimpleNamespace(name=name)
+
+
+def test_render_spawn_flags_isolate_the_render_on_windows(monkeypatch):
     from hermes_ui import pipeline_worker
 
-    monkeypatch.setattr(pipeline_worker.os, "name", "nt")
+    # POSIX primeiro: o isolamento é 0 (camada do start_new_session).
+    monkeypatch.setattr(pipeline_worker, "os", _fake_os("posix"))
+    assert pipeline_worker._render_spawn_creationflags() == 0
+    if os.name != "nt":
+        # As constantes de criação são Windows-only; em POSIX não existem e
+        # macará-las seria um AttributeError (foi o crash do gate no Linux).
+        assert not hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP")
+        return
+    monkeypatch.setattr(pipeline_worker, "os", _fake_os("nt"))
     flags = pipeline_worker._render_spawn_creationflags()
     assert flags & subprocess.CREATE_NEW_PROCESS_GROUP
     assert flags & subprocess.CREATE_NO_WINDOW
-    monkeypatch.setattr(pipeline_worker.os, "name", "posix")
-    assert pipeline_worker._render_spawn_creationflags() == 0
 
 
 def test_render_spawn_uses_the_helper_flags():
@@ -113,11 +131,11 @@ def test_stop_process_does_not_depend_on_process_groups():
 
 
 # ---------------------------------------------------------------------------
-# Prova comportamental real: o flag não quebra o spawn (Node + Python)
+# Provas reais e valor do código do relato
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="creationFlags 0x200 e o código 3221225786 são Windows")
+@pytest.mark.skipif(os.name != "nt", reason="as constantes Windows só existem em Windows")
 def test_windows_child_spawns_with_new_process_group(tmp_path: Path):
     """Um filho criado com CREATE_NEW_PROCESS_GROUP arranca e responde normal.
 
@@ -141,3 +159,4 @@ def test_status_control_c_exit_value_is_documented():
     """O código do relato (3221225786) fica gravado no contrato do teste."""
     assert STATUS_CONTROL_C_EXIT == 0xC000013A
     assert "STATUS_CONTROL_C_EXIT" in CLI_SOURCE
+    assert sys.platform in {"win32", "linux", "darwin"}  # sanity do import
