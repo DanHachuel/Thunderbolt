@@ -890,6 +890,21 @@ const workerStderrTails = new WeakMap();
 const fastFailWindowMs = 10_000;
 const fastFailLimit = 3;
 const workerBootTracker = new Map();
+
+// 1.0.71 — ISOLAMENTO DE SINAIS DO CONSOLE (fim do 0xC000013A). Sem
+// CREATE_NEW_PROCESS_GROUP os workers partilham o grupo de processos do
+// launcher: um Ctrl+C/CTRL_BREAK no terminal (MobaXterm, PowerShell) era
+// entregue a TODOS e o thumbnail/image worker morria com
+// STATUS_CONTROL_C_EXIT (3221225786) — o circuit breaker cancelava então o
+// loop de reinício e a fila ficava morta. Com o grupo próprio, o sinal do
+// console não chega ao worker; o encerramento continua a ser o NOSSO
+// (child.kill()/stopStackComponents), que usa TerminateProcess e não
+// depende de grupos. O stdin já é "ignore" e a saída vai por pipes: nada
+// muda no funcionamento normal.
+const WINDOWS_CREATE_NEW_PROCESS_GROUP = 0x00000200;
+function workerCreationFlags() {
+  return process.platform === "win32" ? WINDOWS_CREATE_NEW_PROCESS_GROUP : 0;
+}
 let queueWorkersFastFailDisabled = false;
 let pipelineFastFailDisabled = false;
 let automationFastFailDisabled = false;
@@ -996,6 +1011,8 @@ function startAutomationWorker() {
     stdio: ["ignore", "inherit", "pipe"],
     env: runtimeEnv,
     windowsHide: false,
+    // 1.0.71: grupo proprio — o Ctrl+C do console nao mata o worker.
+    creationFlags: workerCreationFlags(),
   });
   noteWorkerStarted("automation");
   worker.stderr?.setEncoding("utf8");
@@ -1090,6 +1107,8 @@ function startPipelineWorker() {
     stdio: ["ignore", "pipe", "pipe"],
     env: runtimeEnv,
     windowsHide: false,
+    // 1.0.71: grupo proprio — o Ctrl+C do console nao mata o worker.
+    creationFlags: workerCreationFlags(),
   });
   const pipelineLog = attachQueueWorkerLog(pipelineWorker, "pipeline_worker.log", "pipeline worker");
   noteWorkerStarted("pipeline");
@@ -1197,6 +1216,9 @@ function startQueueWorkers() {
     stdio: ["ignore", "pipe", "pipe"],
     env: runtimeEnv,
     windowsHide: false,
+    // 1.0.71: grupo próprio — o Ctrl+C do console não mata o worker
+    // (0xC000013A / STATUS_CONTROL_C_EXIT relatado pelo utilizador).
+    creationFlags: workerCreationFlags(),
   });
   const thumbnailLog = attachQueueWorkerLog(thumbnailWorker, "thumbnail_worker.log", "thumbnail worker");
   noteWorkerStarted("thumbnail");
@@ -1232,6 +1254,9 @@ function startQueueWorkers() {
     stdio: ["ignore", "pipe", "pipe"],
     env: runtimeEnv,
     windowsHide: false,
+    // 1.0.71: grupo próprio — o Ctrl+C do console não mata o worker
+    // (0xC000013A / STATUS_CONTROL_C_EXIT relatado pelo utilizador).
+    creationFlags: workerCreationFlags(),
   });
   const imageLog = attachQueueWorkerLog(imageWorker, "image_worker.log", "image worker");
   noteWorkerStarted("image");

@@ -1226,6 +1226,22 @@ def _persist_video_diagnostics(task: dict[str, Any], output: str) -> dict[str, s
         return {"log_file": log_file, "result_file": result_file}
 
 
+def _render_spawn_creationflags() -> int:
+    """Flags de criação do subprocesso de render (1.0.71).
+
+    ``CREATE_NEW_PROCESS_GROUP`` isola o render dos sinais do CONSOLE: um
+    Ctrl+C/CTRL_BREAK no terminal (MobaXterm/PowerShell) deixava o helper
+    morrer com STATUS_CONTROL_C_EXIT (0xC000013A) a meio de um vídeo —
+    exactamente a morte que o relato do utilizador mostrou. ``CREATE_NO_WINDOW``
+    mantém-se (não queremos consola à mostra). O cancelamento da tarefa usa
+    ``_stop_process`` (psutil terminate/kill), que não depende de grupos.
+    Em POSIX devolve 0 — o isolamento é o ``start_new_session``.
+    """
+    if os.name != "nt":
+        return 0
+    return subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+
+
 def _stop_process(process: subprocess.Popen[str], *, reason: str = "unknown") -> None:
     process_id = getattr(process, "pid", None)
     terminated_children = 0
@@ -2257,7 +2273,9 @@ def _run_video_helper_once(
                 cwd=helper_dir,
                 env=env,
                 start_new_session=os.name != "nt",
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                # 1.0.71: CREATE_NEW_PROCESS_GROUP isola o render dos Ctrl+C do
+                # console (STATUS_CONTROL_C_EXIT 0xC000013A matava o vídeo).
+                creationflags=_render_spawn_creationflags(),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
