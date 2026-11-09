@@ -7911,6 +7911,28 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False, tasks: li
 # ---------------------------------------------------------------------------
 
 
+def _video_task_status_icon(task: dict[str, Any]) -> str:
+    """Ícone de estado para o TÍTULO do card — e só para o título.
+
+    1.0.78: conclusão ganha ✅ e falha ganha ❌, sempre no fim do título do
+    `st.expander`, para se ler a fila de relance sem abrir cada card. Estados
+    vivos (to_do/standby/doing) e os restantes terminais (cancelled/blocked)
+    ficam sem ícone — um ❌ a mais ou a menos só baralha.
+
+    A leitura passa por `_catalog_task_state`, a MESMA que decide o player do
+    card: assim um vídeo com `state` = "published"/"completed" (sinónimos já
+    normalizados) recebe o ✅, e um vídeo pronto cuja falha foi só do upload
+    também é ✅ — o utilizador vê no título exactamente o que o card confirma
+    no corpo. Nada disto muda a lógica de estado do backend.
+    """
+    state = _catalog_task_state(task)
+    if state == "done":
+        return " ✅"
+    if state in {"failed", "error"}:
+        return " ❌"
+    return ""
+
+
 def _youtube_task_card_body(task_id: str) -> str:
     """Renderiza o card da tarefa YouTube com dados FRESCOS; devolve o estado.
 
@@ -7929,7 +7951,7 @@ def _youtube_task_card_body(task_id: str) -> str:
         return ""
     task_title = str(task.get("topic") or task.get("title") or "Vídeo sem nome").strip()
     task_channel = str(task.get("channel_name") or "Canal sem nome").strip()
-    with st.expander(f"{task_title} · {task_channel}", expanded=False):
+    with st.expander(f"{task_title} · {task_channel}{_video_task_status_icon(task)}", expanded=False):
         task_cols = st.columns([2.25, 1.55, 1.05, 2.15], gap="small")
         script_path = _task_artifact_path(task, "script")
         video_path = _task_artifact_path(task, "video")
