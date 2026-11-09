@@ -148,3 +148,57 @@ def test_keep_alive_and_signal_absorption_are_preserved():
     assert "absorbTerminalSignal" in CLI_SOURCE
     assert "guardConsoleStream" in CLI_SOURCE
     assert "ignorado. Mantendo processo activo." in CLI_SOURCE
+
+
+# ---------------------------------------------------------------------------
+# 1.0.84 — worker de automação: diagnóstico e watchdog (runtime permanente)
+# ---------------------------------------------------------------------------
+
+
+def test_automation_worker_spawn_has_runtime_flags_and_own_log():
+    """O worker de automação corre do runtime, isolado, e escreve log próprio.
+
+    Sem log próprio (1.0.80/1.0.81) o erro que matava o worker na
+    inicialização era invisível: a UI mostrava «Worker de automação não está
+    activo» sem ninguém saber porquê. Agora segue o contrato stdio-seguro dos
+    outrosworkers — pipes + storage/logs/automation_worker.log.
+    """
+    block = _spawn_block("automation_worker")
+    assert "cwd: executionRoot," in block
+    assert "windowsHide: true" in block
+    assert "creationFlags: workerCreationFlags()," in block
+    # pipes (nada de inherit) e log próprio do worker.
+    assert 'stdio: ["ignore", "pipe", "pipe"]' in block
+    assert 'attachQueueWorkerLog(worker, "automation_worker.log"' in CLI_SOURCE
+    # a mensagem de crash loop passa a apontar o ficheiro do log.
+    assert 'reportFastFailLoop("worker de automacao", "automation", code, signal, automationLog);' in CLI_SOURCE
+
+
+def test_automation_worker_watchdog_tolerates_slow_ticks(tmp_path, monkeypatch):
+    """Um worker VIVO com tick lento não pode ser reportado morto (e vice-versa)."""
+    from datetime import datetime, timedelta, timezone
+
+    monkeypatch.setenv("THUNDERBOLT_STORAGE_DIR", str(tmp_path / "storage"))
+    from hermes_ui import storage
+
+    storage.STORAGE = tmp_path / "storage"
+    storage.STATE = storage.STORAGE / "state"
+    storage.ensure_storage()
+    from hermes_ui import automation_worker
+
+    now = datetime.now(timezone.utc)
+
+    def status_with_heartbeat_age(seconds: float):
+        stamp = (now - timedelta(seconds=seconds)).astimezone().isoformat(timespec="seconds")
+        storage.write_json("automation_worker.json", {**automation_worker.DEFAULT_STATE, "last_heartbeat_local": stamp})
+        return automation_worker.load_worker_status()
+
+    assert status_with_heartbeat_age(0)["alive"] is True
+    assert status_with_heartbeat_age(29)["alive"] is True
+    # 40 s é mais que o tick (30 s) mas menos que a folga: continua VIVO.
+    assert status_with_heartbeat_age(40)["alive"] is True
+    # morte real continua detectada.
+    assert status_with_heartbeat_age(automation_worker.WORKER_HEARTBEAT_TTL_SECONDS + 60)["alive"] is False
+
+    storage.write_json("automation_worker.json", {**automation_worker.DEFAULT_STATE, "last_heartbeat_local": None})
+    assert automation_worker.load_worker_status()["alive"] is False

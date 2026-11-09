@@ -53,6 +53,10 @@ from integrations.session_info_health import check_all_accounts_session_info_hea
 WORKER_STATE_FILE = "automation_worker.json"
 LOCK_FILENAME = "automation_worker.lock"
 DEFAULT_INTERVAL_SECONDS = 30
+# 1.0.84 - TTL do heartbeat na UI: derivado do tick do worker (1.5×), com
+# este valor como piso. Um worker vivo nunca é reportado morto por um tick
+# lento; uma morte real continua detectada (ver load_worker_status).
+WORKER_HEARTBEAT_TTL_SECONDS = 45
 DEFAULT_STATE: dict[str, Any] = {
     "worker_started_at": None,
     "worker_pid": None,
@@ -109,7 +113,18 @@ def load_worker_status() -> dict[str, Any]:
     if heartbeat:
         try:
             heartbeat_at = datetime.fromisoformat(heartbeat)
-            status["alive"] = (datetime.now().astimezone() - heartbeat_at.astimezone()).total_seconds() <= 30
+            # 1.0.84 - o watchdog exigia heartbeat com menos de 30 s, mas o
+            # tick do worker é de 30 s: um worker VIVO com um tick mais lento
+            # (sessão a verificar contas, disco ocupado) era reportado morto
+            # e a UI mandava o utilizador "iniciar pelo launcher" sem razão.
+            # A folga passa a ser derivada do intervalo do worker (1.5×),
+            # nunca inferior ao tick padrão — uma morte real continua a ser
+            # detectada, apenas não no limite do boundary.
+            ttl_seconds = max(
+                WORKER_HEARTBEAT_TTL_SECONDS,
+                DEFAULT_INTERVAL_SECONDS * 1.5,
+            )
+            status["alive"] = (datetime.now().astimezone() - heartbeat_at.astimezone()).total_seconds() <= ttl_seconds
         except ValueError:
             status["alive"] = False
     return status

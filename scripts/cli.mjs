@@ -1312,16 +1312,20 @@ function startAutomationWorker() {
   lastAutomationWorkerError = "";
   worker = spawn(python, ["-m", "hermes_ui.automation_worker"], {
     cwd: executionRoot,
-    // 1.0.80 - o stdout era "inherit": quando o terminal desvincula, o
-    // handle da consola morre e o PRIMEIRO write do worker mata o processo
-    // (0xC000013A / STATUS_CONTROL_C_EXIT na inicializacao, loop de restart
-    // do relato). Stdout ignorado + stderr em pipe (ja lido pelo launcher).
-    stdio: ["ignore", "ignore", "pipe"],
+    // 1.0.84 - o worker de automação era o UNICO supervisionado sem log
+    // próprio: com stdout ignorado (1.0.80) o erro que o matava na
+    // inicialização só existia em memória («Worker de automação não está
+    // activo» na UI sem ninguém saber porquê). Passa a seguir o mesmo
+    // contrato stdio-seguro dos outrosworkers — pipes + log em
+    // storage/logs/automation_worker.log (attachQueueWorkerLog) — para a
+    // falha ser diagnosticável pelo utilizador e pelo suporte.
+    stdio: ["ignore", "pipe", "pipe"],
     env: runtimeEnv,
     windowsHide: true,
     // 1.0.71: grupo proprio — o Ctrl+C do console nao mata o worker.
     creationFlags: workerCreationFlags(),
   });
+  const automationLog = attachQueueWorkerLog(worker, "automation_worker.log", "worker de automação");
   noteWorkerStarted("automation");
   worker.stderr?.setEncoding("utf8");
   worker.stderr?.on("data", (chunk) => {
@@ -1346,7 +1350,7 @@ function startAutomationWorker() {
     // 1.0.52 - circuit breaker: morte instantanea repetida (< 10 s) cancela o
     // loop do worker de automacao (antes: 5 mortes em 60 s e depois insistia).
     if (workerBootFailedForGood("automation")) {
-      reportFastFailLoop("worker de automacao", "automation", code, signal);
+      reportFastFailLoop("worker de automacao", "automation", code, signal, automationLog);
       automationFastFailDisabled = true;
       automationAutoRestartDisabled = true;
       return;
