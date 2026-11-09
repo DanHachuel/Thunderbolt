@@ -1,0 +1,150 @@
+"""1.0.81 — RUNTIME PERMANENTE: a execução nunca sai do cache do npx.
+
+O Thunderbolt corria de ``.npm/_npx/<hash>/...``; com o processo vivo, o npm
+não consegue actualizar a pasta (**EBUSY**) e o utilizador fica preso à versão
+antiga. A arquitectura validada no ProdMaker separa as responsabilidades:
+
+- ``install`` **apenas prepara**: mata o que está atrelado ao runtime anterior,
+  corre o instalador (venv/dependências), copia o CÓDIGO do pacote para
+  ``THUNDERBOLT_HOME/.runtime`` e encerra **sem servidor**;
+- ``run`` **executa de ``.runtime``** (``cwd: executionRoot``) — nunca do
+  cache do npx;
+- ``storage/`` (dados, chaves, logs) e ``.env`` ficam na **raiz** do
+  ``THUNDERBOLT_HOME`` — a whitelist de cópia só contém código.
+
+Estes testes leem o ``scripts/cli.mjs`` e falham se qualquer peça da
+arquitectura desaparecer.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+CLI_SOURCE = (ROOT / "scripts" / "cli.mjs").read_text(encoding="utf-8")
+
+SUPERVISED_MODULES = ("automation_worker", "pipeline_worker", "thumbnail_worker", "image_worker")
+
+
+def _spawn_block(module: str) -> str:
+    marker = f'spawn(python, ["-m", "hermes_ui.{module}"]'
+    return CLI_SOURCE.split(marker, 1)[1].split("});", 1)[0]
+
+
+def _install_block() -> str:
+    return CLI_SOURCE.split('if (args[0] === "install" || args[0] === "--install") {', 1)[1].split("\nif (args[0] ===", 1)[0]
+
+
+# ---------------------------------------------------------------------------
+# 1. O diretório de runtime existe e vive no THUNDERBOLT_HOME (não no npx)
+# ---------------------------------------------------------------------------
+
+
+def test_runtime_dir_is_inside_thunderbolt_home():
+    assert ".runtime" in CLI_SOURCE
+    assert 'const runtimeDir = process.env.THUNDERBOLT_RUNTIME_DIR || join(thunderboltHome, ".runtime");' in CLI_SOURCE
+    # o runtime NUNCA é resolvido a partir da raiz do pacote (cache do npx).
+    assert "join(runtimeDir" not in CLI_SOURCE.split("const runtimeDir")[0]
+
+
+def test_execution_root_switches_to_the_runtime_when_ready():
+    assert "let executionRoot = root;" in CLI_SOURCE
+    assert "executionRoot = runtimeDir;" in CLI_SOURCE
+    # app/, bootstrap e kill_tree passam a ser resolvidos pela raiz de execução.
+    assert 'main = resolve(executionRoot, "app", "main.py");' in CLI_SOURCE
+    assert 'streamlitBootstrap = resolve(executionRoot, "scripts", "streamlit_bootstrap.py");' in CLI_SOURCE
+    assert 'killTreeHelper = resolve(executionRoot, "scripts", "kill_tree.py");' in CLI_SOURCE
+
+
+def test_missing_runtime_is_prepared_silently_before_starting():
+    assert "ensureRuntimeSources();" in CLI_SOURCE
+    assert "refreshRuntimeSources(true);" in CLI_SOURCE
+    assert 'if (existsSync(join(runtimeDir, "app", "main.py"))) return true;' in CLI_SOURCE
+
+
+# ---------------------------------------------------------------------------
+# 2. O comando install é SÓ cópia — nunca arranca o servidor
+# ---------------------------------------------------------------------------
+
+
+def test_install_only_prepares_and_never_starts_the_server():
+    block = _install_block()
+    assert "startStackComponents" not in block
+    assert "startStreamlit" not in block
+    assert "process.exit(installStatus);" in block
+    # copia efetiva dos alivos essenciais (código) e encerramento com log claro.
+    assert "refreshRuntimeSources(true);" in block
+    assert "runtime permanente preparado" in block
+    assert "runInstaller(" in block  # instalador síncrono e visível
+
+
+def test_install_kills_previous_runtime_processes_before_copying():
+    block = _install_block()
+    assert "stopRuntimeProcesses();" in block
+    assert '"--cleanup", String(process.pid)' in CLI_SOURCE  # kill_tree.py
+    # em EBUSY residual a cópia é por cima (fallback) com aviso, não aborta.
+    assert "refreshRuntimeSources(false);" in block
+
+
+def test_runtime_copy_whitelist_is_code_only():
+    """storage/, .env e .venv NUNCA entram no .runtime (dados do utilizador)."""
+    targets = CLI_SOURCE.split("const RUNTIME_COPY_TARGETS = [", 1)[1].split("];", 1)[0]
+    for essential in ('"app"', '"hermes_ui"', '"scripts"', '"seed"', '"integrations"', '"packages"', '"requirements.txt"'):
+        assert essential in targets, f"alvo essencial em falta: {essential}"
+    for forbidden in ("storage", ".env", ".venv", "channels.json", "tasks.json"):
+        assert f'"{forbidden}"' not in targets, f"{forbidden} nunca pode ser copiado para o .runtime"
+
+
+# ---------------------------------------------------------------------------
+# 3. O run corre do .runtime (spawn + cwd) — nunca do cache do npx
+# ---------------------------------------------------------------------------
+
+
+def test_streamlit_spawn_runs_from_the_runtime():
+    block = CLI_SOURCE.split('child = spawn(python, [streamlitBootstrap', 1)[1].split("});", 1)[0]
+    assert "cwd: executionRoot," in block
+    # o isolamento do Windows sobreviveu à mudança de raiz.
+    assert "stdio: [\"ignore\", \"pipe\", \"pipe\"]" in block
+    assert "windowsHide: true" in block
+    assert "creationFlags: workerCreationFlags()," in block
+
+
+def test_every_worker_spawn_runs_from_the_runtime():
+    for module in SUPERVISED_MODULES:
+        block = _spawn_block(module)
+        assert "cwd: executionRoot," in block, f"{module} não corre do runtime"
+        # isolamento intacto (1.0.80): sem inherit, grupo próprio, NO_WINDOW, hide.
+        stdio = next(line.strip() for line in block.splitlines() if line.strip().startswith("stdio:"))
+        assert "inherit" not in stdio
+        assert stdio.startswith('stdio: ["ignore"')
+        assert "windowsHide: true" in block
+        assert "creationFlags: workerCreationFlags()," in block
+
+
+def test_worker_isolation_flags_survive_the_runtime_move():
+    assert "const WINDOWS_CREATE_NEW_PROCESS_GROUP = 0x00000200;" in CLI_SOURCE
+    assert "const WINDOWS_CREATE_NO_WINDOW = 0x08000000;" in CLI_SOURCE
+    helper = CLI_SOURCE.split("function workerCreationFlags()", 1)[1].split("\n}", 1)[0]
+    assert "WINDOWS_CREATE_NEW_PROCESS_GROUP | WINDOWS_CREATE_NO_WINDOW" in helper
+    assert "0x00000008" not in helper  # DETACHED_PROCESS continua proibido
+
+
+# ---------------------------------------------------------------------------
+# 4. storage/ e .env ficam na raiz do THUNDERBOLT_HOME
+# ---------------------------------------------------------------------------
+
+
+def test_storage_dir_stays_out_of_the_runtime():
+    assert 'const storageDir = process.env.THUNDERBOLT_STORAGE_DIR || join(thunderboltHome, "storage");' in CLI_SOURCE
+    assert 'join(runtimeDir, "storage")' not in CLI_SOURCE
+    # o runtimeEnv continua a apontar os filhos para o storage da raiz.
+    assert "THUNDERBOLT_STORAGE_DIR: storageDir," in CLI_SOURCE
+
+
+def test_keep_alive_and_signal_absorption_are_preserved():
+    """A arquitectura do terminal desvinculado (1.0.77) não pode regredir."""
+    assert "setInterval" in CLI_SOURCE  # keep-alive timer
+    assert "absorbTerminalSignal" in CLI_SOURCE
+    assert "guardConsoleStream" in CLI_SOURCE
+    assert "ignorado. Mantendo processo activo." in CLI_SOURCE

@@ -62,7 +62,11 @@ def test_cli_guard_runs_before_the_public_port_bind_and_any_spawn():
 
 def test_cli_guard_uses_the_psutil_helper_with_cleanup_mode():
     assert 'runKillTreeHelper(["--cleanup", String(process.pid)])' in CLI_SOURCE
-    assert 'const killTreeHelper = resolve(root, "scripts", "kill_tree.py")' in CLI_SOURCE
+    # 1.0.81 - RUNTIME PERMANENTE: o helper deixa de ser ``const`` porque passa
+    # a ser resolvido pela raiz de EXECUCAO (.runtime), não pela raiz do pacote
+    # npx — ver tests/test_runtime_isolation.py.
+    assert 'let killTreeHelper = resolve(root, "scripts", "kill_tree.py")' in CLI_SOURCE
+    assert 'killTreeHelper = resolve(executionRoot, "scripts", "kill_tree.py");' in CLI_SOURCE
     # O venv tem sempre psutil; o Python de sistema pode não ter.
     assert "const candidates = [venvPython, python]" in CLI_SOURCE
 

@@ -2,7 +2,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import http from "node:http";
 import net from "node:net";
-import { existsSync, mkdirSync, readFileSync, copyFileSync, readdirSync, appendFileSync, writeFileSync, rmSync, statSync, createReadStream } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, copyFileSync, readdirSync, appendFileSync, writeFileSync, rmSync, statSync, createReadStream, cpSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,11 +25,25 @@ const defaultThunderboltHome = platform() === "win32"
   ? join(process.env.LOCALAPPDATA || join(userHome, "AppData", "Local"), "THUNDERBOLT")
   : join(userHome, ".thunderbolt");
 const thunderboltHome = resolve(process.env.THUNDERBOLT_HOME || defaultThunderboltHome);
+// 1.0.81 - RUNTIME PERMANENTE (fim do EBUSY no cache do npx): o CODIGO nunca
+// corre de ``_npx/<hash>/node_modules/@danhachuel/thunderbolt`` — enquanto o
+// processo corre, o npm não consegue actualizar a pasta (EBUSY) e o
+// utilizador fica preso à versão velha. O ``install`` copia os ficheiros do
+// pacote para THUNDERBOLT_HOME/.runtime e o ``run`` executa SEMPRE de lá.
+// REGRA INVIOLAVEL (AGENTS.md): storage/ (base de dados, chaves, logs) e o
+// ficheiro .env NUNCA entram no .runtime — a whitelist de cópia abaixo só
+// leva código; os dados ficam na raiz do THUNDERBOLT_HOME.
+const runtimeDir = process.env.THUNDERBOLT_RUNTIME_DIR || join(thunderboltHome, ".runtime");
 const venvDir = process.env.THUNDERBOLT_VENV || process.env.HERMES_VENV || join(thunderboltHome, ".venv");
 const venvPython = platform() === "win32" ? join(venvDir, "Scripts", "python.exe") : join(venvDir, "bin", "python");
 const python = process.env.THUNDERBOLT_PYTHON || process.env.HERMES_PYTHON || (existsSync(venvPython) ? venvPython : (platform() === "win32" ? "python" : "python3"));
-const main = resolve(root, "app", "main.py");
-const streamlitBootstrap = resolve(root, "scripts", "streamlit_bootstrap.py");
+// 1.0.81 - RUNTIME PERMANENTE: a raiz de EXECUCA (onde app/, hermes_ui/ e
+// scripts/ são lidos) é o .runtime quando ele existe; o ``root`` continua a
+// ser a raiz do pacote npx (origem da cópia). Todos os spawns usam
+// ``cwd: executionRoot`` — nunca o cache do npx.
+let executionRoot = root;
+let main = resolve(root, "app", "main.py");
+let streamlitBootstrap = resolve(root, "scripts", "streamlit_bootstrap.py");
 const storageDir = process.env.THUNDERBOLT_STORAGE_DIR || join(thunderboltHome, "storage");
 const diagnosticsDir = join(storageDir, "state");
 const launcherDiagnosticsPath = join(diagnosticsDir, "launcher_diagnostics.jsonl");
@@ -37,7 +51,7 @@ const settingsPath = join(storageDir, "state", "settings.json");
 // Single-instance guard: o lock por ficheiro sobrevive a overrides de porta
 // (THUNDERBOLT_PORT/HERMES_PORT) que derrotavam o bind 3030 como lock.
 const launcherLockPath = join(diagnosticsDir, "launcher.lock");
-const killTreeHelper = resolve(root, "scripts", "kill_tree.py");
+let killTreeHelper = resolve(root, "scripts", "kill_tree.py");
 const pythonEnvironment = { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", PYTHONLEGACYWINDOWSSTDIO: "1", CLICK_NO_WIN_CONSOLE: "1" };
 
 function diagnostic(event, payload = {}) {
@@ -191,7 +205,7 @@ function run(command, commandArgs, label = "comando", environment = process.env)
   const result = spawnSync(command, commandArgs, {
     stdio: "inherit",
     env: { ...pythonEnvironment, ...environment, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", PYTHONLEGACYWINDOWSSTDIO: "1", CLICK_NO_WIN_CONSOLE: "1" },
-    cwd: root,
+    cwd: executionRoot,
     windowsHide: false,
   });
   if (result.error) {
@@ -556,6 +570,90 @@ function check() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 1.0.81 - RUNTIME PERMANENTE: preparação do THUNDERBOLT_HOME/.runtime
+// ---------------------------------------------------------------------------
+
+// Whitelist de CÓPIA — apenas código. storage/, .env e .venv ficam de fora
+// por construção (nunca aparecem nesta lista): os dados do utilizador vivem
+// na raiz do THUNDERBOLT_HOME e sobrevivem a qualquer actualização.
+const RUNTIME_COPY_TARGETS = [
+  "app",
+  "hermes_ui",
+  "integrations",
+  "scripts",
+  "seed",
+  "packages",
+  "requirements.txt",
+  "pyproject.toml",
+  "sitecustomize.py",
+  ".streamlit",
+  "README.md",
+  "MANUAL-INSTALACAO.md",
+  "THIRD-PARTY-NOTICES.md",
+  "legal",
+];
+
+function stopRuntimeProcesses() {
+  // Mata o launcher anterior e os workers órfãos (todos menos a árvore deste
+  // PID). Sem isto, ficheiros em uso travam a limpeza do .runtime — o mesmo
+  // EBUSY que o npm sofria com o cache do _npx.
+  const helper = resolve(root, "scripts", "kill_tree.py");
+  if (!existsSync(helper)) return;
+  try {
+    spawnSync(python, [helper, "--cleanup", String(process.pid)], {
+      encoding: "utf8",
+      env: pythonEnvironment,
+      timeout: 60000,
+    });
+  } catch { /* best effort: a cópia tenta na mesma */ }
+}
+
+function refreshRuntimeSources(clean) {
+  if (clean) rmSync(runtimeDir, { recursive: true, force: true });
+  mkdirSync(runtimeDir, { recursive: true });
+  for (const target of RUNTIME_COPY_TARGETS) {
+    const source = resolve(root, target);
+    if (!existsSync(source)) continue;
+    cpSync(source, resolve(runtimeDir, target), { recursive: true, force: true });
+  }
+}
+
+function ensureRuntimeSources() {
+  // Auto-preparação silenciosa: corrida directa do pacote sem ``install``
+  // (ex.: npx cache frio) não pode arrancar do cache do npx. Se o runtime já
+  // existe, não toca em nada (actualizações posteriores são do ``install``).
+  if (existsSync(join(runtimeDir, "app", "main.py"))) return true;
+  try {
+    refreshRuntimeSources(true);
+    return true;
+  } catch {
+    return false; // falhou: o arranque cai para a raiz do pacote (compat)
+  }
+}
+
+function runInstaller(installer, installerArgs) {
+  // Instalador SÍNCRONO e visível: o ``install`` prepara o ambiente e
+  // ENCERRA — jamais arranca o servidor. Corre da RAIZ DO PACOTE (é ele que
+  // copia o código para o .runtime — não pode correr do destino).
+  console.log("Thunderbolt: a iniciar a instalação...");
+  const result = spawnSync(process.execPath, [installer, ...installerArgs], {
+    stdio: "inherit",
+    env: { ...pythonEnvironment, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", PYTHONLEGACYWINDOWSSTDIO: "1", CLICK_NO_WIN_CONSOLE: "1" },
+    cwd: root,
+    windowsHide: false,
+  });
+  if (result.error) {
+    console.error(`Thunderbolt: não foi possível iniciar a instalação: ${result.error.message}`);
+    return 1;
+  }
+  if (result.signal) {
+    console.error(`Thunderbolt: a instalação terminou pelo sinal ${result.signal}.`);
+    return 1;
+  }
+  return result.status ?? 1;
+}
+
 if (args[0] === "install" || args[0] === "--install") {
   const installer = resolve(root, "scripts", "install.mjs");
   if (!existsSync(installer)) {
@@ -568,7 +666,35 @@ if (args[0] === "install" || args[0] === "--install") {
   if (runningInsidePowerShell()) {
     console.log("Atenção: O PowerShell pode bloquear a instalação de scripts. Se falhar, use o CMD (Prompt de Comando).");
   }
-  run(process.execPath, [installer, ...args.slice(1)], "a instalação");
+  // 1.0.81 - o install APENAS PREPARA: (1) mata o que está atrelado ao
+  // runtime anterior, (2) corre o instalador (venv/dependências), (3) copia
+  // o código para o .runtime, (4) encerra SEM servidor — o npx é libertado
+  // imediatamente e a próxima actualização nunca dá EBUSY.
+  stopRuntimeProcesses();
+  const installStatus = runInstaller(installer, args.slice(1));
+  if (installStatus === 0) {
+    try {
+      refreshRuntimeSources(true);
+      console.log(`Thunderbolt: runtime permanente preparado em ${runtimeDir}.`);
+      console.log("Thunderbolt: instalação concluída — o servidor NÃO foi iniciado (o comando 'install' apenas prepara).");
+      console.log("Para abrir o Thunderbolt: npx @danhachuel/thunderbolt");
+    } catch (error) {
+      // Ficheiro ainda em uso (EBUSY residual): copia por cima sem limpar e
+      // avisa — a limpeza total fica para o próximo install com a app fechada.
+      try {
+        refreshRuntimeSources(false);
+        console.log("Thunderbolt: runtime actualizado (havia ficheiros em uso; corra 'install' de novo com o Thunderbolt fechado para uma limpeza completa).");
+        console.log("Para abrir o Thunderbolt: npx @danhachuel/thunderbolt");
+      } catch (fallbackError) {
+        console.error(`Thunderbolt: não foi possível preparar o runtime permanente: ${fallbackError.message}`);
+        console.error("Feche o Thunderbolt e corra o install novamente.");
+        launcherExiting("install_runtime_failed");
+        process.exit(1);
+      }
+    }
+  }
+  launcherExiting(installStatus === 0 ? "install" : "install_failed");
+  process.exit(installStatus);
 }
 if (args[0] === "doctor" || args.includes("--check")) {
   check();
@@ -578,6 +704,18 @@ if (args[0] === "doctor" || args.includes("--check")) {
 // REMOVIDO: relançamento em janela separada — o launcher corre directamente
 // no terminal onde foi chamado, como sempre correu. Ctrl+C único encerra.
 
+// 1.0.81 - RUNTIME PERMANENTE: a execução NUNCA sai do cache do npx. Se o
+// .runtime ainda não existe (corrida directa sem install), ele é preparado
+// SILENCIOSAMENTE agora; a partir daqui tudo (app, bootstrap, workers) corre
+// de THUNDERBOLT_HOME/.runtime. O storage/ e o .env nunca entram no .runtime
+// (whitelist só de código) — os dados do utilizador continuam na raiz.
+ensureRuntimeSources();
+if (existsSync(join(runtimeDir, "app", "main.py"))) {
+  executionRoot = runtimeDir;
+}
+main = resolve(executionRoot, "app", "main.py");
+streamlitBootstrap = resolve(executionRoot, "scripts", "streamlit_bootstrap.py");
+killTreeHelper = resolve(executionRoot, "scripts", "kill_tree.py");
 if (!existsSync(main)) {
   console.error(`Entrada não encontrada: ${main}`);
   process.exit(1);
@@ -1169,7 +1307,7 @@ function startAutomationWorker() {
   const startedAt = Date.now();
   lastAutomationWorkerError = "";
   worker = spawn(python, ["-m", "hermes_ui.automation_worker"], {
-    cwd: root,
+    cwd: executionRoot,
     // 1.0.80 - o stdout era "inherit": quando o terminal desvincula, o
     // handle da consola morre e o PRIMEIRO write do worker mata o processo
     // (0xC000013A / STATUS_CONTROL_C_EXIT na inicializacao, loop de restart
@@ -1265,7 +1403,7 @@ function startPipelineWorker() {
   }
   const startedAt = Date.now();
   pipelineWorker = spawn(python, ["-m", "hermes_ui.pipeline_worker"], {
-    cwd: root,
+    cwd: executionRoot,
     // 1.0.20: pipes + log proprio (storage/logs/pipeline_worker.log) - o mesmo
     // padrao stdio-seguro da 1.0.18 para os workers de fila (o "inherit" era o
     // gatilho documentado do "Fatal Python error: init_sys_streams" no
@@ -1405,7 +1543,7 @@ function startQueueWorkers() {
     return;
   }
   thumbnailWorker = spawn(python, ["-m", "hermes_ui.thumbnail_worker"], {
-    cwd: root,
+    cwd: executionRoot,
     // 1.0.18: pipes + log próprio (storage/logs/thumbnail_worker.log) em
     // vez de herdar a consola — ver attachQueueWorkerLog.
     stdio: ["ignore", "pipe", "pipe"],
@@ -1462,7 +1600,7 @@ function startQueueWorkers() {
 
 function spawnImageWorker() {
   imageWorker = spawn(python, ["-m", "hermes_ui.image_worker"], {
-    cwd: root,
+    cwd: executionRoot,
     // 1.0.18: pipes + log próprio (storage/logs/image_worker.log).
     stdio: ["ignore", "pipe", "pipe"],
     env: runtimeEnv,
@@ -1572,7 +1710,7 @@ function startStreamlit() {
   if (shuttingDown || child || streamlitRestartTimer || streamlitAutoRestartDisabled || streamlitFastFailDisabled) return;
   const startedAt = Date.now();
   child = spawn(python, [streamlitBootstrap, "run", main, "--server.port", String(backendPort), "--server.address", "127.0.0.1"], {
-    cwd: root,
+    cwd: executionRoot,
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...runtimeEnv, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", PYTHONLEGACYWINDOWSSTDIO: "1", CLICK_NO_WIN_CONSOLE: "1", THUNDERBOLT_LAUNCHER_RESTART: "1" },
     // 1.0.80 - janela de consola suprimida (CREATE_NO_WINDOW nas flags)

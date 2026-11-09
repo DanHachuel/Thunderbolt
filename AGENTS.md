@@ -63,6 +63,17 @@ Sempre que uma sessão de agente criar commits, o ramo deve ser **enviado de ime
 3. O código que monta o prompt **DEVE** ativamente deletar/ignorar essas chaves do JSON do Blueprint antes de enviá-lo à LLM (`hermes_ui/blueprint_length_guard.py` — `sanitize_blueprint_for_prompt`).
 4. Nenhuma alteração no sistema de Blueprints pode quebrar ou contornar esta regra. Qualquer PR que tocar em geração de roteiro deve passar pelos testes de regressão específicos (`tests/test_script_length_guard.py`).
 
+## 🚨 REGRA INVIOLÁVEL: RUNTIME PERMANENTE E PROTEÇÃO CONTRA EBUSY
+
+O Thunderbolt **nunca** corre do cache do `npx` (`.npm/_npx/<hash>/...`). Enquanto o processo vive, o npm não consegue actualizar a pasta — o utilizador fica preso à versão velha com `EBUSY`. A partir da **1.0.81** a arquitectura é a do ProdMaker (já validada em produção):
+
+1. **O servidor NUNCA deve rodar do cache do `npx` (`_npx`).** Todo o spawn (`app/main.py`, `scripts/streamlit_bootstrap.py`, `-m hermes_ui.<worker>`) usa `cwd: executionRoot`, que é `THUNDERBOLT_HOME/.runtime` quando o runtime existe.
+2. **O comando `install` deve copiar os ficheiros de código para `THUNDERBOLT_HOME/.runtime` antes de qualquer execução.** O `install` **apenas prepara**: mata o que está atrelado ao runtime anterior (`kill_tree.py --cleanup`), corre o instalador (venv/dependências), copia os ficheiros e **encerra sem servidor** — o `npx` é libertado imediatamente.
+3. **O comando `run` deve sempre ler do `.runtime`** (`cwd: runtimeDir`). Se o runtime ainda não existe (corrida directa sem `install`), ele é preparado silenciosamente no arranque (`ensureRuntimeSources`) — nenhum caminho pode arrancar do cache.
+4. **O diretório `storage/` e o arquivo `.env` NUNCA devem ser movidos para dentro do `.runtime`**, para preservar a persistência dos dados do utilizador. A whitelist de cópia (`RUNTIME_COPY_TARGETS` em `scripts/cli.mjs`) só contém **código**: `app/`, `hermes_ui/`, `integrations/`, `scripts/`, `seed/`, `packages/`, `requirements.txt`, `pyproject.toml`, `sitecustomize.py`, `.streamlit/`, docs e `legal/`. Dados, chaves, logs, venv e locks ficam na raiz do `THUNDERBOLT_HOME`.
+5. **A separação de responsabilidades é inviolável**: `install` = cópia segura para `.runtime`; `run` = execução isolada. Quem reescrever o `run` a arrancar o servidor a partir da raiz do pacote, ou o `install` a spawnar a stack, quebra a regra. Crave: `tests/test_runtime_isolation.py` (lê o `scripts/cli.mjs` e falha se o `.runtime`, o `cwd: executionRoot`, a whitelist só-de-código ou o encerramento sem servidor desaparecerem).
+6. **Keep-alive, absorção de sinais e isolamento de workers (regras acima) continuam válidos por cima do runtime** — a mudança de raiz não pode remover `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW`, `windowsHide: true`, stdio sem `inherit` nem os handlers do terminal desvinculado.
+
 ## 🚨 REGRA INVIOLÁVEL: ARQUITETURA DO LAUNCHER (WINDOWS/MOBAXTERM)
 
 Estas linhas do `scripts/cli.mjs` foram escolhidas a CONTA de evidência (teleometria real do utilizador + sondas ao sistema operativo). **Não são gambiarras e não devem ser removidas** por nenhuma sessão futura. Quem as alterar tem de actualizar, na mesma PR, a regra e os testes que as crave (`tests/test_launcher_keep_alive.py`).

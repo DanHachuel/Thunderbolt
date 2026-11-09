@@ -82,7 +82,11 @@ class NpxCacheCompatibilityTests(unittest.TestCase):
     def test_streamlit_uses_preimport_encoding_bootstrap(self):
         source = (ROOT / "scripts" / "cli.mjs").read_text(encoding="utf-8")
         bootstrap = (ROOT / "scripts" / "streamlit_bootstrap.py").read_text(encoding="utf-8")
-        self.assertIn('const streamlitBootstrap = resolve(root, "scripts", "streamlit_bootstrap.py");', source)
+        # 1.0.81 - RUNTIME PERMANENTE: o bootstrap passa a ser resolvido pela
+        # raiz de EXECUCAO (.runtime), por isso a declaracao e ``let`` e a raiz
+        # comuta no arranque (ver tests/test_runtime_isolation.py).
+        self.assertIn('let streamlitBootstrap = resolve(root, "scripts", "streamlit_bootstrap.py");', source)
+        self.assertIn('streamlitBootstrap = resolve(executionRoot, "scripts", "streamlit_bootstrap.py");', source)
         self.assertIn('[streamlitBootstrap, "run", main', source)
         self.assertIn('from streamlit.web.cli import main', bootstrap)
         self.assertLess(bootstrap.index('os.environ["PYTHONIOENCODING"]'), bootstrap.index('from streamlit.web.cli import main'))
