@@ -1041,8 +1041,15 @@ const workerBootTracker = new Map();
 // sinais + keep-alive + arranque dos filhos pelo launcher (que fica vivo), não
 // da fuga do job.
 const WINDOWS_CREATE_NEW_PROCESS_GROUP = 0x00000200;
+// 1.0.80 - CREATE_NO_WINDOW (0x08000000): isolamento total da interface
+// grafica do Windows. Sem esta flag o successor pode ganhar uma consola
+// propria (janela CMD a pairar) quando o terminal de origem desvincula; com
+// ela, nenhum filho do launcher depende da consola do terminal para existir.
+// PROIBIDO trocar por DETACHED_PROCESS (0x00000008) - ver regra AGENTS.md e
+// tests/test_no_detached_process.py.
+const WINDOWS_CREATE_NO_WINDOW = 0x08000000;
 function workerCreationFlags() {
-  return process.platform === "win32" ? WINDOWS_CREATE_NEW_PROCESS_GROUP : 0;
+  return process.platform === "win32" ? (WINDOWS_CREATE_NEW_PROCESS_GROUP | WINDOWS_CREATE_NO_WINDOW) : 0;
 }
 // 1.0.72 - MORTE DE INICIALIZACAO DO PROCESSO (nao é falta de pacote).
 // 0xC0000142 = STATUS_DLL_INIT_FAILED (a DLL de sistema não arrancou) e
@@ -1163,9 +1170,13 @@ function startAutomationWorker() {
   lastAutomationWorkerError = "";
   worker = spawn(python, ["-m", "hermes_ui.automation_worker"], {
     cwd: root,
-    stdio: ["ignore", "inherit", "pipe"],
+    // 1.0.80 - o stdout era "inherit": quando o terminal desvincula, o
+    // handle da consola morre e o PRIMEIRO write do worker mata o processo
+    // (0xC000013A / STATUS_CONTROL_C_EXIT na inicializacao, loop de restart
+    // do relato). Stdout ignorado + stderr em pipe (ja lido pelo launcher).
+    stdio: ["ignore", "ignore", "pipe"],
     env: runtimeEnv,
-    windowsHide: false,
+    windowsHide: true,
     // 1.0.71: grupo proprio — o Ctrl+C do console nao mata o worker.
     creationFlags: workerCreationFlags(),
   });
@@ -1261,7 +1272,8 @@ function startPipelineWorker() {
     // Windows) E permite ao launcher detectar morte por ImportError.
     stdio: ["ignore", "pipe", "pipe"],
     env: runtimeEnv,
-    windowsHide: false,
+    // 1.0.80 - janela de consola suprimida (CREATE_NO_WINDOW nas flags)
+    windowsHide: true,
     // 1.0.71: grupo proprio — o Ctrl+C do console nao mata o worker.
     creationFlags: workerCreationFlags(),
   });
@@ -1398,7 +1410,8 @@ function startQueueWorkers() {
     // vez de herdar a consola — ver attachQueueWorkerLog.
     stdio: ["ignore", "pipe", "pipe"],
     env: runtimeEnv,
-    windowsHide: false,
+    // 1.0.80 - janela de consola suprimida (CREATE_NO_WINDOW nas flags)
+    windowsHide: true,
     // 1.0.71: grupo próprio — o Ctrl+C do console não mata o worker
     // (0xC000013A / STATUS_CONTROL_C_EXIT relatado pelo utilizador).
     creationFlags: workerCreationFlags(),
@@ -1453,7 +1466,8 @@ function spawnImageWorker() {
     // 1.0.18: pipes + log próprio (storage/logs/image_worker.log).
     stdio: ["ignore", "pipe", "pipe"],
     env: runtimeEnv,
-    windowsHide: false,
+    // 1.0.80 - janela de consola suprimida (CREATE_NO_WINDOW nas flags)
+    windowsHide: true,
     // 1.0.71: grupo próprio — o Ctrl+C do console não mata o worker
     // (0xC000013A / STATUS_CONTROL_C_EXIT relatado pelo utilizador).
     creationFlags: workerCreationFlags(),
@@ -1561,7 +1575,8 @@ function startStreamlit() {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...runtimeEnv, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", PYTHONLEGACYWINDOWSSTDIO: "1", CLICK_NO_WIN_CONSOLE: "1", THUNDERBOLT_LAUNCHER_RESTART: "1" },
-    windowsHide: false,
+    // 1.0.80 - janela de consola suprimida (CREATE_NO_WINDOW nas flags)
+    windowsHide: true,
     // 1.0.75: grupo próprio também para o servidor da interface — era o único
     // filho supervisionado que continuava no grupo do launcher, por isso um
     // Ctrl+C no terminal (MobaXterm/PowerShell) chegava-lhe pela consola e

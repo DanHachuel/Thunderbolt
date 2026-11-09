@@ -11,6 +11,19 @@ posts estáticos que NÃO geram vídeo:
 Pool limitado por `motor.max_parallel_images`; Rate Limit (429) reza em
 backoff exponencial. O estado do worker fica em `image_worker.json`.
 """
+import signal
+import sys
+
+# 1.0.80 - BLINDAGEM DE ARRANQUE (isolamento de sinais): o launcher cria os
+# workers num grupo de processos PRÓPRIO e sem consola herdada, mas um evento
+# de console (CTRL_C_EVENT/CTRL_CLOSE) pode ainda ser entregue em terminais
+# desvinculados (MobaXterm/PowerShell). Ignorar o SIGINT no Windows impede que
+# o worker morra com 0xC000013A (STATUS_CONTROL_C_EXIT) durante o arranque.
+# O encerramento continua deliberado: Ctrl+Break, ficheiro .thunderbolt.stop
+# ou kill do launcher (TerminateProcess) — nenhum handler Python intercepta.
+if sys.platform == "win32":
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
 import argparse
 import json
 import threading

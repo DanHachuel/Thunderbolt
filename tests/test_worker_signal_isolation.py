@@ -160,3 +160,83 @@ def test_status_control_c_exit_value_is_documented():
     assert STATUS_CONTROL_C_EXIT == 0xC000013A
     assert "STATUS_CONTROL_C_EXIT" in CLI_SOURCE
     assert sys.platform in {"win32", "linux", "darwin"}  # sanity do import
+
+
+# ---------------------------------------------------------------------------
+# 1.0.80 — consola morta não mata Worker: sem stdout herdado + CREATE_NO_WINDOW
+# ---------------------------------------------------------------------------
+#
+# O keep-alive do launcher resolveu o terminal desvinculado, mas os workers
+# secundários continuavam a cair com 3221225786 (0xC000013A) na
+# inicialização: o spawn herdava stdout da consola (`inherit`) e o primeiro
+# write do worker — depois de o terminal morrer — matava o processo. Duas
+# camadas de defesa, cravadas aqui:
+#   1. launcher: nenhum filho supervisionado herda stdout; todos ganham
+#      CREATE_NO_WINDOW (0x08000000) além do grupo próprio;
+#   2. Python: cada worker ignora SIGINT no arranque (antes dos imports
+#      pesados), para um evento de console tardio não o matar.
+
+
+SUPERVISED_MODULES = ("automation_worker", "pipeline_worker", "thumbnail_worker", "image_worker")
+
+
+def _spawn_block(module: str) -> str:
+    marker = f'spawn(python, ["-m", "hermes_ui.{module}"]'
+    return CLI_SOURCE.split(marker, 1)[1].split("});", 1)[0]
+
+
+def _stdio_line(block: str) -> str:
+    """A linha ``stdio: [...]`` do bloco (comentários podem citar 'inherit')."""
+    for line in block.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("stdio:"):
+            return stripped
+    return ""
+
+
+def test_no_supervised_worker_inherits_the_console_streams():
+    """Nenhum spawn de worker pode usar `inherit` (a consola morre com o terminal).
+
+    O automation_worker era o último com `stdio: ["ignore", "inherit", "pipe"]`
+    — o vector documentado do 0xC000013A pós-desvinculação.
+    """
+    for module in SUPERVISED_MODULES:
+        stdio = _stdio_line(_spawn_block(module))
+        assert "inherit" not in stdio, f"{module} ainda herda uma stream da consola: {stdio}"
+        assert stdio.startswith('stdio: ["ignore"'), f"{module}: o stdin nunca pode ser herdado ({stdio})"
+    # os workers de fila mantêm o contrato stdio-seguro (pipe + log próprio).
+    for module in ("pipeline_worker", "thumbnail_worker", "image_worker"):
+        assert 'stdio: ["ignore", "pipe", "pipe"]' in _spawn_block(module)
+
+
+def test_worker_flags_include_create_no_window():
+    """workerCreationFlags() leva CREATE_NO_WINDOW (0x08000000) no Windows."""
+    assert "const WINDOWS_CREATE_NO_WINDOW = 0x08000000;" in CLI_SOURCE
+    helper_body = CLI_SOURCE.split("function workerCreationFlags()", 1)[1].split("\n}", 1)[0]
+    assert "WINDOWS_CREATE_NO_WINDOW" in helper_body
+    # o grupo próprio NÃO sai (0xC000013A pelo sinal do console).
+    assert "WINDOWS_CREATE_NEW_PROCESS_GROUP" in helper_body
+    # PROIBIDO DETACHED_PROCESS (0x00000008) — ver tests/test_no_detached_process.py.
+    assert "0x00000008" not in helper_body
+
+
+def test_supervised_spawns_hide_the_windows_console():
+    for module in SUPERVISED_MODULES:
+        assert "windowsHide: true" in _spawn_block(module), f"{module} pode abrir janela de consola"
+    streamlit_block = CLI_SOURCE.split('child = spawn(python, [streamlitBootstrap', 1)[1].split("});", 1)[0]
+    assert "windowsHide: true" in streamlit_block
+
+
+def test_python_workers_ignore_sigint_at_startup():
+    """Cada worker blinda o SIGINT no Windows ANTES dos imports pesados."""
+    heavy_markers = ("import psutil", "import requests", "import logging", "import argparse", "from hermes_ui", "from .")
+    for module in ("pipeline_worker", "automation_worker", "image_worker", "thumbnail_worker"):
+        source = (ROOT / "hermes_ui" / f"{module}.py").read_text(encoding="utf-8")
+        guard = "signal.signal(signal.SIGINT, signal.SIG_IGN)"
+        assert guard in source, f"{module} não ignora SIGINT no arranque"
+        assert 'if sys.platform == "win32":' in source
+        # a blindagem corre antes de qualquer import pesado/logging.
+        heavy_positions = [source.index(marker) for marker in heavy_markers if marker in source]
+        assert source.index(guard) < min(heavy_positions), (
+            f"{module}: a blindagem de sinais tem de correr antes dos imports pesados"
+        )
