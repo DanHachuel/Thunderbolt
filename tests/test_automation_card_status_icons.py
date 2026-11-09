@@ -40,17 +40,25 @@ def test_status_icon_helper_reads_the_catalog_state_not_the_backend():
 def test_status_icon_lives_only_in_the_title_not_in_the_card_body():
     """Proibido: ícone dentro do corpo do card (só no título da aba expansível)."""
     assert "st.button(" in CARD_BLOCK  # os botões continuam lá
-    assert "st.image(" in CARD_BLOCK  # a thumbnail continua lá
+    assert "_render_task_thumbnail(thumbnail_path)" in CARD_BLOCK  # a thumbnail continua lá
     assert "_render_video_task_state(task)" in CARD_BLOCK  # e a barra/badge de estado
     # O ícone só aparece no título: nenhum widget do corpo o usa.
-    widgets = [block for block in (CARD_BLOCK, _STATE_BLOCK)]
-    for block in widgets:
+    for block in (CARD_BLOCK, _STATE_BLOCK):
         for line in block.splitlines():
-            if any(widget in line for widget in ("st.button", "st.image", "st.progress", "st.caption", "st.write", "st.error")):
+            if any(widget in line for widget in ("st.button", "st.image", "st.progress", "st.caption", "st.write", "st.error", "_render_task_thumbnail", "_render_video_task_state")):
                 assert "_video_task_status_icon" not in line, f"widget ganhou ícone no corpo: {line.strip()}"
     # e o corpo do card continua com o título LIMPO (sem ícone) — só o expander o leva
     assert 'with st.expander(f"{task_title} · {task_channel}{_video_task_status_icon(task)}", expanded=False):' in CARD_BLOCK
     assert CARD_BLOCK.count("_video_task_status_icon") == 1
+
+
+def test_thumbnail_fallback_is_used_by_the_card():
+    """1.0.81: o card mostra a thumbnail pela função de fallback (nunca buraco)."""
+    assert "def _render_task_thumbnail(" in MAIN_SOURCE
+    assert "Thumbnail não gerada" in MAIN_SOURCE
+    card = MAIN_SOURCE.split("def _youtube_task_card_body", 1)[1].split("@st.fragment", 1)[0]
+    assert "_render_task_thumbnail(thumbnail_path)" in card
+    assert 'st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")' not in card
 
 
 def test_other_platform_cards_are_untouched():

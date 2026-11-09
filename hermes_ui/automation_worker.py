@@ -1,5 +1,6 @@
 import signal
 import sys
+import threading
 
 # 1.0.80 - BLINDAGEM DE ARRANQUE (isolamento de sinais): o launcher cria os
 # workers num grupo de processos PRÓPRIO e sem consola herdada, mas um evento
@@ -8,8 +9,19 @@ import sys
 # o worker morra com 0xC000013A (STATUS_CONTROL_C_EXIT) durante o arranque.
 # O encerramento continua deliberado: Ctrl+Break, ficheiro .thunderbolt.stop
 # ou kill do launcher (TerminateProcess) — nenhum handler Python intercepta.
-if sys.platform == "win32":
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
+# 1.0.81 - CORRECÇÃO CRÍTICA (morte da interface por import): a blindagem
+# continua no topo — protege o arranque antes dos imports pesados — mas só
+# corre quando este módulo é a THREAD PRINCIPAL. O Streamlit importa os
+# workers e corre o script do utilizador numa thread secundária, onde
+# `signal.signal` é proibido: sem esta guarda o import levantava
+# `ValueError: signal only works in main thread of the main interpreter` e a
+# UI inteira deixava de renderizar (foi relatado como "thumbnails que
+# desapareceram" — sem UI não há cards).
+if sys.platform == "win32" and threading.current_thread() is threading.main_thread():
+    try:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+    except ValueError:
+        pass  # thread inesperada ou sinal indisponível: seguir sem isolar
 
 import os
 import io

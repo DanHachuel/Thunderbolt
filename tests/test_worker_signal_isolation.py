@@ -228,13 +228,23 @@ def test_supervised_spawns_hide_the_windows_console():
 
 
 def test_python_workers_ignore_sigint_at_startup():
-    """Cada worker blinda o SIGINT no Windows ANTES dos imports pesados."""
+    """Cada worker blinda o SIGINT no Windows ANTES dos imports pesados.
+
+    1.0.81: a blindagem continua no topo (protege o arranque antes dos imports
+    pesados), MAS protegida pela guarda de thread principal. Sem ela, o
+    Streamlit — que importa estes módulos numa thread secundária para correr o
+    script do utilizador — morria com `ValueError: signal only works in main
+    thread of the main interpreter` e a interface inteira deixava de renderizar.
+    """
     heavy_markers = ("import psutil", "import requests", "import logging", "import argparse", "from hermes_ui", "from .")
     for module in ("pipeline_worker", "automation_worker", "image_worker", "thumbnail_worker"):
         source = (ROOT / "hermes_ui" / f"{module}.py").read_text(encoding="utf-8")
         guard = "signal.signal(signal.SIGINT, signal.SIG_IGN)"
         assert guard in source, f"{module} não ignora SIGINT no arranque"
-        assert 'if sys.platform == "win32":' in source
+        assert 'if sys.platform == "win32" and threading.current_thread() is threading.main_thread():' in source, (
+            f"{module}: a blindagem tem de correr só na thread principal (import pela UI não pode crashar)"
+        )
+        assert "except ValueError:" in source, f"{module}: a blindagem tem de absorver o ValueError"
         # a blindagem corre antes de qualquer import pesado/logging.
         heavy_positions = [source.index(marker) for marker in heavy_markers if marker in source]
         assert source.index(guard) < min(heavy_positions), (

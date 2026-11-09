@@ -24,10 +24,18 @@ def test_automation_cards_render_thumbnail_before_video_metadata():
     # Postados renderizadas por _render_youtube_automation_task_list.
     automation = source.split("def _render_youtube_automation_task_list", 1)[1].split("def _render_youtube_automation_cards", 1)[0]
     assert "thumbnail_path = _task_thumbnail_path(task)" in automation
-    # 0.9.96 (recuperação): width="stretch" original restaurado.
-    assert 'st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")' in automation
-    assert 'st.caption("Thumbnail ainda não pronta")' in automation
-    assert automation.index('st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")') < automation.index("with task_cols[1]:")
+    # 1.0.81: a thumbnail passou a ser renderizada por _render_task_thumbnail —
+    # a imagem continua a vir do caminho (st.image faz stream), e quando não há
+    # ficheiro aparece um placeholder em vez de um buraco branco.
+    assert "_render_task_thumbnail(thumbnail_path)" in automation
+    assert 'def _render_task_thumbnail(' in source
+    assert 'st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")' in source
+    assert "Thumbnail não gerada" in source  # placeholder (nunca buraco branco)
+    # o card do YouTube já não usa o caption antigo (outros renderizadores podem)
+    card_body = source.split("def _youtube_task_card_body", 1)[1].split("@st.fragment", 1)[0]
+    assert 'st.caption("Thumbnail ainda não pronta")' not in card_body
+    assert "_render_task_thumbnail(thumbnail_path)" in card_body
+    assert automation.index("_render_task_thumbnail(thumbnail_path)") < automation.index("with task_cols[1]:")
 
 
 def test_thumbnail_renderers_reference_local_paths_instead_of_cached_bytes():

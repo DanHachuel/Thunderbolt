@@ -7911,6 +7911,32 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False, tasks: li
 # ---------------------------------------------------------------------------
 
 
+def _render_task_thumbnail(thumbnail_path: Path | None) -> None:
+    """Thumbnail do card da Automação — com placeholder quando não há imagem.
+
+    1.0.81: o relato "as thumbnails desapareceram e ficou um espaço em branco"
+    tinha duas causas, e esta função fecha a segunda. A primeira era a app
+    inteira a crashar no arranque (`signal.signal` ao nível do módulo nos
+    workers — ver `hermes_ui/*_worker.py` e
+    `tests/test_worker_import_thread_safety.py`); a segunda é esta: quando não
+    havia ficheiro para mostrar, o card deixava a coluna vazia e o utilizador
+    não sabia distinguir bug da UI de falta de imagem.
+
+    Agora: imagem quando existe (o `st.image` faz stream do caminho, como
+    sempre) e um bloco cinza explícito — "Thumbnail não gerada" — quando não
+    existe. Nada muda no resto do card (botões, player, progresso, downloads).
+    """
+    if thumbnail_path is not None and thumbnail_path.is_file():
+        st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")
+        return
+    st.markdown(
+        "<div style='background:#F0F2F6;border:1px dashed #C7CBD1;border-radius:8px;"
+        "padding:28px 10px;text-align:center;color:#5B6470;font-size:0.85rem'>"
+        "Thumbnail não gerada</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def _video_task_status_icon(task: dict[str, Any]) -> str:
     """Ícone de estado para o TÍTULO do card — e só para o título.
 
@@ -7961,10 +7987,12 @@ def _youtube_task_card_body(task_id: str) -> str:
         with task_cols[0]:
             media_cols = st.columns(2, gap="small")
             with media_cols[0]:
-                if thumbnail_path is not None:
-                    st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")
-                else:
-                    st.caption("Thumbnail ainda não pronta")
+                # 1.0.81 — fallback visual. Se o caminho não resolve (thumbnail
+                # ausente, apagada ou caminho legado que já não existe), NÃO se
+                # deixa um buraco branco no card: mostra-se um bloco cinza com
+                # a razão. Quem tem ética de diagnóstico percebe que falta a
+                # imagem, e não que a UI está partida.
+                _render_task_thumbnail(thumbnail_path)
             with media_cols[1]:
                 if video_path is not None and _catalog_task_state(task) == "done":
                     # 1.0.32: player DIRECTO — sem botões «Reproduzir vídeo»/
