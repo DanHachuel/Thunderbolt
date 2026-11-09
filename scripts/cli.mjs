@@ -586,6 +586,10 @@ const RUNTIME_COPY_TARGETS = [
   "packages",
   "requirements.txt",
   "pyproject.toml",
+  // 1.0.83 - o package.json é CODIGO, não dado: o app/main.py le-o para
+  // mostrar a versão na sidebar (APP_VERSION). Sem ele no runtime, a versão
+  // ficava "" e o número desaparecia do menu lateral do utilizador.
+  "package.json",
   "sitecustomize.py",
   ".streamlit",
   "README.md",

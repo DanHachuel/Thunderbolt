@@ -265,10 +265,27 @@ def _load_local_env() -> None:
 
 _load_local_env()
 
+def _pyproject_version() -> str:
+    """Versão do pyproject.toml (fallback quando o package.json não está no runtime).
+
+    1.0.83: com o runtime permanente (`.runtime`), o pacote pode correr sem o
+    `package.json` ao lado — e a versão desaparecia da sidebar. O
+    `pyproject.toml` é código também copiado, por isso serve de segunda fonte.
+    """
+    try:
+        content = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    match = re.search(r'^\s*version\s*=\s*["\']([^"\']+)["\']', content, flags=re.MULTILINE)
+    return match.group(1).strip() if match else ""
+
+
 try:
     APP_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8")).get("version", "")
 except (OSError, json.JSONDecodeError):
     APP_VERSION = ""
+if not APP_VERSION:
+    APP_VERSION = _pyproject_version()
 
 
 def display_version(version: str) -> str:
