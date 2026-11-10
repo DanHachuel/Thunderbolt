@@ -750,6 +750,13 @@ const runtimeEnv = {
   PYTHONLEGACYWINDOWSSTDIO: "1",
   CLICK_NO_WIN_CONSOLE: "1",
   THUNDERBOLT_STORAGE_DIR: storageDir,
+  // 1.0.88 — VERSÃO DINÂMICA: a versão publicada é injectada no ambiente de
+  // TODOS os filhos. Antes a app lia `ROOT/package.json`, e com o runtime
+  // permanente o ROOT é o `.runtime` — se o utilizador não correu o `install`
+  // depois de uma actualização, o ficheiro de lá continuava velho e a sidebar
+  // mostrava uma versão antiga (o relato: "mostra 1.0.82 mas estou na 1.0.87").
+  // Onde o código está, esta variável nunca fica velha.
+  THUNDERBOLT_VERSION: packageVersion,
   STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false",
   STREAMLIT_SERVER_HEADLESS: "true",
 };

@@ -71,11 +71,14 @@ def test_sidebar_renders_the_version_span():
     assert "opacity:.62" in MAIN  # cinza/atenuado, como pedido
 
 
-def test_app_version_reads_package_json_then_pyproject():
-    """A leitura da versão tem as DUAS fontes (package.json e o fallback)."""
-    assert 'APP_VERSION = json.loads((ROOT / "package.json")' in MAIN
-    assert "if not APP_VERSION:" in MAIN
-    assert "APP_VERSION = _pyproject_version()" in MAIN
+def test_app_version_reads_environment_then_files():
+    """A leitura da versão tem 3 fontes, começando pelo ambiente (1.0.88)."""
+    assert "def _app_version() -> str:" in MAIN
+    assert "THUNDERBOLT_VERSION" in MAIN
+    assert "APP_VERSION = _app_version()" in MAIN
+    # e o package.json/pyproject continuam como fallback
+    assert "package.json" in MAIN
+    assert "def _pyproject_version" in MAIN
 
 
 def test_runtime_copy_includes_package_json():

@@ -266,7 +266,7 @@ def _load_local_env() -> None:
 _load_local_env()
 
 def _pyproject_version() -> str:
-    """Versão do pyproject.toml (fallback quando o package.json não está no runtime).
+    """Versão do pyproject.toml (fallback quando não há versão no ambiente).
 
     1.0.83: com o runtime permanente (`.runtime`), o pacote pode correr sem o
     `package.json` ao lado — e a versão desaparecia da sidebar. O
@@ -280,12 +280,35 @@ def _pyproject_version() -> str:
     return match.group(1).strip() if match else ""
 
 
-try:
-    APP_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8")).get("version", "")
-except (OSError, json.JSONDecodeError):
-    APP_VERSION = ""
-if not APP_VERSION:
-    APP_VERSION = _pyproject_version()
+def _app_version() -> str:
+    """A versão REAL do que está a correr — nesta ordem de confiança:
+
+    1. `THUNDERBOLT_VERSION` (injectada pelo launcher, que sabe a versão do
+       pacote que está a executar — nunca fica velha, mesmo que o `.runtime`
+       tenha ficheiros de uma instalação anterior);
+    2. `package.json` ao lado do código;
+    3. `pyproject.toml` ao lado do código.
+
+    1.0.88 — o relato "a sidebar mostra 1.0.82 mas estou na 1.0.87" era o caso
+    2 a ganhar com ficheiros velhos no `.runtime` (o utilizador ainda não tinha
+    corrido o `install`). Nenhuma versão é escrita no código: todas as fontes
+    são lidas em tempo de execução.
+    """
+    for reader in (
+        lambda: os.environ.get("THUNDERBOLT_VERSION", "").strip(),
+        lambda: json.loads((ROOT / "package.json").read_text(encoding="utf-8")).get("version", ""),
+        _pyproject_version,
+    ):
+        try:
+            value = str(reader() or "").strip()
+        except (OSError, json.JSONDecodeError):
+            value = ""
+        if value:
+            return value
+    return ""
+
+
+APP_VERSION = _app_version()
 
 
 def display_version(version: str) -> str:
