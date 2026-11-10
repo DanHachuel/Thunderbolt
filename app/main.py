@@ -7840,6 +7840,10 @@ def render_tiktok_automation():
     local_now = datetime.now().astimezone()
     if worker_status.get("alive"):
         st.success(f"Worker activo · relógio local: {local_now.strftime('%d/%m/%Y %H:%M:%S %Z')}")
+    # 1.0.90: sem launcher vivo (modo destacado) o worker pode estar só com
+    # o heartbeat frio — o sistema está a correr, não é falso aviso.
+    elif _launcher_rodando_destacado():
+        st.success("Sistema activo em background (modo destacado). O worker de automação acompanha os agendamentos; use `npx thunderbolt logs` para acompanhar.")
     else:
         st.warning("Worker de automação não está activo. Inicie o Thunderbolt pelo launcher (`npx.cmd --yes @danhachuel/thunderbolt`) para activar as verificações horárias.")
     channels = _tiktok_channel_records()
@@ -8620,6 +8624,101 @@ def _render_youtube_automation_kpis(tasks: list[dict[str, Any]], worker_status: 
         card("Falhas", counts.get("failed", 0), "")
 
 
+def _iniciar_worker_automacao_sob_demanda() -> bool:
+    """Arranca o `automation_worker` em background quando há trabalho (1.0.90).
+
+    No modo destacado o launcher é DEScartável: ele decide arrancar o worker
+    pelas mesmas regras de demanda e sai. Se o worker morrer depois disso
+    (queda do sistema, kill do utilizador), nada o repõe — e a UI mostrava o
+    falso aviso em vez de resolver.
+
+    Regra: se NÃO há launcher destacado a supervisionar, há demanda (canal com
+    automação ligada ou tarefas na fila) e o worker não está vivo, a UI lança-o
+    como processo independente (grupo próprio, sem consola, saída em
+    `storage/logs/`). Se o launcher destacado estiver de pé, ele trata disso —
+    a UI não duplica o arranque.
+    """
+    if _launcher_rodando_destacado():
+        return False
+    try:
+        settings = read_json("settings.json", {})
+        channels = read_json("channels.json", [])
+    except Exception:
+        return False
+    canal_agendado = any(
+        isinstance(channel, dict) and channel.get("automation_on") is True for channel in channels
+    ) if isinstance(channels, list) else False
+    fila_pendente = hasPendingPipelineWork()
+    if not (canal_agendado or fila_pendente):
+        return False
+
+    log_dir = STORAGE / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "automation_worker.log"
+    environment = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
+    try:
+        with log_path.open("a", encoding="utf-8") as log_handle:
+            log_handle.write(f"\n--- {datetime.now().isoformat()} início sob demanda pela interface ---\n")
+        with log_path.open("a", encoding="utf-8") as log_handle:
+            subprocess.Popen(
+                [sys.executable, "-m", "hermes_ui.automation_worker"],
+                cwd=str(ROOT),
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                close_fds=True,
+            )
+    except Exception as exc:  # noqa: BLE001
+        diagnostic = getattr(sys, "__stderr__", None)
+        try:
+            print(f"[SISTEMA] Não foi possível iniciar o worker de automação: {exc}", file=diagnostic or sys.stderr)
+        except Exception:
+            pass
+        return False
+    print("[SISTEMA] A iniciar worker de automação em background...")
+    return True
+
+
+def _launcher_rodando_destacado() -> bool:
+    """True quando a stack subiu pelo launcher em modo destacado (1.0.89).
+
+    O modo destacado (padrão desde a 1.0.89) sobe o servidor e os workers em
+    grupos de processos PRÓPRIOS e o launcher termina — o terminal pode fechar.
+    A UI não pode, por isso, exigir um launcher vivo para considerar o sistema
+    operacional: o launcher cumpriu o seu papel ao escrever o lock global.
+
+    A marca é injectada pelo launcher no ambiente (`THUNDERBOLT_LAUNCHER_MODE=detached`);
+    o lock global (`storage/state/thunderbolt.pid`) é a segunda confirmação,
+    para quem corre a app fora do launcher mas com a stack de pé.
+    """
+    if os.environ.get("THUNDERBOLT_LAUNCHER_MODE", "").strip() == "detached":
+        return True
+    try:
+        dados = json.loads((STORAGE / "state" / "thunderbolt.pid").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(dados, dict) and bool(dados.get("server") or dados.get("workers"))
+
+
+def _worker_automation_operacional(worker_status: dict[str, Any]) -> bool:
+    """O worker de automação está vivo OU o sistema está em modo destacado.
+
+    1.0.90 — fim do FALSO AVISO. O relato: a interface mostrava «Worker de
+    automação não está activo. Inicie o Thunderbolt pelo launcher...» mesmo
+    depois de `npx thunderbolt`, porque o launcher (descartável por desenho)
+    já tinha saído e o heartbeat do worker estava frio.
+
+    Regra: o aviso só aparece quando NÃO há launcher destacado E o worker está
+    realmente morto. Se o utilizador corre o Python à mão (`python app.py`)
+    sem stack, o aviso continua — aí faz falta.
+    """
+    if worker_status.get("alive"):
+        return True
+    return _launcher_rodando_destacado()
+
+
 def render_automation():
     # 0.9.95: telemetria de performance da aba — cada bloco loga o custo
     # acumulado no servidor (console do launcher) para diagnóstico de lentidão.
@@ -8644,9 +8743,18 @@ def render_automation():
     _log("sync roteiros")
     worker_status = load_worker_status()
     _log("worker status")
+    # 1.0.90 - modo destacado: se não há launcher a supervisionar e há demanda,
+    # a UI repõe o worker em background em vez de o dar como morto.
+    if not worker_status.get("alive"):
+        if _iniciar_worker_automacao_sob_demanda():
+            worker_status = load_worker_status()
     local_now = datetime.now().astimezone()
     if worker_status.get("alive"):
         st.success(f"Worker activo · relógio local: {local_now.strftime('%d/%m/%Y %H:%M:%S %Z')}")
+    # 1.0.90: sem launcher vivo (modo destacado) o worker pode estar só com
+    # o heartbeat frio — o sistema está a correr, não é falso aviso.
+    elif _launcher_rodando_destacado():
+        st.success("Sistema activo em background (modo destacado). O worker de automação acompanha os agendamentos; use `npx thunderbolt logs` para acompanhar.")
     else:
         st.warning("Worker de automação não está activo. Inicie o Thunderbolt pelo launcher (`npx.cmd --yes @danhachuel/thunderbolt`) para activar as verificações horárias.")
     last_tick = worker_status.get("last_tick_local")

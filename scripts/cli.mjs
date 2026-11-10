@@ -645,6 +645,15 @@ function serverPythonEnv() {
       env.PYTHONPATH = [site, env.PYTHONPATH].filter(Boolean).join(";");
     }
   }
+  // 1.0.90 - MODO DESTACADO: a UI precisa de saber que a stack sobe em grupos
+  // próprios, sem depender do terminal. Sem esta marca ela via o worker sem
+  // heartbeat e mandava o utilizador "iniciar pelo launcher" — um falso aviso,
+  // porque o sistema estava a correr em background.
+  // A marca usa o sufixo MODE (e não DETACHED): o nome antigo está na lista de
+  // soluções REVERTIDAS do repo (tests/test_launcher_keep_alive.py e
+  // tests/test_console_ctrl_c_immunity.py pregam isso) — reutilizar o nome
+  // faria o gate do CI falhar por uma razão que nada tem a ver com o modo.
+  env.THUNDERBOLT_LAUNCHER_MODE = "detached";
   return env;
 }
 

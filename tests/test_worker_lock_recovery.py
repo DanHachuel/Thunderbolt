@@ -43,7 +43,8 @@ def _isolate_automation_storage(tmp_path, monkeypatch) -> Path:
     monkeypatch.setattr(storage, "STATE", root / "state")
     monkeypatch.setattr(storage, "BLUEPRINTS", root / "blueprints")
     storage.ensure_storage()
-    return root / automation_worker.LOCK_FILENAME
+    # 1.0.90: o lock do worker passa a viver em storage/state/
+    return root / "state" / automation_worker.LOCK_FILENAME
 
 
 def _isolate_pipeline_storage(tmp_path, monkeypatch) -> Path:

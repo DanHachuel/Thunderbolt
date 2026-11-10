@@ -149,15 +149,17 @@ def test_automation_lock_recovers_after_dead_process(tmp_path, monkeypatch):
     from hermes_ui import automation_worker
 
     root = _isolate_lock_storage(tmp_path, monkeypatch)
-    lock_path = root / automation_worker.LOCK_FILENAME
+    lock_path = root / "state" / automation_worker.LOCK_FILENAME
     lock_path.write_text("pid=999999999\n", encoding="utf-8")
 
     acquired = automation_worker._acquire_lock()
 
+    # 1.0.90: o lock passa a viver em storage/state/ (onde a UI lê o estado)
     assert acquired == lock_path
     assert lock_path.read_text(encoding="utf-8") == f"pid={__import__('os').getpid()}\n"
     automation_worker._release_lock(acquired)
     assert not lock_path.exists()
+    assert not (root / automation_worker.LOCK_FILENAME).exists()
 
 
 def test_automation_lock_rejects_live_process(tmp_path, monkeypatch):
@@ -168,7 +170,7 @@ def test_automation_lock_rejects_live_process(tmp_path, monkeypatch):
     import pytest
 
     root = _isolate_lock_storage(tmp_path, monkeypatch)
-    lock_path = root / automation_worker.LOCK_FILENAME
+    lock_path = root / "state" / automation_worker.LOCK_FILENAME
     # 0.9.73: o lock só é recusado quando o PID pertence realmente a um worker
     # do Thunderbolt — um processo qualquer com o mesmo número de PID não conta.
     dummy = subprocess.Popen(
@@ -188,7 +190,7 @@ def test_automation_lock_invalid_format_is_treated_as_stale(tmp_path, monkeypatc
     from hermes_ui import automation_worker
 
     root = _isolate_lock_storage(tmp_path, monkeypatch)
-    lock_path = root / automation_worker.LOCK_FILENAME
+    lock_path = root / "state" / automation_worker.LOCK_FILENAME
     lock_path.write_text("not-a-pid", encoding="utf-8")
 
     acquired = automation_worker._acquire_lock()
@@ -205,4 +207,21 @@ def test_run_worker_releases_lock_on_shutdown(tmp_path, monkeypatch):
 
     automation_worker.run_worker(interval_seconds=2)
 
+    assert not (root / "state" / automation_worker.LOCK_FILENAME).exists()
     assert not (root / automation_worker.LOCK_FILENAME).exists()
+
+
+def test_release_lock_cleans_the_legacy_root_location(tmp_path, monkeypatch):
+    """1.0.90: um lock velho na raiz do storage não pode bloquear o próximo arranque."""
+    from hermes_ui import automation_worker
+
+    root = _isolate_lock_storage(tmp_path, monkeypatch)
+    legacy = root / automation_worker.LOCK_FILENAME
+    legacy.write_text("pid=999999999\n", encoding="utf-8")
+    state_lock = root / "state" / automation_worker.LOCK_FILENAME
+    state_lock.write_text(f"pid={__import__('os').getpid()}\n", encoding="utf-8")
+
+    automation_worker._release_lock(state_lock)
+
+    assert not state_lock.exists()
+    assert not legacy.exists(), "o lock legado tem de ser limpo também"

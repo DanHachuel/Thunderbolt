@@ -160,39 +160,54 @@ def _pid_alive(pid: int, *, expect_marker: str = "") -> bool:
     return expect_marker.casefold() in cmdline
 
 
+def _lock_paths() -> list[Path]:
+    """Onde o lock do worker é escrito/procurado (1.0.90).
+
+    O lock vive em `STORAGE/state/automation_worker.lock` — a pasta `state/` é
+    onde a UI lê o resto do estado do worker. O local antigo
+    (`STORAGE/automation_worker.lock`) continua aceite: instalações antigas
+    deixaram o ficheiro lá e a UI tem de o encontrar para saber que o worker
+    está vivo.
+    """
+    return [storage.STORAGE / "state" / LOCK_FILENAME, storage.STORAGE / LOCK_FILENAME]
+
+
 def _acquire_lock() -> Path | None:
-    lock_path = storage.STORAGE / LOCK_FILENAME
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
-        try:
-            lock_contents = lock_path.read_text(encoding="utf-8").strip()
-            old_pid_text = lock_contents.removeprefix("pid=").strip()
-            old_pid = int(old_pid_text)
-        except (OSError, ValueError):
-            old_pid = 0
-        if _pid_alive(old_pid, expect_marker="hermes_ui.automation_worker"):
-            raise RuntimeError(f"Já existe um worker de automação activo para este storage do Thunderbolt (PID {old_pid}).")
-        try:
-            lock_path.unlink()
-        except OSError:
-            return None
+    for lock_path in _lock_paths():
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
-            return None
-    try:
-        os.write(descriptor, f"pid={os.getpid()}\n".encode("ascii"))
-    finally:
-        os.close(descriptor)
-    return lock_path
+            try:
+                lock_contents = lock_path.read_text(encoding="utf-8").strip()
+                old_pid_text = lock_contents.removeprefix("pid=").strip()
+                old_pid = int(old_pid_text)
+            except (OSError, ValueError):
+                old_pid = 0
+            if _pid_alive(old_pid, expect_marker="hermes_ui.automation_worker"):
+                raise RuntimeError(f"Já existe um worker de automação activo para este storage do Thunderbolt (PID {old_pid}).")
+            try:
+                lock_path.unlink()
+            except OSError:
+                continue
+            try:
+                descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except FileExistsError:
+                continue
+        try:
+            os.write(descriptor, f"pid={os.getpid()}\n".encode("ascii"))
+        finally:
+            os.close(descriptor)
+        return lock_path
+    return None
 
 
 def _release_lock(lock_path: Path | None) -> None:
-    if lock_path is not None:
+    # remove em TODOS os locais: um lock velho na raiz do storage envenenaria
+    # o próximo arranque com "já existe um worker activo".
+    for path in _lock_paths():
         try:
-            lock_path.unlink()
+            path.unlink()
         except OSError:
             pass
 
