@@ -6702,7 +6702,16 @@ def load_automation_tasks_for_platform(platform_name: str) -> list[dict[str, Any
 
 
 def _task_thumbnail_path(task: dict[str, Any]) -> Path | None:
-    """Resolve a generated thumbnail from current and legacy task fields."""
+    """Resolve a generated thumbnail from current and legacy task fields.
+
+    1.0.84 — caminhos legados. Com o runtime permanente (`.runtime`) a app deixou
+    de correr da raiz do pacote, e `ROOT` passou a apontar para o runtime. Um
+    caminho RELATIVO gravado por uma versão antiga (antes do `STORAGE` absoluto)
+    pode continuar a existir num destes sítios, por isso todos são tentados:
+    tal como veio, `STORAGE`, `STORAGE/videos` e a raiz do `THUNDERBOLT_HOME`.
+    A verificação é apenas `is_file()` (um stat, sem ler bytes) — a página nunca
+    bloqueia por causa de uma thumbnail.
+    """
     artifacts = task.get("artifacts") if isinstance(task.get("artifacts"), dict) else {}
     candidates = [
         artifacts.get("thumbnail"),
@@ -6715,16 +6724,25 @@ def _task_thumbnail_path(task: dict[str, Any]) -> Path | None:
         task.get("thumbnail"),
         task.get("thumbnail_url"),
     ]
+    thunderbolt_home = Path(os.environ.get("THUNDERBOLT_HOME") or STORAGE.parent)
     for candidate in candidates:
         raw = str(candidate or "").strip()
         if not raw or raw.startswith(("http://", "https://")):
             continue
         paths = [Path(raw)]
         if not Path(raw).is_absolute():
-            paths.extend([STORAGE / raw, STORAGE / "videos" / raw])
+            paths.extend([
+                STORAGE / raw,
+                STORAGE / "videos" / raw,
+                thunderbolt_home / raw,
+                thunderbolt_home / "storage" / raw,
+            ])
         for path in paths:
-            if path.is_file():
-                return path
+            try:
+                if path.is_file():
+                    return path
+            except OSError:
+                continue  # caminho inacessível (rede/permissão): tentar o próximo
     return None
 
 
@@ -7083,23 +7101,36 @@ def _video_backlog_card_body(task_id: str) -> str:
             with media_cols[1]:
                 if video_file is not None and task_state == "done":
                     _render_local_video_player(video_file, width="stretch")
-                    # 1.0.24: leitura segura com aviso amigável quando o
-                    # Windows mantém o ficheiro ocupado — nunca derruba a página.
-                    try:
-                        with video_file.open("rb") as video_stream:
-                            st.download_button(
-                                'Descarregar vídeo pronto',
-                                data=video_stream,
-                                file_name=video_file.name,
-                                mime='video/mp4',
-                                key=f"pipeline_video_download_{task['id']}",
-                                width="stretch",
+                    # 1.0.84 — downloads alimentados SÓ A PEDIDO (invariante 0.9.95):
+                    # o botão com o stream lia o MP4 inteiro em cada rerun.
+                    prepare_key = f"pipeline_prepare_video_{task['id']}"
+                    if not st.session_state.get(prepare_key):
+                        if st.button(
+                            "Preparar vídeo para download",
+                            key=f"pipeline_prepare_video_button_{task['id']}",
+                            width="stretch",
+                            help="O ficheiro (que pode ter mais de 100 MB) só é lido quando pede o download — assim a página nunca trava.",
+                        ):
+                            st.session_state[prepare_key] = True
+                            st.rerun()
+                    else:
+                        # 1.0.24: leitura segura com aviso amigável quando o
+                        # Windows mantém o ficheiro ocupado — nunca derruba a página.
+                        try:
+                            with video_file.open("rb") as video_stream:
+                                st.download_button(
+                                    'Descarregar vídeo pronto',
+                                    data=video_stream,
+                                    file_name=video_file.name,
+                                    mime='video/mp4',
+                                    key=f"pipeline_video_download_{task['id']}",
+                                    width="stretch",
+                                )
+                        except (OSError, PermissionError):
+                            st.warning(
+                                "O ficheiro de vídeo está a ser utilizado por outro processo "
+                                "(por exemplo, o leitor aberto). Feche o leitor e tente novamente em alguns segundos."
                             )
-                    except (OSError, PermissionError):
-                        st.warning(
-                            "O ficheiro de vídeo está a ser utilizado por outro processo "
-                            "(por exemplo, o leitor aberto). Feche o leitor e tente novamente em alguns segundos."
-                        )
                 elif video_path:
                     st.caption(f'Vídeo registado: {video_path}')
             st.write(f"**{task.get('title') or task.get('topic', 'Sem título')}**")
@@ -7951,17 +7982,25 @@ def _render_task_thumbnail(thumbnail_path: Path | None) -> None:
     Agora: imagem quando existe (o `st.image` faz stream do caminho, como
     sempre) e um bloco cinza explícito — "Thumbnail não gerada" — quando não
     existe. Nada muda no resto do card (botões, player, progresso, downloads).
+
+    1.0.84 — o `is_file()` é apenas um stat (nunca lê bytes) e está dentro de
+    try/except: um caminho inacessível (rede, permissão, drive desmontado) dá
+    placeholder imediato, não uma excepção que deixaria a página a carregar
+    para sempre. Foi parte da regressão do loading infinito.
     """
-    if thumbnail_path is not None and thumbnail_path.is_file():
-        st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")
-        return
+    if thumbnail_path is not None:
+        try:
+            if thumbnail_path.is_file():
+                st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")
+                return
+        except OSError:
+            pass  # caminho inacessível: placeholder, nunca excepção na página
     st.markdown(
         "<div style='background:#F0F2F6;border:1px dashed #C7CBD1;border-radius:8px;"
         "padding:28px 10px;text-align:center;color:#5B6470;font-size:0.85rem'>"
         "Thumbnail não gerada</div>",
         unsafe_allow_html=True,
     )
-
 
 def _video_task_status_icon(task: dict[str, Any]) -> str:
     """Ícone de estado para o TÍTULO do card — e só para o título.
@@ -8086,28 +8125,7 @@ def _youtube_task_card_body(task_id: str) -> str:
                     disabled=script_path is None,
                 )
             with video_download_col:
-                if video_path is not None:
-                    download_name = _automation_download_name("Vídeo", task, video_path, ".mp4")
-                    # 1.0.24: botão standard de volta (o link markdown perdia o
-                    # estilo) e leitura segura — o open("rb") sem protecção
-                    # derrubava o servidor quando o Windows mantinha o ficheiro
-                    # ocupado (player/preview); agora há aviso amigável.
-                    try:
-                        with video_path.open("rb") as video_stream:
-                            st.download_button(
-                                "Baixar Vídeo",
-                                data=video_stream,
-                                file_name=download_name,
-                                mime="video/mp4",
-                                key=f"automation_download_video_{task_id}",
-                                width="stretch",
-                            )
-                    except (OSError, PermissionError):
-                        st.warning(
-                            "O ficheiro de vídeo está a ser utilizado por outro processo "
-                            "(por exemplo, o leitor aberto). Feche o leitor e tente novamente em alguns segundos."
-                        )
-                else:
+                if video_path is None:
                     st.download_button(
                         "Baixar Vídeo",
                         data=b"",
@@ -8117,6 +8135,50 @@ def _youtube_task_card_body(task_id: str) -> str:
                         width="stretch",
                         disabled=True,
                     )
+                else:
+                    download_name = _automation_download_name("Vídeo", task, video_path, ".mp4")
+                    # 1.0.84 — REGRESSÃO DE PERFORMANCE CORRIGIDA. O botão passava o
+                    # STREAM do ficheiro (`with video_path.open("rb")`) e o Streamlit
+                    # lê o stream INTEIRO durante a renderização para guardar o
+                    # payload de download. Com 24 vídeos de 40-123 MB (2,18 GB no
+                    # total; 493 MB só na primeira página) cada rerun lia tudo outra
+                    # vez — medido nesta máquina: 950 MB de leituras numa sessão
+                    # curta. O run do script nunca terminava, os `/media/` das
+                    # thumbnails ficavam pendentes atrás dele e o download só
+                    # arrancava depois de o utilizador carregar em "Parar
+                    # Carregamento" (que aborta o run e liberta o servidor).
+                    # Padrão do repo (invariante 0.9.95): downloads alimentados SÓ A
+                    # PEDIDO — «Preparar downloads».
+                    prepare_key = f"automation_prepare_video_{task_id}"
+                    if not st.session_state.get(prepare_key):
+                        if st.button(
+                            "Preparar Vídeo para download",
+                            key=f"automation_prepare_video_button_{task_id}",
+                            width="stretch",
+                            help="O ficheiro (que pode ter mais de 100 MB) só é lido quando pede o download — assim a página nunca trava.",
+                        ):
+                            # Só AQUI o vídeo entra no payload do download: um
+                            # ficheiro, um clique, e a página nunca mais o lê
+                            # sozinha a cada rerun.
+                            st.session_state[prepare_key] = True
+                            _invalidate_live_tasks_snapshot()
+                            st.rerun()
+                    else:
+                        try:
+                            with video_path.open("rb") as video_stream:
+                                st.download_button(
+                                    "Baixar Vídeo",
+                                    data=video_stream,
+                                    file_name=download_name,
+                                    mime="video/mp4",
+                                    key=f"automation_download_video_{task_id}",
+                                    width="stretch",
+                                )
+                        except (OSError, PermissionError):
+                            st.warning(
+                                "O ficheiro de vídeo está a ser utilizado por outro processo "
+                                "(por exemplo, o leitor aberto). Feche o leitor e tente novamente em alguns segundos."
+                            )
             upload_legend_col, legend_col = st.columns(2, gap="small")
             with upload_legend_col:
                 if st.button(
