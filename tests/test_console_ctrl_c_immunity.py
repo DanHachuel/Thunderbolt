@@ -17,7 +17,14 @@ CLI_SOURCE = (ROOT / "scripts" / "cli.mjs").read_text(encoding="utf-8")
 
 def test_windows_absorbs_sigint():
     """No Windows o SIGINT é absorvido — o launcher NÃO encerra."""
-    win_block = CLI_SOURCE.split('if (platform() === "win32")', 1)[1].split("} else {", 1)[0]
+    import re as _re
+
+    _signals = _re.search(
+        r"// 1\.0\.74 — SINAL DO TERMINAL ABSORVIDO.*?stopFileWatcher\.unref\(\);",
+        CLI_SOURCE,
+        flags=_re.DOTALL,
+    )
+    win_block = _signals.group(0).split("} else {", 1)[0]
     assert 'process.on("SIGINT"' in win_block
     assert "ctrl_c_absorbed_windows" in win_block
     # o handler Windows NÃO chama stopWorker
@@ -26,7 +33,14 @@ def test_windows_absorbs_sigint():
 
 def test_unix_sigint_stops_normally():
     """No Linux/macOS o Ctrl+C encerra normalmente (padrão CLI)."""
-    unix_block = CLI_SOURCE.split("} else {", 1)[1].split('process.on("SIGBREAK"', 1)[0]
+    import re as _re
+
+    _signals = _re.search(
+        r"// 1\.0\.74 — SINAL DO TERMINAL ABSORVIDO.*?stopFileWatcher\.unref\(\);",
+        CLI_SOURCE,
+        flags=_re.DOTALL,
+    )
+    unix_block = "} else {\n" + _signals.group(0).split("} else {", 1)[1].split('process.on("SIGBREAK"', 1)[0]
     assert 'process.on("SIGINT", () => stopWorker("ctrl+c"));' in unix_block
 
 

@@ -191,7 +191,7 @@ def test_launcher_cancels_crash_loop_instead_of_restarting_forever(tmp_path: Pat
     }
     with out_path.open("wb") as out_file, err_path.open("wb") as err_file:
         process = subprocess.Popen(
-            ["node", "scripts/cli.mjs"],
+            ["node", "scripts/cli.mjs", "--foreground"],
             cwd=str(ROOT),
             env=environment,
             stdout=out_file,

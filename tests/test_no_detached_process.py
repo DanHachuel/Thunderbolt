@@ -1,13 +1,16 @@
-"""Garante que DETACHED_PROCESS nunca volta ao código (causava janelas CMD).
+"""1.0.89 - Nenhuma tela de CMD; `detached` OBRIGATÓRIO no servidor/workers.
 
-O DETACHED_PROCESS desassocia o subprocesso da consola pai — em Windows,
-cada uv/ffmpeg/MPT precisava da sua própria consola e abria janelas CMD
-visíveis. CREATE_NO_WINDOW suprime a janela sem desanexar.
-1.0.75 - REGRA INVIOLAVEL (AGENTS.md): "PROIBIDO ABRIR TELAS DE CMD NO
-COMPUTADOR DO UTILIZADOR". O teste passa a cobrir tambem o lado Node
-(`scripts/*.mjs`), porque o respawn do launcher depois de uma atualizacao usava
-`detached: true` + `windowsHide: false` - a unica maneira de o Windows criar
-uma consola visivel para o successor.
+A regra inverteu (auditoria contra o PandaNews, 2026-11-10): a proibição que
+fica é a de **janelas de consola visíveis** — não a do `detached`. Enquanto a
+stack esteve presa ao terminal, o terminal foi ponto único de falha (o
+`npx.cmd` morre com o sinal de console antes de o Node absorver). Agora o
+servidor e os workers correm DESTACADOS (grupo próprio) com `windowsHide: true`
+e `stdio` em ficheiro; no Windows sobe o interpretador BASE do venv com o
+`site-packages` no `PYTHONPATH` — a armadilha do redirector do venv, que fazia
+o neto nascer sem as flags de ocultação e abrir uma consola nova.
+
+Lado Python: continua PROIBIDO `DETACHED_PROCESS` cru — lá os spawns usam
+`CREATE_NO_WINDOW` (suprime a janela sem desanexar).
 """
 
 from __future__ import annotations
@@ -29,38 +32,35 @@ def _all_source_files() -> list[Path]:
     return result
 
 
-def test_no_detached_process_in_codebase():
+def _stdio_ignores_the_console(block: str) -> bool:
+    """stdio nunca herda consola: `"ignore"` puro ou array começando em ignore."""
+    if re.search(r'^\s*stdio:\s*"ignore"', block, flags=re.MULTILINE):
+        return True
+    match = re.search(r'^\s*stdio:\s*\[([^\]]*)\]', block, flags=re.MULTILINE)
+    return bool(match) and '"ignore"' in match.group(1)
+
+
+def test_python_side_never_uses_detached_process():
+    """Lado Python intacto: CREATE_NO_WINDOW succumbe a janela sem desanexar."""
     for path in _all_source_files():
         content = path.read_text(encoding="utf-8", errors="replace")
         assert "DETACHED_PROCESS" not in content, f"{path.name} contém DETACHED_PROCESS"
 
 
-def test_pipeline_worker_mpt_popen_uses_create_no_window():
-    content = (ROOT / "hermes_ui" / "pipeline_worker.py").read_text(encoding="utf-8")
-    assert "CREATE_NO_WINDOW" in content
-    assert "DETACHED_PROCESS" not in content
-
-
-def test_mpt_agent_subprocesses_use_create_no_window():
-    content = (ROOT / "seed" / "skills" / "mpt_agent.py").read_text(encoding="utf-8")
-    assert "CREATE_NO_WINDOW" in content
-    assert "DETACHED_PROCESS" not in content
-
-
-def test_remotion_render_uses_create_no_window():
-    content = (ROOT / "hermes_ui" / "remotion_provider.py").read_text(encoding="utf-8")
-    assert "CREATE_NO_WINDOW" in content
-    assert "DETACHED_PROCESS" not in content
+def test_python_side_keeps_create_no_window():
+    for name in ("pipeline_worker.py",):
+        content = (ROOT / "hermes_ui" / name).read_text(encoding="utf-8")
+        assert "CREATE_NO_WINDOW" in content
+        assert "DETACHED_PROCESS" not in content
 
 
 # ---------------------------------------------------------------------------
-# 1.0.75 - lado Node (scripts/*.mjs): nenhuma tela de CMD
+# Lado Node (scripts/*.mjs): destacado OBRIGATÓRIO no servidor/workers, com
+# windowsHide e saída em ficheiro — nunca uma consola visível.
 # ---------------------------------------------------------------------------
 
 
-def test_node_files_never_detach_without_hiding_the_console():
-    """Um `detached: true` em Node so sobrevive ao pai se vier com
-    `windowsHide: true` - caso contrario o Windows abre uma consola visivel."""
+def test_every_detached_spawn_hides_the_console_and_ignores_stdio():
     for path in NODE_FILES:
         content = path.read_text(encoding="utf-8", errors="replace")
         for block in re.split(r"(?=spawn\()", content):
@@ -71,12 +71,29 @@ def test_node_files_never_detach_without_hiding_the_console():
             assert "windowsHide: true" in block, (
                 f"{path.name}: spawn destacado sem windowsHide: true (abre janela de CMD)"
             )
-            assert 'stdio: "ignore"' in block, f"{path.name}: spawn destacado deve usar stdio ignore"
+            assert _stdio_ignores_the_console(block), (
+                f"{path.name}: spawn destacado deve ignorar/herdar arquivo — nunca a consola"
+            )
 
 
-def test_workers_of_queue_never_inherit_the_console():
-    """Os spawns normais (workers) levam a saida por pipes - nunca 'inherit'
-    (o gatilho documentado do Fatal Python error: init_sys_streams)."""
+def test_streamlit_server_spawn_is_detached_with_log_file():
+    """O servidor da interface é destacado por omissão (regra nova AGENTS.md)."""
+    cli = (ROOT / "scripts" / "cli.mjs").read_text(encoding="utf-8")
+    block = cli.split("function spawnDetached(", 1)[1].split("\nasync function portaTcpAbertaAtiva", 1)[0]
+    assert "detached: true," in block
+    assert "windowsHide: true," in block
+    assert 'stdio: ["ignore", fd, fd]' in block
+    assert "filho.unref();" in block
+    assert "cwd: executionRoot," in block
+    # o servidor é lançado por esse helper (nunca um spawn foreground por omissão)
+    start_block = cli.split("if (!foregroundRequested) {", 1)[1].split("const port = process.env.THUNDERBOLT_PORT", 1)[0]
+    assert "spawnDetached(" in start_block
+    assert '"--server.port", String(serverPort)' in start_block
+    assert "process.exit(0);" in start_block  # o launcher descartável termina
+
+
+def test_queue_workers_spawns_never_inherit_the_console():
+    """Workers: foreground por pipes OU destacados com stdio em ficheiro."""
     for path in NODE_FILES:
         content = path.read_text(encoding="utf-8", errors="replace")
         for block in re.split(r"(?=spawn\()", content):
@@ -84,15 +101,17 @@ def test_workers_of_queue_never_inherit_the_console():
                 continue
             if "hermes_ui." not in block[:240]:
                 continue
-            if "automation_worker" in block[:240]:
-                continue  # 1.0.18: o worker de automacao escreve no terminal de proposito
+            if _stdio_ignores_the_console(block):
+                continue  # destacado (arquivo) ou ignore: nunca herda a consola
             assert 'stdio: ["ignore", "pipe", "pipe"]' in block, (
-                f"{path.name}: worker de fila/pipeline deve levar a saida por pipes"
+                f"{path.name}: worker deve levar a saida por pipes ou arquivo, nunca inherit"
             )
 
 
-def test_agents_md_declares_the_no_cmd_windows_rule():
-    """A regra inviolavel tem de estar escrita (quem a remover tem de a ver)."""
+def test_agents_md_declares_the_new_rule():
     content = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    # a proibição de janelas continua escrita…
     assert "PROIBIDO ABRIR TELAS DE CMD NO COMPUTADOR DO UTILIZADOR" in content
+    # …e a nova obrigatoriedade do detached também.
+    assert "`detached: true` é **OBRIGATÓRIO**" in content
     assert "test_no_detached_process.py" in content

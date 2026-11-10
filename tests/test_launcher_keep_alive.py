@@ -116,7 +116,13 @@ def test_keep_alive_never_replaces_the_deliberate_shutdowns():
 
 def test_windows_absorbs_sighup_without_touching_the_stack():
     """No Windows o SIGHUP é absorvido: a stack NÃO é derrubada."""
-    win_block = CLI.split('if (platform() === "win32")', 1)[1].split("} else {", 1)[0]
+    import re as _re
+    _signals = _re.search(
+        r"// 1\.0\.74 — SINAL DO TERMINAL ABSORVIDO.*?stopFileWatcher\.unref\(\);",
+        CLI,
+        flags=_re.DOTALL,
+    )
+    win_block = _signals.group(0).split('} else {', 1)[0]
     assert 'process.on("SIGHUP", () => absorbTerminalSignal("SIGHUP"));' in win_block
     assert "stopWorker" not in win_block  # o handler NÃO encerra o launcher
 
@@ -133,14 +139,27 @@ def test_absorbed_signal_logs_the_keep_alive_notice():
 
 def test_windows_sigint_absorption_is_preserved():
     """1.0.86: o SIGINT espúrio do Windows continua absorvido (não regride)."""
-    win_block = CLI.split('if (platform() === "win32")', 1)[1].split("} else {", 1)[0]
+    import re as _re
+    _signals = _re.search(
+        r"// 1\.0\.74 — SINAL DO TERMINAL ABSORVIDO.*?stopFileWatcher\.unref\(\);",
+        CLI,
+        flags=_re.DOTALL,
+    )
+    win_block = _signals.group(0).split('} else {', 1)[0]
     assert 'process.on("SIGINT"' in win_block
     assert "ctrl_c_absorbed_windows" in win_block
 
 
 def test_unix_signals_still_stop_the_stack():
     """No Linux/macOS o fecho do terminal é real: encerrar continua correcto."""
-    unix_block = CLI.split("} else {", 1)[1].split('process.on("SIGBREAK"', 1)[0]
+    import re as _re
+
+    _signals = _re.search(
+        r"// 1\.0\.74 — SINAL DO TERMINAL ABSORVIDO.*?stopFileWatcher\.unref\(\);",
+        CLI,
+        flags=_re.DOTALL,
+    )
+    unix_block = "} else {\n" + _signals.group(0).split("} else {", 1)[1].split('process.on("SIGBREAK"', 1)[0]
     assert 'process.on("SIGINT", () => stopWorker("ctrl+c"));' in unix_block
     assert 'process.on("SIGHUP", () => stopWorker("console_closed"));' in unix_block
 
@@ -334,7 +353,13 @@ def test_keep_alive_is_the_last_thing_the_launcher_sets_up():
 
 def test_windows_absorbs_both_terminal_signals():
     """No Windows o SIGINT e o SIGHUP são absorvidos, num só bloco."""
-    win_block = CLI.split('if (platform() === "win32")', 1)[1].split("} else {", 1)[0]
+    import re as _re
+    _signals = _re.search(
+        r"// 1\.0\.74 — SINAL DO TERMINAL ABSORVIDO.*?stopFileWatcher\.unref\(\);",
+        CLI,
+        flags=_re.DOTALL,
+    )
+    win_block = _signals.group(0).split('} else {', 1)[0]
     assert 'process.on("SIGINT"' in win_block
     assert 'process.on("SIGHUP", () => absorbTerminalSignal("SIGHUP"));' in win_block
     assert "ctrl_c_absorbed_windows" in win_block  # telemetria 0.9.86 intacta
@@ -441,7 +466,7 @@ const fs = require("node:fs");
 const launcher = path.join(process.cwd(), "scripts", "cli.mjs");
 const child = require("node:child_process").spawn(
   process.execPath,
-  [launcher],
+  [launcher, "--foreground"],
   { stdio: "inherit", cwd: process.cwd(), windowsHide: false, detached: true },
 );
 child.on("error", (error) => { console.error(String(error)); process.exit(1); });
@@ -699,7 +724,7 @@ def test_console_detach_never_kills_the_launcher(tmp_path: Path):
     port = _free_tcp_port()
     environment = _launcher_environment(tmp_path, venv, port)
     process = subprocess.Popen(
-        ["node", str(ROOT / "scripts" / "cli.mjs")],
+        ["node", str(ROOT / "scripts" / "cli.mjs"), "--foreground"],
         cwd=str(ROOT),
         env=environment,
         stdout=subprocess.PIPE,
@@ -754,7 +779,7 @@ def test_ctrl_c_keeps_the_terminal_and_the_interface_alive(tmp_path: Path):
 
     def boot():
         return subprocess.Popen(
-            ["node", str(ROOT / "scripts" / "cli.mjs")],
+            ["node", str(ROOT / "scripts" / "cli.mjs"), "--foreground"],
             cwd=str(ROOT),
             env=environment,
             stdout=subprocess.PIPE,

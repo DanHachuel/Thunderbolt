@@ -2,7 +2,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import http from "node:http";
 import net from "node:net";
-import { existsSync, mkdirSync, readFileSync, copyFileSync, readdirSync, appendFileSync, writeFileSync, rmSync, statSync, createReadStream, cpSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, copyFileSync, readdirSync, appendFileSync, writeFileSync, rmSync, statSync, createReadStream, cpSync, unlinkSync, openSync, closeSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,6 +53,17 @@ const settingsPath = join(storageDir, "state", "settings.json");
 const launcherLockPath = join(diagnosticsDir, "launcher.lock");
 let killTreeHelper = resolve(root, "scripts", "kill_tree.py");
 const pythonEnvironment = { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", PYTHONLEGACYWINDOWSSTDIO: "1", CLICK_NO_WIN_CONSOLE: "1" };
+// 1.0.89 - ARQUITECTURA DESTACADA (modelo validado no PandaNews): o terminal
+// (MobaXterm/PowerShell) É um ponto único de falha enquanto a stack estiver
+// presa a ele — o npx.cmd morre com o sinal de console antes de o Node absorver.
+// A partir daqui o servidor e os workers correm DESTACADOS (grupo de processos
+// próprio, saída em ficheiro) e o launcher Node é descartável: morre sem levar
+// o sistema consigo. `--foreground` (ou THUNDERBOLT_FOREGROUND=1) preserva o
+// modo antigo — keep-alive, sinais absorvidos, logs ao vivo — para debug.
+const foregroundRequested = args.includes("--foreground") || args.includes("-f") || process.env.THUNDERBOLT_FOREGROUND === "1";
+const serverLockPath = join(diagnosticsDir, "thunderbolt.pid");
+const streamlitLogPath = join(storageDir, "logs", "streamlit.log");
+const serverPort = process.env.THUNDERBOLT_PORT || process.env.HERMES_PORT || "3030";
 
 function diagnostic(event, payload = {}) {
   try {
@@ -589,6 +600,231 @@ function check() {
 }
 
 // ---------------------------------------------------------------------------
+// 1.0.89 - SERVIDOR DESTACADO + LOCK GLOBAL + COMANDOS kill/logs
+// Arquitectura validada no PandaNews (auditoria 2026-11-10): o terminal é
+// descartável, o sistema é que tem de sobreviver. Regra nova no AGENTS.md
+// substitui a proibição de `detached`: agora `detached: true` é OBRIGATÓRIO
+// no servidor/workers, sempre com `windowsHide: true`, `stdio` em ficheiro e
+// (Windows) o interpretador BASE + PYTHONPATH do venv — a armadilha do
+// redirector do venv, que abria uma consola nova para o neto.
+// ---------------------------------------------------------------------------
+
+// --- python base (armadilha do redirector do venv, medida no PandaNews) -----
+// `venv/Scripts/python.exe` das distribuições standalone é um REDIRECIONADOR:
+// re-executa o interpretador real, que nasce SEM as flags de ocultação do pai
+// e ganha uma consola nova. Lendo o `pyvenv.cfg` (campo `home`) encontramos o
+// interpretador real e subimos ELE, com o site-packages do venv no PYTHONPATH:
+// um único processo, zero filhos, zero consola nova.
+function venvBasePython() {
+  try {
+    const cfg = readFileSync(join(venvDir, "pyvenv.cfg"), "utf8");
+    const match = /^\s*home\s*=\s*(.+)$/m.exec(cfg);
+    if (!match) return "";
+    const home = resolve(match[1].trim());
+    const candidate = platform() === "win32" ? join(home, "python.exe") : join(home, "bin", "python3");
+    return existsSync(candidate) ? candidate : "";
+  } catch {
+    return "";
+  }
+}
+
+function serverPython() {
+  if (process.env.THUNDERBOLT_PYTHON || process.env.HERMES_PYTHON) return python;
+  if (platform() === "win32") {
+    const base = venvBasePython();
+    if (base && resolve(base) !== resolve(venvPython)) return base;
+  }
+  return python; // POSIX (venv é symlink do base) e venvs normais
+}
+
+function serverPythonEnv() {
+  const env = { ...runtimeEnv };
+  if (platform() === "win32" && serverPython() !== python) {
+    const site = join(venvDir, "Lib", "site-packages");
+    if (existsSync(site)) {
+      env.PYTHONPATH = [site, env.PYTHONPATH].filter(Boolean).join(";");
+    }
+  }
+  return env;
+}
+
+// --- lock global: launcher + servidor + workers (fora da pasta do pacote) ----
+
+function readServerLock() {
+  try {
+    const dados = JSON.parse(readFileSync(serverLockPath, "utf8"));
+    if (typeof dados !== "object" || dados === null) return null;
+    return dados;
+  } catch {
+    return null;
+  }
+}
+
+function writeServerLock(payload) {
+  try {
+    writeFileSync(serverLockPath, `${JSON.stringify({ criado: new Date().toISOString(), ...payload }, null, 2)}\n`, "utf8");
+  } catch { /* lock nunca pode derrubar o arranque */ }
+}
+
+function clearServerLock() {
+  try { unlinkSync(serverLockPath); } catch { /* já removido */ }
+}
+
+// --- encerramento por código, sempre silencioso ------------------------------
+
+function killTreeSilent(pid) {
+  if (!pid || pid === process.pid) return;
+  try {
+    if (platform() === "win32") {
+      spawnSync("taskkill", ["/pid", String(pid), "/f", "/t"], {
+        windowsHide: true, // CREATE_NO_WINDOW — sem tela preta
+        detached: true, // grupo isolado, imune ao Ctrl+C do console
+        stdio: "ignore", // taskkill não escreve no terminal
+      });
+    } else {
+      process.kill(-pid, "SIGKILL");
+    }
+  } catch { /* processo já não existia */ }
+}
+
+// Dono de uma porta em LISTEN (Windows, via netstat silencioso) — rede de
+// segurança para o lock obsoleto (medido no PandaNews: lock a apontar para o
+// processo ERRADO depois de uma actualização).
+function pidDaPorta(port) {
+  if (platform() !== "win32") return null;
+  try {
+    const result = spawnSync("netstat", ["-ano"], {
+      windowsHide: true,
+      detached: true,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    if (result.status !== 0 || !result.stdout) return null;
+    const alvo = `:${port}`;
+    for (const linha of result.stdout.toString().split(/\r?\n/)) {
+      if (!linha.includes(alvo) || !/LISTENING/i.test(linha)) continue;
+      const colunas = linha.trim().split(/\s+/);
+      const pid = Number(colunas[colunas.length - 1]);
+      if (Number.isInteger(pid) && pid > 0) return pid;
+    }
+  } catch { /* netstat indisponível — seguimos sem o fallback */ }
+  return null;
+}
+
+function serverLockPids(lock) {
+  const pids = [];
+  for (const pid of [lock?.launcher, lock?.server, ...Object.values(lock?.workers || {})]) {
+    if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && !pids.includes(pid)) pids.push(pid);
+  }
+  return pids;
+}
+
+// Auto-kill no arranque: lock global + dono da porta. Sem isto cada arranque
+// empilharia outra instância (a média do PandaNews: 2 uvicorns, lock errado).
+function killServerInstances(motivo = "auto-kill") {
+  const lock = readServerLock();
+  const pids = serverLockPids(lock);
+  const donoPorta = pidDaPorta(Number(serverPort));
+  if (donoPorta && donoPorta !== process.pid && !pids.includes(donoPorta)) pids.push(donoPorta);
+  for (const pid of pids) killTreeSilent(pid);
+  if (pids.length) {
+    console.log(`Encerrando instancia anterior (${pids.length} processo(s)) antes de iniciar... (${motivo})`);
+    // 1s para o SO libertar ficheiros e portas — sem isto o bind seguinte
+    // pode falhar com EADDRINUSE.
+    const espera = Date.now();
+    while (Date.now() - espera < 1000) { /* respiro sincrono, melhor esforco */ }
+  }
+  clearServerLock();
+}
+
+function comandoKill() {
+  const lock = readServerLock();
+  const pids = serverLockPids(lock);
+  const donoPorta = pidDaPorta(Number(serverPort));
+  if (donoPorta && donoPorta !== process.pid && !pids.includes(donoPorta)) pids.push(donoPorta);
+  for (const pid of pids) killTreeSilent(pid);
+  clearServerLock();
+  if (pids.length) {
+    console.log(`Thunderbolt encerrado (${pids.length} processo(s)). A porta ${serverPort} foi libertada.`);
+  } else {
+    console.log("Nenhuma instancia do Thunderbolt em execucao.");
+  }
+  process.exit(0);
+}
+
+// --- `thunderbolt logs`: tail ao vivo, sem depender de `tail` no Windows -----
+
+function comandoLogs(resto) {
+  const alvos = { worker: "image_worker.log", pipeline: "pipeline_worker.log", thumbnail: "thumbnail_worker.log", automation: "automation_worker.log", launcher: "launcher_console.log" };
+  const nome = resto.find((arg) => alvos[arg]);
+  const arquivo = nome ? alvos[nome] : "streamlit.log";
+  const caminho = join(storageDir, "logs", arquivo);
+  if (!existsSync(caminho)) {
+    console.error(`Thunderbolt: log não encontrado: ${caminho}`);
+    process.exit(1);
+  }
+  console.log(`Thunderbolt: a seguir ${caminho} (Ctrl+C para sair)`);
+  let posicao = 0;
+  const seguir = () => {
+    try {
+      const tamanho = statSync(caminho).size;
+      if (tamanho > posicao) {
+        const fluxo = createReadStream(caminho, { start: posicao, end: tamanho - 1 });
+        fluxo.on("data", (chunk) => process.stdout.write(chunk));
+        posicao = tamanho;
+      }
+    } catch { /* ficheiro rodou — a próxima leitura recupera */ }
+  };
+  seguir();
+  const temporizador = setInterval(seguir, 1000);
+  process.on("SIGINT", () => { clearInterval(temporizador); process.exit(0); });
+}
+
+// --- spawns destacados --------------------------------------------------------
+
+function detachedLogFd(caminho) {
+  try {
+    mkdirSync(join(storageDir, "logs"), { recursive: true });
+    if (existsSync(caminho) && statSync(caminho).size > 5_000_000) writeFileSync(caminho, "");
+  } catch { /* logging nunca muda o comportamento do launcher */ }
+  return openSync(caminho, "a");
+}
+
+function spawnDetached(comando, argumentos, logCaminho, rotulo) {
+  const fd = detachedLogFd(logCaminho);
+  const filho = spawn(comando, argumentos, {
+    cwd: executionRoot, // SEMPRE o runtime permanente — nunca o cache do npx
+    detached: true, // CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS: imune ao console
+    windowsHide: true, // sem janela de consola (regra AGENTS.md)
+    stdio: ["ignore", fd, fd], // saída DIRETA no ficheiro — zero handle de console
+    env: serverPythonEnv(),
+  });
+  try { closeSync(fd); } catch { /* o filho tem a sua própria cópia herdada */ }
+  filho.unref(); // o launcher não vive nem morre com o filho
+  if (!filho.pid) {
+    console.error(`Thunderbolt: não foi possível iniciar ${rotulo}.`);
+    return null;
+  }
+  return filho.pid;
+}
+
+async function portaTcpAbertaAtiva(porta) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: "127.0.0.1", port: Number(porta) });
+    socket.once("connect", () => { socket.destroy(); resolve(true); });
+    socket.once("error", () => resolve(false));
+    socket.setTimeout(1000, () => { socket.destroy(); resolve(false); });
+  });
+}
+
+async function esperarPorta(porta, tentativas, intervaloMs) {
+  for (let i = 0; i < tentativas; i += 1) {
+    if (await portaTcpAbertaAtiva(porta)) return true;
+    await new Promise((resolve) => setTimeout(resolve, intervaloMs));
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // 1.0.81 - RUNTIME PERMANENTE: preparação do THUNDERBOLT_HOME/.runtime
 // ---------------------------------------------------------------------------
 
@@ -674,6 +910,16 @@ function runInstaller(installer, installerArgs) {
     return 1;
   }
   return result.status ?? 1;
+}
+
+// 1.0.89 - COMANDOS DE CICLO DE VIDA (modelo destacado): funcionam sem runtime
+// preparado e antes de qualquer outra coisa — o `kill` é a saída de emergência
+// quando o terminal morreu e o sistema ficou em background.
+if (args[0] === "kill" || args[0] === "stop") {
+  comandoKill();
+}
+if (args[0] === "logs" || args[0] === "log") {
+  comandoLogs(args.slice(1));
 }
 
 if (args[0] === "install" || args[0] === "--install") {
@@ -779,6 +1025,51 @@ if (args[0] === "thumbnail-worker" || args.includes("--thumbnail-worker")) {
 if (args[0] === "image-worker" || args.includes("--image-worker")) {
   if (!checkWorkerDependencies("o worker de imagens de produção")) process.exit(1);
   run(python, ["-m", "hermes_ui.image_worker", ...args.filter((arg) => arg !== "image-worker" && arg !== "--image-worker")], "worker de imagens de produção", runtimeEnv);
+}
+
+// ---------------------------------------------------------------------------
+// 1.0.89 - MODO DESTACADO (padrão, modelo validado no PandaNews): o servidor e
+// os workers sobem em grupos de processos PRÓPRIOS com saída em ficheiro; o
+// launcher escreve o lock global e sai. O terminal pode fechar — o sistema
+// continua. `--foreground` preserva o modo antigo (proxy, workers
+// supervisionados, sinais absorvidos, logs ao vivo) para debug.
+// ---------------------------------------------------------------------------
+if (!foregroundRequested) {
+  killServerInstances("arranque destacado");
+  const serverPid = spawnDetached(
+    serverPython(),
+    [streamlitBootstrap, "run", main, "--server.port", String(serverPort), "--server.address", "127.0.0.1"],
+    streamlitLogPath,
+    "servidor da interface",
+  );
+  if (!serverPid) {
+    console.error("Thunderbolt: o servidor da interface não arrancou. Verifique a instalação com: npx @danhachuel/thunderbolt install");
+    process.exit(1);
+  }
+  const workers = {};
+  // O worker de automação só sobe quando há demanda (canal com automação ON ou
+  // tarefas na fila) — a mesma regra do modo foreground.
+  if (hasScheduledAutomation() || hasPendingPipelineWork()) {
+    const automationPid = spawnDetached(serverPython(), ["-m", "hermes_ui.automation_worker"], join(storageDir, "logs", "automation_worker.log"), "worker de automação");
+    if (automationPid) workers.automation = automationPid;
+  }
+  for (const [nome, modulo] of [["pipeline", "pipeline_worker"], ["thumbnail", "thumbnail_worker"], ["image", "image_worker"]]) {
+    const pid = spawnDetached(serverPython(), ["-m", `hermes_ui.${modulo}`], join(storageDir, "logs", `${nome}_worker.log`), `worker de ${nome}`);
+    if (pid) workers[nome] = pid;
+  }
+  writeServerLock({ launcher: null, server: serverPid, port: Number(serverPort), workers, modo: "detached" });
+  console.log(`A iniciar o servidor em http://localhost:${serverPort}/ ... (log: ${streamlitLogPath})`);
+  const pronto = await esperarPorta(Number(serverPort), 60, 500);
+  if (!pronto) {
+    console.error(`Thunderbolt: o servidor não respondeu em http://localhost:${serverPort}/ em 30s. Diagnóstico completo em: ${streamlitLogPath}`);
+    clearServerLock();
+    process.exit(1);
+  }
+  console.log(`Servidor activo em background (http://localhost:${serverPort}/). Para encerrar: npx thunderbolt kill`);
+  console.log("Logs ao vivo em outro terminal: npx thunderbolt logs");
+  console.log("Este terminal pode ser fechado — o Thunderbolt continua a correr.");
+  launcherExiting("background_started");
+  process.exit(0);
 }
 
 const port = process.env.THUNDERBOLT_PORT || process.env.HERMES_PORT || "3030";
