@@ -6945,18 +6945,27 @@ def _start_pipeline_task(task_id: str, state: str) -> bool:
     return True
 
 
-def _remake_video_from_card(task: dict[str, Any]) -> bool:
-    """Queue a new render while keeping the script and all creative artefacts."""
+def _remake_video_from_card(task: dict[str, Any], *, force_audio_regeneration: bool = False) -> bool:
+    """Queue a new render while keeping the script and all creative artefacts.
+
+    1.0.86 - ``force_audio_regeneration`` (checkbox «Regenerar Áudio (TTS)» do
+    cartao, ao lado do «Upload ok»): descarta a narracao existente para o
+    worker sincronizar voz nova. Sem o checkbox, o reaproveitamento da 1.0.66
+    continua intacto.
+    """
     task_id = str(task.get("id") or "")
     try:
-        updated = remake_video_task(task_id)
+        updated = remake_video_task(task_id, force_audio_regeneration=force_audio_regeneration)
     except ValueError as exc:
         st.error(str(exc))
         return False
     if not updated:
         st.error("Não foi possível refazer este vídeo: a tarefa já não existe na fila.")
         return False
-    st.success("Vídeo colocado na fila para remontagem. Roteiro, tags, voz, thumbnail e artefactos existentes foram preservados; legendas, duração máxima do clip, fonte de vídeo e restantes definições do canal foram revalidadas para a nova renderização.")
+    message = "Vídeo colocado na fila para remontagem. Roteiro, tags, voz, thumbnail e artefactos existentes foram preservados; legendas, duração máxima do clip, fonte de vídeo e restantes definições do canal foram revalidadas para a nova renderização."
+    if force_audio_regeneration:
+        message = "Vídeo colocado na fila para remontagem com ÁUDIO NOVO: a narração actual foi descartada e o TTS vai gerar uma voz nova. Roteiro, tags, thumbnail e restantes definições do canal foram revalidadas para a nova renderização."
+    st.success(message)
     # 1.0.15: invalida o memo de leitura para o card mostrar o estado novo
     # (to_do na fila de remontagem) logo no rerun seguinte.
     _invalidate_live_tasks_snapshot()
@@ -8158,13 +8167,26 @@ def _youtube_task_card_body(task_id: str) -> str:
                         update_task(task_id, {"has_subtitles": True})
                         _invalidate_live_tasks_snapshot()
                         st.rerun()
-            checked_upload_ok = st.checkbox(
-                "Upload ok",
-                value=upload_ok,
-                key=f"automation_upload_ok_{task['id']}",
-                disabled=not upload_ready,
-                help="Marque depois de concluir manualmente o upload do vídeo.",
-            )
+            # 1.0.86 - os dois checkboxes na MESMA linha (pedido do utilizador):
+            # «Upload ok» e «Regenerar Áudio (TTS)» lado a lado, logo acima do
+            # botão «Refazer Vídeo». Proporção 1:1.5 para o texto do segundo
+            # não ficar espremido.
+            upload_check_col, regen_check_col = st.columns([1, 1.5])
+            with upload_check_col:
+                checked_upload_ok = st.checkbox(
+                    "Upload ok",
+                    value=upload_ok,
+                    key=f"automation_upload_ok_{task['id']}",
+                    disabled=not upload_ready,
+                    help="Marque depois de concluir manualmente o upload do vídeo.",
+                )
+            with regen_check_col:
+                force_audio_regen = st.checkbox(
+                    "Regenerar Áudio (TTS)",
+                    value=bool(st.session_state.get(f"automation_force_audio_{task['id']}")),
+                    key=f"automation_force_audio_{task['id']}",
+                    help="Descarta a narração actual e força uma síntese TTS nova no próximo «Refazer Vídeo». Deixe desmarcado para reaproveitar o áudio existente.",
+                )
             if checked_upload_ok != upload_ok:
                 update_task(str(task["id"]), {"upload_ok": bool(checked_upload_ok), "upload_status": "manual" if checked_upload_ok else "pending"})
                 _invalidate_live_tasks_snapshot()
@@ -8178,7 +8200,7 @@ def _youtube_task_card_body(task_id: str) -> str:
                 disabled=state == "doing",
                 help="Reaplica as configurações atuais do canal (legendas, música, voz, duração, proporção, transição) e regenera o vídeo do zero. Use quando a config do canal mudou ou quando o vídeo foi gerado sem legenda por engano.",
             ):
-                if _remake_video_from_card(task):
+                if _remake_video_from_card(task, force_audio_regeneration=force_audio_regen):
                     st.rerun()
             with delete_col:
                 confirm_delete_key = f"automation_confirm_delete_{task['id']}"

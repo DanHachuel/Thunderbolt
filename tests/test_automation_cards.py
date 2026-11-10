@@ -52,7 +52,38 @@ class AutomationCardsTests(unittest.TestCase):
         self.assertIn('"Refazer Vídeo"', MAIN_SOURCE)
         self.assertIn('tiktok_automation_remake_video_', MAIN_SOURCE)
         self.assertIn('automation_remake_video_', MAIN_SOURCE)
-        self.assertIn('remake_video_task(task_id)', MAIN_SOURCE)
+        # 1.0.86 - a chamada passou a carregar a selecção de áudio do cartão.
+        self.assertIn('remake_video_task(task_id, force_audio_regeneration=force_audio_regeneration)', MAIN_SOURCE)
+
+    def test_upload_ok_and_audio_regen_checkboxes_share_the_same_row(self):
+        """1.0.86 - os dois checkboxes ficam na MESMA linha horizontal do card,
+        logo acima do botão «Refazer Vídeo» (pedido do utilizador)."""
+        card_block = MAIN_SOURCE.split('def _youtube_task_card_body(', 1)[1].split('def _youtube_task_card_live(', 1)[0]
+        self.assertIn('upload_check_col, regen_check_col = st.columns([1, 1.5])', card_block)
+        self.assertIn('checked_upload_ok = st.checkbox(', card_block)
+        self.assertIn('"Upload ok"', card_block)
+        self.assertIn('force_audio_regen = st.checkbox(', card_block)
+        self.assertIn('"Regenerar Áudio (TTS)"', card_block)
+        # a ordem importa: colunas → checkboxes → botão Refazer.
+        columns_at = card_block.index('upload_check_col, regen_check_col = st.columns([1, 1.5])')
+        upload_at = card_block.index('checked_upload_ok = st.checkbox(')
+        regen_at = card_block.index('force_audio_regen = st.checkbox(')
+        remake_at = card_block.index('"Refazer Vídeo"')
+        self.assertLess(columns_at, min(upload_at, regen_at))
+        self.assertLess(max(upload_at, regen_at), remake_at)
+        # a selecção do checkbox chega ao backend pelo cartão.
+        self.assertIn('_remake_video_from_card(task, force_audio_regeneration=force_audio_regen)', MAIN_SOURCE)
+
+    def test_remake_without_checkbox_keeps_the_audio_reuse_default(self):
+        """Regressao invertida (1.0.66): os OUTROS cartões e o comportamento
+        padrão continuam a reaproveitar a narração."""
+        domain_source = (ROOT / "hermes_ui" / "domain.py").read_text(encoding="utf-8")
+        self.assertIn('def remake_video_task(task_id: str, *, force_audio_regeneration: bool = False)', domain_source)
+        self.assertIn('if force_audio_regeneration or not audio_value or not Path(str(audio_value)).expanduser().is_file():', domain_source)
+        # a bandeira morta da 1.0.66 NUNCA volta.
+        self.assertNotIn('"audio_regeneration_requested"', domain_source)
+        # os restantes cartões chamam sem forçar (reaproveitamento intacto).
+        self.assertEqual(MAIN_SOURCE.count('_remake_video_from_card(task)'), 2)
 
     def test_bilibili_automation_cards_expose_the_same_remake_action(self):
         self.assertIn('def _render_bilibili_automation_cards()', MAIN_SOURCE)
@@ -93,7 +124,9 @@ class AutomationCardsTests(unittest.TestCase):
 
     def test_remake_operation_preserves_creative_artifacts_and_clears_only_video_upload(self):
         domain_source = (ROOT / "hermes_ui" / "domain.py").read_text(encoding="utf-8")
-        self.assertIn('def remake_video_task(task_id: str)', domain_source)
+        # 1.0.86 - a assinatura ganhou o ``force_audio_regeneration`` (checkbox
+        # «Regenerar Áudio (TTS)» do cartão); o paradeiro de vídeo/upload mantém-se.
+        self.assertIn('def remake_video_task(task_id: str, *, force_audio_regeneration: bool = False)', domain_source)
         self.assertIn('artifacts.pop("video", None)', domain_source)
         self.assertIn('artifacts.pop("upload", None)', domain_source)
         self.assertIn('"stage": "video"', domain_source)

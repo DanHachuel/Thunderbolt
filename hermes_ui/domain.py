@@ -905,7 +905,7 @@ def _refresh_task_channel_video_settings(task: dict[str, Any]) -> None:
     task["generation_settings"].pop("video_material_source", None)
 
 
-def remake_video_task(task_id: str) -> dict[str, Any] | None:
+def remake_video_task(task_id: str, *, force_audio_regeneration: bool = False) -> dict[str, Any] | None:
     """Queue a fresh video render while retaining the task's creative inputs.
 
     The persisted script, blueprint, keywords/tags, voice, thumbnail prompt/image
@@ -925,6 +925,14 @@ def remake_video_task(task_id: str) -> dict[str, Any] | None:
     concatenacao/transicao, fonte de materiais) sao revalidados a partir dos
     valores actuais do canal, para que a remontagem honre alteracoes feitas
     depois da geracao original em vez de repetir os valores congelados.
+
+    1.0.86 - FORCAR REGENERACAO DO AUDIO: o cartao da Automacao ganhou o
+    checkbox «Regenerar Áudio (TTS)» ao lado do «Upload ok». Quando o
+    utilizador o marca, o remake descarta os artefactos de narracao AQUI (em
+    vez de os reaproveitar) e o worker sincroniza voz nova no próximo arranque
+    — sem bandeira escrita-e-nunca-lida (o ``audio_regeneration_requested``
+    morreu na 1.0.66 precisamente por esse motivo). Sem o checkbox, o
+    comportamento de reaproveitamento da 1.0.66 fica intacto.
     """
     normalized_id = str(task_id or "").strip()
 
@@ -952,7 +960,10 @@ def remake_video_task(task_id: str) -> dict[str, Any] | None:
             artifacts.pop("upload", None)
             for audio_key in ("audio", "narration", "voiceover", "voiceover_audio", "audio_path", "narration_audio"):
                 audio_value = artifacts.get(audio_key)
-                if audio_value and not Path(str(audio_value)).expanduser().is_file():
+                # 1.0.86 - «Regenerar Áudio (TTS)» marcado no cartao: a
+                # narracao valida tambem sai (ressintese forcada). Ficheiro
+                # desaparecido sai de qualquer forma.
+                if force_audio_regeneration or not audio_value or not Path(str(audio_value)).expanduser().is_file():
                     artifacts.pop(audio_key, None)  # ficheiro desaparecido: gera de novo
             try:
                 remake_count = int(task.get("remake_count") or 0)
