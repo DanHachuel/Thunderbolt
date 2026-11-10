@@ -181,8 +181,20 @@ def _tb_media_video_url(path: Path, settings: dict[str, Any] | None = None) -> s
     Só é usado em modo launcher (o runtime define THUNDERBOLT_STORAGE_DIR);
     devolve None quando o ficheiro não pertence às raízes servidas ou quando
     a app corre sem o launcher (dev puro) — o chamador cai para o caminho.
+
+    1.0.91 — REGRESSÃO DO MODO DESTACADO (1.0.89): o endpoint ``/tb-media/``
+    vive no PROXY do launcher, que só existe no modo ``--foreground``
+    (``proxy.listen``). No modo destacado (por omissão desde a 1.0.89) o
+    Streamlit é spawnado DIRECTO na porta pública (``--server.port 3030``) e
+    o launcher termina (``process.exit(0)``) — a URL antiga passou a ser um
+    404 garantido do Streamlit e o player ficava PRETO com o vídeo «done».
+    Com ``THUNDERBOLT_LAUNCHER_MODE=detached`` devolvemos None e o player
+    toca pelo caminho absoluto resolvido (media_file_mgr do Streamlit, com
+    Range requests — o mecanismo provado na 1.0.32).
     """
     if not os.environ.get("THUNDERBOLT_STORAGE_DIR"):
+        return None
+    if os.environ.get("THUNDERBOLT_LAUNCHER_MODE") == "detached":
         return None
     try:
         resolved = path.resolve()
@@ -242,7 +254,17 @@ def _render_local_video_player(path: Path, *, width: int | str = "stretch") -> N
         st.video(media_url, **video_kwargs)
         return
     # fallback (1.0.32): caminho absoluto resolvido → media_file_mgr
-    st.video(str(path.resolve()), **video_kwargs)
+    resolved = path.resolve()
+    try:
+        st.video(str(resolved), **video_kwargs)
+    except Exception as exc:
+        # 1.0.91 — o player NUNCA pode ficar mudo: um caminho resolvido para
+        # o sitio errado (.runtime vs THUNDERBOLT_HOME) ou um ficheiro
+        # bloqueado pelo Windows era silencioso no card.
+        st.error(
+            "Não foi possível carregar o player. O arquivo não foi encontrado ou está bloqueado. "
+            f"({exc})"
+        )
 
 
 def _load_local_env() -> None:
@@ -6770,18 +6792,37 @@ def _task_thumbnail_path(task: dict[str, Any]) -> Path | None:
 
 
 def _task_artifact_path(task: dict[str, Any], *names: str) -> Path | None:
-    """Resolve um artefacto local, incluindo caminhos relativos e legados."""
+    """Resolve um artefacto local, incluindo caminhos relativos e legados.
+
+    1.0.91 — raízes do `THUNDERBOLT_HOME`. Com o runtime permanente
+    (`.runtime`) a app deixou de correr da raiz do pacote: um caminho
+    RELATIVO gravado por uma versão antiga (ou resolvido contra o `ROOT`
+    do runtime) nunca existiria dentro do `.runtime` — o storage não é
+    copiado para lá (whitelist só-de-código). Por isso os relativos são
+    tentados também contra o `STORAGE`, `STORAGE/artifacts`, `STORAGE/videos`
+    e a raiz do `THUNDERBOLT_HOME` (onde os dados vivem de facto).
+    """
     artifacts = task.get("artifacts") if isinstance(task.get("artifacts"), dict) else {}
+    thunderbolt_home = Path(os.environ.get("THUNDERBOLT_HOME") or STORAGE.parent)
     for name in names:
         raw = str(artifacts.get(name) or "").strip()
         if not raw or raw.startswith(("http://", "https://")):
             continue
         candidates = [Path(raw)]
         if not Path(raw).is_absolute():
-            candidates.extend([STORAGE / raw, STORAGE / "videos" / raw])
+            candidates.extend([
+                STORAGE / raw,
+                STORAGE / "artifacts" / raw,
+                STORAGE / "videos" / raw,
+                thunderbolt_home / raw,
+                thunderbolt_home / "storage" / raw,
+            ])
         for candidate in candidates:
-            if candidate.is_file():
-                return candidate
+            try:
+                if candidate.is_file():
+                    return candidate
+            except OSError:
+                continue  # caminho inacessível: tentar o próximo
     return None
 
 

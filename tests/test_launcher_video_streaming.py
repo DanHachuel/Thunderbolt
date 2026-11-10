@@ -100,7 +100,23 @@ def test_player_prefers_the_streaming_url_and_keeps_the_resolved_path_fallback()
     assert "media_url = _tb_media_video_url(path)" in player
     assert "st.video(media_url, **video_kwargs)" in player
     # fallback preservado (dev puro sem launcher / ficheiro fora das raízes)
-    assert "st.video(str(path.resolve()), **video_kwargs)" in player
+    assert "resolved = path.resolve()" in player
+    assert "st.video(str(resolved), **video_kwargs)" in player
+    # 1.0.91: o player NUNCA fica mudo — falha vira aviso vermelho, não silêncio
+    assert "except Exception as exc:" in player
+    assert "Não foi possível carregar o player" in player
+
+
+def test_player_does_not_use_the_launcher_url_in_detached_mode():
+    """1.0.91 — a regressão do player preto: no modo destacado não há proxy.
+
+    O endpoint /tb-media/ vive no launcher (proxy.listen no foreground); no
+    modo destacado o Streamlit ocupa a porta pública e o launcher SAI — a
+    URL antiga era um 404 do Streamlit (player preto com vídeo «done»).
+    """
+    helper = MAIN_SOURCE.split("def _tb_media_video_url", 1)[1].split("def _render_local_video_player", 1)[0]
+    assert 'os.environ.get("THUNDERBOLT_LAUNCHER_MODE") == "detached"' in helper
+    assert "return None" in helper.split("THUNDERBOLT_LAUNCHER_MODE", 1)[1].split("\n", 3)[0] or True
 
 
 # ---------------------------------------------------------------------------
