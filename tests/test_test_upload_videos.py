@@ -38,7 +38,11 @@ def test_local_video_player_uses_native_static_url_without_base64():
     assert "if not path.is_file()" in block
     assert 'st.warning(f"Vídeo não encontrado: {path.name}")' in block
     # 1.0.32: caminho absoluto resolvido → media_file_mgr do Streamlit
-    assert 'st.video(str(path.resolve()), **video_kwargs)' in block
+    # 1.0.32/1.0.91: caminho absoluto resolvido -> media_file_mgr do Streamlit
+    # (1.0.91: dentro de try/except para o player nunca ficar mudo)
+    assert "resolved = path.resolve()" in block
+    assert "st.video(str(resolved), **video_kwargs)" in block
+    assert "except Exception as exc:" in block
     # a URL estática NÃO entra no player (o docstring explica o porquê;
     # o check é o padrão EXACTO da chamada antiga com video_kwargs)
     assert 'st.video(static_url or str(path), **video_kwargs)' not in block

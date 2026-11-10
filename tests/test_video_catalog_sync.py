@@ -42,7 +42,8 @@ def test_youtube_automation_loads_local_video_player_only_after_explicit_request
     assert "media_url = _tb_media_video_url(path)" in player
     assert "st.video(media_url, **video_kwargs)" in player
     assert "fallback (1.0.32): caminho absoluto resolvido" in player
-    assert player.index("st.video(media_url") < player.index("st.video(str(path.resolve())")
+    assert "resolved = path.resolve()" in player
+    assert player.index("st.video(media_url") < player.index("st.video(str(resolved)")
 
 
 def test_youtube_automation_video_download_uses_a_safe_standard_button():

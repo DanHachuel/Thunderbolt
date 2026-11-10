@@ -170,6 +170,15 @@ def _kill_process_tree(process: subprocess.Popen) -> None:
     not shutil.which("node"),
     reason="node necessário para arrancar o launcher",
 )
+def _free_tcp_port() -> int:
+    """Porta livre efêmera — o launcher do teste nunca toca na 3030 real."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
 def test_launcher_cancels_crash_loop_instead_of_restarting_forever(tmp_path: Path):
     venv = _venv_python()
     if venv is None:
@@ -188,6 +197,10 @@ def test_launcher_cancels_crash_loop_instead_of_restarting_forever(tmp_path: Pat
         "PYTHONPATH": str(shadow),
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
+        # 1.0.91 — porta PRIVADA: sem isto o launcher do teste faria
+        # ``killServerInstances`` contra a instância REAL do utilizador
+        # (porta 3030) e o teste falhava por flake de ambiente.
+        "THUNDERBOLT_PORT": str(_free_tcp_port()),
     }
     with out_path.open("wb") as out_file, err_path.open("wb") as err_file:
         process = subprocess.Popen(
