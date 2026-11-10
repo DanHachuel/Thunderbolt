@@ -135,6 +135,24 @@ function guardConsoleStream(stream, name) {
 
 guardConsoleStream(process.stdout, "stdout");
 guardConsoleStream(process.stderr, "stderr");
+// 1.0.85 - STREAM DE ENTRADA: o launcher NUNCA morre por o terminal fechar o
+// stdin. Sem ``resume()`` o Node trata o fim do stdin como falta de trabalho e
+// pode esvaziar o event loop; e um npx.cmd que morre levava o Node consigo.
+// ``resume()`` mantém o handle referenciado e os eventos de fim/erro são
+// registados sem nunca encerrar (a paragem é deliberada: Ctrl+Break, ficheiro
+// .thunderbolt.stop ou kill — ver keep-alive e absorção de sinais abaixo).
+process.stdin.resume();
+for (const stdinEvent of ("end", "close", "error")) {
+  process.stdin.on(stdinEvent, (detail) => {
+    diagnostic(`stdin_${stdinEvent}`, {
+      pid: process.pid,
+      uptime_seconds: Math.round(process.uptime()),
+      detail: String((detail && (detail.code || detail.message)) || "").slice(0, 200),
+    });
+    // STDIN fechado NÃO é ordem de paragem: o espelho de consola e o
+    // keep-alive mantêm a stack viva (regra AGENTS.md).
+  });
+}
 
 function runKillTreeHelper(modeArgs) {
   // O venv do Thunderbolt tem sempre psutil (os workers dependem dele); o

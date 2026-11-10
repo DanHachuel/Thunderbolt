@@ -244,6 +244,15 @@ O pacote está publicado no npm como `@danhachuel/thunderbolt` e pode ser execut
 npx --yes @danhachuel/thunderbolt
 ```
 
+> **Se o terminal devolver o prompt `PS C:\...>` sozinho** (MobaXterm/PowerShell): o `npx` no Windows é um ficheiro em lote (`npx.cmd`) que morre com o sinal de console antes de o Node o poder absorver. Corra o launcher **sem a camada batch**, directamente no Node:
+>
+> ```bash
+> npm start                                  # dentro do pacote/clone
+> node bin/start.js                          # wrapper oficial (mesmo processo Node)
+> ```
+>
+> O launcher nunca encerra por `stdin` fechado nem por sinais espúrios de console; a paragem é sempre deliberada: `Ctrl+Break`, ficheiro `.thunderbolt.stop` na pasta do utilizador, ou `taskkill /F`.
+
 Para instalar automaticamente o ambiente completo — Python 3.11/3.12, ambiente virtual, dependências Python do Thunderbolt, dependências Python do MoneyPrinterTurbo, Streamlit e `imageio-ffmpeg` — execute:
 
 ```bash
