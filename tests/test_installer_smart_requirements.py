@@ -83,8 +83,10 @@ def test_repair_failure_aborts_the_installation():
     assert "A instalação foi ABORTADA" in repair
     assert "a instalação CONTINUA" not in repair
     assert repair.count("process.exit(") >= 3  # sem spec / reparação falhou / ainda em falta
-    # e a mensagem aponta sempre para a acção seguinte
-    assert "npx.cmd --yes --prefer-online @danhachuel/thunderbolt install --force-deps" in repair
+    # e a mensagem aponta sempre para a acção seguinte (1.0.91: dentro do
+    # reportMissingModules — a função que imprime a causa antes do aborto)
+    assert "npx.cmd --yes --prefer-online @danhachuel/thunderbolt install --force-deps" in INSTALLER_SOURCE
+    assert "reportMissingModules(label, stillMissing);" in repair
 
 
 def test_moneyprinter_requirements_keep_the_plain_contract():

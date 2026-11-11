@@ -1077,6 +1077,28 @@ if (!foregroundRequested) {
   console.log(`Servidor activo em background (http://localhost:${serverPort}/). Para encerrar: npx thunderbolt kill`);
   console.log("Logs ao vivo em outro terminal: npx thunderbolt logs");
   console.log("Este terminal pode ser fechado — o Thunderbolt continua a correr.");
+  // 1.0.90 - UX DO BACKGROUND: o utilizador achou que o app tinha fechado
+  // porque o terminal devolvia o prompt. O aviso passa a ser um bloco óbvio
+  // (verde/amarelo) com as três acções possíveis — logs, kill e foreground.
+  console.log("");
+  console.log("\x1b[42m\x1b[30m============================================================\x1b[0m");
+  console.log("\x1b[42m\x1b[30m✅ THUNDERBOLT ESTÁ RODANDO EM SEGUNDO PLANO!\x1b[0m");
+  console.log(`\x1b[36m🌐 Acesse: http://localhost:${serverPort}/\x1b[0m`);
+  console.log("");
+  console.log("\x1b[33mPara ver os logs ao vivo, abra OUTRO terminal e rode:\x1b[0m");
+  console.log("");
+  console.log("\x1b[93m  npx @danhachuel/thunderbolt logs\x1b[0m");
+  console.log("");
+  console.log("\x1b[33mPara encerrar o Thunderbolt, rode:\x1b[0m");
+  console.log("");
+  console.log("\x1b[93m  npx @danhachuel/thunderbolt kill\x1b[0m");
+  console.log("");
+  console.log("\x1b[33mPreferir manter os logs nesta mesma janela? Rode com:\x1b[0m");
+  console.log("");
+  console.log("\x1b[93m  npx @danhachuel/thunderbolt --foreground\x1b[0m");
+  console.log("");
+  console.log("\x1b[33m(O terminal pode ser fechado — o Thunderbolt continua a correr.)\x1b[0m");
+  console.log("\x1b[42m\x1b[30m============================================================\x1b[0m");
   launcherExiting("background_started");
   process.exit(0);
 }

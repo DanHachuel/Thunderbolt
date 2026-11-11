@@ -646,6 +646,40 @@ function missingModules(modules) {
   return [...modules];
 }
 
+// 1.0.90 — DIAGNÓSTICO REAL DE IMPORT: o aborto dizia «uploader não importa»
+// sem ninguém saber SE é dependência em falta, permissão ou conflito de nomes.
+// Corre o import de cada módulo e captura a EXCEPÇÃO (stderr): a causa exacta
+// passa a sair no terminal e no install.log. Necessário para os uploaders
+// (social-auto-upload): `sau_cli` importa os 10 uploadadores, e qualquer um
+// deles com dependência em falta derruba o import inteiro.
+const SOCIAL_AUTO_UPLOAD_DEPS = ["loguru", "opencv-python", "qrcode", "segno", "patchright==1.58.2"];
+
+function moduleImportDiagnostics(modules) {
+  const details = [];
+  for (const moduleName of modules) {
+    const result = spawnSync(pythonBin, ["-c", `import ${moduleName}`], {
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf8",
+      env: pythonEnvironment,
+    });
+    if (result.status !== 0) {
+      const stderr = String(result.stderr || "").trim();
+      const lastLine = stderr.split(/\r?\n/).filter(Boolean).pop() || `código de saída ${result.status}`;
+      details.push(`${moduleName}: ${lastLine.slice(0, 300)}`);
+    }
+  }
+  return details;
+}
+
+function reportMissingModules(label, modules, extraHint = "") {
+  const causes = moduleImportDiagnostics(modules);
+  console.error(`${label}: pacotes obrigatórios ainda sem importar: ${modules.join(", ")}. A instalação foi ABORTADA.`);
+  for (const cause of causes) console.error(`  causa — ${cause}`);
+  if (extraHint) console.error(extraHint);
+  console.error(`Registo completo em ${installLogPath}`);
+  console.error("Execute: npx.cmd --yes --prefer-online @danhachuel/thunderbolt install --force-deps");
+}
+
 function installRequirementIfNeeded(requirementsPath, stateKey, modules, label) {
   if (!existsSync(requirementsPath)) return;
   const lines = requirementLines(requirementsPath);
@@ -705,28 +739,42 @@ function installRequirementIfNeeded(requirementsPath, stateKey, modules, label) 
     }
   }
   if (unmatched.length) {
-    console.error(`${label}: pacotes obrigatórios sem spec no requirements.txt: ${unmatched.join(", ")}. A instalação foi ABORTADA.`);
-    console.error("Corrija o requirements.txt ou execute: npx.cmd --yes --prefer-online @danhachuel/thunderbolt install --force-deps");
+    reportMissingModules(label, unmatched, "Estes módulos não têm spec no requirements.txt — corrija o requirements.txt.");
     process.exit(1);
   }
   if (!repairable.length) return;
   console.warn(`${label}: pacotes que não importam no ambiente existente: ${repairable.join(", ")}.`);
   // 1.0.48 — reparação ALVO também silenciosa (o "Uninstalling/Installing"
   // do --force-reinstall costumava poluir o terminal e assustar o utilizador)
+  // 1.0.90 — --no-cache-dir: um ZIP do GitHub mal guardado no cache do pip
+  // (social-auto-upload) reaproveitava uma cópia corompida em cada tentativa.
   const repaired = runQuiet(
     `${label}: a instalar APENAS os pacotes em falta (detalhes em ${installLogPath})...`,
     pythonBin,
-    ["-m", "pip", "install", "--quiet", "--no-input", "--force-reinstall", "--disable-pip-version-check", ...repairSpecs],
+    ["-m", "pip", "install", "--quiet", "--no-input", "--force-reinstall", "--no-cache-dir", "--disable-pip-version-check", ...repairSpecs],
   );
   if (repaired.status !== 0) {
     console.error(`${label}: a reparação de ${repairable.join(", ")} falhou. A instalação foi ABORTADA — dependências obrigatórias não podem ficar em falta.`);
     console.error("Confirme o acesso à Internet e execute o instalador novamente.");
     process.exit(repaired.status || 1);
   }
-  const stillMissing = missingModules(modules);
+  let stillMissing = missingModules(modules);
+  // 1.0.90 - REPARAÇÃO DE SEGUNDO PASSO PARA OS UPLOADERS: o pacote
+  // social-auto-upload declara dependências (loguru, opencv-python, qrcode,
+  // segno) que o `-r requirements.txt` trouxe como transitivas — se alguma
+  // ficou em falta ou corrompida, o `import sau_cli` (que importa OS DEZ
+  // uploadadores) falha mesmo com o pacote reinstalado. Instalar as
+  // declaradas explicitamente antes de abortar.
+  if (stillMissing.some((moduleName) => moduleRequirementAliases[moduleName] === "social-auto-upload")) {
+    runQuiet(
+      `${label}: a reparar as dependências declaradas dos uploaders (detalhes em ${installLogPath})...`,
+      pythonBin,
+      ["-m", "pip", "install", "--quiet", "--no-input", "--force-reinstall", "--no-cache-dir", "--disable-pip-version-check", ...SOCIAL_AUTO_UPLOAD_DEPS],
+    );
+    stillMissing = missingModules(modules);
+  }
   if (stillMissing.length) {
-    console.error(`${label}: pacotes obrigatórios ainda sem importar após a reparação: ${stillMissing.join(", ")}. A instalação foi ABORTADA.`);
-    console.error("Execute: npx.cmd --yes --prefer-online @danhachuel/thunderbolt install --force-deps");
+    reportMissingModules(label, stillMissing);
     process.exit(1);
   }
 }

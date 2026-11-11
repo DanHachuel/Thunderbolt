@@ -85,13 +85,16 @@ def test_failed_install_or_repair_aborts_with_clear_error():
     gate = INSTALLER_SOURCE.split("function installRequirementIfNeeded(", 1)[1].split("function installPlaywrightBrowsers", 1)[0]
     repair = gate.split("const missingAfter = missingModules(modules);", 1)[1]
     for failure in (
-        "pacotes obrigatórios sem spec no requirements.txt",
         "A instalação foi ABORTADA",
+        "reportMissingModules(",  # 1.0.91: diagnóstico real + aborto (sem spec/ainda em falta)
     ):
         assert failure in repair
     assert repair.count("process.exit(") >= 3  # sem spec / reparação falhou / ainda em falta
     # e o caminho pesado já aborta pelo run() (exit on failure)
     assert "if (result.status !== 0) process.exit(result.status || 1);" in INSTALLER_SOURCE
+    # 1.0.91: a causa de cada pacote é impressa antes do aborto
+    assert "reportMissingModules(label, stillMissing);" in repair
+    assert "reportMissingModules(label, unmatched," in repair
 
 
 def test_browsers_and_mpt_abort_on_failure():
@@ -150,7 +153,9 @@ def test_pip_installs_are_quiet_and_never_touch_the_terminal():
         line for line in INSTALLER_SOURCE.splitlines() if not line.strip().startswith("//")
     )
     assert '"-m", "pip", "install", "--quiet", "--no-input", "--disable-pip-version-check", "-r", requirementsPath' in runtime
-    assert '"-m", "pip", "install", "--quiet", "--no-input", "--force-reinstall", "--disable-pip-version-check"' in runtime
+    # 1.0.91 - --no-cache-dir: um ZIP do GitHub corrompido no cache do pip era
+    # reaproveitado em cada tentativa de reparação dos uploaders.
+    assert '"-m", "pip", "install", "--quiet", "--no-input", "--force-reinstall", "--no-cache-dir", "--disable-pip-version-check"' in runtime
     assert 'stdio: "inherit"' not in runtime  # nada de pip/npm/browser no console
 
 

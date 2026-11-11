@@ -166,3 +166,28 @@ def test_storage_and_env_stay_out_of_the_runtime():
     assert 'const streamlitLogPath = join(storageDir, "logs", "streamlit.log");' in CLI_SOURCE
     assert 'join(runtimeDir, "storage")' not in CLI_SOURCE
     assert "THUNDERBOLT_STORAGE_DIR: storageDir," in CLI_SOURCE
+
+
+# ---------------------------------------------------------------------------
+# 1.0.90 - UX do background: bloco óbvio (verde/amarelo) + dica de foreground
+# ---------------------------------------------------------------------------
+
+
+def test_background_banner_is_unmistakable():
+    """O utilizador achou que o app fechou porque o aviso era discreto."""
+    assert "THUNDERBOLT ESTÁ RODANDO EM SEGUNDO PLANO!" in CLI_SOURCE
+    assert "\\x1b[42m" in CLI_SOURCE  # fundo verde
+    assert "\\x1b[93m" in CLI_SOURCE  # amarelo claro
+    assert "Acesse: http://localhost:" in CLI_SOURCE
+    assert "Para ver os logs ao vivo, abra OUTRO terminal e rode:" in CLI_SOURCE
+    assert "Para encerrar o Thunderbolt, rode:" in CLI_SOURCE
+    assert "(O terminal pode ser fechado — o Thunderbolt continua a correr.)" in CLI_SOURCE
+
+
+def test_banner_points_to_the_real_commands_and_foreground_hint():
+    # comandos REAIS do pacote (o `npx thunderbolt` nu não resolve o registry)
+    assert "npx @danhachuel/thunderbolt logs" in CLI_SOURCE
+    assert "npx @danhachuel/thunderbolt kill" in CLI_SOURCE
+    # dica de foreground para quem quer os logs na mesma janela
+    assert "npx @danhachuel/thunderbolt --foreground" in CLI_SOURCE
+    assert "Preferir manter os logs nesta mesma janela?" in CLI_SOURCE
