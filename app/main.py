@@ -3,6 +3,9 @@ import sys
 import io
 import shutil
 import subprocess
+import threading
+import socket
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
 os.environ["PYTHONUTF8"] = "1"
@@ -222,6 +225,212 @@ def _tb_media_video_url(path: Path, settings: dict[str, Any] | None = None) -> s
     return None
 
 
+TB_MEDIA_STREAM_CHUNK = 256 * 1024  # 256 KB por bloco — nunca o ficheiro inteiro em RAM
+TB_MEDIA_PLAYER_TIMEOUT_MS = 3000
+
+
+def _tb_media_roots() -> dict[str, Path]:
+    """Raízes servidas pelo endpoint local: vídeos locais + vídeos finais do MPT."""
+    roots: dict[str, Path] = {"videos": STORAGE / "videos"}
+    settings = read_json("settings.json", {})
+    mpt_path = str(
+        (settings.get("moneyprinter_path") if isinstance(settings, dict) else "")
+        or os.environ.get("MONEYPRINTER_PATH")
+        or ""
+    ).strip()
+    if mpt_path:
+        roots["mpt"] = Path(mpt_path).expanduser() / "storage" / "tasks"
+    return roots
+
+
+class _TbMediaRequestHandler(BaseHTTPRequestHandler):
+    """Serve ficheiros das raízes permitidas com Range — streaming do disco.
+
+    GET/HEAD, 200 sem Range e 206 com ``Range: bytes=start-end`` (o <video>
+    do browser pede intervalos para o scrubbing). Path traversal cortado
+    ANTES do disco e contenção real pela raiz resolvida.
+    """
+
+    server_version = "ThunderboltMedia/1.0"
+
+    def log_message(self, *_args) -> None:
+        return  # o log do handler não interessa (o launcher já tem os seus)
+
+    def _resolve(self) -> Path | None:
+        from urllib.parse import unquote, urlparse
+
+        parsed = urlparse(self.path)
+        if not parsed.path.startswith("/tb-media/"):
+            return None
+        pieces = parsed.path[len("/tb-media/"):].split("/")
+        if len(pieces) < 2:
+            return None
+        root_name, *rest = pieces
+        roots = _tb_media_roots()
+        if root_name not in roots:
+            return None
+        segments = [unquote(segment) for segment in rest]
+        if any(segment in {"", ".", ".."} or "\\" in segment for segment in segments):
+            return None
+        try:
+            target = roots[root_name].joinpath(*segments).resolve()
+            root_resolved = roots[root_name].resolve()
+        except OSError:
+            return None
+        if target != root_resolved and root_resolved not in target.parents:
+            return None
+        return target if target.is_file() else None
+
+    def _guess_mimetype(self, path: Path) -> str:
+        return mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+
+    def _parse_range(self, file_size: int):
+        """``bytes=start-end`` | ``start-`` | ``-suffix`` → (start, end) | None | 'invalid'."""
+        header = (self.headers.get("Range") or "").strip()
+        match = re.fullmatch(r"bytes=(\d*)-(\d*)", header)
+        if not match:
+            return None
+        start_raw, end_raw = match.group(1), match.group(2)
+        if not start_raw and not end_raw:
+            return None
+        if not start_raw:  # sufixo: os últimos N bytes
+            suffix = int(end_raw)
+            start = max(0, file_size - suffix)
+            end = file_size - 1
+        else:
+            start = int(start_raw)
+            end = int(end_raw) if end_raw else file_size - 1
+        if start >= file_size or end < start:
+            return "invalid"
+        return (start, min(end, file_size - 1))
+
+    def _send(self, method: str) -> None:
+        target = self._resolve()
+        if target is None:
+            self.send_error(404, "not found")
+            return
+        file_size = target.stat().st_size
+        parsed_range = self._parse_range(file_size)
+        if parsed_range == "invalid":
+            self.send_response(416)
+            self.send_header("Content-Range", f"bytes */{file_size}")
+            self.end_headers()
+            return
+        if parsed_range is None:
+            start, end, status = 0, file_size - 1, 200
+        else:
+            start, end, status = parsed_range[0], parsed_range[1], 206
+        length = end - start + 1
+        self.send_response(status)
+        self.send_header("Content-Type", self._guess_mimetype(target))
+        self.send_header("Content-Length", str(length))
+        self.send_header("Accept-Ranges", "bytes")
+        if status == 206:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+        self.end_headers()
+        if method == "HEAD":
+            return
+        with target.open("rb") as handle:
+            handle.seek(start)
+            remaining = length
+            while remaining > 0:
+                chunk = handle.read(min(TB_MEDIA_STREAM_CHUNK, remaining))
+                if not chunk:
+                    break
+                try:
+                    self.wfile.write(chunk)
+                except (BrokenPipeError, ConnectionResetError):
+                    return  # o browser fez scrubbing: normal
+                remaining -= len(chunk)
+
+    def do_GET(self) -> None:  # noqa: N802 — nome exigido pela stdlib
+        self._send("GET")
+
+    def do_HEAD(self) -> None:  # noqa: N802 — nome exigido pela stdlib
+        self._send("HEAD")
+
+
+_TB_MEDIA_SERVER: ThreadingHTTPServer | None = None
+_TB_MEDIA_LOCK = threading.Lock()
+
+
+def _tb_media_server() -> ThreadingHTTPServer | None:
+    """Sobe (uma vez) o servidor de média local numa thread daemon.
+
+    Porta efémera em 127.0.0.1: o browser está na mesma máquina (SaaS
+    local). Falha de bind devolve None — o caller cai para o player
+    nativo. Thread-safe para renders paralelos do Streamlit.
+    """
+    global _TB_MEDIA_SERVER
+    with _TB_MEDIA_LOCK:
+        if _TB_MEDIA_SERVER is not None:
+            return _TB_MEDIA_SERVER
+        try:
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _TbMediaRequestHandler)
+        except OSError:
+            return None
+        server.daemon_threads = True
+        threading.Thread(target=server.serve_forever, name="tb-media", daemon=True).start()
+        _TB_MEDIA_SERVER = server
+        return server
+
+
+def _tb_media_local_url(path: Path) -> str | None:
+    """URL http local do ficheiro (None se não estiver numa raiz servida)."""
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return None
+    for root_name, root_path in _tb_media_roots().items():
+        try:
+            relative = resolved.relative_to(root_path.resolve())
+        except (ValueError, OSError):
+            continue
+        if not relative.parts:
+            continue
+        server = _tb_media_server()
+        if server is None:
+            return None
+        port = server.server_address[1]
+        quoted = "/".join(quote(part) for part in relative.parts)
+        return f"http://127.0.0.1:{port}/tb-media/{root_name}/{quoted}"
+    return None
+
+
+def _custom_video_player(video_path: Path, *, width: int | str = "stretch") -> None:
+    """Player HTML5 servido pelo endpoint local (1.0.93).
+
+    Em vez do ``st.video(caminho)`` — que no Streamlit 1.65 lê o MP4
+    INTEIRO para a RAM e faz hash do conteúdo a cada render (spinner
+    infinito com vídeos grandes) — toca o ficheiro DIRECTAMENTE do disco
+    pelo servidor local, com Range requests. Se o vídeo não estiver
+    pronto em 3 s, o JS troca o player pela dica de download (nunca um
+    spinner mudo).
+    """
+    url = _tb_media_local_url(video_path)
+    if not url:
+        raise RuntimeError(f"ficheiro fora das raízes servidas: {video_path}")
+    token = uuid.uuid4().hex[:8]
+    player_id = f"tb-player-{token}"
+    message_id = f"tb-player-msg-{token}"
+    style = "width:100%" if width == "stretch" else f"width:{width}px"
+    html = (
+        f'<video id="{player_id}" controls preload="metadata" src="{url}" style="{style}">'
+        "O seu navegador não suporta o elemento de vídeo."
+        "</video>"
+        f'<div id="{message_id}" style="display:none;color:#b00020;padding:8px 0">'
+        "O player demorou a carregar. Clique em 'Baixar Vídeo' para assistir localmente."
+        "</div>"
+        "<script>"
+        f"setTimeout(function(){{var v=document.getElementById('{player_id}');"
+        f"if(v&&v.readyState===0){{v.style.display='none';"
+        f"document.getElementById('{message_id}').style.display='block';}}}},"
+        f"{TB_MEDIA_PLAYER_TIMEOUT_MS});"
+        "</script>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def _render_local_video_player(path: Path, *, width: int | str = "stretch") -> None:
     """Render a local video directly — no custom URLs, no symlinks (1.0.32).
 
@@ -253,7 +462,15 @@ def _render_local_video_player(path: Path, *, width: int | str = "stretch") -> N
         # (streaming directo do disco pelo launcher, com Range requests).
         st.video(media_url, **video_kwargs)
         return
-    # fallback (1.0.32): caminho absoluto resolvido → media_file_mgr
+    # 1.0.93 — player HTML5 servido pelo processo da própria app (zero RAM):
+    # o st.video(caminho) leria o MP4 inteiro para a RAM e faria hash do
+    # conteúdo a cada render (spinner infinito com vídeos grandes).
+    try:
+        _custom_video_player(path, width=width)
+        return
+    except Exception:
+        pass  # cai para o media_file_mgr abaixo (última rede)
+    # fallback (1.0.32): caminho absoluto resolvido
     resolved = path.resolve()
     try:
         st.video(str(resolved), **video_kwargs)
