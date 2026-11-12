@@ -122,9 +122,13 @@ def test_windows_absorbs_sighup_without_touching_the_stack():
         CLI,
         flags=_re.DOTALL,
     )
-    win_block = _signals.group(0).split('} else {', 1)[0]
+    win_block = _signals.group(0).split("} else {", 1)[0]
     assert 'process.on("SIGHUP", () => absorbTerminalSignal("SIGHUP"));' in win_block
-    assert "stopWorker" not in win_block  # o handler NÃO encerra o launcher
+    # 1.0.94: o bloco Windows passou a ter o Ctrl+C com confirmação (que chama
+    # stopWorker no segundo toque) — o que não pode acontecer é o SIGHUP, o
+    # fantasma do MobaXterm, encerrar o launcher.
+    sighup_line = next(line for line in win_block.splitlines() if 'process.on("SIGHUP"' in line)
+    assert "stopWorker" not in sighup_line  # o handler do SIGHUP NÃO encerra
 
 
 def test_absorbed_signal_logs_the_keep_alive_notice():

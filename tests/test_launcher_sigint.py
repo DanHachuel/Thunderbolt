@@ -27,8 +27,13 @@ def _signals_block(source: str) -> str:
     ).group(0)
 
 
-def test_windows_absorbs_sigint():
-    """No Windows o SIGINT é absorvido — o launcher NÃO encerra."""
+def test_windows_ctrl_c_shuts_down_with_confirmation():
+    """1.0.94 — no Windows o Ctrl+C encerra, mas só no SEGUNDO toque.
+
+    O primeiro toque avisa (absorve o fantasma); um eco de rajada (< 1 s) não
+    conta como confirmação. A 0.9.86 absorvia sem excepção — o que o utilizador
+    rejeitou ("quero carregar Ctrl+C e fechar").
+    """
     import re as _re
 
     _signals = _re.search(
@@ -38,8 +43,12 @@ def test_windows_absorbs_sigint():
     )
     sigint_block = _signals.group(0).split("} else {", 1)[0]
     assert 'process.on("SIGINT"' in sigint_block
-    assert 'stopWorker' not in sigint_block  # o handler NÃO chama stopWorker
-    assert "ctrl_c_absorbed_windows" in sigint_block
+    assert 'stopWorker("ctrl+c")' in sigint_block  # o segundo Ctrl+C encerra
+    assert 'console.log("[LAUNCHER] Encerrando o Thunderbolt (Ctrl+C)...");' in sigint_block
+    # confirmação: 1 s–5 s entre toques; eco de rajada não conta
+    assert "intervalo > 1000 && intervalo <= 5000" in sigint_block
+    assert "terminal_echo_ignored" in sigint_block
+    assert "ctrl_c_absorbed_windows" in sigint_block  # telemetria 0.9.86 mantida
 
 
 def test_unix_sigint_stops_normally():
