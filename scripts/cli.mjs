@@ -60,9 +60,7 @@ const pythonEnvironment = { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF
 // próprio, saída em ficheiro) e o launcher Node é descartável: morre sem levar
 // o sistema consigo. `--foreground` (ou THUNDERBOLT_FOREGROUND=1) preserva o
 // modo antigo — keep-alive, sinais absorvidos, logs ao vivo — para debug.
-const foregroundRequested = args.includes("--foreground") || args.includes("-f") || process.env.THUNDERBOLT_FOREGROUND === "1";
 const serverLockPath = join(diagnosticsDir, "thunderbolt.pid");
-const streamlitLogPath = join(storageDir, "logs", "streamlit.log");
 const serverPort = process.env.THUNDERBOLT_PORT || process.env.HERMES_PORT || "3030";
 
 function diagnostic(event, payload = {}) {
@@ -599,64 +597,6 @@ function check() {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 1.0.89 - SERVIDOR DESTACADO + LOCK GLOBAL + COMANDOS kill/logs
-// Arquitectura validada no PandaNews (auditoria 2026-11-10): o terminal é
-// descartável, o sistema é que tem de sobreviver. Regra nova no AGENTS.md
-// substitui a proibição de `detached`: agora `detached: true` é OBRIGATÓRIO
-// no servidor/workers, sempre com `windowsHide: true`, `stdio` em ficheiro e
-// (Windows) o interpretador BASE + PYTHONPATH do venv — a armadilha do
-// redirector do venv, que abria uma consola nova para o neto.
-// ---------------------------------------------------------------------------
-
-// --- python base (armadilha do redirector do venv, medida no PandaNews) -----
-// `venv/Scripts/python.exe` das distribuições standalone é um REDIRECIONADOR:
-// re-executa o interpretador real, que nasce SEM as flags de ocultação do pai
-// e ganha uma consola nova. Lendo o `pyvenv.cfg` (campo `home`) encontramos o
-// interpretador real e subimos ELE, com o site-packages do venv no PYTHONPATH:
-// um único processo, zero filhos, zero consola nova.
-function venvBasePython() {
-  try {
-    const cfg = readFileSync(join(venvDir, "pyvenv.cfg"), "utf8");
-    const match = /^\s*home\s*=\s*(.+)$/m.exec(cfg);
-    if (!match) return "";
-    const home = resolve(match[1].trim());
-    const candidate = platform() === "win32" ? join(home, "python.exe") : join(home, "bin", "python3");
-    return existsSync(candidate) ? candidate : "";
-  } catch {
-    return "";
-  }
-}
-
-function serverPython() {
-  if (process.env.THUNDERBOLT_PYTHON || process.env.HERMES_PYTHON) return python;
-  if (platform() === "win32") {
-    const base = venvBasePython();
-    if (base && resolve(base) !== resolve(venvPython)) return base;
-  }
-  return python; // POSIX (venv é symlink do base) e venvs normais
-}
-
-function serverPythonEnv() {
-  const env = { ...runtimeEnv };
-  if (platform() === "win32" && serverPython() !== python) {
-    const site = join(venvDir, "Lib", "site-packages");
-    if (existsSync(site)) {
-      env.PYTHONPATH = [site, env.PYTHONPATH].filter(Boolean).join(";");
-    }
-  }
-  // 1.0.90 - MODO DESTACADO: a UI precisa de saber que a stack sobe em grupos
-  // próprios, sem depender do terminal. Sem esta marca ela via o worker sem
-  // heartbeat e mandava o utilizador "iniciar pelo launcher" — um falso aviso,
-  // porque o sistema estava a correr em background.
-  // A marca usa o sufixo MODE (e não DETACHED): o nome antigo está na lista de
-  // soluções REVERTIDAS do repo (tests/test_launcher_keep_alive.py e
-  // tests/test_console_ctrl_c_immunity.py pregam isso) — reutilizar o nome
-  // faria o gate do CI falhar por uma razão que nada tem a ver com o modo.
-  env.THUNDERBOLT_LAUNCHER_MODE = "detached";
-  return env;
-}
-
 // --- lock global: launcher + servidor + workers (fora da pasta do pacote) ----
 
 function readServerLock() {
@@ -788,51 +728,6 @@ function comandoLogs(resto) {
   process.on("SIGINT", () => { clearInterval(temporizador); process.exit(0); });
 }
 
-// --- spawns destacados --------------------------------------------------------
-
-function detachedLogFd(caminho) {
-  try {
-    mkdirSync(join(storageDir, "logs"), { recursive: true });
-    if (existsSync(caminho) && statSync(caminho).size > 5_000_000) writeFileSync(caminho, "");
-  } catch { /* logging nunca muda o comportamento do launcher */ }
-  return openSync(caminho, "a");
-}
-
-function spawnDetached(comando, argumentos, logCaminho, rotulo) {
-  const fd = detachedLogFd(logCaminho);
-  const filho = spawn(comando, argumentos, {
-    cwd: executionRoot, // SEMPRE o runtime permanente — nunca o cache do npx
-    detached: true, // CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS: imune ao console
-    windowsHide: true, // sem janela de consola (regra AGENTS.md)
-    stdio: ["ignore", fd, fd], // saída DIRETA no ficheiro — zero handle de console
-    env: serverPythonEnv(),
-  });
-  try { closeSync(fd); } catch { /* o filho tem a sua própria cópia herdada */ }
-  filho.unref(); // o launcher não vive nem morre com o filho
-  if (!filho.pid) {
-    console.error(`Thunderbolt: não foi possível iniciar ${rotulo}.`);
-    return null;
-  }
-  return filho.pid;
-}
-
-async function portaTcpAbertaAtiva(porta) {
-  return new Promise((resolve) => {
-    const socket = net.connect({ host: "127.0.0.1", port: Number(porta) });
-    socket.once("connect", () => { socket.destroy(); resolve(true); });
-    socket.once("error", () => resolve(false));
-    socket.setTimeout(1000, () => { socket.destroy(); resolve(false); });
-  });
-}
-
-async function esperarPorta(porta, tentativas, intervaloMs) {
-  for (let i = 0; i < tentativas; i += 1) {
-    if (await portaTcpAbertaAtiva(porta)) return true;
-    await new Promise((resolve) => setTimeout(resolve, intervaloMs));
-  }
-  return false;
-}
-
 // ---------------------------------------------------------------------------
 // 1.0.81 - RUNTIME PERMANENTE: preparação do THUNDERBOLT_HOME/.runtime
 // ---------------------------------------------------------------------------
@@ -886,17 +781,45 @@ function refreshRuntimeSources(clean) {
   }
 }
 
+function runtimePackageVersion() {
+  // Versão do CÓDIGO que está actualmente no .runtime (pode diferir da do
+  // pacote quando o utilizador corre `npx thunderbolt` sem ter corrido o
+  // `install` — o relato "mostra 1.0.82 mas estou na 1.0.87").
+  try { return JSON.parse(readFileSync(join(runtimeDir, "package.json"), "utf8")).version || ""; }
+  catch { return ""; }
+}
+
 function ensureRuntimeSources() {
   // Auto-preparação silenciosa: corrida directa do pacote sem ``install``
-  // (ex.: npx cache frio) não pode arrancar do cache do npx. Se o runtime já
-  // existe, não toca em nada (actualizações posteriores são do ``install``).
-  if (existsSync(join(runtimeDir, "app", "main.py"))) return true;
-  try {
-    refreshRuntimeSources(true);
-    return true;
-  } catch {
-    return false; // falhou: o arranque cai para a raiz do pacote (compat)
+  // (ex.: npx cache frio) não pode arrancar do cache do npx.
+  if (!existsSync(join(runtimeDir, "app", "main.py"))) {
+    try {
+      refreshRuntimeSources(true);
+      return true;
+    } catch {
+      return false; // falhou: o arranque cai para a raiz do pacote (compat)
+    }
   }
+  // 1.0.94 - SINCRONIZAÇÃO DO RUNTIME (auditoria A7). O `.runtime` só era
+  // actualizado pelo `install`; quem corria apenas `npx thunderbolt` depois de
+  // uma actualização ficava com o pacote NOVO e o código VELHO, enquanto a
+  // interface mostrava a versão nova (`THUNDERBOLT_VERSION` vem do pacote).
+  // Agora a diferença de versão dispara a recopia silenciosa: o que corre é
+  // sempre o que a sidebar diz que é. Sem `install` novo o custo é uma única
+  // comparação de strings por arranque.
+  if (packageVersion !== "dev" && runtimePackageVersion() !== packageVersion) {
+    diagnostic("runtime_desatualizado", {
+      pacote: packageVersion,
+      runtime: runtimePackageVersion() || "(sem version)",
+    });
+    try {
+      refreshRuntimeSources(false); // por cima: nunca apagar antes de copiar
+      return true;
+    } catch {
+      return true; // EBUSY residual: segue com o que há (o install limpa)
+    }
+  }
+  return true;
 }
 
 function runInstaller(installer, installerArgs) {
@@ -1005,6 +928,14 @@ const runtimeEnv = {
   PYTHONLEGACYWINDOWSSTDIO: "1",
   CLICK_NO_WIN_CONSOLE: "1",
   THUNDERBOLT_STORAGE_DIR: storageDir,
+  // 1.0.94 — MARCA DO LAUNCHER, EM QUALQUER MODO. Todos os filhos (o servidor
+  // Streamlit e os 4 workers, indistintamente) nascem a saber que a stack subiu
+  // pelo launcher. Antes a UI media «sistema operacional» por uma marca que só
+  // existia no modo destacado; no foreground o ambiente do Streamlit não tinha
+  // NENHUMA marca e a interface mandava o utilizador «iniciar pelo launcher»
+  // com o launcher à sua frente — o falso aviso que regressou 5 vezes. Esta
+  // variável fecha o buraco em todos os caminhos de arranque.
+  THUNDERBOLT_LAUNCHER_ACTIVE: "1",
   // 1.0.88 — VERSÃO DINÂMICA: a versão publicada é injectada no ambiente de
   // TODOS os filhos. Antes a app lia `ROOT/package.json`, e com o runtime
   // permanente o ROOT é o `.runtime` — se o utilizador não correu o `install`
@@ -1037,71 +968,26 @@ if (args[0] === "image-worker" || args.includes("--image-worker")) {
 }
 
 // ---------------------------------------------------------------------------
-// 1.0.89 - MODO DESTACADO (padrão, modelo validado no PandaNews): o servidor e
-// os workers sobem em grupos de processos PRÓPRIOS com saída em ficheiro; o
-// launcher escreve o lock global e sai. O terminal pode fechar — o sistema
-// continua. `--foreground` preserva o modo antigo (proxy, workers
-// supervisionados, sinais absorvidos, logs ao vivo) para debug.
+// 1.0.94 - MODO FOREGROUND RESTAURADO (reversão explícita do modelo destacado
+// da 1.0.89, rejeitado pelo utilizador). O launcher corre o Streamlit e os
+// workers como filhos normais, com os logs no terminal, e NÃO sai depois de
+// arrancar: o terminal fica ocupado enquanto o sistema vive. O encerramento é
+// deliberado — Ctrl+C (com confirmação no Windows, ver os handlers de sinal),
+// Ctrl+Break, arquivo .thunderbolt.stop ou `npx thunderbolt kill`.
+//
+// A stack continua protegida do ponto único de falha que o terminal era: os
+// sinais fantasmas do console (SIGHUP espúrio, rajadas de SIGINT) são
+// absorvidos, e o keep-alive explícito no fim deste ficheiro impede que o Node
+// esvazie o event loop e devolva o prompt.
+//
+// A bandeira `--foreground` continua aceita por compatibilidade, mas já não
+// muda nada: passou a ser o único modo.
 // ---------------------------------------------------------------------------
-if (!foregroundRequested) {
-  killServerInstances("arranque destacado");
-  const serverPid = spawnDetached(
-    serverPython(),
-    [streamlitBootstrap, "run", main, "--server.port", String(serverPort), "--server.address", "127.0.0.1"],
-    streamlitLogPath,
-    "servidor da interface",
-  );
-  if (!serverPid) {
-    console.error("Thunderbolt: o servidor da interface não arrancou. Verifique a instalação com: npx @danhachuel/thunderbolt install");
-    process.exit(1);
-  }
-  const workers = {};
-  // O worker de automação só sobe quando há demanda (canal com automação ON ou
-  // tarefas na fila) — a mesma regra do modo foreground.
-  if (hasScheduledAutomation() || hasPendingPipelineWork()) {
-    const automationPid = spawnDetached(serverPython(), ["-m", "hermes_ui.automation_worker"], join(storageDir, "logs", "automation_worker.log"), "worker de automação");
-    if (automationPid) workers.automation = automationPid;
-  }
-  for (const [nome, modulo] of [["pipeline", "pipeline_worker"], ["thumbnail", "thumbnail_worker"], ["image", "image_worker"]]) {
-    const pid = spawnDetached(serverPython(), ["-m", `hermes_ui.${modulo}`], join(storageDir, "logs", `${nome}_worker.log`), `worker de ${nome}`);
-    if (pid) workers[nome] = pid;
-  }
-  writeServerLock({ launcher: null, server: serverPid, port: Number(serverPort), workers, modo: "detached" });
-  console.log(`A iniciar o servidor em http://localhost:${serverPort}/ ... (log: ${streamlitLogPath})`);
-  const pronto = await esperarPorta(Number(serverPort), 60, 500);
-  if (!pronto) {
-    console.error(`Thunderbolt: o servidor não respondeu em http://localhost:${serverPort}/ em 30s. Diagnóstico completo em: ${streamlitLogPath}`);
-    clearServerLock();
-    process.exit(1);
-  }
-  console.log(`Servidor activo em background (http://localhost:${serverPort}/). Para encerrar: npx thunderbolt kill`);
-  console.log("Logs ao vivo em outro terminal: npx thunderbolt logs");
-  console.log("Este terminal pode ser fechado — o Thunderbolt continua a correr.");
-  // 1.0.90 - UX DO BACKGROUND: o utilizador achou que o app tinha fechado
-  // porque o terminal devolvia o prompt. O aviso passa a ser um bloco óbvio
-  // (verde/amarelo) com as três acções possíveis — logs, kill e foreground.
-  console.log("");
-  console.log("\x1b[42m\x1b[30m============================================================\x1b[0m");
-  console.log("\x1b[42m\x1b[30m✅ THUNDERBOLT ESTÁ RODANDO EM SEGUNDO PLANO!\x1b[0m");
-  console.log(`\x1b[36m🌐 Acesse: http://localhost:${serverPort}/\x1b[0m`);
-  console.log("");
-  console.log("\x1b[33mPara ver os logs ao vivo, abra OUTRO terminal e rode:\x1b[0m");
-  console.log("");
-  console.log("\x1b[93m  npx @danhachuel/thunderbolt logs\x1b[0m");
-  console.log("");
-  console.log("\x1b[33mPara encerrar o Thunderbolt, rode:\x1b[0m");
-  console.log("");
-  console.log("\x1b[93m  npx @danhachuel/thunderbolt kill\x1b[0m");
-  console.log("");
-  console.log("\x1b[33mPreferir manter os logs nesta mesma janela? Rode com:\x1b[0m");
-  console.log("");
-  console.log("\x1b[93m  npx @danhachuel/thunderbolt --foreground\x1b[0m");
-  console.log("");
-  console.log("\x1b[33m(O terminal pode ser fechado — o Thunderbolt continua a correr.)\x1b[0m");
-  console.log("\x1b[42m\x1b[30m============================================================\x1b[0m");
-  launcherExiting("background_started");
-  process.exit(0);
-}
+
+// Rede de segurança de instância única pelo lock global + dono da porta:
+// cobre a stack deixada por uma versão destacada anterior, que o kill_tree
+// (por cmdline) pode não reconhecer. Corre antes do bind da porta pública.
+killServerInstances("arranque foreground");
 
 const port = process.env.THUNDERBOLT_PORT || process.env.HERMES_PORT || "3030";
 const publicPort = Number.parseInt(String(port), 10);
@@ -2261,8 +2147,36 @@ function detectDetachedLauncher() {
 }
 
 if (platform() === "win32") {
+  // 1.0.94 - CTRL+C PASSA A ENCERRAR, COM CONFIRMAÇÃO. A 0.9.86 absorvia o
+  // SIGINT sem excepção porque o Windows entrega o MESMO evento para o Ctrl+C
+  // real e para o CTRL_C_EVENT fantasma (a telemetria regou 17 717 eventos,
+  // muitos em rajadas de milissegundos sem ninguém no teclado). Encerrar ao
+  // primeiro sinal devolveria o "fecha sozinho"; ignorá-lo para sempre é o que
+  // o utilizador rejeitou ("quero carregar Ctrl+C e fechar").
+  //
+  // Compromisso medido: o PRIMEIRO Ctrl+C avisa e não encerra; o SEGUNDO, com
+  // mais de 1 s de distância (um eco de rajada não conta) e menos de 5 s,
+  // encerra a stack inteira. Um toque único do utilizador continua a ser
+  // respeitado — e um fantasma nunca fecha a aplicação.
+  let ultimoCtrlC = 0;
   process.on("SIGINT", () => {
+    const agora = Date.now();
+    const intervalo = agora - ultimoCtrlC;
+    ultimoCtrlC = agora;
+    if (intervalo > 1000 && intervalo <= 5000) {
+      console.log("");
+      console.log("[LAUNCHER] Encerrando o Thunderbolt (Ctrl+C)...");
+      diagnostic("ctrl_c_confirmed_shutdown", { pid: process.pid, uptime_seconds: Math.round(process.uptime()), gap_ms: intervalo });
+      stopWorker("ctrl+c");
+      return;
+    }
+    if (intervalo <= 1000 && ultimoCtrlC > 0) {
+      diagnostic("terminal_echo_ignored", { pid: process.pid, gap_ms: intervalo, uptime_seconds: Math.round(process.uptime()) });
+      return; // eco da mesma interrupção: não conta como confirmação
+    }
     diagnostic("ctrl_c_absorbed_windows", { pid: process.pid, uptime_seconds: Math.round(process.uptime()) });
+    console.log("");
+    console.log("Thunderbolt: Ctrl+C ignorado para não interromper execuções (interrupções espúrias fechavam a app sozinha). Carregue Ctrl+C novamente dentro de 5 s para encerrar.");
   });
   // 1.0.74 — SIGHUP no Windows NÃO é "janela fechada" de confiança: a
   // telemetria do launcher registou 82 encerramentos com motivo

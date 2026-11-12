@@ -126,15 +126,114 @@ def _cached_file_bytes(path_string: str, modified_ns: int, size: int) -> bytes:
 #     nunca do .mp4/.csv gigante.
 
 
+# acima disto, NUNCA para a RAM do Streamlit (invariante 0.9.95): vídeo e
+# áudio passam pelo mini-servidor HTTP local ou pelo padrão «Preparar».
+_LARGE_FILE_BYTES = 8 * 1024 * 1024
+
+
 def _file_bytes(path: Path | None) -> bytes:
+    """Bytes para payloads PEQUENOS (thumbnail, prompt, roteiro).
+
+    1.0.94 — AUDITORIA A3: este helper era usado também para VÍDEO, e o
+    `@st.cache_data(max_entries=256)` guardava cada MP4 (40-123 MB medidos
+    nesta máquina) na RAM do servidor até ao ficheiro mudar. Com uma dezena de
+    vídeos prontos eram vários GB retidos sem ninguém ter pedido um download.
+    Ficheiros acima de ``_LARGE_FILE_BYTES`` deixam de passar por aqui: o
+    vídeo usa `_render_video_download_control`, que serve pelo mini-servidor
+    HTTP local (zero RAM) ou, em último caso, lê só depois do clique.
+    """
     if not path or not path.is_file():
+        return b""
+    try:
+        if path.stat().st_size > _LARGE_FILE_BYTES:
+            return b""
+    except OSError:
         return b""
     stat = path.stat()
     return _cached_file_bytes(str(path.resolve()), int(stat.st_mtime_ns), int(stat.st_size))
 
 
+def _render_video_download_control(
+    task: dict[str, Any],
+    video_path: Path | None,
+    download_name: str,
+    *,
+    label: str,
+    key_prefix: str,
+    artifact: str = "video",
+    width: str = "stretch",
+) -> None:
+    """Download de vídeo sem nunca carregar o MP4 para a RAM (1.0.94).
+
+    Duas camadas, pela ordem:
+    1. **mini-servidor HTTP local** (`_tb_media_local_url`): o browser
+       descarrega DIRECTO do disco, com Range, e o processo do Streamlit não
+       toca num único byte — é o mesmo endpoint que toca o player;
+    2. **«Preparar Vídeo para download»** (padrão da 1.0.84): o ficheiro só é
+       lido DEPOIS do clique, para ficheiros fora das raízes servidas.
+
+    Antes disto os cartões TikTok/Bilibili passavam o MP4 directo para o
+    `st.download_button` a cada render — leitura inteira, a causa da aba que
+    nunca terminava de carregar.
+    """
+    task_id = str(task.get("id") or "")
+    if video_path is None:
+        st.download_button(
+            label,
+            data=b"",
+            file_name="video.mp4",
+            mime="video/mp4",
+            key=f"{key_prefix}_download_video_{task_id}",
+            width=width,
+            disabled=True,
+        )
+        return
+    media_url = None
+    try:
+        media_url = _tb_media_local_url(video_path)
+    except Exception:  # noqa: BLE001 - o servidor local é opcional
+        media_url = None
+    if media_url:
+        safe_url = escape(media_url, quote=True)
+        safe_name = escape(download_name, quote=True)
+        st.markdown(
+            f'<a href="{safe_url}" download="{safe_name}" role="button" '
+            f'style="display:inline-block;width:100%;text-align:center;padding:0.45rem 0.75rem;'
+            f'border:1px solid rgba(49,51,63,0.2);border-radius:0.5rem;text-decoration:none;'
+            f'font-weight:600">{escape(label)}</a>',
+            unsafe_allow_html=True,
+        )
+        return
+    prepare_key = f"{key_prefix}_prepare_video_{task_id}"
+    if not st.session_state.get(prepare_key):
+        if st.button(
+            "Preparar Vídeo para download",
+            key=f"{key_prefix}_prepare_video_button_{task_id}",
+            width=width,
+            help="O ficheiro (que pode ter mais de 100 MB) só é lido quando pede o download — assim a página nunca trava.",
+        ):
+            st.session_state[prepare_key] = True
+            _invalidate_live_tasks_snapshot()
+            st.rerun()
+        return
+    try:
+        with video_path.open("rb") as video_stream:
+            st.download_button(
+                label,
+                data=video_stream,
+                file_name=download_name,
+                mime="video/mp4",
+                key=f"{key_prefix}_download_video_{task_id}",
+                width=width,
+            )
+    except (OSError, PermissionError):
+        st.warning(
+            "O ficheiro de vídeo está a ser utilizado por outro processo "
+            "(por exemplo, o leitor aberto). Feche o leitor e tente novamente em alguns segundos."
+        )
+
+
 def _local_video_static_url(path: Path) -> str | None:
-    """Expose a local video by static URL without copying it into the Streamlit payload."""
     try:
         static_dir = Path(__file__).resolve().parent / "static" / "videos"
         static_dir.mkdir(parents=True, exist_ok=True)
@@ -230,8 +329,21 @@ TB_MEDIA_PLAYER_TIMEOUT_MS = 3000
 
 
 def _tb_media_roots() -> dict[str, Path]:
-    """Raízes servidas pelo endpoint local: vídeos locais + vídeos finais do MPT."""
-    roots: dict[str, Path] = {"videos": STORAGE / "videos"}
+    """Raízes servidas pelo endpoint local: vídeos locais + vídeos finais do MPT.
+
+    1.0.94 — `artifacts` entrou na lista. Sem ela um vídeo de tarefa gravado em
+    ``storage/artifacts/<id>/video.mp4`` (o destino real da maioria das rotas)
+    ficava FORA das raízes servidas: `_tb_media_local_url` devolvia None,
+    `_custom_video_player` levantava a excepção e o player caía no
+    ``st.video(caminho)`` — ou seja, no ``MemoryMediaFileStorage`` que lê o MP4
+    inteiro para a RAM a cada render, exactamente o spinner infinito que este
+    servidor existe para evitar. A contenção de path traversal continua intacta
+    (o alvo tem de ficar dentro da raiz resolvida).
+    """
+    roots: dict[str, Path] = {
+        "videos": STORAGE / "videos",
+        "artifacts": STORAGE / "artifacts",
+    }
     settings = read_json("settings.json", {})
     mpt_path = str(
         (settings.get("moneyprinter_path") if isinstance(settings, dict) else "")
@@ -3658,7 +3770,13 @@ def _render_bilibili_automation_task_card(task: dict[str, Any]) -> None:
             with script_download_col:
                 st.download_button("Baixar Roteiro", data=_file_bytes(script_path), file_name=_automation_download_name("Script", task, script_path, ".md"), mime="text/markdown", key=f"bilibili_automation_download_script_{task_id}", width="stretch", disabled=script_path is None)
             with video_download_col:
-                st.download_button("Baixar Vídeo", data=_file_bytes(video_path), file_name=_automation_download_name("Vídeo", task, video_path, ".mp4"), mime="video/mp4", key=f"bilibili_automation_download_video_{task_id}", width="stretch", disabled=video_path is None)
+                _render_video_download_control(
+                    task,
+                    video_path,
+                    _automation_download_name("Vídeo", task, video_path, ".mp4"),
+                    label="Baixar Vídeo",
+                    key_prefix="bilibili_automation",
+                )
             if st.button("Refazer Vídeo", key=f"bilibili_automation_remake_video_{task_id}", icon=":material/refresh:", type="primary", width="stretch", disabled=state == "doing", help="Remonta apenas o vídeo, mantendo o mesmo roteiro, Blueprint/Prompt Master, tags, thumbnail, voz e artefactos já baixados. Revalida legendas, duração máxima do clip, fonte de vídeo e restantes definições actuais do canal (novas chamadas à fonte configurada)."):
                 if _remake_video_from_card(task):
                     st.rerun(scope="fragment")
@@ -6565,6 +6683,9 @@ def _render_pipeline_worker_banner(worker_status: dict[str, Any], active_count: 
         # repara as dependencias sozinho no arranque; se o worker continuar
         # morto, este botao pede o reinicio IMEDIATO ao launcher (que o le no
         # tick de 2 s) - o utilizador nao precisa de fechar e abrir o terminal.
+        # 1.0.94 - e se NAO houver launcher vivo (corrida manual do Python), a
+        # propria interface repo os workers: sem isto o pedido ficava escrito
+        # em force_restart.json para sempre e a mensagem de sucesso mentia.
         if st.button(
             "Forçar Reinício do Sistema",
             key="force_worker_restart",
@@ -6580,9 +6701,18 @@ def _render_pipeline_worker_banner(worker_status: dict[str, Any], active_count: 
                         "worker_status": str(worker_status.get("status") or ""),
                     },
                 )
-                st.success("Reinício pedido. O launcher vai reiniciar os workers dentro de segundos — atualize daqui a momentos.")
             except Exception as exc:  # noqa: BLE001 - a UI nunca morre por isto
                 st.error(f"Não foi possível pedir o reinício: {exc}")
+            else:
+                if _launcher_activo():
+                    st.success("Reinício pedido. O launcher vai reiniciar os workers dentro de segundos — atualize daqui a momentos.")
+                else:
+                    reposto = _forcar_reinicio_dos_workers()
+                    (st.success if reposto else st.error)(
+                        "Workers repostos pela interface. Atualize daqui a momentos para ver o estado."
+                        if reposto
+                        else "Não foi possível repor os workers. Veja storage/logs/ ou inicie o Thunderbolt pelo launcher."
+                    )
     heartbeat = worker_status.get("last_heartbeat_at") or worker_status.get("updated_at")
     if heartbeat:
         st.caption(f"{_pipeline_time_age(heartbeat)} · vídeo: até 10 min com watchdog de inactividade de 5 min")
@@ -8037,14 +8167,12 @@ def _render_tiktok_automation_task_list(*, posted_only: bool = False):
                             disabled=script_path is None,
                         )
                     with video_download_col:
-                        st.download_button(
-                            "Baixar Vídeo9:16",
-                            data=_file_bytes(video_path),
-                            file_name=_automation_download_name("Vídeo9:16", task, video_path, ".mp4"),
-                            mime="video/mp4",
-                            key=f"tiktok_automation_download_video_{task_id}",
-                            width="stretch",
-                            disabled=video_path is None,
+                        _render_video_download_control(
+                            task,
+                            video_path,
+                            _automation_download_name("Vídeo9:16", task, video_path, ".mp4"),
+                            label="Baixar Vídeo9:16",
+                            key_prefix="tiktok_automation",
                         )
                     if st.button(
                         "Refazer Vídeo",
@@ -8095,15 +8223,12 @@ def render_tiktok_automation():
     st.title("Automação Tiktok")
     st.caption("Agendamento diário da geração por canal. A fila TikTok usa Prompt Master e mantém exclusivamente o formato Portrait 9:16.")
     worker_status = load_worker_status()
-    local_now = datetime.now().astimezone()
-    if worker_status.get("alive"):
-        st.success(f"Worker activo · relógio local: {local_now.strftime('%d/%m/%Y %H:%M:%S %Z')}")
-    # 1.0.90: sem launcher vivo (modo destacado) o worker pode estar só com
-    # o heartbeat frio — o sistema está a correr, não é falso aviso.
-    elif _launcher_rodando_destacado():
-        st.success("Sistema activo em background (modo destacado). O worker de automação acompanha os agendamentos; use `npx thunderbolt logs` para acompanhar.")
-    else:
-        st.warning("Worker de automação não está activo. Inicie o Thunderbolt pelo launcher (`npx.cmd --yes @danhachuel/thunderbolt`) para activar as verificações horárias.")
+    # 1.0.94 - mesma regra da aba YouTube: sem launcher a supervisionar e com
+    # demanda, a UI repõe o worker em vez de dar o sistema como morto.
+    if not worker_status.get("alive"):
+        if _iniciar_worker_automacao_sob_demanda():
+            worker_status = load_worker_status()
+    _render_worker_automacao_status(worker_status)
     channels = _tiktok_channel_records()
     prompt_ids, prompt_labels = _tiktok_prompt_options()
     if not channels:
@@ -8882,22 +9007,76 @@ def _render_youtube_automation_kpis(tasks: list[dict[str, Any]], worker_status: 
         card("Falhas", counts.get("failed", 0), "")
 
 
+def hasPendingPipelineWork() -> bool:
+    """Há tarefas de vídeo na fila (`to_do`/`doing`) — a regra de demanda.
+
+    1.0.94 — BUG LATENTE ENCONTRADO NA AUDITORIA: esta função é EXIGIDA pelos
+    testes e chamada por `_iniciar_worker_automacao_sob_demanda`, mas nunca
+    tinha sido definida em `app/main.py` — um `NameError` que só disparava
+    quando o ambiente não tinha marca de launcher (corrida manual
+    `python app/main.py`) e o heartbeat do worker estava frio: a aba Automação
+    inteira deixava de renderizar. Espelha o `hasPendingPipelineWork` do
+    `scripts/cli.mjs` (mesma tolerância ao schema legado `state`/`status`).
+    """
+    try:
+        tasks = read_json("tasks.json", [])
+    except Exception:  # noqa: BLE001 - a UI nunca morre por um JSON ilegível
+        return False
+    if not isinstance(tasks, list):
+        return False
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        state = str(task.get("state") or task.get("status") or "").strip().casefold()
+        if state in {"to_do", "doing"}:
+            return True
+    return False
+
+
+def _spawn_queue_worker(module: str, log_name: str) -> bool:
+    """Arranca um worker de fila como processo independente (1.0.94).
+
+    Usado quando NÃO há launcher vivo a supervisionar a stack (corrida manual,
+    launcher morto). Grupo de processos próprio, sem consola e saída em
+    `storage/logs/` — o mesmo contrato stdio-seguro dos spawns do launcher.
+    Cada worker tem o seu lock de instância única, por isso um spawn duplicado
+    é inofensivo (o segundo sai com «já existe um worker activo»).
+    """
+    log_dir = STORAGE / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / log_name
+    environment = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
+    try:
+        with log_path.open("a", encoding="utf-8") as log_handle:
+            log_handle.write(f"\n--- {datetime.now().isoformat()} início pela interface ---\n")
+            subprocess.Popen(
+                [sys.executable, "-m", f"hermes_ui.{module}"],
+                cwd=str(ROOT),
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                close_fds=True,
+            )
+    except Exception as exc:  # noqa: BLE001 - diagnosticar sem derrubar a página
+        print(f"[SISTEMA] Não foi possível iniciar o worker {module}: {exc}", file=sys.stderr)
+        return False
+    print(f"[SISTEMA] A iniciar {module} em background...")
+    return True
+
+
 def _iniciar_worker_automacao_sob_demanda() -> bool:
     """Arranca o `automation_worker` em background quando há trabalho (1.0.90).
 
-    No modo destacado o launcher é DEScartável: ele decide arrancar o worker
-    pelas mesmas regras de demanda e sai. Se o worker morrer depois disso
-    (queda do sistema, kill do utilizador), nada o repõe — e a UI mostrava o
-    falso aviso em vez de resolver.
-
-    Regra: se NÃO há launcher destacado a supervisionar, há demanda (canal com
-    automação ligada ou tarefas na fila) e o worker não está vivo, a UI lança-o
-    como processo independente (grupo próprio, sem consola, saída em
-    `storage/logs/`). Se o launcher destacado estiver de pé, ele trata disso —
-    a UI não duplica o arranque.
+    Regra: se NÃO há launcher a supervisionar (corrida directa do Python, sem
+    launcher), há demanda (canal com automação ligada ou tarefas na fila) e o
+    worker não está vivo, a UI lança-o como processo independente (grupo
+    próprio, sem consola, saída em `storage/logs/`). Com o launcher de pé —
+    que é a regra desde a 1.0.94 — ele trata disso e a UI não duplica.
     """
-    if _launcher_rodando_destacado():
-        return False
+    if _launcher_activo():
+        return False  # o launcher (em foreground) trata disso — não duplicar
     try:
         settings = read_json("settings.json", {})
         channels = read_json("channels.json", [])
@@ -8939,19 +9118,38 @@ def _iniciar_worker_automacao_sob_demanda() -> bool:
     return True
 
 
-def _launcher_rodando_destacado() -> bool:
-    """True quando a stack subiu pelo launcher em modo destacado (1.0.89).
+def _forcar_reinicio_dos_workers() -> bool:
+    """Sem launcher vivo, a UI repõe os workers de fila (1.0.94).
 
-    O modo destacado (padrão desde a 1.0.89) sobe o servidor e os workers em
-    grupos de processos PRÓPRIOS e o launcher termina — o terminal pode fechar.
-    A UI não pode, por isso, exigir um launcher vivo para considerar o sistema
-    operacional: o launcher cumpriu o seu papel ao escrever o lock global.
-
-    A marca é injectada pelo launcher no ambiente (`THUNDERBOLT_LAUNCHER_MODE=detached`);
-    o lock global (`storage/state/thunderbolt.pid`) é a segunda confirmação,
-    para quem corre a app fora do launcher mas com a stack de pé.
+    «Forçar Reinício do Sistema» escrevia `force_restart.json` e esperava que o
+    `monitorWorkers()` do launcher o consumisse no tick de 2 s. Sem launcher a
+    supervisionar o pedido ficava no disco para sempre e a interface prometia
+    um reinício que nunca chegava. Aqui o pedido é escrito na mesma (um launcher
+    que apareça ainda o consome) e, na ausência dele, a fila pausada é retomada
+    e os workers são repostos directamente — zero comandos manuais.
     """
-    if os.environ.get("THUNDERBOLT_LAUNCHER_MODE", "").strip() == "detached":
+    demanda = hasPendingPipelineWork()
+    try:
+        resume_pipeline_worker()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[SISTEMA] Não foi possível retomar a fila pausada: {exc}", file=sys.stderr)
+    reposto = _spawn_queue_worker("pipeline_worker", "pipeline_worker.log")
+    reposto |= _spawn_queue_worker("thumbnail_worker", "thumbnail_worker.log")
+    reposto |= _spawn_queue_worker("image_worker", "image_worker.log")
+    reposto |= _iniciar_worker_automacao_sob_demanda()
+    return bool(reposto or demanda)
+
+
+def _launcher_activo() -> bool:
+    """True quando a stack subiu pelo launcher (foreground ou destacado).
+
+    1.0.94 — o modo destacado foi revertido: o launcher voltou a correr em
+    foreground e a supervisionar os workers. A marca que a UI usa é agora
+    `THUNDERBOLT_LAUNCHER_ACTIVE=1`, injectada pelo launcher no `runtimeEnv` de
+    TODOS os filhos, em qualquer modo. O lock global continua como segunda
+    fonte (cobre uma stack deixada a correr por uma sessão anterior).
+    """
+    if os.environ.get("THUNDERBOLT_LAUNCHER_ACTIVE", "").strip() == "1":
         return True
     try:
         dados = json.loads((STORAGE / "state" / "thunderbolt.pid").read_text(encoding="utf-8"))
@@ -8961,20 +9159,45 @@ def _launcher_rodando_destacado() -> bool:
 
 
 def _worker_automation_operacional(worker_status: dict[str, Any]) -> bool:
-    """O worker de automação está vivo OU o sistema está em modo destacado.
+    """O worker de automação está vivo OU o launcher está a arrancá-lo.
 
-    1.0.90 — fim do FALSO AVISO. O relato: a interface mostrava «Worker de
-    automação não está activo. Inicie o Thunderbolt pelo launcher...» mesmo
-    depois de `npx thunderbolt`, porque o launcher (descartável por desenho)
-    já tinha saído e o heartbeat do worker estava frio.
-
-    Regra: o aviso só aparece quando NÃO há launcher destacado E o worker está
-    realmente morto. Se o utilizador corre o Python à mão (`python app.py`)
-    sem stack, o aviso continua — aí faz falta.
+    Regra: o aviso «Worker de automação não está activo» só aparece quando NÃO
+    há launcher a supervisionar a stack E o worker está realmente morto. Quem
+    corre o Python à mão (`python app.py`) sem launcher continua a ver o aviso —
+    aí faz falta. (1.0.90/1.0.90.94: o falso aviso nasceu de medir «sistema
+    operacional» por «launcher vivo/worker vivo»; o launcher arranca o worker
+    por demanda em ~2 s, e a UI não pode gritar antes disso.)
     """
     if worker_status.get("alive"):
         return True
-    return _launcher_rodando_destacado()
+    return _launcher_activo()
+
+
+def _render_worker_automacao_status(worker_status: dict[str, Any]) -> None:
+    """Faixa de estado do worker — UMA fonte de verdade para TODAS as abas.
+
+    O aviso «Worker de automação não está activo» é a linha que mais regressões
+    teve no repo (cinco desde a 1.0.80): cada aba de automação media «sistema
+    operacional» à sua maneira e uma delas esquecia-se sempre da última
+    correcção. Com este helper as abas deixam de ter lógica própria — todas
+    passam pelas mesmas três verificações, nesta ordem:
+
+    1. worker vivo → banner verde com o relógio local;
+    2. launcher activo (`THUNDERBOLT_LAUNCHER_ACTIVE=1`) → linha neutra: o
+       sistema está no controle e o worker arranca por demanda. NUNCA um aviso a
+       mandar o utilizador «iniciar pelo launcher» — ele já o fez;
+    3. nada disso → aviso a sério, para quem corre o Python à mão sem stack.
+    """
+    local_now = datetime.now().astimezone()
+    if worker_status.get("alive"):
+        st.success(f"Worker activo · relógio local: {local_now.strftime('%d/%m/%Y %H:%M:%S %Z')}")
+        return
+    # 1.0.94: o launcher está a arrancar o worker por demanda (~2 s) — não é
+    # falso aviso, e também não é um banner verde: uma linha neutra.
+    if _launcher_activo():
+        st.info("A preparar o worker de automação... (o launcher inicia-o quando há agendamentos ou tarefas na fila)")
+        return
+    st.warning("Worker de automação não está activo. Inicie o Thunderbolt pelo launcher (`npx.cmd --yes @danhachuel/thunderbolt`) para activar as verificações horárias.")
 
 
 def render_automation():
@@ -9006,15 +9229,7 @@ def render_automation():
     if not worker_status.get("alive"):
         if _iniciar_worker_automacao_sob_demanda():
             worker_status = load_worker_status()
-    local_now = datetime.now().astimezone()
-    if worker_status.get("alive"):
-        st.success(f"Worker activo · relógio local: {local_now.strftime('%d/%m/%Y %H:%M:%S %Z')}")
-    # 1.0.90: sem launcher vivo (modo destacado) o worker pode estar só com
-    # o heartbeat frio — o sistema está a correr, não é falso aviso.
-    elif _launcher_rodando_destacado():
-        st.success("Sistema activo em background (modo destacado). O worker de automação acompanha os agendamentos; use `npx thunderbolt logs` para acompanhar.")
-    else:
-        st.warning("Worker de automação não está activo. Inicie o Thunderbolt pelo launcher (`npx.cmd --yes @danhachuel/thunderbolt`) para activar as verificações horárias.")
+    _render_worker_automacao_status(worker_status)
     last_tick = worker_status.get("last_tick_local")
     if last_tick:
         st.caption(f"Última verificação do worker: {last_tick}")
