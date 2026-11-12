@@ -159,7 +159,7 @@ def test_installer_treats_camoufox_as_required():
     main_block = INSTALLER_SOURCE.split("function main() {", 1)[1]
     assert "installCamoufoxBrowser();" in main_block
     # o binário é descarregado por omissão (sem --skip-browsers)
-    assert "if (!skipDeps && !skipBrowsers) installCamoufoxBrowser();" in main_block
+    assert "if (!skipDeps && !skipBrowsers) await installCamoufoxBrowser();" in main_block
 
 
 def test_requirements_pin_camoufox_as_a_hard_dependency():
