@@ -35,3 +35,8 @@ storage/blueprints/thumbnails/
 storage/blueprints/*.md
 storage/blueprints/importados/*
 storage/tiktok/prompts_master/*
+# 1.0.96 - M8: lixo deixado por testes que apontavam LOCALAPPDATA para dentro
+# do repositório (tests/test_winerror32_temp_isolation.py, agora corrigido) e
+# miniaturas reduzidas geradas em tempo de execução pelos cartões.
+storage/_temp_test/
+storage/thumbnails/cache/

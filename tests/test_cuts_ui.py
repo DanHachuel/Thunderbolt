@@ -19,7 +19,12 @@ def test_cuts_page_uses_functional_clip_generator_renderer():
 def test_cuts_page_has_output_formats_rights_confirmation_and_results():
     assert 'format_options = ["9:16", "1:1", "16:9"]' in MAIN_SOURCE
     assert 'Confirmo que possuo os direitos ou autorização para processar este conteúdo.' in MAIN_SOURCE
-    assert 'st.video(str(clip["path"]))' in MAIN_SOURCE
+    # 1.0.96: o clip passou a tocar pelo mini-servidor HTTP local (Range, zero
+    # RAM) em vez do st.video directo — o MP4 deixou de entrar no processo do
+    # Streamlit a cada render. O caminho continua a ser resolvido a partir do
+    # registo do clip.
+    assert '_render_local_video_player(clip_path)' in MAIN_SOURCE
+    assert 'clip_path = Path(str(clip["path"]))' in MAIN_SOURCE
     assert 'Descarregar todos os clips (ZIP)' in MAIN_SOURCE
     assert 'Descarregar manifesto JSON' in MAIN_SOURCE
     assert 'Histórico do Clip Generator' in MAIN_SOURCE

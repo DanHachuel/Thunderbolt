@@ -40,7 +40,9 @@ def test_youtube_downloads_use_the_same_requested_name_patterns():
     assert '_automation_download_name("Thumbnail-Prompt", task, thumbnail_prompt_path, ".txt")' in card_block
     assert '_automation_download_name("Script", task, script_path, ".md")' in card_block
     assert '_automation_download_name("Vídeo", task, video_path, ".mp4")' in card_block
-    assert 'st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")' in card_block
+    # 1.0.96 - M4: continua a ser um caminho local (nunca bytes), mas passa
+    # primeiro pela miniatura reduzida em cache.
+    assert 'st.image(str(_thumbnail_display_path(thumbnail_path)), width="stretch", caption="Thumbnail")' in card_block
     assert 'st.image(str(thumbnail_path), width=180, caption="Thumbnail")' not in card_block
 
 
@@ -54,8 +56,9 @@ def test_automation_download_title_uses_original_topic_without_losing_letters():
 def test_tiktok_automation_start_uses_shared_pipeline_start_helper():
     assert '@st.fragment\ndef _render_tiktok_automation_cards()' in SOURCE
     assert 'st.tabs(["Pipeline", "Vídeos Postados"])' in SOURCE
-    assert '_render_tiktok_automation_task_list(posted_only=False)' in SOURCE
-    assert '_render_tiktok_automation_task_list(posted_only=True)' in SOURCE
+    # 1.0.96 - M3: as duas sub-abas partilham o catálogo carregado uma vez.
+    assert '_render_tiktok_automation_task_list(tiktok_tasks, posted_only=False)' in SOURCE
+    assert '_render_tiktok_automation_task_list(tiktok_tasks, posted_only=True)' in SOURCE
     assert 'key=f"tiktok_automation_start_{task_id}"' in SOURCE
     assert '_start_pipeline_task(task_id, state)' in SOURCE
     assert 'disabled=state not in {"to_do", "blocked", "failed"}' in SOURCE

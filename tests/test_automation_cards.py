@@ -109,7 +109,9 @@ class AutomationCardsTests(unittest.TestCase):
         block = MAIN_SOURCE.split("def _render_youtube_automation_task_list", 1)[1].split("def _facebook_pages_for_automation", 1)[0]
         self.assertIn('media_cols = st.columns(2, gap="small")', block)
         # 0.9.96 (recuperação): width="stretch" original restaurado.
-        self.assertIn('st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")', block)
+        # 1.0.96 - M4: o caminho é o da MINIATURA reduzida em cache, não o
+        # original em resolução de produção.
+        self.assertIn('st.image(str(_thumbnail_display_path(thumbnail_path)), width="stretch", caption="Thumbnail")', block)
         self.assertNotIn('st.button("Carregar player"', block)
         self.assertIn('_render_local_video_player(video_path, width="stretch")', block)
         self.assertIn('if video_path is not None and _catalog_task_state(task) == "done"', block)

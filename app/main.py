@@ -153,6 +153,78 @@ def _file_bytes(path: Path | None) -> bytes:
     return _cached_file_bytes(str(path.resolve()), int(stat.st_mtime_ns), int(stat.st_size))
 
 
+def _render_download_control(
+    label: str,
+    path: Path | None,
+    file_name: str,
+    mime: str,
+    *,
+    key: str,
+    width: str = "stretch",
+    help_text: str = "",
+) -> None:
+    """Download de um ficheiro sem carregá-lo para a RAM (1.0.96).
+
+    Duas camadas, pela ordem:
+
+    1. **mini-servidor HTTP local** (`_tb_media_local_url`): o browser
+       descarrega DIRECTO do disco, com Range, e o processo do Streamlit não
+       toca num único byte — o mesmo endpoint que toca o player. Zero RAM,
+       instantâneo, e o ficheiro nunca é lido pelo servidor;
+    2. **`st.download_button` com o caminho**: último recurso para ficheiros
+       fora das raízes servidas. O Streamlit lê o stream durante a render,
+       por isso este caminho só é usado quando não há mesmo alternativa.
+
+    Antes disto, cada aba com um botão de download fazia `path.read_bytes()`
+    no render — um MP4 de 60 MB a entrar na RAM a cada rerun de cada cartão
+    (a causa da aba que nunca terminava de carregar).
+    """
+    if path is None or not path.is_file():
+        st.download_button(
+            label,
+            data=b"",
+            file_name=file_name,
+            mime=mime,
+            key=key,
+            width=width,
+            disabled=True,
+            help=help_text or None,
+        )
+        return
+    media_url = None
+    try:
+        media_url = _tb_media_local_url(path)
+    except Exception:  # noqa: BLE001 - o servidor local é opcional
+        media_url = None
+    if media_url:
+        safe_url = escape(media_url, quote=True)
+        safe_name = escape(file_name, quote=True)
+        st.markdown(
+            f'<a href="{safe_url}" download="{safe_name}" role="button" '
+            f'style="display:inline-block;width:100%;text-align:center;padding:0.45rem 0.75rem;'
+            f'border:1px solid rgba(49,51,63,0.2);border-radius:0.5rem;text-decoration:none;'
+            f'font-weight:600">{escape(label)}</a>',
+            unsafe_allow_html=True,
+        )
+        return
+    try:
+        with path.open("rb") as stream:
+            st.download_button(
+                label,
+                data=stream,
+                file_name=file_name,
+                mime=mime,
+                key=key,
+                width=width,
+                help=help_text or None,
+            )
+    except (OSError, PermissionError):
+        st.warning(
+            "O ficheiro está a ser utilizado por outro processo "
+            "(por exemplo, o leitor aberto). Feche o leitor e tente novamente em alguns segundos."
+        )
+
+
 def _render_video_download_control(
     task: dict[str, Any],
     video_path: Path | None,
@@ -214,7 +286,7 @@ def _render_video_download_control(
         ):
             st.session_state[prepare_key] = True
             _invalidate_live_tasks_snapshot()
-            st.rerun()
+            st.rerun(scope="fragment")
         return
     try:
         with video_path.open("rb") as video_stream:
@@ -343,6 +415,17 @@ def _tb_media_roots() -> dict[str, Path]:
     roots: dict[str, Path] = {
         "videos": STORAGE / "videos",
         "artifacts": STORAGE / "artifacts",
+        # 1.0.96 - Cortes e Editor Python mostram vídeos que vivem nestas duas
+        # pastas; sem elas aqui, o `<video>` HTML5 caía no `st.video(caminho)`
+        # e voltava o carregamento do MP4 inteiro para a RAM a cada render.
+        "cuts": STORAGE / "cuts",
+        "python_editor": STORAGE / "python_editor",
+        # 1.0.96 - Media Downloader e Limpador de Metadados servem os seus
+        # resultados (que podem ser vídeos de centenas de MB) pelo mesmo
+        # endpoint, sem passar pelo processo do Streamlit.
+        "downloads": STORAGE / "downloads",
+        "metadata_cleaner": STORAGE / "metadata_cleaner",
+        "music": STORAGE / "music",
     }
     settings = read_json("settings.json", {})
     mpt_path = str(
@@ -3029,7 +3112,7 @@ def render_growth_youtube():
         if selected_record and selected_record.get("report_path"):
             report_path = Path(str(selected_record["report_path"]))
             if report_path.is_file():
-                st.download_button("BAIXAR ANALISE COMPLETA", report_path.read_bytes(), file_name=report_path.name, mime="text/markdown", width="stretch", key=f"growth_download_{selected_record['code']}")
+                st.download_button("BAIXAR ANALISE COMPLETA", _file_bytes(report_path), file_name=report_path.name, mime="text/markdown", width="stretch", key=f"growth_download_{selected_record['code']}")
         else:
             st.button("BAIXAR ANALISE COMPLETA", disabled=True, width="stretch", key="growth_download_disabled")
     st.subheader("Dashboard de Growth")
@@ -3119,7 +3202,7 @@ def render_growth_youtube():
             row[4].write(f"{record.get('overall_score', '—')}/100" if record.get("overall_score") is not None else "—")
             report_path = Path(str(record.get("report_path") or ""))
             if report_path.is_file():
-                row[5].download_button("Análise", report_path.read_bytes(), file_name=report_path.name, mime="text/markdown", key=f"growth_history_{record.get('code')}")
+                row[5].download_button("Análise", _file_bytes(report_path), file_name=report_path.name, mime="text/markdown", key=f"growth_history_{record.get('code')}")
             elif record.get("status") == "failed":
                 row[5].caption("Falhou")
 
@@ -5893,7 +5976,7 @@ def render_scripts():
                     if stored_path.is_file():
                         download_col, edit_col, delete_col = st.columns([1.25, 0.75, 0.75], gap="small")
                         with download_col:
-                            st.download_button("Descarregar Markdown", data=stored_path.read_bytes(), file_name=stored_path.name, mime="text/markdown", key=f"download_script_{document_id}", width="stretch")
+                            st.download_button("Descarregar Markdown", data=_file_bytes(stored_path), file_name=stored_path.name, mime="text/markdown", key=f"download_script_{document_id}", width="stretch")
                         with edit_col:
                             if st.button("Editar", key=f"edit_script_{document_id}", width="stretch"):
                                 st.session_state[edit_key] = True
@@ -6235,8 +6318,13 @@ def render_media_download():
                     output = media_download_file(record, str(filename))
                     if output:
                         mime = "audio/*" if record.get("mode") == "audio" else ("image/*" if record.get("mode") == "image" else "video/*")
-                        st.download_button("Descarregar ficheiro", data=output.read_bytes(), file_name=output.name, mime=mime, key=f"media_result_{record.get('operation_id')}_{filename}")
-
+                        _render_download_control(
+                            "Descarregar ficheiro",
+                            output,
+                            output.name,
+                            mime,
+                            key=f"media_result_{record.get('operation_id')}_{filename}",
+                        )
     st.divider()
     if st.button("Abrir pasta de downloads", key="media_download_open_folder", width="stretch"):
         try:
@@ -6284,7 +6372,13 @@ def render_media_download():
                 output = media_download_file(record, str(filename))
                 if output:
                     mime = "audio/*" if record.get("mode") == "audio" else ("image/*" if record.get("mode") == "image" else "video/*")
-                    st.download_button("Descarregar", data=output.read_bytes(), file_name=output.name, mime=mime, key=f"media_history_{record.get('operation_id')}_{filename}")
+                    _render_download_control(
+                        "Descarregar",
+                        output,
+                        output.name,
+                        mime,
+                        key=f"media_history_{record.get('operation_id')}_{filename}",
+                    )
 
 
 def render_cuts():
@@ -6332,7 +6426,11 @@ def render_cuts():
                         if thumbnail:
                             st.image(thumbnail, width="stretch")
                         else:
-                            st.video(str(generated_path))
+                            # 1.0.96: player unificado (mini-servidor HTTP local
+                            # com Range; caminho resolvido só como último
+                            # recurso). O st.video directo carregava o MP4
+                            # inteiro para a RAM a cada render.
+                            _render_local_video_player(generated_path)
                     with card_cols[1]:
                         st.markdown(f"**{generated_path.stem}**")
                         st.caption(f"Vídeo pronto · {generated_path.suffix.lstrip('.').upper()}")
@@ -6364,7 +6462,9 @@ def render_cuts():
         st.markdown(f"**Fonte seleccionada:** `{st.session_state.get('cuts_source_label', source_path.name)}`")
         source_cols = st.columns([1.4, 1])
         with source_cols[0]:
-            st.video(str(source_path))
+            # 1.0.96: player unificado em vez do st.video directo (o MP4 não
+            # passa pela RAM do servidor do Streamlit).
+            _render_local_video_player(source_path)
         with source_cols[1]:
             st.caption(f"{source_path.name}")
             st.caption(f"{source_path.stat().st_size / (1024 * 1024):.2f} MB")
@@ -6457,8 +6557,17 @@ def render_cuts():
                     with col:
                         with st.container(border=True):
                             st.caption(f"Clip {clip.get('index', '—')} · {float(clip.get('duration', 0)):.1f}s")
-                            st.video(str(clip["path"]))
-                            st.download_button("Descarregar clip", data=Path(clip["path"]).read_bytes(), file_name=clip["name"], mime="video/mp4", key=f"cuts_download_{last_run['id']}_{clip['index']}", width="stretch")
+                            # 1.0.96: player unificado — um clip de corte pode
+                            # ser tão grande quanto o original; não passa pela RAM.
+                            clip_path = Path(str(clip["path"]))
+                            _render_local_video_player(clip_path)
+                            _render_download_control(
+                                "Descarregar clip",
+                                clip_path,
+                                clip["name"],
+                                "video/mp4",
+                                key=f"cuts_download_{last_run['id']}_{clip['index']}",
+                            )
             try:
                 _, archive_bytes = zip_cut_run(last_run)
                 st.download_button("Descarregar todos os clips (ZIP)", data=archive_bytes, file_name=f"{last_run['id']}.zip", mime="application/zip", key=f"cuts_download_zip_{last_run['id']}", width="stretch")
@@ -6503,7 +6612,9 @@ def render_python_editor():
                             if thumbnail:
                                 st.image(thumbnail, width="stretch")
                             else:
-                                st.video(str(generated_path))
+                                # 1.0.96: player unificado em vez do st.video
+                                # directo (o MP4 não passa pela RAM).
+                                _render_local_video_player(generated_path)
                         with card_cols[1]:
                             st.markdown(f"**{generated_path.stem}**")
                             st.caption(f"Vídeo pronto · {generated_path.suffix.lstrip('.').upper()}")
@@ -6535,7 +6646,9 @@ def render_python_editor():
         if source_path and source_path.is_file():
             st.session_state["python_editor_source_path"] = str(source_path)
             st.caption(f"Fonte seleccionada: `{source_path}` · {source_path.stat().st_size / (1024 * 1024):.2f} MB")
-            st.video(str(source_path))
+            # 1.0.96: player unificado em vez do st.video directo — o vídeo
+            # fonte do Editor Python pode ter centenas de MB.
+            _render_local_video_player(source_path)
             st.divider()
             st.subheader("Operação PYEdit")
             operation_options = ["Cortar trecho", "Remover áudio", "Extrair áudio", "Substituir áudio", "Alterar velocidade", "Redimensionar vídeo"]
@@ -6586,8 +6699,15 @@ def render_python_editor():
                     if output.suffix.lower() in AUDIO_EXTENSIONS:
                         st.audio(output.read_bytes(), format="audio/mpeg")
                     else:
-                        st.video(str(output))
-                    st.download_button("Descarregar resultado", data=output.read_bytes(), file_name=output.name, mime="video/mp4" if output.suffix.lower() in VIDEO_EXTENSIONS else "audio/mpeg", key=f"python_editor_download_{record['id']}")
+                        # 1.0.96: player unificado em vez do st.video directo.
+                        _render_local_video_player(output)
+                    _render_download_control(
+                        "Descarregar resultado",
+                        None if output.suffix.lower() in AUDIO_EXTENSIONS else output,
+                        output.name,
+                        "video/mp4" if output.suffix.lower() in VIDEO_EXTENSIONS else "audio/mpeg",
+                        key=f"python_editor_download_{record['id']}",
+                    )
                     st.download_button("Descarregar manifesto JSON", data=editor_manifest(record), file_name=f"{output.stem}.json", mime="application/json", key=f"python_editor_manifest_{record['id']}")
                 except (PythonEditorError, OSError, ValueError) as exc:
                     st.error(str(exc))
@@ -7523,7 +7643,7 @@ def _video_backlog_card_body(task_id: str) -> str:
                             help="O ficheiro (que pode ter mais de 100 MB) só é lido quando pede o download — assim a página nunca trava.",
                         ):
                             st.session_state[prepare_key] = True
-                            st.rerun()
+                            st.rerun(scope="fragment")
                     else:
                         # 1.0.24: leitura segura com aviso amigável quando o
                         # Windows mantém o ficheiro ocupado — nunca derruba a página.
@@ -7562,12 +7682,12 @@ def _video_backlog_card_body(task_id: str) -> str:
             with start_col:
                 if st.button("Start", key=f"automation_start_{task['id']}", width="stretch", disabled=not _can_start_video_task(task, state)):
                     _start_pipeline_task(str(task["id"]), state)
-                    st.rerun()
+                    st.rerun(scope="fragment")
             with stop_col:
                 if st.button("Stop", key=f"automation_stop_{task['id']}", width="stretch", disabled=state != "doing"):
                     transition_task(task["id"], "blocked")
                     _invalidate_live_tasks_snapshot()
-                    st.rerun()
+                    st.rerun(scope="fragment")
             # 1.0.33: botão «Legendar» — queima legendas num vídeo pronto
             # sem re-renderizar (mesma trava: desabilitado se já tem legendas).
             # 1.0.38 — FIM DA ADIVINHAÇÃO: a trava lê APENAS a flag gravada
@@ -7595,7 +7715,7 @@ def _video_backlog_card_body(task_id: str) -> str:
                     # apanha a tarefa em to_do (o legado do Start retinha a fila).
                     update_task(str(task["id"]), {"state": "to_do", "action": "burn_subtitles_only", "manual_start_required": False, "error": None})
                     _invalidate_live_tasks_snapshot()
-                    st.rerun()
+                    st.rerun(scope="fragment")
                 # 1.0.38 — OVERRIDE MANUAL: vídeo antigo já legendado sem a
                 # flag? O utilizador congela o botão sem voltar a queimar.
                 if st.button(
@@ -7606,7 +7726,7 @@ def _video_backlog_card_body(task_id: str) -> str:
                 ):
                     update_task(str(task["id"]), {"has_subtitles": True})
                     _invalidate_live_tasks_snapshot()
-                    st.rerun()
+                    st.rerun(scope="fragment")
     return task_state
 
 
@@ -7687,13 +7807,14 @@ def _render_music_file_card(record: dict[str, Any]) -> None:
                 st.caption(f"Provider: {provider}")
             st.caption(record_id)
             if music_path.is_file():
-                st.download_button(
+                # 1.0.96: download sem carregar o áudio para a RAM — o
+                # mini-servidor local serve o ficheiro directo do disco.
+                _render_download_control(
                     "Descarregar música",
-                    data=music_path.read_bytes(),
-                    file_name=music_path.name,
-                    mime=mimetypes.guess_type(music_path.name)[0] or "audio/mpeg",
+                    music_path,
+                    music_path.name,
+                    mimetypes.guess_type(music_path.name)[0] or "audio/mpeg",
                     key=f"music_backlog_download_{record_id}",
-                    width="stretch",
                 )
                 edit_key = _render_library_name_editor("music", music_path, title)
                 with st.columns([0.2, 0.8])[0]:
@@ -7742,7 +7863,7 @@ def _render_lyrics_card(record: dict[str, Any]) -> None:
             st.write(f"**{title}**")
             st.caption("Lyrics")
         with download_col:
-            st.download_button("Descarregar lyrics", data=path.read_bytes(), file_name=path.name, mime="text/markdown", key=f"music_lyrics_download_{record_id}", width="stretch")
+            st.download_button("Descarregar lyrics", data=_file_bytes(path), file_name=path.name, mime="text/markdown", key=f"music_lyrics_download_{record_id}", width="stretch")
         with edit_col:
             edit_key = _render_library_name_editor("music_lyrics", path, title)
             _render_card_pencil(edit_key)
@@ -8073,13 +8194,25 @@ def _thumbnail_status_fragment_idle(task_id: str, fallback_record: dict[str, Any
     _thumbnail_status_block(task_id, fallback_record)
 
 
-def _render_tiktok_automation_task_list(*, posted_only: bool = False):
+def _render_tiktok_automation_task_list(
+    tasks: list[dict[str, Any]] | None = None,
+    *,
+    posted_only: bool = False,
+):
         if not _has_script_context():
             return
         st.divider()
         st.subheader("Vídeos Postados" if posted_only else "Pipeline")
         st.caption("Vídeos confirmados como publicados no TikTok." if posted_only else "Fila de produção TikTok.")
-        tiktok_tasks = load_automation_tasks_for_platform("tiktok")
+        # 1.0.96 - M3 (auditoria): o catálogo chega pronto de
+        # `_render_tiktok_automation_cards`, que o carrega UMA vez por rerun e
+        # parte-ilho pelas duas sub-abas. Sem ele (chamada directa) a leitura
+        # acontece aqui, como antes — uma leitura por aba, não duas.
+        tiktok_tasks = (
+            list(tasks)
+            if tasks is not None
+            else load_automation_tasks_for_platform("tiktok")
+        )
         tiktok_tasks = [task for task in tiktok_tasks if _automation_task_is_posted(task) is posted_only]
         tiktok_channels_by_id = {
             str(channel.get("id")): channel
@@ -8149,12 +8282,12 @@ def _render_tiktok_automation_task_list(*, posted_only: bool = False):
                     with start_col:
                         if st.button("Start", key=f"tiktok_automation_start_{task_id}", width="stretch", disabled=not _can_start_video_task(task, state)):
                             if _start_pipeline_task(task_id, state):
-                                st.rerun()
+                                st.rerun(scope="fragment")
                     with stop_col:
                         if st.button("Stop", key=f"tiktok_automation_stop_{task_id}", width="stretch", disabled=state != "doing"):
                             stop_task_by_user(task_id)
                             _invalidate_live_tasks_snapshot()
-                            st.rerun()
+                            st.rerun(scope="fragment")
                     script_download_col, video_download_col = st.columns(2, gap="small")
                     with script_download_col:
                         st.download_button(
@@ -8184,12 +8317,12 @@ def _render_tiktok_automation_task_list(*, posted_only: bool = False):
                         help="Remonta apenas o vídeo, mantendo o mesmo roteiro, Blueprint/Prompt Master, tags, thumbnail, voz e artefactos já baixados. Revalida legendas, duração máxima do clip, fonte de vídeo e restantes definições actuais do canal (novas chamadas à fonte configurada).",
                     ):
                         if _remake_video_from_card(task):
-                            st.rerun()
+                            st.rerun(scope="fragment")
                     with delete_col:
                         confirm_delete_key = f"tiktok_automation_confirm_delete_{task_id}"
                         if st.button("Apagar", key=f"tiktok_automation_delete_{task_id}", width="stretch", disabled=state == "doing"):
                             st.session_state[confirm_delete_key] = True
-                            st.rerun()
+                            st.rerun(scope="fragment")
                         if st.session_state.get(confirm_delete_key):
                             st.warning("Remover este vídeo da fila? Os ficheiros de artefactos serão preservados.")
                             confirm_col, cancel_col = st.columns(2)
@@ -8199,24 +8332,29 @@ def _render_tiktok_automation_task_list(*, posted_only: bool = False):
                                         delete_task(task["id"])
                                         st.session_state.pop(confirm_delete_key, None)
                                         _invalidate_live_tasks_snapshot()
-                                        st.rerun()
+                                        st.rerun(scope="fragment")
                                     except ValueError as exc:
                                         st.error(str(exc))
                             with cancel_col:
                                 if st.button("Cancelar", key=f"tiktok_automation_cancel_delete_{task_id}", width="stretch"):
                                     st.session_state.pop(confirm_delete_key, None)
-                            st.rerun()
+                            st.rerun(scope="fragment")
 
 
 @st.fragment
 def _render_tiktok_automation_cards():
     if not _has_script_context():
         return
+    # 1.0.96 - M3 (auditoria): o catálogo é carregado UMA vez por rerun e
+    # partilhado pelas duas sub-abas. Antes cada sub-aba relia o catálogo
+    # inteiro e os canais no mesmo ciclo de render (a variante YouTube já
+    # recebia a lista pronta desde a 1.0.95).
+    tiktok_tasks = load_automation_tasks_for_platform("tiktok")
     pipeline_tab, posted_tab = st.tabs(["Pipeline", "Vídeos Postados"])
     with pipeline_tab:
-        _render_tiktok_automation_task_list(posted_only=False)
+        _render_tiktok_automation_task_list(tiktok_tasks, posted_only=False)
     with posted_tab:
-        _render_tiktok_automation_task_list(posted_only=True)
+        _render_tiktok_automation_task_list(tiktok_tasks, posted_only=True)
 
 
 def render_tiktok_automation():
@@ -8378,6 +8516,50 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False, tasks: li
 # ---------------------------------------------------------------------------
 
 
+_THUMBNAIL_CACHE_DIR = STORAGE / "thumbnails" / "cache"
+_THUMBNAIL_DISPLAY_WIDTH = 360  # largura de exibição nos cartões (px)
+
+
+def _thumbnail_display_path(thumbnail_path: Path) -> Path:
+    """Caminho de uma miniatura REDUZIDA e em cache (1.0.96 — M4).
+
+    As thumbnails são geradas em resolução de produção e mostradas em cartões
+    de ~300 px: mandar o original inteiro para o browser era dezenas de MB por
+    render num backlog cheio. Aqui a imagem é reduzida UMA vez (largura
+    `_THUMBNAIL_DISPLAY_WIDTH`) e gravada em `storage/thumbnails/cache/`, com o
+    nome derivado do caminho + mtime + tamanho do original — quando a thumbnail
+    é regenerada, a miniatura muda com ela.
+
+    Falha nunca quebra o card: qualquer problema (Pillow ausente, ficheiro
+    corrompido, disco cheio, path de rede) devolve o ORIGINAL, que continua a
+    ser servido — só sem a redução. O custo de acerto é zero: um `is_file()`.
+    """
+    try:
+        stat = thumbnail_path.stat()
+        signature = f"{thumbnail_path.resolve()}|{int(stat.st_mtime_ns)}|{int(stat.st_size)}"
+        cache_name = (
+            f"{hashlib.sha1(signature.encode('utf-8')).hexdigest()[:16]}"
+            f"-{thumbnail_path.stem[:40]}.png"
+        )
+        cached = _THUMBNAIL_CACHE_DIR / cache_name
+        if cached.is_file():
+            return cached
+        from PIL import Image
+
+        with Image.open(thumbnail_path) as image:
+            image = image.convert("RGB")
+            if image.width > _THUMBNAIL_DISPLAY_WIDTH:
+                height = max(1, round(image.height * _THUMBNAIL_DISPLAY_WIDTH / image.width))
+                image = image.resize((_THUMBNAIL_DISPLAY_WIDTH, height), Image.LANCZOS)
+            _THUMBNAIL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            temporary = cached.with_suffix(".tmp")
+            image.save(temporary, format="PNG", optimize=True)
+            temporary.replace(cached)
+        return cached
+    except Exception:  # noqa: BLE001 - a miniatura é opcional; o original serve
+        return thumbnail_path
+
+
 def _render_task_thumbnail(thumbnail_path: Path | None) -> None:
     """Thumbnail do card da Automação — com placeholder quando não há imagem.
 
@@ -8397,11 +8579,18 @@ def _render_task_thumbnail(thumbnail_path: Path | None) -> None:
     try/except: um caminho inacessível (rede, permissão, drive desmontado) dá
     placeholder imediato, não uma excepção que deixaria a página a carregar
     para sempre. Foi parte da regressão do loading infinito.
+
+    1.0.96 — M4 (auditoria): a imagem passa por `_thumbnail_display_path`, que
+    serve uma cópia REDUZIDA e em cache. As thumbnails de cartão são geradas em
+    resolução de produção (1280×720, 1-2 MB cada) e iam inteiras para o
+    browser só para serem mostradas a ~300 px — num backlog com 24 cartões eram
+    dezenas de MB por render. A miniatura é gravada uma vez em
+    `storage/thumbnails/cache/` e reutilizada enquanto o original não mudar.
     """
     if thumbnail_path is not None:
         try:
             if thumbnail_path.is_file():
-                st.image(str(thumbnail_path), width="stretch", caption="Thumbnail")
+                st.image(str(_thumbnail_display_path(thumbnail_path)), width="stretch", caption="Thumbnail")
                 return
         except OSError:
             pass  # caminho inacessível: placeholder, nunca excepção na página
@@ -8517,12 +8706,12 @@ def _youtube_task_card_body(task_id: str) -> str:
             with start_col:
                 if st.button("Start", key=f"automation_start_{task_id}", width="stretch", disabled=not _can_start_video_task(task, state)):
                     if _start_pipeline_task(task_id, state):
-                        st.rerun()
+                        st.rerun(scope="fragment")
             with stop_col:
                 if st.button("Stop", key=f"automation_stop_{task_id}", width="stretch", disabled=state != "doing"):
                     stop_task_by_user(task_id)
                     _invalidate_live_tasks_snapshot()
-                    st.rerun()
+                    st.rerun(scope="fragment")
             script_download_col, video_download_col = st.columns(2, gap="small")
             with script_download_col:
                 st.download_button(
@@ -8572,7 +8761,7 @@ def _youtube_task_card_body(task_id: str) -> str:
                             # sozinha a cada rerun.
                             st.session_state[prepare_key] = True
                             _invalidate_live_tasks_snapshot()
-                            st.rerun()
+                            st.rerun(scope="fragment")
                     else:
                         try:
                             with video_path.open("rb") as video_stream:
@@ -8602,7 +8791,7 @@ def _youtube_task_card_body(task_id: str) -> str:
                     with st.spinner("A enviar vídeo..."):
                         result = _upload_automation_task(task, video_path, thumbnail_path)
                     (st.success if result.ok else st.error)(result.message)
-                    st.rerun()
+                    st.rerun(scope="fragment")
             with legend_col:
                 # 1.0.33: botão «Legendar» — queima legendas num vídeo pronto
                 # sem re-renderizar (1-2 min vs 10+ de um «Refazer Vídeo»).
@@ -8627,7 +8816,7 @@ def _youtube_task_card_body(task_id: str) -> str:
                         # imediato pelo worker (o legado do Start retinha a fila).
                         update_task(task_id, {"state": "to_do", "action": "burn_subtitles_only", "manual_start_required": False, "error": None})
                         _invalidate_live_tasks_snapshot()
-                        st.rerun()
+                        st.rerun(scope="fragment")
                     # 1.0.38 — OVERRIDE MANUAL: vídeo antigo já legendado sem
                     # a flag? O utilizador congela o botão sem voltar a queimar.
                     if st.button(
@@ -8638,7 +8827,7 @@ def _youtube_task_card_body(task_id: str) -> str:
                     ):
                         update_task(task_id, {"has_subtitles": True})
                         _invalidate_live_tasks_snapshot()
-                        st.rerun()
+                        st.rerun(scope="fragment")
             # 1.0.86 - os dois checkboxes na MESMA linha (pedido do utilizador):
             # «Upload ok» e «Regenerar Áudio (TTS)» lado a lado, logo acima do
             # botão «Refazer Vídeo». Proporção 1:1.5 para o texto do segundo
@@ -8662,7 +8851,7 @@ def _youtube_task_card_body(task_id: str) -> str:
             if checked_upload_ok != upload_ok:
                 update_task(str(task["id"]), {"upload_ok": bool(checked_upload_ok), "upload_status": "manual" if checked_upload_ok else "pending"})
                 _invalidate_live_tasks_snapshot()
-                st.rerun()
+                st.rerun(scope="fragment")
             if st.button(
                 "Refazer Vídeo",
                 key=f"automation_remake_video_{task['id']}",
@@ -8673,7 +8862,7 @@ def _youtube_task_card_body(task_id: str) -> str:
                 help="Reaplica as configurações atuais do canal (legendas, música, voz, duração, proporção, transição) e regenera o vídeo do zero. Use quando a config do canal mudou ou quando o vídeo foi gerado sem legenda por engano.",
             ):
                 if _remake_video_from_card(task, force_audio_regeneration=force_audio_regen):
-                    st.rerun()
+                    st.rerun(scope="fragment")
             with delete_col:
                 confirm_delete_key = f"automation_confirm_delete_{task['id']}"
                 if st.button("Apagar", key=f"automation_delete_{task['id']}", width="stretch", disabled=state == "doing"):
@@ -8688,7 +8877,7 @@ def _youtube_task_card_body(task_id: str) -> str:
                                 delete_task(task["id"])
                                 st.session_state.pop(confirm_delete_key, None)
                                 _invalidate_live_tasks_snapshot()
-                                st.rerun()
+                                st.rerun(scope="fragment")
                             except ValueError as exc:
                                 st.error(str(exc))
                     with cancel_col:
@@ -9402,11 +9591,12 @@ def _render_music_upload_history() -> None:
             st.caption(f"{record.get('created_at', '—')} · {path.name if path.name else record.get('target', {})}")
             st.write(record.get("message", ""))
             if path.is_file():
-                st.download_button(
+                # 1.0.96: download sem carregar o áudio para a RAM.
+                _render_download_control(
                     "Descarregar cópia local",
-                    data=path.read_bytes(),
-                    file_name=path.name,
-                    mime=mimetypes.guess_type(path.name)[0] or "audio/mpeg",
+                    path,
+                    path.name,
+                    mimetypes.guess_type(path.name)[0] or "audio/mpeg",
                     key=f"music_history_download_{record.get('id')}",
                 )
 
@@ -9687,13 +9877,13 @@ def _render_music_automation_card(record: dict[str, Any], *, posted: bool) -> No
                 st.write(VIDEO_TASK_STATE_LABELS.get(state, state.replace("_", " ").capitalize() or "Pendente"))
                 st.progress(progress, text=f"{progress}%")
             if path.is_file():
-                st.download_button(
+                # 1.0.96: download sem carregar o áudio para a RAM.
+                _render_download_control(
                     "Descarregar música",
-                    data=path.read_bytes(),
-                    file_name=path.name,
-                    mime=mimetypes.guess_type(path.name)[0] or "audio/mpeg",
+                    path,
+                    path.name,
+                    mimetypes.guess_type(path.name)[0] or "audio/mpeg",
                     key=f"music_automation_download_{record_id}",
-                    width="stretch",
                 )
 
 
@@ -11868,7 +12058,13 @@ def _render_test_upload_videos(settings: dict[str, Any]) -> None:
                     media_slot = st.columns([1, 2, 1])[1] if video["id"] == "vertical" else st.container()
                     with media_slot:
                         _render_local_video_player(video_path)
-                        st.download_button("Download vídeo modelo", video_path.read_bytes(), file_name=video["filename"], mime="video/mp4", key=f"download_test_upload_{video['id']}", width="stretch")
+                        _render_download_control(
+                            "Download vídeo modelo",
+                            video_path,
+                            video["filename"],
+                            "video/mp4",
+                            key=f"download_test_upload_{video['id']}",
+                        )
                 else:
                     st.error(f"Asset de teste não encontrado: {video_path}")
 
@@ -13371,7 +13567,13 @@ def render_metadata_cleaner():
             st.subheader("Resultado")
             st.write(f"**Ficheiro limpo:** `{output.name}`")
             mime = "video/mp4" if output.suffix.lower() == ".mp4" else "video/*"
-            st.download_button("Descarregar vídeo limpo", data=output.read_bytes(), file_name=output.name, mime=mime, width="stretch", key="metadata_download_video")
+            _render_download_control(
+                "Descarregar vídeo limpo",
+                output,
+                output.name,
+                mime,
+                key="metadata_download_video",
+            )
             st.download_button("Descarregar manifesto de upload (JSON)", data=metadata_manifest(record), file_name=f"{output.stem}-metadata.json", mime="application/json", width="stretch", key="metadata_download_manifest")
             with st.expander("Pré-visualizar metadados"):
                 st.json(record["metadata"])
@@ -13387,7 +13589,13 @@ def render_metadata_cleaner():
             st.write(f"**{record.get('metadata', {}).get('title') or record.get('output_name')}**")
             st.caption(f"Terceiro · {record.get('created_at', '—')} · {record.get('output_name', 'sem saída')}")
             if output.exists():
-                st.download_button("Descarregar", data=output.read_bytes(), file_name=output.name, mime="video/*", key=f"metadata_history_{record.get('id')}")
+                _render_download_control(
+                    "Descarregar",
+                    output,
+                    output.name,
+                    "video/*",
+                    key=f"metadata_history_{record.get('id')}",
+                )
 
 
 def render_update_youtube_videos():

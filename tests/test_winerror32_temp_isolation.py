@@ -174,10 +174,14 @@ def test_worker_process_temp_isolation_guard():
     assert "_isolate_worker_process_temp()" in source
 
 
-def test_worker_process_temp_env_is_isolated_after_import(monkeypatch):
+def test_worker_process_temp_env_is_isolated_after_import(monkeypatch, tmp_path):
     monkeypatch.setenv("TEMP", r"C:\Users\danha\AppData\Roaming\MobaXterm\slash\tmp")
     monkeypatch.setenv("TMP", r"C:\Users\danha\AppData\Roaming\MobaXterm\slash\tmp")
-    monkeypatch.setenv("LOCALAPPDATA", str(ROOT / "storage" / "_temp_test"))
+    # 1.0.96 - M8: o LOCALAPPDATA apontava para `storage/_temp_test` DENTRO do
+    # repositório, e o teste deixava lá pastas de lixo a cada corrida. Agora é
+    # um directório temporário do próprio pytest — o storage do utilizador
+    # nunca é tocado.
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "localappdata"))
     import importlib
 
     module = importlib.reload(pipeline_worker)
