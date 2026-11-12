@@ -3407,6 +3407,7 @@ def _run_remotion_blueprint(
     composição — nunca calculada aqui.
     """
     from .blueprint_assets import generate_assets
+    from .blueprint_length_guard import sanitize_blueprint_for_prompt
     from .blueprint_loader import build_system_prompt, find_placeholders, load_blueprint, render_blueprint_prompt
     from .creative_generation import _chat_json
     from .schemas import SCHEMAS
@@ -3419,7 +3420,18 @@ def _run_remotion_blueprint(
         raise PipelineError("Remotion indisponível: " + "; ".join(status.get("reasons") or ["ambiente incompleto"]))
 
     try:
-        blueprint = load_blueprint(blueprint_id)
+        # 1.0.94 - REGRA INVIOLÁVEL (AGENTS.md): as regras de contagem de
+        # caracteres dos Blueprints NUNCA podem chegar à LLM. Esta rota monta o
+        # prompt a partir do blueprint bruto (`build_system_prompt` +
+        # `render_blueprint_prompt`) e era o ÚNICO caminho de geração sem o
+        # sanitizador — um blueprint de composição criado pelo utilizador com
+        # `character_length_requirement`/`strict_character_range` passava
+        # directo para o modelo. Os 5 blueprints Remotion do seed não têm essas
+        # chaves, mas nada o garantia para os que vêm depois.
+        # `find_placeholders`/`render_blueprint_prompt` são inseparáveis dos
+        # placeholders, que o sanitizador preserva — a substituição continua
+        # inteiramente funcional.
+        blueprint = sanitize_blueprint_for_prompt(load_blueprint(blueprint_id))
     except FileNotFoundError as exc:
         raise PipelineError(f"Blueprint não encontrado: {blueprint_id}") from exc
     composition_id = str(blueprint.get("composition_id") or "").strip()

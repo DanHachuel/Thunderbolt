@@ -60,7 +60,31 @@ def test_execution_root_switches_to_the_runtime_when_ready():
 def test_missing_runtime_is_prepared_silently_before_starting():
     assert "ensureRuntimeSources();" in CLI_SOURCE
     assert "refreshRuntimeSources(true);" in CLI_SOURCE
-    assert 'if (existsSync(join(runtimeDir, "app", "main.py"))) return true;' in CLI_SOURCE
+    # 1.0.94 - o guard passou a negado (preparar quando FALTA) para deixar
+    # espaço à sincronização por versão do teste seguinte.
+    assert 'if (!existsSync(join(runtimeDir, "app", "main.py"))) {' in CLI_SOURCE
+
+
+def test_runtime_is_resynced_when_the_package_version_changes():
+    """1.0.94 - auditoria A7: o `.runtime` não pode ficar com código velho.
+
+    Quem corria `npx thunderbolt` sem `install` depois de uma actualização
+    tinha o pacote novo e o `.runtime` velho, enquanto a sidebar mostrava a
+    versão nova (THUNDERBOLT_VERSION vem do pacote). A diferença de versão
+    dispara a recopia silenciosa — o que corre é o que a interface diz.
+    """
+    assert "function runtimePackageVersion()" in CLI_SOURCE
+    assert "runtime_desatualizado" in CLI_SOURCE
+    ensure = CLI_SOURCE.split("function ensureRuntimeSources()", 1)[1].split("\n}\n", 1)[0]
+    assert 'runtimePackageVersion() !== packageVersion' in ensure
+    # a recopia é POR CIMA no caminho da sincronização (nunca apagar o runtime
+    # antes de copiar o novo): um rmSync antes da cópia deixaria a stack sem
+    # código se a cópia falhasse. A limpeza total continua dona do arranque a
+    # frio (runtime em falta) e do `install`.
+    sync_block = ensure.split('runtimePackageVersion() !== packageVersion', 1)[1]
+    assert "refreshRuntimeSources(false);" in sync_block
+    assert "refreshRuntimeSources(true);" not in sync_block
+    assert ensure.count("refreshRuntimeSources(true);") == 1
 
 
 # ---------------------------------------------------------------------------
