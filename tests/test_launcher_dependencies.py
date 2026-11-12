@@ -35,7 +35,8 @@ def test_installer_installs_remotion_as_a_mandatory_persistent_dependency():
     # não pode ser o local de instalação (reinstalaria 257 pacotes do zero).
     source = (ROOT / "scripts" / "install.mjs").read_text(encoding="utf-8")
     assert "function installRemotionDependencies()" in source
-    assert "if (!skipDeps) installRemotionDependencies();" in source
+    # 1.0.94: instaladores assíncronos (runQuietTimed com timeout + heartbeat).
+    assert "if (!skipDeps) await installRemotionDependencies();" in source
     assert "--skip-remotion" not in source
     block = source.split("function installRemotionDependencies()", 1)[1].split("\nfunction ", 1)[0]
     assert 'join(thunderboltHome, "remotion")' in block
@@ -95,7 +96,8 @@ def test_installer_installs_the_camoufox_browser_as_a_mandatory_dependency():
     source = (ROOT / "scripts" / "install.mjs").read_text(encoding="utf-8")
     assert "function installCamoufoxBrowser()" in source
     assert "function camoufoxBrowserDownloaded()" in source
-    assert "if (!skipDeps && !skipBrowsers) installCamoufoxBrowser();" in source
+    # 1.0.94: assíncrono (timeout/heartbeat) — com await no main.
+    assert "if (!skipDeps && !skipBrowsers) await installCamoufoxBrowser();" in source
     block = source.split("function installCamoufoxBrowser()", 1)[1].split("\nfunction ", 1)[0]
     assert '"-m", "camoufox", "fetch"' in block
     assert "camoufoxBrowserDownloaded()" in block
@@ -122,9 +124,10 @@ def test_installer_skip_browsers_flag_leaves_plain_install_always_downloading():
     main_block = source.split("function main()", 1)[1]
     assert 'const skipBrowsers = args.includes("--skip-browsers");' in main_block
     for guard in (
-        "if (!skipDeps && !skipBrowsers) installPlaywrightBrowsers();",
-        "if (!skipDeps && !skipBrowsers) installPatchrightBrowser();",
-        "if (!skipDeps && !skipBrowsers) installCamoufoxBrowser();",
+        # 1.0.94: com await (instaladores assíncronos com tempo limite).
+        "if (!skipDeps && !skipBrowsers) await installPlaywrightBrowsers();",
+        "if (!skipDeps && !skipBrowsers) await installPatchrightBrowser();",
+        "if (!skipDeps && !skipBrowsers) await installCamoufoxBrowser();",
     ):
         assert guard in main_block, guard
     # os browsers saíram de installThunderboltDependencies (só requirements)

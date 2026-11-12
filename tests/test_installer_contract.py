@@ -76,8 +76,11 @@ def test_heavy_install_always_uses_the_complete_requirements():
     heavy = INSTALLER_SOURCE.split("if (forceDeps || !persistedHashMatches) {", 1)[1].split("writeFileSync(markerPath", 1)[0]
     assert '"--quiet", "--no-input", "--disable-pip-version-check", "-r", requirementsPath' in heavy
     assert "filtered" not in heavy.lower()
-    # 1.0.48 — runQuiet silencioso (rótulo amigável + install.log), ficheiro INTEIRO
-    assert "runQuiet(" in heavy
+    # 1.0.48 — execução silenciosa (rótulo amigável + install.log), ficheiro
+    # INTEIRO. 1.0.94: o passo pesado passou a ter tempo limite + heartbeat
+    # (runQuietTimed ~ runQuiet, mas com timeout, retry de rede e beat).
+    assert "runQuietTimed(" in heavy
+    assert "runQuiet(" not in heavy  # o passo pesado não volta a ser sem tempo limite
 
 
 def test_failed_install_or_repair_aborts_with_clear_error():

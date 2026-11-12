@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, renameSync, cpSync, copyFi
 import { homedir, platform } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
@@ -114,6 +114,95 @@ function runQuiet(label, command, commandArgs, options = {}) {
 
 function run(command, commandArgs, options = {}) {
   runQuiet(`> ${command} ${commandArgs.join(" ")}`, command, commandArgs, options);
+}
+
+// 1.0.94 — instalação pesada com TEMPO LIMITE, HEARTBEAT e RETRY DE REDE.
+// O relato: 20 minutos preso em "a reparar as dependências declaradas dos
+// uploaders" sem uma única linha de saída — o pip retentava uma rede morta e
+// nenhum passo tinha tempo limite. `spawnSync` não serve aqui: bloqueia o
+// event loop, pelo qual um heartbeat nunca dispararia durante o passo. Por
+// isso o filho corre em `spawn` (assíncrono): o heartbeat sai a cada 30 s e o
+// timeout MATA o processo. Regra 2 do AGENTS.md mantida: a saída crua do pip
+// (barras, "Uninstalling...") NUNCA vai para o terminal — só install.log.
+const PIP_INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
+const BROWSER_INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
+const INSTALL_HEARTBEAT_SECONDS = 30;
+const NETWORK_FAILURE_CODES = ["etimedout", "econnreset", "eai_again", "enotfound", "econnrefused", "enetunreach"];
+const NETWORK_FAILURE_HINTS = [
+  "readtimeout", "connectionerror", "timed out", "temporary failure in name resolution",
+  "connection aborted", "connection refused", "network is unreachable", "max retries exceeded",
+];
+
+function isNetworkFailure(result) {
+  if (!result) return false;
+  const code = String((result.error && result.error.code) || "").toLowerCase();
+  if (NETWORK_FAILURE_CODES.includes(code)) return true;
+  const text = `${result.stderr || ""}\n${result.stdout || ""}`.toLowerCase();
+  return NETWORK_FAILURE_HINTS.some((hint) => text.includes(hint));
+}
+
+async function runQuietTimed(label, command, commandArgs, options = {}) {
+  console.log(label);
+  const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : PIP_INSTALL_TIMEOUT_MS;
+  const beatSeconds = Number(options.heartbeatSeconds) > 0 ? Number(options.heartbeatSeconds) : INSTALL_HEARTBEAT_SECONDS;
+  const allowRetry = options.retryOnNetwork !== false;
+  const started = Date.now();
+  const heartbeat = setInterval(() => {
+    const seconds = Math.max(1, Math.round((Date.now() - started) / 1000));
+    console.log(`${label} - em curso há ${seconds}s (detalhes em ${installLogPath})...`);
+  }, beatSeconds * 1000);
+  let attempt = 0;
+  let result = null;
+  try {
+    for (attempt = 1; attempt <= 2; attempt += 1) {
+      if (attempt > 1) {
+        console.log(`${label} - falha de rede detectada; a tentar novamente (tentativa ${attempt} de 2)...`);
+      }
+      result = await new Promise((resolve) => {
+        let settled = false;
+        const done = (payload) => { if (!settled) { settled = true; resolve(payload); } };
+        const child = spawn(command, commandArgs, {
+          stdio: ["ignore", "pipe", "pipe"],
+          env: { ...pythonEnvironment, ...(options.env || {}) },
+        });
+        let stdout = "";
+        let stderr = "";
+        const timer = setTimeout(() => {
+          try { child.kill("SIGTERM"); } catch { /* já morto */ }
+          done({ status: null, timedOut: true, stdout, stderr });
+        }, timeoutMs);
+        child.stdout.on("data", (chunk) => { stdout += String(chunk); });
+        child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+        child.on("error", (error) => { clearTimeout(timer); done({ status: null, error, stdout, stderr }); });
+        child.on("close", (code, signal) => { clearTimeout(timer); done({ status: code, signal, stdout, stderr }); });
+      });
+      const timedOut = !!(result && (result.timedOut || (result.error && result.error.code === "ETIMEDOUT")));
+      if (!timedOut && result && result.status === 0) {
+        appendInstallLog(`${label} > ${command} ${commandArgs.join(" ")}`, result.stdout, result.stderr);
+        return result;
+      }
+      appendInstallLog(`${label} (tentativa ${attempt}) > ${command} ${commandArgs.join(" ")}`, result && result.stdout, result && result.stderr);
+      if (timedOut) {
+        // Passo travado: o filho já foi morto pelo timer. Aborta com mensagem
+        // clara — nunca mais 20 minutos de silêncio.
+        console.error(`A instalação demorou mais de ${Math.round(timeoutMs / 60000)} minutos. Verifique sua conexão ou use --force-deps.`);
+        console.error(`Registo parcial em ${installLogPath}`);
+        process.exit(1);
+      }
+      if (!allowRetry || !isNetworkFailure(result)) break;
+    }
+  } finally {
+    clearInterval(heartbeat);
+  }
+  if (result && result.status === 0) return result;
+  const tail = failureTail(result);
+  if (tail) console.error(tail);
+  if (isNetworkFailure(result)) {
+    console.error("Falha de rede ao baixar pacotes. A geração de vídeos continuará funcionando, mas os uploaders não estarão disponíveis.");
+  }
+  console.error(`${label} - falhou (codigo ${(result && result.status) || 1}).`);
+  console.error(`Veja o registo completo em ${installLogPath}`);
+  process.exit((result && result.status) || 1);
 }
 
 function probePython(command, commandArgs = []) {
@@ -434,7 +523,7 @@ function cleanInstallationRoots(moneyprinterPath) {
   }
 }
 
-function installPythonWindows() {
+async function installPythonWindows() {
   if (process.env.THUNDERBOLT_SKIP_PYTHON_INSTALL === "1" || process.env.HERMES_SKIP_PYTHON_INSTALL === "1") return null;
   if (!commandExists("winget")) {
     console.error("Python 3.11 ou 3.12 não foi encontrado e o winget também não está disponível.");
@@ -457,7 +546,7 @@ function installPythonWindows() {
   return found;
 }
 
-function ensurePython() {
+async function ensurePython() {
   let found = findPython();
   if (found) {
     console.log(`Python compatível encontrado: ${found.command} ${found.args.join(" ")} (${found.version})`);
@@ -465,7 +554,7 @@ function ensurePython() {
   }
   if (existsSync(venvPath)) removePath(venvPath);
   found = findPython();
-  if (!found && platform() === "win32") found = installPythonWindows();
+  if (!found && platform() === "win32") found = await installPythonWindows();
   if (!found) {
     console.error("Python 3.11 ou 3.12 compatível não foi encontrado. Instale uma dessas versões e execute novamente.");
     process.exit(1);
@@ -680,7 +769,7 @@ function reportMissingModules(label, modules, extraHint = "") {
   console.error("Execute: npx.cmd --yes --prefer-online @danhachuel/thunderbolt install --force-deps");
 }
 
-function installRequirementIfNeeded(requirementsPath, stateKey, modules, label) {
+async function installRequirementIfNeeded(requirementsPath, stateKey, modules, label) {
   if (!existsSync(requirementsPath)) return;
   const lines = requirementLines(requirementsPath);
   const currentHash = fileHash(requirementsPath);
@@ -708,7 +797,7 @@ function installRequirementIfNeeded(requirementsPath, stateKey, modules, label) 
     const reason = forceDeps ? "forçados (--force-deps)" : "alterados desde a última instalação";
     // 1.0.48 — pip SILENCIOSO (--quiet --no-input): o terminal não vê barras
     // de progresso nem "Uninstalling..."; a saída completa fica em install.log
-    runQuiet(
+    await runQuietTimed(
       `${label}: requirements ${reason}; a instalar (detalhes em ${installLogPath})...`,
       pythonBin,
       ["-m", "pip", "install", "--quiet", "--no-input", "--disable-pip-version-check", "-r", requirementsPath],
@@ -748,7 +837,7 @@ function installRequirementIfNeeded(requirementsPath, stateKey, modules, label) 
   // do --force-reinstall costumava poluir o terminal e assustar o utilizador)
   // 1.0.90 — --no-cache-dir: um ZIP do GitHub mal guardado no cache do pip
   // (social-auto-upload) reaproveitava uma cópia corompida em cada tentativa.
-  const repaired = runQuiet(
+  const repaired = await runQuietTimed(
     `${label}: a instalar APENAS os pacotes em falta (detalhes em ${installLogPath})...`,
     pythonBin,
     ["-m", "pip", "install", "--quiet", "--no-input", "--force-reinstall", "--no-cache-dir", "--disable-pip-version-check", ...repairSpecs],
@@ -766,7 +855,7 @@ function installRequirementIfNeeded(requirementsPath, stateKey, modules, label) 
   // uploadadores) falha mesmo com o pacote reinstalado. Instalar as
   // declaradas explicitamente antes de abortar.
   if (stillMissing.some((moduleName) => moduleRequirementAliases[moduleName] === "social-auto-upload")) {
-    runQuiet(
+    await runQuietTimed(
       `${label}: a reparar as dependências declaradas dos uploaders (detalhes em ${installLogPath})...`,
       pythonBin,
       ["-m", "pip", "install", "--quiet", "--no-input", "--force-reinstall", "--no-cache-dir", "--disable-pip-version-check", ...SOCIAL_AUTO_UPLOAD_DEPS],
@@ -779,13 +868,17 @@ function installRequirementIfNeeded(requirementsPath, stateKey, modules, label) 
   }
 }
 
-function installPlaywrightBrowsers() {
+async function installPlaywrightBrowsers() {
   if (!existsSync(pythonBin)) return;
   console.log("Playwright: a verificar os browsers Chromium e Firefox... ");
-  const result = runQuiet(
+  // 1.0.94 — aviso de download PESADO (Chromium + Firefox passam dos 100 MB)
+  // e timeout de 10 min com heartbeat: o passo nunca mais fica mudo.
+  console.log("A instalar browsers (pode demorar alguns minutos)...");
+  const result = await runQuietTimed(
     "Playwright: a instalar os browsers Chromium e Firefox (detalhes no install.log)...",
     pythonBin,
     ["-m", "playwright", "install", "chromium", "firefox"],
+    { timeoutMs: BROWSER_INSTALL_TIMEOUT_MS },
   );
   if (result.status !== 0) {
     console.error("Não foi possível instalar os browsers Chromium e Firefox do Playwright.");
@@ -795,14 +888,18 @@ function installPlaywrightBrowsers() {
   console.log("Playwright: browsers Chromium e Firefox prontos.");
 }
 
-function installPatchrightBrowser() {
+async function installPatchrightBrowser() {
   if (!existsSync(pythonBin)) return;
   const executable = join(venvPath, process.platform === "win32" ? "Scripts" : "bin", process.platform === "win32" ? "patchright.exe" : "patchright");
   console.log("Patchright: a verificar o browser Chromium...");
-  const result = runQuiet(
+  // 1.0.94 — aviso de download PESADO (o Chromium do Patchright passa dos
+  // 100 MB) e timeout de 10 min com heartbeat.
+  console.log("A instalar browsers (pode demorar alguns minutos)...");
+  const result = await runQuietTimed(
     "Patchright: a instalar o browser Chromium (detalhes no install.log)...",
     executable,
     ["install", "chromium"],
+    { timeoutMs: BROWSER_INSTALL_TIMEOUT_MS },
   );
   if (result.status !== 0) {
     console.error("Não foi possível instalar o Chromium do Patchright.");
@@ -855,7 +952,7 @@ function camoufoxBrowserDownloaded() {
   return /^\s*Installed\s*[:=]?\s*(?:yes|true)\s*$/im.test(String(probe.stdout || ""));
 }
 
-function installCamoufoxBrowser() {
+async function installCamoufoxBrowser() {
   // 0.9.57: o pacote Python camoufox instala com os requirements, mas o
   // BINÁRIO Firefox (browser anti-detect da sessão de upload directo) exige
   // `python -m camoufox fetch` — o mesmo género de passo do
@@ -870,10 +967,14 @@ function installCamoufoxBrowser() {
     return;
   }
   console.log("Camoufox: a descarregar o browser (python -m camoufox fetch)...");
-  const result = runQuiet(
+  // 1.0.94 — aviso de download PESADO (~150 MB de Firefox) + timeout de
+  // 10 min com heartbeat.
+  console.log("A instalar browsers (pode demorar alguns minutos)...");
+  const result = await runQuietTimed(
     "Camoufox: a descarregar o browser (detalhes no install.log)...",
     pythonBin,
     ["-m", "camoufox", "fetch"],
+    { timeoutMs: BROWSER_INSTALL_TIMEOUT_MS },
   );
   if (result.status === 0 && camoufoxBrowserDownloaded()) {
     console.log("Camoufox: browser instalado.");
@@ -919,7 +1020,7 @@ function writeSettings(moneyprinterPath) {
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf8");
 }
 
-function installThunderboltDependencies(python) {
+async function installThunderboltDependencies(python) {
   // 1.0.22: apenas o Python/requirements — os BROWSERS (Playwright,
   // Patchright, Camoufox) passam a ser geridos no main() com a flag
   // --skip-browsers: sem flags, `npx thunderbolt install` baixa-os SEMPRE.
@@ -928,7 +1029,7 @@ function installThunderboltDependencies(python) {
   // 1.0.20 contra pacotes partidos) e reparados sem excepções — «uploader»/
   // «sau_cli» (social-auto-upload) são OBRIGATÓRIOS como os restantes; a era
   // opt-in (--with-uploaders) foi revertida na 1.0.44 (regra do AGENTS.md).
-  installRequirementIfNeeded(
+  await installRequirementIfNeeded(
     join(root, "requirements.txt"),
     "thunderbolt_requirements_sha256",
     ["psutil", "streamlit", "requests", "pandas", "toml", "imageio_ffmpeg", "edge_tts", "google.auth", "google_auth_oauthlib", "googleapiclient", "yt_dlp", "deno", "youtube_transcript_api", "huggingface_hub", "playwright", "patchright", "camoufox", "filelock", "uploader", "sau_cli", "serpapi"],
@@ -1011,11 +1112,11 @@ function installRemotionDependencies() {
   console.log(`Remotion: dependências prontas (persistentes em ${persistentDir}).`);
 }
 
-function installMoneyPrinterDependencies(moneyprinterPath) {
-  installRequirementIfNeeded(join(moneyprinterPath, "requirements.txt"), "moneyprinter_requirements_sha256", ["fastapi", "moviepy", "PIL", "numpy", "requests"], "MoneyPrinterTurbo");
+async function installMoneyPrinterDependencies(moneyprinterPath) {
+  await installRequirementIfNeeded(join(moneyprinterPath, "requirements.txt"), "moneyprinter_requirements_sha256", ["fastapi", "moviepy", "PIL", "numpy", "requests"], "MoneyPrinterTurbo");
 }
 
-function main() {
+async function main() {
   const skipMpt = args.includes("--skip-moneyprinter");
   const skipDeps = args.includes("--skip-python-deps");
   // 1.0.22: --skip-browsers salta SÓ os downloads de browsers (Playwright,
@@ -1028,14 +1129,14 @@ function main() {
   cleanInstallationRoots(moneyprinterPath);
   ensureDirs();
   migrateLegacyNpxStorage();
-  const python = skipDeps ? null : ensurePython();
+  const python = skipDeps ? null : await ensurePython();
   if (!skipMpt) cloneMoneyPrinter(moneyprinterPath);
-  if (!skipDeps) installThunderboltDependencies(python);
-  if (!skipDeps && !skipBrowsers) installPlaywrightBrowsers();
-  if (!skipDeps && !skipBrowsers) installPatchrightBrowser();
-  if (!skipDeps) installRemotionDependencies();
-  if (!skipDeps && !skipBrowsers) installCamoufoxBrowser();
-  if (!skipDeps && !skipMpt) installMoneyPrinterDependencies(moneyprinterPath);
+  if (!skipDeps) await installThunderboltDependencies(python);
+  if (!skipDeps && !skipBrowsers) await installPlaywrightBrowsers();
+  if (!skipDeps && !skipBrowsers) await installPatchrightBrowser();
+  if (!skipDeps) await installRemotionDependencies();
+  if (!skipDeps && !skipBrowsers) await installCamoufoxBrowser();
+  if (!skipDeps && !skipMpt) await installMoneyPrinterDependencies(moneyprinterPath);
   if (!skipDeps) installFfmpegSeedWindows();
   writeSettings(moneyprinterPath);
   console.log("\nInstalação do Thunderbolt concluída.");
