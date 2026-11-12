@@ -37,7 +37,10 @@ def _render_task_thumbnail(streamlit):
         node for node in tree.body
         if isinstance(node, ast.FunctionDef) and node.name == "_render_task_thumbnail"
     )
-    namespace = {"st": streamlit, "Path": Path}
+    # 1.0.96 - M4: `_thumbnail_display_path` é a dependência nova (reduz e
+    # guarda em cache a miniatura). É injectada aqui como identidade, para o
+    # teste provar o COMPORTAMENTO do fallback sem depender do Pillow.
+    namespace = {"st": streamlit, "Path": Path, "_thumbnail_display_path": lambda path: path}
     exec(compile(ast.unparse(function), "<main.py:_render_task_thumbnail>", "exec"), namespace)
     return namespace["_render_task_thumbnail"]
 
