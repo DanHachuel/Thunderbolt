@@ -2975,7 +2975,7 @@ def render_home_update_controls() -> None:
                 st.session_state["home_update_notice_dismissed"] = False
                 if update_result.ok and update_result.restart_required:
                     st.success("Actualização concluída. A reiniciar o Thunderbolt para aplicar a nova versão…")
-                    time.sleep(0.8)
+                    time.sleep(0.8)  # backoff/grace: unica forma de o aviso render antes do restart
                     restart_current_process()
     if notice_visible:
         with notice_area:

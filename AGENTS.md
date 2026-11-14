@@ -1,5 +1,25 @@
 # Instruções do Repositório Thunderbolt
 
+## 🛡️ AUDITORIA OBRIGATÓRIA DAS SKILLS LOCAIS (`.opencode/skills/`)
+
+O repo carrega as skills de auditoria em `.opencode/skills/` e o workflow
+`.github/workflows/publish-npm.yml` corre os cinco scripts como **gate bloqueante**
+antes de qualquer publicação (passo «Rodar Auditorias das Skills (Gate)»).
+**Qualquer alteração de código feita neste repo tem de passar por essas validações** —
+localmente, antes de commitar:
+
+```bash
+python .opencode/skills/evitar-regressoes/scripts/verificar-atomic.py   # escrita atómica de JSON
+python .opencode/skills/escopo-cirurgico/scripts/verificar-escopo.py    # escopo cirúrgico (instalador/menus)
+python .opencode/skills/streamlit-estado/scripts/verificar-streamlit.py # anti-padrões Streamlit (time.sleep/loops na UI)
+python .opencode/skills/windows-processos/scripts/verificar-spawn.py    # flags de spawn/sinal no Windows
+python .opencode/skills/testes-contrato/scripts/verificar-testes.py     # testes frágeis (só string)
+```
+
+Todos têm de devolver **0**. Uma violação corrige-se no código (ou, quando a regra
+está errada para o código legado, no próprio script — nunca silenciando o passo).
+O contrato está cravado em `tests/test_skills_audit_gate.py`.
+
 ## 🚨 REGRAS INVIOLÁVEIS DE ESCOPO, TERMINAL E PROJETO
 
 1. **Proibido tocar no instalador para tarefas de UI:** Se a tarefa pedir uma mudança visual ou nova aba (ex: "Criar aba de Dependências"), é TERMINANTEMENTE PROIBIDO alterar `install.mjs`, `requirements.txt` ou scripts de setup.

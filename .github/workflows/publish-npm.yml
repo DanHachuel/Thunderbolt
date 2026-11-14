@@ -27,6 +27,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # OBRIGATORIO: o auditor de escopo corre `git diff` contra o HEAD real
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -61,6 +63,24 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: requirements-dev.txt
+
+      # 1.0.99 - AUDITORIA DAS SKILLS LOCAIS (.opencode/skills): gate bloqueante
+      # das regras de arquitectura do repo. Corre ANTES de qualquer publish e
+      # antes da suite completa: se uma regra foi violada (escopo cirurgico,
+      # escrita atomica, anti-padroes de Streamlit, blindagem de spawn no
+      # Windows), a publicacao nao segue. Sem continue-on-error, por design.
+      - name: Rodar Auditorias das Skills (Gate)
+        env:
+          PYTHONIOENCODING: utf-8 # regra AGENTS.md: zero mojibake nos subprocessos
+          PYTHONUTF8: "1"
+        run: |
+          echo "Iniciando auditoria de regras de arquitetura..."
+          python .opencode/skills/evitar-regressoes/scripts/verificar-atomic.py
+          python .opencode/skills/escopo-cirurgico/scripts/verificar-escopo.py
+          python .opencode/skills/streamlit-estado/scripts/verificar-streamlit.py
+          python .opencode/skills/windows-processos/scripts/verificar-spawn.py
+          python .opencode/skills/testes-contrato/scripts/verificar-testes.py
+          echo "Todas as auditorias passaram."
 
       # 0.9.94 - CI gate: a 0.9.92 foi publicada com a suite vermelha em 3
       # testes porque a verificacao pre-release corria apenas testes focais.
