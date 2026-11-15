@@ -202,7 +202,13 @@ def test_mpt_captions_error_propagates_gpu_lock_instead_of_silencing():
     assert "GpuTempLockError" in block
     assert "isinstance(exc, GpuTempLockError)" in block
     # O re-raise aparece ANTES do except genérico: a tarefa morre.
-    assert block.index("isinstance(exc, GpuTempLockError)") < block.index("legendas ignoradas por falha na queima")
+    # 1.1.00 - o caminho genérico deixou de ter o print cru duplicado e passou
+    # a registar a falha por _mpt_runtime_error (ficheiro E terminal).
+    assert block.index("isinstance(exc, GpuTempLockError)") < block.index(
+        "falha na queima local"
+    )
+    assert "_mpt_runtime_error(" in block
+    assert 'print(f"[pexels] legendas ignoradas' not in block
 
 
 # ---------------------------------------------------------------------------

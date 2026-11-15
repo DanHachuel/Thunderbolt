@@ -315,13 +315,27 @@ function launchingFromSignalHeavyTerminal() {
   return launchTerminalAncestry().some((name) => LAUNCH_TERMINAL_NAMES.test(name));
 }
 
+// 1.0.74 - o aviso de terminal MORAVA no arranque e foi REMOVIDO na 1.1.00
+// (7.º relato do utilizador: "o terminal está a ser inundado por mensagens").
+// O utilizador não precisa de saber que o terminal dele é problemático — e a
+// nota aparecia a cada arranque, antes de qualquer coisa útil. A DETECÇÃO
+// continua (ela alimenta a telemetria e ajuda a diagnosticar quando o
+// terminal se desvincula), mas não escreve uma linha no terminal.
+//
+// O que o terminal mostra no arranque é agora só:
+//   Thunderbolt: interface disponível em http://localhost:3030/
+// e, a partir daí, apenas erros e o ciclo de vida dos workers.
+
 let terminalAdvisoryShown = false;
 function launchTerminalAdvisory() {
   if (terminalAdvisoryShown) return;
   terminalAdvisoryShown = true;
-  if (platform() !== "win32") return; // a nota é do console do Windows
+  if (platform() !== "win32") return; // a detecção é do console do Windows
   if (!launchingFromSignalHeavyTerminal()) return; // CMD/MSYS normais: silêncio
-  console.log("Thunderbolt: nota de terminal — o PowerShell/MobaXterm pode devolver o prompt sozinho quando sinais do console chegam ao arranque (npx). Se isso acontecer, a interface continua activa em http://localhost:3030/ (Terminal desvinculado); para um arranque sempre em primeiro plano use o CMD classico: npx.cmd --yes @danhachuel/thunderbolt");
+  diagnostic("terminal_sinal_pesado_detectado", {
+    pid: process.pid,
+    uptime_seconds: Math.round(process.uptime()),
+  });
 }
 
 function pythonVersion() {

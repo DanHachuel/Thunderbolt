@@ -227,14 +227,37 @@ def test_uncaught_exception_no_longer_dies_on_console_writes():
 # ---------------------------------------------------------------------------
 
 
-def test_terminal_advisory_recommends_the_classic_cmd():
+def test_terminal_advisory_is_silent_but_still_detects():
+    """1.1.00 - a nota de terminal foi SILENCIADA (7.º relato de ruído).
+
+    O terminal deve mostrar só a URL e os erros. A detecção do terminal
+    sina-pesado continua (alimenta a telemetria e ajuda a diagnosticar quando
+    o terminal se desvincula), mas NUNCA escreve uma linha no terminal.
+    """
     assert "function launchTerminalAdvisory()" in CLI
     advisory = CLI.split("function launchTerminalAdvisory()", 1)[1].split("\nfunction ", 1)[0]
-    assert "npx.cmd --yes @danhachuel/thunderbolt" in advisory
-    assert "PowerShell/MobaXterm" in advisory
-    assert 'if (platform() !== "win32") return;' in advisory  # a nota é do console Windows
-    # uma vez só
+    # uma vez só, e só no console do Windows
     assert "terminalAdvisoryShown = true;" in advisory
+    assert 'if (platform() !== "win32") return;' in advisory
+    assert "launchingFromSignalHeavyTerminal()" in advisory
+    # O CONTRATO NOVO: nem uma linha de console dentro do aviso
+    assert "console.log(" not in advisory
+    assert "nota de terminal" not in advisory
+    assert "npx.cmd --yes @danhachuel/thunderbolt" not in advisory
+    # a detecção continua real e registada em telemetria
+    assert 'diagnostic("terminal_sinal_pesado_detectado"' in advisory
+
+
+def test_launcher_startup_prints_only_the_url():
+    """O arranque imprime UMA linha útil: a URL. Nada mais."""
+    linhas = [
+        linha for linha in CLI.splitlines()
+        if "interface disponível em http://localhost" in linha and "console.log" in linha
+    ]
+    assert len(linhas) == 1
+    # a nota do PowerShell/MobaXterm não volta ao terminal
+    assert "nota de terminal" not in CLI
+    assert "pode devolver o prompt sozinho" not in CLI
 
 
 def test_terminal_detection_covers_powershell_and_mobaxterm():

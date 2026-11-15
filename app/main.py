@@ -90,19 +90,57 @@ if str(ROOT) not in sys.path:
 # "ValueError: I/O operation on closed file" quando o Streamlit fechava o
 # sys.stdout do script run durante um rerun (ex.: botão "Refazer vídeo") —
 # o _log era chamado no rerun seguinte e o stdout anterior já estava
-# fechado; não era um erro da pipeline de vídeo. O logging emite num
-# handler próprio com referência estável ao stderr UTF-8 real da consola
-# (capturado no import, fora do ciclo de vida do stdout dos reruns) e
-# engole falhas de escrita internamente (Handler.handleError). Sem handler
-# dedicado, INFO cairia no lastResort (só emite WARNING+) e a telemetria
-# de diagnóstico desapareceria em silêncio.
+# fechado; não era um erro da pipeline de vídeo.
+#
+# 1.1.00 — FIM DO LIXO NO TERMINAL (7.º relato do utilizador). A telemetria
+# [YT-AUTOM] era emitida a CADA render da aba (sync roteiros, KPIs, task
+# cards...) e inundava o terminal a cada clique/rerun. Ela continua a existir
+# — mas em FICHEIRO (storage/logs/automation.log), para auditoria futura. O
+# terminal só a vê com THUNDERBOLT_DEBUG=1. Escrever em ficheiro também
+# dissolve o problema original do 1.0.05: nenhum handler toca no sys.stderr
+# do ciclo de vida dos reruns.
 _automation_logger = logging.getLogger("thunderbolt.automation")
 _automation_logger.setLevel(logging.INFO)
 _automation_logger.propagate = False
-if not _automation_logger.handlers:
-    _automation_stream_handler = logging.StreamHandler(sys.stderr)
-    _automation_stream_handler.setFormatter(logging.Formatter("%(message)s"))
-    _automation_logger.addHandler(_automation_stream_handler)
+
+
+def _automation_log_storage_dir() -> Path:
+    """Onde a telemetria da aba é guardada (a raiz do THUNDERBOLT_HOME)."""
+    configured = os.environ.get("THUNDERBOLT_STORAGE_DIR") or ""
+    base = Path(configured) if configured else ROOT / "storage"
+    return base / "logs"
+
+
+def _ensure_automation_logger_handlers() -> None:
+    """Liga os handlers da telemetria: ficheiro sempre; terminal só em debug.
+
+    Chamado preguiçosamente (na primeira emissão), porque o `STORAGE` do
+    `hermes_ui.storage` só é importado mais abaixo neste ficheiro. Falha ao
+    abrir o ficheiro NUNCA derruba a aba: sem handler a emissão fica muda.
+
+    A guarda reconhece os handlers PELOS NOSSOS MARCADORES e não por "existe
+    algum handler": se outra biblioteca (ou um plugin de teste) ligar um
+    handler ao mesmo logger, a telemetria continuaria a desaparecer em
+    silêncio — exactamente o modo de falha que a 1.0.05 documentou.
+    """
+    if any(getattr(handler, "_thunderbolt_automation_handler", False) for handler in _automation_logger.handlers):
+        return
+    try:
+        log_dir = _automation_log_storage_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(log_dir / "automation.log", encoding="utf-8")
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+        file_handler._thunderbolt_automation_handler = True  # type: ignore[attr-defined]
+        _automation_logger.addHandler(file_handler)
+    except OSError:
+        pass
+    if os.environ.get("THUNDERBOLT_DEBUG", "").strip() == "1":
+        stream_handler = logging.StreamHandler(sys.stderr)
+        stream_handler.setLevel(logging.INFO)
+        stream_handler.setFormatter(logging.Formatter("%(message)s"))
+        stream_handler._thunderbolt_automation_handler = True  # type: ignore[attr-defined]
+        _automation_logger.addHandler(stream_handler)
 
 
 @st.cache_data(show_spinner=False, max_entries=256)
@@ -9402,7 +9440,10 @@ def render_automation():
         # "ValueError: I/O operation on closed file". A guarda extra garante
         # que a telemetria nunca interrompe o render, mesmo se até o stream
         # do handler estiver fechado.
+        # 1.1.00: a telemetria vai para FICHEIRO (storage/logs/automation.log);
+        # o terminal só a vê com THUNDERBOLT_DEBUG=1.
         try:
+            _ensure_automation_logger_handlers()
             _automation_logger.info(f"[YT-AUTOM] {msg}: {_perf_time.perf_counter() - _automation_t0:.2f}s")
         except (ValueError, OSError):
             pass

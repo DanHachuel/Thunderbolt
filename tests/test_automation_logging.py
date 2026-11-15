@@ -27,24 +27,37 @@ class AutomationLoggingTests(unittest.TestCase):
 
     def test_automation_logger_configured_at_module_level(self):
         # Logger dedicado com nome estável ("thunderbolt.automation"), nível
-        # INFO (o lastResort só emite WARNING+ e engoliria a telemetria) e
-        # handler próprio no stderr — sem propagação para o root.
+        # INFO e sem propagação para o root.
+        # 1.1.00 - o handler de TERMINAL saiu do arranque: a telemetria
+        # [YT-AUTOM] era emitida a cada render e inundava o terminal (7.º
+        # relato do utilizador). Ela passa a ir para FICHEIRO
+        # (storage/logs/automation.log); o terminal só a vê com
+        # THUNDERBOLT_DEBUG=1.
         self.assertIn('logging.getLogger("thunderbolt.automation")', MAIN_SOURCE)
         self.assertIn("_automation_logger.setLevel(logging.INFO)", MAIN_SOURCE)
         self.assertIn("_automation_logger.propagate = False", MAIN_SOURCE)
+        # o StreamHandler existe, mas DENTRO da guarda de debug
         self.assertIn("logging.StreamHandler(sys.stderr)", MAIN_SOURCE)
-        self.assertIn('if not _automation_logger.handlers:', MAIN_SOURCE)
+        self.assertIn("THUNDERBOLT_DEBUG", MAIN_SOURCE)
+        # handler de ficheiro é a rota principal
+        self.assertIn("automation.log", MAIN_SOURCE)
+        # a guarda reconhece os handlers pelos marcadores, não por "existe
+        # algum handler" (senão um handler de terceiros calava a telemetria)
+        self.assertIn("_thunderbolt_automation_handler", MAIN_SOURCE)
+        self.assertNotIn('if not _automation_logger.handlers:', MAIN_SOURCE)
 
     def test_automation_logger_runtime_shape(self):
-        # O import de app.main já corre a configuração; o logger tem de
-        # existir, estar em INFO e ter exatamente um handler que escreve.
+        # O import de app.main cria o logger (nível INFO, sem propagação);
+        # os HANDLERS são preguiçosos - só nascem na primeira emissão
+        # (_ensure_automation_logger_handlers), para o storage já estar
+        # resolvido e para um handler de terceiros não os bloquear.
         from app import main as app_main
 
         automation_logger = logging.getLogger("thunderbolt.automation")
         self.assertEqual(automation_logger.level, logging.INFO)
         self.assertFalse(automation_logger.propagate)
-        self.assertTrue(automation_logger.handlers)
         self.assertIs(automation_logger, app_main._automation_logger)
+        self.assertTrue(callable(app_main._ensure_automation_logger_handlers))
 
     def test_logging_swallows_writes_to_closed_stream(self):
         # Runtime do mecanismo: mesmo que o stream do handler esteja

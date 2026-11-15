@@ -1936,21 +1936,70 @@ def _video_helper_python_bin() -> str:
 _mpt_logger = logging.getLogger("thunderbolt.mpt")
 
 
-def _mpt_runtime_log(message: str) -> None:
-    """Loga o arranque do MPT em stderr INFO (padrão de telemetria da casa).
+def _ensure_mpt_logger_handlers() -> None:
+    """Liga os handlers da telemetria do motor (idempotente).
 
-    Sem handler configurado o logging root engoliria INFO — o padrão
-    [BROWSER-LAUNCH] (1.0.08) é um handler stderr estável por logger.
+    1.1.00 — FIM DO LIXO NO TERMINAL (7.º relato do utilizador). A telemetria
+    do motor (`[SCRIPT] tentativa 1/3`, `[PEXELS] Clipe 3/9 baixado`,
+    `[MPT-GATE]`, `[MPT-SUBTITLES]`...) era emitida em stderr INFO a cada
+    etapa de cada tarefa e inundava o terminal. Ela continua inteira — em
+    `storage/logs/mpt_runtime.log` — para auditoria futura.
+
+    O terminal NÃO ficou mudo: o handler de stderr passa a nível **WARNING**,
+    portanto erros e avisos reais (`[MPT-SUBTITLES] [ERRO]`, `[PEXELS] [ERRO]`)
+    continuam a aparecer. Só a telemetria de progresso é que sai do ecrã.
+    `THUNDERBOLT_DEBUG=1` devolve o INFO ao terminal para depuração.
+
+    A guarda reconhece os handlers PELOS NOSSOS MARCADORES e não por "existe
+    algum handler": se outra biblioteca (ou um plugin de teste) ligar um
+    handler ao mesmo logger, a telemetria continuaria a desaparecer em
+    silêncio — exactamente o modo de falha que a 1.0.05 documentou.
     """
-    if not any(getattr(handler, "_thunderbolt_mpt_handler", False) for handler in _mpt_logger.handlers):
-        handler = logging.StreamHandler()
-        handler.setLevel(logging.INFO)
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
-        handler._thunderbolt_mpt_handler = True  # type: ignore[attr-defined]
-        _mpt_logger.addHandler(handler)
-        _mpt_logger.setLevel(logging.INFO)
-        _mpt_logger.propagate = False
+    if any(getattr(handler, "_thunderbolt_mpt_handler", False) for handler in _mpt_logger.handlers):
+        return
+    _mpt_logger.setLevel(logging.INFO)
+    _mpt_logger.propagate = False
+    try:
+        os.makedirs(STORAGE / "logs", exist_ok=True)
+        file_handler = logging.FileHandler(STORAGE / "logs" / "mpt_runtime.log", encoding="utf-8")
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+        file_handler._thunderbolt_mpt_handler = True  # type: ignore[attr-defined]
+        _mpt_logger.addHandler(file_handler)
+    except OSError:
+        pass  # sem ficheiro: a telemetria fica muda, o motor continua
+    debug = os.environ.get("THUNDERBOLT_DEBUG", "").strip() == "1"
+    stream_handler = logging.StreamHandler()
+    # INFO só em depuração; erros/avisos continuam sempre no terminal.
+    stream_handler.setLevel(logging.INFO if debug else logging.WARNING)
+    stream_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    stream_handler._thunderbolt_mpt_handler = True  # type: ignore[attr-defined]
+    _mpt_logger.addHandler(stream_handler)
+
+
+def _mpt_runtime_log(message: str) -> None:
+    """Regista a telemetria do motor em FICHEIRO; o terminal vê só o que importa.
+
+    Sem handler configurado o logging root engoliria INFO - o padrão
+    [BROWSER-LAUNCH] (1.0.08) é um handler estável por logger.
+    """
+    _ensure_mpt_logger_handlers()
     _mpt_logger.info(message)
+
+
+def _mpt_runtime_error(message: str) -> None:
+    """Erro/aviso real do motor: vai para o ficheiro E para o terminal.
+
+    Usado onde a mensagem é uma falha que o utilizador tem de ver (a tarefa
+    falhou, o ficheiro está bloqueado, a queima de legendas não aconteceu) —
+    o terminal continua a ser o sítio onde isso aparece, sem depender de
+    `THUNDERBOLT_DEBUG`.
+    """
+    try:
+        _ensure_mpt_logger_handlers()
+    except Exception:  # noqa: BLE001 - o log nunca pode derrubar o worker
+        pass
+    _mpt_logger.warning(message)
 
 
 # 1.0.17 — arranque concorrente do runtime MPT: com 3+ vídeos em paralelo o
@@ -3147,10 +3196,12 @@ def _apply_mpt_captions(
             _mpt_runtime_log(f"[MPT-SUBTITLES] [ERRO] {exc}")
             _log_mpt_captions_total(task, burn_started)
             raise
-        import sys as _sys
-
-        print(f"[pexels] legendas ignoradas por falha na queima: {exc}", file=_sys.stderr)
-        _mpt_runtime_log(f"[MPT-SUBTITLES] [AVISO] falha na queima local ({exc}) — o vídeo {Path(video_path).name} mantém-se sem legendas")
+        # 1.1.00 - era um print cru para stderr, DUPLICADO da linha de aviso
+        # abaixo (o terminal mostrava a mesma falha duas vezes, uma delas sem
+        # timestamp nem contexto). A falha é real e continua visível: agora
+        # passa por _mpt_runtime_error, que a escreve no ficheiro E no
+        # terminal (nível WARNING).
+        _mpt_runtime_error(f"[MPT-SUBTITLES] [AVISO] falha na queima local ({exc}) - o vídeo {Path(video_path).name} mantém-se sem legendas")
         return video_path, False
 
 
