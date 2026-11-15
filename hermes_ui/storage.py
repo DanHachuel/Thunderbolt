@@ -1054,27 +1054,133 @@ def _append_recovery_event(name: str, message: str) -> None:
         pass
 
 
+# ── Recuperação de estado protegido: incidente 13/11/2026 ─────────────────────
+# Os 117 vídeos da aba Automação apareceram como 4 na interface. Nada foi
+# apagado: uma leitura TRANSITÓRIA do tasks.json falhou (violação de partilha
+# do Windows durante uma escrita concorrente), o sistema preservou o ficheiro
+# como tasks.json.corrupt-20261113234519534382 — com os 117 itens, válido — e
+# restaurou por cima um backup de 28 de Agosto com 3 itens, ignorando a cópia
+# que acabara de criar. Daqui saem três regras, todas cravaadas em testes:
+#
+# 1. REGRA DE OURO: a cópia preservada no momento do erro é byte-a-byte do
+#    ficheiro que falhou — a fonte mais fresca que existe. Ela é tentada
+#    PRIMEIRO; se parsear, é ela que é restaurada, nunca um backup antigo.
+# 2. RELEITURA: a própria leitura pode ter falho de forma transitória; o
+#    ficheiro em disco costuma estar inteiro. Lê-lo de novo é o restauro
+#    perfeito — não escreve nada e não perde uma única tarefa.
+# 3. GUARDA DE ENCOLHIMENTO: nenhum restauro pode devolver menos de metade dos
+#    itens conhecidos. Sobrescrever 100+ tarefas por 3 de um backup antigo é
+#    exactamente como se perdem dados; nesse caso o corrompido fica preservado
+#    para análise manual.
+
+_RECOVERY_SHRINK_RATIO = 0.5
+
+
+def _item_count(data: Any) -> int | None:
+    """Nº de itens de um snapshot de lista; None para objectos/ilegíveis."""
+    return len(data) if isinstance(data, list) else None
+
+
+def _shrink_is_obsolete(candidate_items: int | None, reference_items: int | None) -> bool:
+    """Um restauro com < 50% dos itens conhecidos é obsoleto — bloqueado."""
+    if candidate_items is None or reference_items is None or reference_items <= 0:
+        return False
+    return candidate_items < reference_items * _RECOVERY_SHRINK_RATIO
+
+
+def _safe_mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _recovery_candidates(path: Path, fresh: Path | None) -> list[Path]:
+    """Candidatos a restauro, do mais fresco para o mais antigo.
+
+    1. a cópia acabada de preservar (`_corrupt_backup`) — byte-a-byte do
+       ficheiro que falhou, a fonte mais fresca possível;
+    2. os outros ``.corrupt-*`` por data descendente;
+    3. os leftovers de escrita atómica ``.<nome>.*`` por data descendente
+       (snapshots completos de escritas interrompidas — a lógica anterior
+       nunca os considerou). O lock e os temporários de restauro em curso
+       ficam de fora.
+    """
+    candidates: list[Path] = []
+    if fresh is not None:
+        candidates.append(fresh)
+    corrupt = sorted(path.parent.glob(f"{path.name}.corrupt-*"), key=_safe_mtime, reverse=True)
+    candidates.extend(item for item in corrupt if item != fresh)
+    leftovers = sorted(path.parent.glob(f".{path.name}.*"), key=_safe_mtime, reverse=True)
+    candidates.extend(
+        item for item in leftovers
+        if item != fresh and item.is_file() and not item.name.endswith(".lock")
+    )
+    return candidates
+
+
 def _recover_json_unlocked(name: str, path: Path, default: Any | None) -> Any:
     backup = _corrupt_backup(path)
     _append_recovery_event(name, f"ficheiro invalido; copia preservada em {backup or path}")
-    if name in _PROTECTED_STATE_FILES:
-        candidates = sorted(path.parent.glob(f"{path.name}.corrupt-*"), key=lambda item: item.stat().st_mtime, reverse=True)
+
+    # 2) RELEITURA: a falha pode ter sido transitória (partilha do Windows,
+    #    antivírus, replace atómico em curso). O ficheiro em disco costuma
+    #    estar inteiro — relê-lo não escreve nada e não perde tarefas.
+    try:
+        data = _load_json_unlocked(path)
+    except (json.JSONDecodeError, OSError):
+        pass
+    else:
+        _append_recovery_event(name, "ficheiro relido com sucesso; falha de leitura transitoria — nenhum restauro necessario")
+        return data
+
+    if name not in _PROTECTED_STATE_FILES:
+        fallback = deepcopy(DEFAULTS.get(name, [] if default is None else default))
+        _atomic_write_unlocked(path, fallback)
+        return fallback
+
+    candidates = _recovery_candidates(path, backup)
+
+    # Referência de tamanho para a guarda de encolhimento: o nº de itens da
+    # cópia preservada (byte-a-byte do ficheiro que falhou). Se ela também
+    # não parseia, o maior candidato legível é o melhor proxy do tamanho real
+    # do estado — é o que impede um backup de 3 itens de substituir 100.
+    reference: int | None = None
+    if backup is not None:
+        try:
+            reference = _item_count(_load_json_unlocked(backup))
+        except (json.JSONDecodeError, OSError):
+            reference = None
+    if reference is None:
+        readable: list[int] = []
         for candidate in candidates:
-            if backup is not None and candidate == backup:
-                continue
             try:
-                recovered = _load_json_unlocked(candidate)
+                count = _item_count(_load_json_unlocked(candidate))
             except (json.JSONDecodeError, OSError):
                 continue
-            _atomic_write_unlocked(path, recovered)
-            _append_recovery_event(name, f"restaurado a partir de {candidate.name} — verifique os dados recentes")
-            return recovered
-        location = str(backup or path)
-        _append_recovery_event(name, f"nenhum backup valido; operacao interrompida ({location})")
-        raise StorageIntegrityError(f"O ficheiro protegido {name} está corrompido. A cópia foi preservada em {location}.")
-    fallback = deepcopy(DEFAULTS.get(name, [] if default is None else default))
-    _atomic_write_unlocked(path, fallback)
-    return fallback
+            if count is not None:
+                readable.append(count)
+        reference = max(readable) if readable else None
+
+    for candidate in candidates:
+        try:
+            recovered = _load_json_unlocked(candidate)
+        except (json.JSONDecodeError, OSError):
+            continue
+        if _shrink_is_obsolete(_item_count(recovered), reference):
+            _append_recovery_event(
+                name,
+                f"restauro de {candidate.name} abortado: {_item_count(recovered)} itens "
+                f"< 50% de {reference}; ficheiro corrompido preservado para analise manual",
+            )
+            continue
+        _atomic_write_unlocked(path, recovered)
+        _append_recovery_event(name, f"restaurado a partir de {candidate.name} — verifique os dados recentes")
+        return recovered
+
+    location = str(backup or path)
+    _append_recovery_event(name, f"nenhum backup valido; operacao interrompida ({location})")
+    raise StorageIntegrityError(f"O ficheiro protegido {name} está corrompido. A cópia foi preservada em {location}.")
 
 
 def read_json(name: str, default: Any | None = None) -> Any:
