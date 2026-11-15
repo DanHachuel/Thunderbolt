@@ -23,6 +23,12 @@ secondaryBackgroundColor = "#EEF2F7"
 
 [client]
 toolbarMode = "auto"
+# 1.1.00 - a app tem navegação PRÓPRIA (st.sidebar com o menu em árvore). A
+# pasta app/pages/ faz o Streamlit injectar um selector automático de páginas
+# ("main" / "canva skills") ACIMA do logo — poluição visual no topo da sidebar.
+# Desliga essa navegação automática; a página Canva Skills deixa de aparecer
+# nesse selector (continua no repo, app/pages/canva_skills.py).
+showSidebarNavigation = false
 
 [server]
 enableStaticServing = true

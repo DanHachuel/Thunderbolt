@@ -8610,8 +8610,14 @@ def _render_task_thumbnail(thumbnail_path: Path | None) -> None:
     não sabia distinguir bug da UI de falta de imagem.
 
     Agora: imagem quando existe (o `st.image` faz stream do caminho, como
-    sempre) e um bloco cinza explícito — "Thumbnail não gerada" — quando não
+    sempre) e uma linha cinza discreta — "Thumbnail não gerada" — quando não
     existe. Nada muda no resto do card (botões, player, progresso, downloads).
+
+    1.1.00 — o bloco `/placeholder` da 1.0.81 (fundo claro, borda tracejada e
+    padding de 28 px) voltou a ser lido como erro de layout: um rectângulo
+    branco no meio do card. Passa a ser só texto cinza, sem fundo nem borda —
+    continua a distinguir "não há imagem" de "bug da UI", mas sem o destaque
+    visual.
 
     1.0.84 — o `is_file()` é apenas um stat (nunca lê bytes) e está dentro de
     try/except: um caminho inacessível (rede, permissão, drive desmontado) dá
@@ -8633,8 +8639,7 @@ def _render_task_thumbnail(thumbnail_path: Path | None) -> None:
         except OSError:
             pass  # caminho inacessível: placeholder, nunca excepção na página
     st.markdown(
-        "<div style='background:#F0F2F6;border:1px dashed #C7CBD1;border-radius:8px;"
-        "padding:28px 10px;text-align:center;color:#5B6470;font-size:0.85rem'>"
+        "<div style='text-align:center;color:#8A94A6;font-size:0.78rem;padding:8px 4px'>"
         "Thumbnail não gerada</div>",
         unsafe_allow_html=True,
     )

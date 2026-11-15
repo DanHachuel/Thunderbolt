@@ -58,7 +58,13 @@ def test_missing_path_shows_the_placeholder(render):
     kind, markup, _ = streamlit.calls[0]
     assert kind == "markdown"
     assert "Thumbnail não gerada" in markup
-    assert "#F0F2F6" in markup  # bloco cinza: não fica buraco branco
+    # 1.1.00 - o placeholder deixa de ser um rectângulo: sem fundo nem borda,
+    # só texto cinza discreto (o bloco branco era lido como erro de layout).
+    assert "background" not in markup
+    assert "border" not in markup
+    assert "#F0F2F6" not in markup
+    assert "padding:28px" not in markup
+    assert "color:#8A94A6" in markup  # texto cinza discreto
 
 
 def test_path_that_does_not_exist_shows_the_placeholder(render):
