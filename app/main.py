@@ -8613,7 +8613,7 @@ def _render_task_thumbnail(thumbnail_path: Path | None) -> None:
     sempre) e uma linha cinza discreta — "Thumbnail não gerada" — quando não
     existe. Nada muda no resto do card (botões, player, progresso, downloads).
 
-    1.1.00 — o bloco `/placeholder` da 1.0.81 (fundo claro, borda tracejada e
+    1.1.01 — o bloco `/placeholder` da 1.0.81 (fundo claro, borda tracejada e
     padding de 28 px) voltou a ser lido como erro de layout: um rectângulo
     branco no meio do card. Passa a ser só texto cinza, sem fundo nem borda —
     continua a distinguir "não há imagem" de "bug da UI", mas sem o destaque
