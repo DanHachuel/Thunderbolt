@@ -56,8 +56,34 @@ def test_update_uses_npx_install_without_passing_settings_or_secrets():
     assert result.restart_required is True
     assert captured["command"][-2:] == ["@danhachuel/thunderbolt", "install"]
     assert "settings" not in " ".join(captured["command"]).lower()
-    assert captured["kwargs"]["stdout"] is update_manager.subprocess.DEVNULL
-    assert captured["kwargs"]["stderr"] is update_manager.subprocess.DEVNULL
+    # 1.1.02: o comando corre com stdin fechado e NUNCA devolve output de
+    # instalador para a UI - a saida vai para storage/logs/update.log.
+    assert captured["kwargs"]["stdin"] is update_manager.subprocess.DEVNULL
+    assert "stdout" not in captured["kwargs"]
+    assert "stderr" not in captured["kwargs"]
+
+
+def test_sync_fallback_writes_the_installer_output_to_the_log(tmp_path, monkeypatch):
+    """O caminho sincrono (fallback) deixou de descartar a saida: vai para o log."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    monkeypatch.setattr(update_manager, "update_log_path", lambda: log_dir / "update.log")
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured["stdout"] = kwargs.get("stdout")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(update_manager.subprocess, "run", fake_run)
+
+    result = update_manager.update_to_latest(
+        "0.3.96",
+        get=lambda *args, **kwargs: _Response("0.3.97"),
+    )
+
+    assert result.ok is True
+    assert (log_dir / "update.log").exists(), "a instalacao tem de deixar rasto no log"
+    assert captured["stdout"] is not None, "a saida do instalador vai para o ficheiro"
 
 
 def test_restart_current_process_reexecutes_the_same_python_command(monkeypatch):
@@ -233,6 +259,55 @@ def test_streamlit_restart_loop_is_bounded():
     assert "streamlitAutoRestartDisabled" in block
     assert "streamlitFailureCount >= 5" in block
     assert "Math.min(2 ** streamlitFailureCount, 32) * 1000" in block
+
+
+def test_home_update_now_runs_in_the_background_without_blocking_the_page():
+    """1.1.02 - o clique lanca o job e reruna; a pagina nunca espera pelo npx."""
+    source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+    home_controls = source.split("def render_home_update_controls() -> None:", 1)[1].split("def render_dashboard():", 1)[0]
+
+    assert "started = start_update(APP_VERSION)" in home_controls
+    assert 'st.session_state["home_update_watching"] = True' in home_controls
+    # nenhum st.spinner bloqueia o handler do botao: quem mostra o spinner e o
+    # fragmento de progresso, que corre em paralelo
+    assert 'st.spinner("A instalar a versão mais recente…")' not in home_controls
+
+
+def test_home_update_progress_fragment_polls_the_status_file():
+    """O fragmento de progresso existe, tem timer e mata o proprio timer no fim."""
+    source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+    fragmento = source.split("def _home_update_progress_fragment() -> None:", 1)[1].split("\ndef ", 1)[0]
+
+    assert "@st.fragment(run_every=_HOME_UPDATE_POLL_SECONDS)" in source
+    assert "read_update_status()" in fragmento
+    assert "_stop_own_fragment_auto_rerun()" in fragmento  # sem loop eterno (skill streamlit-estado)
+    assert "st.spinner(" in fragmento  # spinner enquanto corre
+
+
+def test_home_update_failure_shows_the_log_and_a_retry_button():
+    """Falha: cauda do log + botao de tentar novamente (nunca mensagem muda)."""
+    source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+    fragmento = source.split("def _home_update_progress_fragment() -> None:", 1)[1].split("\ndef ", 1)[0]
+
+    assert "_update_log_tail()" in fragmento
+    assert "update.log" in fragmento
+    assert 'st.button("Tentar novamente", key="home_update_retry"' in fragmento
+
+
+def test_home_update_progress_is_only_rendered_while_a_job_runs():
+    """Sem job a correr nao ha fragmento nenhum - zero polling permanente."""
+    source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+    home_controls = source.split("def render_home_update_controls() -> None:", 1)[1].split("def render_dashboard():", 1)[0]
+
+    assert 'if st.session_state.get("home_update_watching") or read_update_status().get("status") == "running":' in home_controls
+    assert "_home_update_progress_fragment()" in home_controls
+
+
+def test_update_manager_exposes_the_background_api():
+    from hermes_ui import update_manager
+
+    for nome in ("start_update", "read_update_status", "update_log_path"):
+        assert hasattr(update_manager, nome), f"falta {nome} em hermes_ui/update_manager.py"
 
 
 def test_home_update_is_disabled_while_video_tasks_are_doing():

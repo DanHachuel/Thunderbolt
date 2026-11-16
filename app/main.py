@@ -837,7 +837,15 @@ from hermes_ui.languages import FLAG_DATA_URIS_BY_ISO, LANGUAGE_CODES, VIDEO_LAN
 from hermes_ui.countries import COUNTRY_OPTIONS
 from hermes_ui.api_key_tests import test_apify_credentials, test_influencer_database, test_innertube_api_key, test_kaggle_credentials, test_kalodata_credentials, test_material_source_credentials, test_media_provider_card, test_nano_banana_credentials, test_postiz_credentials, test_telegram_credentials, test_tiktok_credentials, test_upload_post_credentials, test_voice_provider
 from hermes_ui.tutorials import tutorial_body, tutorial_caption, tutorial_title
-from hermes_ui.update_manager import check_version, restart_current_process, update_to_latest
+from hermes_ui.update_manager import (
+    UpdateResult,
+    check_version,
+    read_update_status,
+    restart_current_process,
+    start_update,
+    update_log_path,
+    update_to_latest,
+)
 
 from hermes_ui.script_documents import delete_script_document, list_script_documents, read_script_document, save_script_document, script_storage_path, update_script_document, update_script_document_metadata
 from hermes_ui.script_generation import generate_script_document
@@ -2943,6 +2951,72 @@ def render_channel_edit_form(channel: dict, youtube_account_ids: list[str], yout
             st.error(str(exc))
 
 
+_HOME_UPDATE_POLL_SECONDS = 2
+
+
+@st.fragment(run_every=_HOME_UPDATE_POLL_SECONDS)
+def _home_update_progress_fragment() -> None:
+    """Acompanha a actualizacao em SEGUNDO PLANO, sem bloquear a pagina (1.1.02).
+
+    O instalador (`npx ... install`) corre numa thread daemon e publica o estado
+    em `storage/state/update_status.json`; este fragmento le esse ficheiro a cada
+    2 s. Regra da skill `streamlit-estado`: quando o trabalho termina, o
+    fragmento CANCELA o proprio timer (`_stop_own_fragment_auto_rerun`) em vez de
+    deixar um loop de rede permanente.
+
+    - `running` -> spinner + linha de progresso (o log vive em
+      `storage/logs/update.log`);
+    - `done` -> guarda o resultado e forca UM rerun completo (a pagina Inicio
+      mostra o sucesso e reinicia o processo para carregar a versao nova);
+    - `error` -> mostra a cauda do log e um botao "Tentar novamente".
+    """
+    status = read_update_status()
+    state = str(status.get("status") or "idle")
+    if state == "running":
+        with st.spinner("A instalar a versao mais recente..."):
+            st.caption(
+                f"A instalar {display_version(str(status.get('latest_version') or ''))} - "
+                "a acompanhar em storage/logs/update.log"
+            )
+        return
+    _stop_own_fragment_auto_rerun()
+    if state == "done" and not st.session_state.get("home_update_restart_done"):
+        st.session_state["home_update_restart_done"] = True
+        st.session_state["home_update_result"] = UpdateResult(
+            True,
+            latest_version=str(status.get("latest_version") or ""),
+            message=str(status.get("message") or "Actualizacao concluida."),
+            restart_required=True,
+        )
+        st.session_state["home_update_notice_dismissed"] = False
+        st.rerun()
+        return
+    if state == "error":
+        st.session_state["home_update_result"] = UpdateResult(
+            False,
+            latest_version=str(status.get("latest_version") or ""),
+            message=str(status.get("message") or "A actualizacao falhou."),
+        )
+        st.session_state["home_update_notice_dismissed"] = False
+        with st.expander("Ver o relatorio da actualizacao (storage/logs/update.log)"):
+            tail = _update_log_tail()
+            st.code(tail or "(log vazio)")
+        if st.button("Tentar novamente", key="home_update_retry", icon=":material/refresh:"):
+            retry = start_update(APP_VERSION)
+            st.session_state["home_update_result"] = retry
+            if retry.status == "running":
+                st.rerun()
+
+
+def _update_log_tail(lines: int = 40) -> str:
+    """Ultimas linhas do log de actualizacao (Diagnostico de falha na UI)."""
+    try:
+        content = update_log_path().read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    return "\n".join(content.strip().splitlines()[-lines:])
+
+
 def render_home_update_controls() -> None:
     """Render update controls and only show actionable or execution-related notices."""
     cache_key = "home_update_version_check"
@@ -3007,14 +3081,29 @@ def render_home_update_controls() -> None:
         if update_blocked:
             st.warning("Actualização bloqueada enquanto houver tarefas de vídeo em execução.")
         if st.button("Atualizar Versão", key="home_update_version", type="primary", icon=":material/system_update:", disabled=update_blocked):
-            with st.spinner("A instalar a versão mais recente…"):
-                update_result = update_to_latest(APP_VERSION)
-                st.session_state["home_update_result"] = update_result
-                st.session_state["home_update_notice_dismissed"] = False
-                if update_result.ok and update_result.restart_required:
-                    st.success("Actualização concluída. A reiniciar o Thunderbolt para aplicar a nova versão…")
-                    time.sleep(0.8)  # backoff/grace: unica forma de o aviso render antes do restart
-                    restart_current_process()
+            # 1.1.02 - a instalacao corre em background (thread daemon); a UI
+            # reruna de imediato e o fragmento _home_update_progress_fragment
+            # acompanha o estado. Nada bloqueia a pagina durante os minutos do
+            # npx install.
+            started = start_update(APP_VERSION)
+            st.session_state["home_update_result"] = started
+            st.session_state["home_update_notice_dismissed"] = False
+            if started.status == "running":
+                st.session_state["home_update_watching"] = True
+                st.session_state["home_update_restart_done"] = False
+            st.rerun()
+        # Conclusao: o fragmento gravou o resultado e rerunou a pagina. Aqui o
+        # processo reinicia para carregar a versao nova (st.rerun() apenas
+        # reexecuta o script - o codigo novo so chega com o restart).
+        update_result = st.session_state.get("home_update_result")
+        if update_result is not None and update_result.ok and update_result.restart_required and not st.session_state.get("home_update_restarted"):
+            st.session_state["home_update_restarted"] = True
+            st.session_state["home_update_watching"] = False
+            st.success("Actualização concluída. A reiniciar o Thunderbolt para aplicar a nova versão…")
+            time.sleep(0.8)  # backoff/grace: unica forma de o aviso render antes do restart
+            restart_current_process()
+        if st.session_state.get("home_update_watching") or read_update_status().get("status") == "running":
+            _home_update_progress_fragment()
     if notice_visible:
         with notice_area:
             if notice_kind == "info":
