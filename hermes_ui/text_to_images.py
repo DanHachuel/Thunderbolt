@@ -370,6 +370,162 @@ def _sanitise_text_overlay(value: Any) -> str:
     return " ".join(words[:3])[:32].strip()
 
 
+# 1.1.02 — anti-viés asiático nos prompts de cena (text_to_images). O modelo
+# de imagem (Qwen/variantes) produz, por omissão, pessoas Leste/Sudeste
+# asiáticas: um prompt sem descritor étnico («A soldier in uniform») quase
+# sempre sai asiático, o que quebra roteiros de contexto ocidental (soldados
+# americanos/alemães na 2ª Guerra, finanças nos EUA...). O gerador passa a
+# (1) extrair a etnia/contexto do roteiro com um LLM, (2) injectá-la em cada
+# cena COM pessoas, e (3) usar um descritor de diversidade quando a análise
+# não determina nada — nenhum prompt de pessoa fica sem instrução de aparência.
+SCENE_PROMPT_CHAR_LIMIT = 240
+APPEARANCE_DESCRIPTOR_CHAR_LIMIT = 120
+DEFAULT_APPEARANCE_DESCRIPTOR = "diverse ethnicities, mixed genders, varied ages"
+# Respostas do LLM que NÃO determinam etnia de facto (viram o descritor
+# genérico de diversidade). NOTA: «diverse American professionals» NÃO entra
+# aqui — é uma resposta útil derivada do contexto do canal.
+_NON_ANSWER_ETHNICITY = {
+    "",
+    "diverse",
+    "diverso",
+    "diversos",
+    "unknown",
+    "desconhecido",
+    "n/a",
+    "na",
+    "none",
+    "nenhum",
+    "unspecified",
+}
+# Presença humana num PROMPT já gerado (usada só quando o LLM não devolve a
+# flag 'people'). Cobre substantivos de pessoa comuns em fotografia/cinema.
+_PEOPLE_HINT = re.compile(
+    r"\b(person|people|human|man|men|woman|women|boy|girl|child|children|family|crowd|face|faces|"
+    r"portrait|soldier|soldiers|officer|officers|general|admiral|civilian|civilians|businessman|"
+    r"businesswoman|professional|professionals|worker|workers|farmer|nurse|doctor|pilot|sailor|"
+    r"priest|monk|refugee|refugees|spy|veteran|figure|silhouette)\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_target_ethnicity(script_text: str, style: str, settings: dict, channel: dict) -> str:
+    """Analisa o roteiro com o LLM e devolve o descritor de etnia predominante.
+
+    1.1.02 — um passo dedicado (o mesmo pool LLM dos prompts) que envia o
+    ROTEIRO completo e pede um único campo ``target_ethnicity``. Sem menção
+    explícita no roteiro, o LLM infere pelo contexto do canal (finanças EUA →
+    «diverse American professionals»). É BEST-EFFORT: qualquer falha de routing
+    ou payload malformado devolve "" para o chamador aplicar o descritor de
+    diversidade — uma dica de contexto nunca pode abortar o vídeo.
+    """
+    narration = " ".join(str(script_text or "").split())[:4000]
+
+    def _field(*keys: str) -> str:
+        for key in keys:
+            if isinstance(channel, dict) and str(channel.get(key) or "").strip():
+                return str(channel.get(key)).strip()[:120]
+        return ""
+
+    system = (
+        "You are a casting director and cultural-context analyst. Return only valid JSON with a single "
+        "field 'target_ethnicity'. Read the narration and identify the predominant nationality/ethnicity of "
+        "the human characters (e.g. 'Caucasian American', 'German', 'Japanese', 'Brazilian'); when more than "
+        "one nationality appears, combine them (e.g. 'Caucasian American and German soldiers'). The value "
+        "must be a short natural-language descriptor. If the narration does not name the people explicitly, "
+        "infer the most likely ethnicity from the channel context and setting. Only answer 'diverse' when "
+        "there is genuinely no context at all."
+    )
+    payload = {
+        "style": style,
+        "channel": {
+            "name": _field("name"),
+            "description": _field("description"),
+            "niche": _field("niche"),
+            "language": _field("language"),
+        },
+        "narration": narration,
+    }
+    try:
+        response = route_llm_json(settings, system, json.dumps(payload, ensure_ascii=False))
+        data = response.payload if isinstance(response.payload, dict) else {}
+        value = data.get("target_ethnicity") or data.get("ethnicity") or data.get("nationality")
+        return str(value or "").strip()[:APPEARANCE_DESCRIPTOR_CHAR_LIMIT]
+    except (ProviderRoutingError, ValueError, TypeError, KeyError, AttributeError, IndexError):
+        return ""
+
+
+def _resolve_appearance_directive(script_text: str, style: str, settings: dict, channel: dict) -> str:
+    """Descritor de aparência final: etnia detectada OU diversidade genérica.
+
+    1.1.02 — garante o requisito «nunca deixar um prompt de pessoa sem
+    descritor»: se a análise não determina nada (string vazia ou resposta
+    «diverse»/«unknown»), o motor usa o descritor genérico de diversidade em
+    vez de deixar o modelo cair no viés asiático.
+    """
+    target = _detect_target_ethnicity(script_text, style, settings, channel)
+    if target.strip().casefold() in _NON_ANSWER_ETHNICITY:
+        return DEFAULT_APPEARANCE_DESCRIPTOR
+    return target
+
+
+def _scene_shows_people(prompt_text: str, flag: Any) -> bool:
+    """Uma cena contém pessoas? A flag do LLM manda; sem ela, a heurística.
+
+    1.1.02 — só as cenas COM pessoas recebem o descritor étnico; paisagens,
+    objectos e veículos ficam com o prompt original (a etnia não faz sentido
+    aí). A flag `people` devolvida pelo LLM é a fonte autoritativa; o regex
+    apenas cobre o caso de o LLM a omitir.
+    """
+    if isinstance(flag, bool):
+        return flag
+    if isinstance(flag, str):
+        normalized = flag.strip().casefold()
+        if normalized in ("true", "yes", "1"):
+            return True
+        if normalized in ("false", "no", "0"):
+            return False
+    return bool(_PEOPLE_HINT.search(str(prompt_text or "")))
+
+
+def _inject_appearance(prompt: str, descriptor: str) -> str:
+    """Injecta o descritor de aparência de forma natural num prompt com pessoas.
+
+    1.1.02 — «A soldier in uniform» → «A Caucasian American soldier in
+    uniform»: o descritor entra a seguir ao artigo inicial quando existe (a/an/
+    the), ou no início com vírgula. Se o LLM já tiver incluído a etnia
+    (substring presente), não duplica. O resultado continua dentro do limite de
+    240 caracteres e o descritor fica sempre à frente — é a parte que não pode
+    ser cortada.
+    """
+    text = str(prompt or "").strip()
+    desc = str(descriptor or "").strip().strip(",; ").strip()
+    if not text or not desc:
+        return text
+    if desc.casefold() in text.casefold():
+        return text  # LLM já representou a etnia — não duplicar
+    match = re.match(r"^(a|an|the)\b(.*)$", text, flags=re.IGNORECASE)
+    combined = f"{match.group(1)} {desc}{match.group(2)}" if match else f"{desc}, {text}"
+    return combined[:SCENE_PROMPT_CHAR_LIMIT]
+
+
+def _appearance_prompt_section(descriptor: str) -> str:
+    """Bloco de system prompt: ensina o LLM a representar a etnia + a marcá-la.
+
+    1.1.02 — pede ao LLM que descreva as pessoas como ``<descriptor>`` (nunca
+    Leste/Sudeste asiático por omissão) e que devolva, por cena, a flag
+    ``people`` que depois governa a injecção determinística em código.
+    """
+    return (
+        "CASTING & ETHNICITY (HARD RULE — image models over-represent Asian faces by default):\n"
+        f"When — and only when — a scene contains one or more people, render them as: {descriptor}. "
+        "Never describe characters as East or Southeast Asian unless the narration explicitly calls for it; "
+        "if the visual rules above forbid humans, that rule wins and no person appears at all. "
+        "For EVERY scene also return a boolean field 'people': true when one or more humans or "
+        "anthropomorphic characters are visible, false for pure landscape, object, vehicle, food or "
+        "abstract scenes."
+    )
+
+
 def generate_image_prompts_for_scenes(
     scenes: list[dict],
     style: str,
@@ -393,6 +549,12 @@ def generate_image_prompts_for_scenes(
     if not scenes:
         return []
     text_positions = _scene_text_overlay_positions(len(scenes))
+    # 1.1.02: a etnia/contexto do roteiro é analisada ANTES de gerar os
+    # prompts de cena — o descritor resultante entra em cada cena com pessoas
+    # (ver _resolve_appearance_directive) para o modelo de imagem não cair no
+    # viés asiático por omissão.
+    script_text = " ".join(str(scene.get("text") or "") for scene in scenes).strip()
+    appearance = _resolve_appearance_directive(script_text, style, settings, channel)
     system = (
         "You are a cinematic storyboard artist. Return only valid JSON with a 'scenes' array. "
         "For every scene create an image prompt of no more than 240 characters. Never include words, letters, logos or watermarks. "
@@ -406,9 +568,14 @@ def generate_image_prompts_for_scenes(
     visual_section = visual_requirements_prompt_section(blueprint)
     if visual_section:
         system += "\n\n" + visual_section
+    # 1.1.02: o descritor étnico (ou o de diversidade) entra no system prompt
+    # do gerador de cena e no payload — o LLM sabe como representar as pessoas
+    # e devolve a flag 'people' que governa a injecção determinística abaixo.
+    system += "\n\n" + _appearance_prompt_section(appearance)
     payload = {
         "style": style,
         "channel": channel,
+        "appearance": appearance,
         "scenes": [
             {
                 "index": item.get("index"),
@@ -433,9 +600,17 @@ def generate_image_prompts_for_scenes(
     for position, scene in enumerate(scenes):
         index = int(scene.get("index") or len(output) + 1)
         candidate = by_index.get(index, {})
-        prompt = str(candidate.get("prompt") or candidate.get("Prompt") or "").strip()[:240]
+        raw_prompt = str(candidate.get("prompt") or candidate.get("Prompt") or "").strip()[:SCENE_PROMPT_CHAR_LIMIT]
         overlay = _sanitise_text_overlay(candidate.get("text_overlay")) if position in text_positions else ""
-        if not prompt:
+        if raw_prompt:
+            prompt = raw_prompt
+            # 1.1.02: anti-viés — só prompts gerados pelo LLM ganham o
+            # descritor étnico (eles trazem a flag 'people'); o fallback obedece
+            # apenas à lei visual do canal, para não injectar pessoas num canal
+            # «ABSOLUTELY NO HUMANS».
+            if _scene_shows_people(prompt, candidate.get("people")):
+                prompt = _inject_appearance(prompt, appearance)
+        else:
             prompt = f"Cinematic scene, dramatic lighting, dynamic composition, visual storytelling about {str(scene.get('text') or '')[:160]}"
             if visual_fallback_suffix:
                 prompt = f"{prompt}. {visual_fallback_suffix}"
