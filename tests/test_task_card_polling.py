@@ -1,4 +1,4 @@
-"""Polling em tempo real dos cards de tarefa (1.0.15).
+"""Polling em tempo real dos cards de tarefa (1.0.15) e dos KPIs (1.1.02).
 
 Backlog Vídeos e Automação Youtube deixaram de precisar de F5: cada card vive
 no seu próprio fragment e RELÊ o tasks.json em cada execução. Regra de ouro do
@@ -10,10 +10,17 @@ Quando o live detecta um estado terminal, CANCELA o próprio timer via
 ``_stop_own_fragment_auto_rerun()`` (1.0.16: a mensagem ``stop_auto_rerun``
 que o runtime usa internamente) — zero reruns completos a partir do polling,
 sem os avisos "The fragment ... does not exist anymore" que o antigo
-``st.rerun(scope="app")`` inundava no terminal e sem destruir os outros cards.
-O memo de 2s partilhado garante que N cards a pollar custem 1 leitura do
-catálogo por janela, e as acções da UI (Start/Stop/Refazer/Apagar) invalidam-no
-para responderem no instante. Zero alterações ao worker de background.
+``st.rerun(scope="app")`` inundavam no terminal e sem destruir os outros
+cards. O memo de 2s partilhado garante que N cards a pollar custem 1 leitura
+do catálogo por janela, e as acções da UI (Start/Stop/Refazer/Apagar)
+invalidam-no para responderem no instante. Zero alterações ao worker de
+background.
+
+1.1.02 — KPIs DA ABA AUTOMAÇÃO YOUTUBE AO VIVO: os blocos do topo (Tarefas,
+A Fazer, Em Fila, Em Execução, Concluídos, Falhas) eram renderizados no corpo
+principal do script desde a 0.9.95, fora de qualquer fragment — só um rerun
+completo (F5) os actualizava. Passam a ter a variante live
+(``_render_youtube_automation_kpis_live``), com o mesmo contrato dos cards.
 """
 from __future__ import annotations
 
@@ -100,6 +107,38 @@ def test_youtube_task_list_dispatches_cards_by_liveness():
     assert "if _catalog_task_state(task) in _VIDEO_TASK_LIVE_STATES:" in block
     assert "_youtube_task_card_live(task_id)" in block
     assert "_youtube_task_card_idle(task_id)" in block
+
+
+# ---------------------------------------------------------------------------
+# 1.1.02: KPIs da aba Automação Youtube ao vivo (regressão do F5)
+# ---------------------------------------------------------------------------
+
+
+def test_youtube_automation_kpis_have_a_live_fragment():
+    """Os KPIs vivem num fragment com run_every enquanto há tarefa viva.
+
+    Regressão corrigida: desde a 0.9.95 eram renderizados no corpo principal
+    do script — o utilizador via-os congelados até apertar F5."""
+    assert "@st.fragment(run_every=_VIDEO_TASK_POLL_SECONDS)\ndef _render_youtube_automation_kpis_live(" in MAIN_SOURCE
+    live = MAIN_SOURCE.split("def _render_youtube_automation_kpis_live(", 1)[1].split("def hasPendingPipelineWork(", 1)[0]
+    # relê o catálogo e o estado do worker a cada tick (nada de dados velhos
+    # vindos do rerun principal)
+    assert 'load_automation_tasks_for_platform("youtube")' in live
+    assert "load_worker_status()" in live
+    assert "_render_youtube_automation_kpis(tasks, worker_status)" in live
+    # regra de ouro: cancela o PRÓPRIO timer quando o catálogo fica terminal,
+    # sem rerun completo a partir do polling (1.0.16)
+    assert "if not any(_video_task_is_live(task) for task in tasks):" in live
+    assert "_stop_own_fragment_auto_rerun()" in live
+    assert "st.rerun(" not in live
+
+
+def test_render_automation_dispatches_kpis_by_liveness():
+    """O despacho live/estático dos KPIs existe na aba (como nos cards)."""
+    block = MAIN_SOURCE.split("def render_automation():", 1)[1].split("def render_upload_direct():", 1)[0]
+    assert "if any(_video_task_is_live(task) for task in yt_tasks):" in block
+    assert "_render_youtube_automation_kpis_live()" in block
+    assert "_render_youtube_automation_kpis(yt_tasks, worker_status)" in block
 
 
 def test_start_and_remake_invalidate_the_snapshot_for_instant_feedback():

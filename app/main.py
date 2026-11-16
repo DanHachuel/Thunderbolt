@@ -9239,6 +9239,32 @@ def _render_youtube_automation_kpis(tasks: list[dict[str, Any]], worker_status: 
         card("Falhas", counts.get("failed", 0), "")
 
 
+@st.fragment(run_every=_VIDEO_TASK_POLL_SECONDS)
+def _render_youtube_automation_kpis_live() -> None:
+    """KPIs ao vivo: as contagens sobem sozinhos, sem F5 (1.1.02).
+
+    REGRESSÃO CORRIGIDA: desde a 0.9.95 os KPIs eram renderizados no CORPO
+    PRINCIPAL do script (`render_automation`), fora de qualquer fragment — o
+    relato do utilizador era exactamente esse: «os KPIs (Tarefas, Em Fila, Em
+    Execução) não atualizam sozinhos; preciso apertar F5». Só um rerun
+    completo os refrescava, e o rerun completo só chega por clique. A 1.0.15
+    deu fragment aos CARDS (barra de progresso, botões), mas os KPIs ficaram
+    de fora — este fragment fecha essa falha com o mesmo padrão do projeto.
+
+    Regra de ouro do ``run_every`` (1.0.15/1.0.16): polla a cada 3s enquanto
+    existir tarefa viva (``to_do``/``standby``/``doing``); quando o catálogo
+    fica todo terminal, CANCELA o próprio timer via
+    ``_stop_own_fragment_auto_rerun()`` — zero reruns completos a partir do
+    polling (sem "fragment does not exist anymore", sem flicker). O ``card()``
+    é HTML puro (``st.markdown``), sem estado de widget: seguro num fragment.
+    """
+    tasks = load_automation_tasks_for_platform("youtube")
+    worker_status = load_worker_status()
+    _render_youtube_automation_kpis(tasks, worker_status)
+    if not any(_video_task_is_live(task) for task in tasks):
+        _stop_own_fragment_auto_rerun()
+
+
 def hasPendingPipelineWork() -> bool:
     """Há tarefas de vídeo na fila (`to_do`/`doing`) — a regra de demanda.
 
@@ -9474,7 +9500,14 @@ def render_automation():
     # alimenta os KPIs e a lista de tarefas (antes: 2× pelas sub-abas st.tabs).
     yt_tasks = load_automation_tasks_for_platform("youtube")
     _log("catálogo tarefas YT")
-    _render_youtube_automation_kpis(yt_tasks, worker_status)
+    # 1.1.02: KPIs ao vivo — fragment com run_every enquanto existir tarefa
+    # viva (1.0.15/1.0.16: o timer é cancelado pelo próprio fragment quando o
+    # catálogo fica terminal). A variante estática serve o catálogo parado,
+    # sem loop de rede.
+    if any(_video_task_is_live(task) for task in yt_tasks):
+        _render_youtube_automation_kpis_live()
+    else:
+        _render_youtube_automation_kpis(yt_tasks, worker_status)
     _log("KPIs")
     _render_youtube_automation_channel_cards()
     _log("channel cards")
