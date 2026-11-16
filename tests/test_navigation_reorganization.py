@@ -106,21 +106,35 @@ class NavigationReorganizationTests(unittest.TestCase):
         self.assertIn('def render_thumbnail_blueprints():', MAIN_SOURCE)
 
     def test_requested_empty_automation_pages_are_present(self):
-        automation_block = MAIN_SOURCE.split("    automation_items = [", 1)[1].split("    ]", 1)[0]
-        labels = ("Automação Facebook", "Automação Musicas", "Automação UGC", "Automação Influencer Content", "Automação Bilibili")
-        # "Automação Musicas" e "Automação Bilibili" deixaram de ser placeholders
-        # (lambda: None) e passaram a ter renderers reais; UGC e Influencer Content
-        # continuam como páginas pedidas mas ainda vazias.
+        # 1.1.02 — as 8 plataformas de Automação deixaram de ser itens do menu e
+        # passaram a ser abas da página «Automação» (botões coloridos no topo, em
+        # render_automation_hub). O contrato muda de endereço, não de conteúdo:
+        # cada plataforma continua a existir e a chamar o renderizador que já
+        # chamava. Facebook/Musicas/Bilibili são renderers reais; UGC e Influencer
+        # Content continuam reservados (deixaram de ser páginas em branco).
+        hub = MAIN_SOURCE.split("def render_automation_hub(", 1)[1].split("\ndef main():", 1)[0]
         expected_renderers = {
-            "Automação Facebook": "render_facebook_automation",
-            "Automação Musicas": "render_music_automation",
-            "Automação UGC": "lambda: None",
-            "Automação Influencer Content": "lambda: None",
-            "Automação Bilibili": "render_bilibili_automation",
+            "youtube": "render_automation()",
+            "tiktok": "render_tiktok_automation()",
+            "facebook": "render_facebook_automation()",
+            "musicas": "render_music_automation()",
+            "bilibili": "render_bilibili_automation()",
         }
-        for label in labels:
-            self.assertIn(f'("{label}",', automation_block)
-            self.assertIn(f'"{label}": {expected_renderers[label]}', MAIN_SOURCE)
+        for tab, renderer in expected_renderers.items():
+            self.assertIn(f'active_tab == "{tab}":', hub)
+            # o renderizador é chamado na LINHA SEGUINTE à do ramo (a Instagram
+            # tem um comentário antes da chamada)
+            branch_line = next(line for line in hub.splitlines() if f'active_tab == "{tab}":' in line)
+            branch_index = hub.splitlines().index(branch_line)
+            following = "\n".join(hub.splitlines()[branch_index + 1 : branch_index + 5])
+            self.assertIn(renderer, following)
+        for tab in ("ugc", "influencer"):
+            self.assertIn(f'elif active_tab == "{tab}":', hub)
+        self.assertIn('render_edit_placeholder("Automação UGC"', hub)
+        self.assertIn('render_edit_placeholder("Automação Influencer"', hub)
+        # a sidebar já não tem filhos de Automação
+        self.assertIn("automation_items = []", MAIN_SOURCE)
+        self.assertNotIn('"Automação": automation_items', MAIN_SOURCE)
 
     def test_instagram_and_facebook_pages_are_video_profile_children(self):
         channel_block = MAIN_SOURCE.split("    channel_profile_items = [", 1)[1].split("    ]", 1)[0]

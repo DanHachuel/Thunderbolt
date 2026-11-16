@@ -27,14 +27,18 @@ def test_social_pages_are_under_video_profiles_and_automation_placeholders_exist
     # Commit c3a5909 ("feat: separar abas das automacoes de tiktok musica e
     # bilibili") substituiu os placeholders "lambda: None" das automações
     # Musicas e Bilibili por renderers reais; UGC e Influencer Content seguem
-    # como placeholders reservados.
-    expected_renderers = {
-        "Automação Facebook": "render_facebook_automation",
-        "Automação Musicas": "render_music_automation",
-        "Automação UGC": "lambda: None",
-        "Automação Influencer Content": "lambda: None",
-        "Automação Bilibili": "render_bilibili_automation",
-    }
-    for label, expected_renderer in expected_renderers.items():
-        assert f'("{label}",' in MAIN_SOURCE
-        assert f'"{label}": {expected_renderer}' in MAIN_SOURCE
+    # reservados.
+    # 1.1.02 — essas plataformas passaram a ser abas da página «Automação»
+    # (botões coloridos em render_automation_hub); os renderizadores são os
+    # mesmos e UGC/Influencer deixaram de ser páginas em branco.
+    hub = MAIN_SOURCE.split("def render_automation_hub(", 1)[1].split("\ndef main():", 1)[0]
+    real_renderers = ("facebook", "musicas", "bilibili")
+    for tab in real_renderers:
+        assert f'active_tab == "{tab}":' in hub
+    for tab in ("ugc", "influencer"):
+        assert f'active_tab == "{tab}":' in hub
+        assert 'render_edit_placeholder(' in hub
+    assert "render_facebook_automation()" in hub
+    assert "render_music_automation()" in hub
+    assert "render_bilibili_automation()" in hub
+    assert "automation_items = []" in MAIN_SOURCE

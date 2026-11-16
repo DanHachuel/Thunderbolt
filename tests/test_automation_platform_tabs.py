@@ -35,7 +35,10 @@ def test_bilibili_has_pipeline_and_posted_tabs_with_closed_named_cards():
 
 
 def test_music_automation_is_wired_and_has_two_tabs_with_closed_cards():
-    assert '"Automação Musicas": render_music_automation' in SOURCE
+    # 1.1.02 — "Musicas" é aba da página «Automação» (botão colorido no topo);
+    # o renderizador chamado pelo hub continua a ser o de sempre.
+    assert '("musicas", "Músicas", "tb-automation-chip-musicas")' in SOURCE
+    assert "render_music_automation()" in SOURCE
     block = SOURCE.split("def render_music_automation()", 1)[1].split("def render_music_upload", 1)[0]
     assert 'st.tabs(["Pipeline", "Vídeos Postados"])' in block
     assert 'with st.expander(f"{title} · {channel}", expanded=False)' in SOURCE

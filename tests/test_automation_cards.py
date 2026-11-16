@@ -88,7 +88,10 @@ class AutomationCardsTests(unittest.TestCase):
     def test_bilibili_automation_cards_expose_the_same_remake_action(self):
         self.assertIn('def _render_bilibili_automation_cards()', MAIN_SOURCE)
         self.assertIn('bilibili_automation_remake_video_', MAIN_SOURCE)
-        self.assertIn('"Automação Bilibili": render_bilibili_automation', MAIN_SOURCE)
+        # 1.1.02 — o botão colorido do Bilibili é aba da página «Automação»
+        # (render_automation_hub); o renderizador continua o mesmo.
+        self.assertIn('("bilibili", "Bilibili", "tb-automation-chip-bilibili")', MAIN_SOURCE)
+        self.assertIn("render_bilibili_automation()", MAIN_SOURCE)
         self.assertIn('classify_channel_platform(channel)', MAIN_SOURCE)
         self.assertIn('return "bilibili"', MAIN_SOURCE)
 

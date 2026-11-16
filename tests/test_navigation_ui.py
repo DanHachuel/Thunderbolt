@@ -4,11 +4,15 @@ from pathlib import Path
 MAIN_SOURCE = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
 
 
-def test_automation_is_an_expander_with_youtube_child_page():
-    assert 'automation_items = [' in MAIN_SOURCE
-    assert '("Automação Youtube", ":material/schedule:", "Automação Youtube")' in MAIN_SOURCE
-    assert 'def render_nav_children(parent: str, children: list[tuple[str, str, str]]):' in MAIN_SOURCE
-    assert '"Automação Youtube": render_automation' in MAIN_SOURCE
+def test_automation_is_one_page_with_a_colored_button_bar():
+    # 1.1.02 — as sub-páginas de Automação saíram da sidebar e passaram a ser
+    # botões coloridos no topo da própria página (render_automation_hub). A
+    # categoria principal continua no menu e cada plataforma continua a ter o
+    # seu renderizador, chamado pelo if/elif do hub.
+    assert 'automation_items = []' in MAIN_SOURCE
+    assert 'def render_automation_hub()' in MAIN_SOURCE
+    assert '"Automação": render_automation_hub' in MAIN_SOURCE
+    assert 'st.session_state.get("active_automation_tab", "youtube")' in MAIN_SOURCE
     assert 'st.title("Automação Youtube")' in MAIN_SOURCE
 
 
@@ -42,7 +46,10 @@ def test_youtube_navigation_labels_and_legacy_aliases_are_preserved():
     assert '"Blueprints Youtube": render_blueprints' in MAIN_SOURCE
     assert '"Canais": "Canais YouTube"' in MAIN_SOURCE
     assert '"Canais Youtube": "Canais YouTube"' in MAIN_SOURCE
-    assert '("Automação Youtube", ":material/schedule:", "Automação Youtube")' in MAIN_SOURCE
+    # 1.1.02 — "Automação Youtube" já não é item de menu, mas continua a ser
+    # alias: o link directo abre a página Automação com a aba YouTube activa.
+    assert '"Automação Youtube": "Automação"' in MAIN_SOURCE
+    assert '"Automação Youtube": "youtube"' in MAIN_SOURCE
 
 
 def test_settings_children_include_logs_between_notifications_and_api():

@@ -13909,6 +13909,92 @@ def render_documentation_pages() -> None:
             renderer()
 
 
+AUTOMATION_TAB_SPECS = [
+    # key, rótulo do botão, classe do "chip" invisível que o CSS usa para pintar
+    # o botão da coluna. A cor vive no CSS (AUTOMATION_NAV_CSS), não no Python.
+    ("youtube", "YouTube", "tb-automation-chip-youtube"),
+    ("tiktok", "TikTok", "tb-automation-chip-tiktok"),
+    ("instagram", "Instagram", "tb-automation-chip-instagram"),
+    ("facebook", "Facebook", "tb-automation-chip-facebook"),
+    ("musicas", "Músicas", "tb-automation-chip-musicas"),
+    ("ugc", "UGC", "tb-automation-chip-ugc"),
+    ("influencer", "Influencer", "tb-automation-chip-influencer"),
+    ("bilibili", "Bilibili", "tb-automation-chip-bilibili"),
+]
+AUTOMATION_TAB_KEYS = {spec[0] for spec in AUTOMATION_TAB_SPECS}
+
+# 1.1.02 — barra de navegação da Automação. Cada coluna do st.columns leva um
+# "chip" invisível (.tb-automation-chip-<plataforma>) e o botão dessa coluna é
+# pintado por :has(chip) — sem depender da ordem nem de texto no DOM. A aba
+# activa leva a classe extra "is-active", que o CSS transforma em borda branca.
+# Nada disto toca nos botões do resto da aplicação: o selector exige a coluna.
+AUTOMATION_NAV_CSS = """
+<style>
+.tb-automation-chip { display:none; }
+[data-testid="stColumn"] .element-container:has(.tb-automation-chip) { display:none !important; margin:0 !important; padding:0 !important; }
+[data-testid="stColumn"]:has(.tb-automation-chip-youtube) button { background:#ff0000 !important; color:#ffffff !important; border-color:#ff0000 !important; }
+[data-testid="stColumn"]:has(.tb-automation-chip-tiktok) button { background:#000000 !important; color:#ffffff !important; border:1px solid #ffffff !important; }
+[data-testid="stColumn"]:has(.tb-automation-chip-instagram) button { background:linear-gradient(45deg,#f09433 0%,#e6683c 25%,#dc2743 50%,#cc2366 75%,#bc1888 100%) !important; color:#ffffff !important; border:0 !important; }
+[data-testid="stColumn"]:has(.tb-automation-chip-facebook) button { background:#1877f2 !important; color:#ffffff !important; border-color:#1877f2 !important; }
+[data-testid="stColumn"]:has(.tb-automation-chip-musicas) button { background:#1db954 !important; color:#ffffff !important; border-color:#1db954 !important; }
+[data-testid="stColumn"]:has(.tb-automation-chip-ugc) button { background:#8a2be2 !important; color:#ffffff !important; border-color:#8a2be2 !important; }
+[data-testid="stColumn"]:has(.tb-automation-chip-influencer) button { background:#ffd700 !important; color:#000000 !important; border-color:#ffd700 !important; }
+[data-testid="stColumn"]:has(.tb-automation-chip-bilibili) button { background:#00a1d6 !important; color:#ffffff !important; border-color:#00a1d6 !important; }
+[data-testid="stColumn"]:has(.tb-automation-chip.is-active) button { border:2px solid #ffffff !important; box-shadow:0 0 0 1px rgba(255,255,255,.35) !important; }
+</style>
+"""
+
+
+def render_automation_hub() -> None:
+    """Automação: barra de botões coloridos + conteúdo da plataforma activa.
+
+    1.1.02 — as 8 sub-páginas estavam aninhadas na sidebar e o utilizador pediu
+    para as transformar em botões horizontais coloridos no topo da página, de
+    forma a aceder a todo o conteúdo num único ecrã. NADA da lógica de negócio
+    mudou: cada ramo chama exactamente o renderizador que a sub-página chamava
+    (catálogo, workers, MPT, fragments e chaves de widget intactos). Não há
+    time.sleep nem loop: a troca de aba é um clique → st.rerun() único.
+    """
+    active_tab = str(st.session_state.get("active_automation_tab", "youtube"))
+    if active_tab not in AUTOMATION_TAB_KEYS:
+        active_tab = "youtube"
+
+    st.markdown(AUTOMATION_NAV_CSS, unsafe_allow_html=True)
+
+    with st.container():
+        nav_columns = st.columns(len(AUTOMATION_TAB_SPECS), gap="small")
+        for column, (tab_key, label, chip_class) in zip(nav_columns, AUTOMATION_TAB_SPECS):
+            with column:
+                active_class = " is-active" if tab_key == active_tab else ""
+                st.markdown(f'<div class="tb-automation-chip {chip_class}{active_class}"></div>', unsafe_allow_html=True)
+                if st.button(label, key=f"tb_automation_nav_{tab_key}", width="stretch"):
+                    if tab_key != active_tab:
+                        st.session_state["active_automation_tab"] = tab_key
+                        st.query_params["tab"] = tab_key
+                        # Um único rerun por clique (skill streamlit-estado):
+                        # clicar na aba já activa não dispara nada.
+                        st.rerun()
+
+    if active_tab == "youtube":
+        render_automation()
+    elif active_tab == "tiktok":
+        render_tiktok_automation()
+    elif active_tab == "instagram":
+        # Só a aba Instagram precisa das settings: a leitura fica aqui para não
+        # acrescentar I/O de JSON às outras sete abas.
+        render_instagram_automation(read_json("settings.json", {}))
+    elif active_tab == "facebook":
+        render_facebook_automation()
+    elif active_tab == "musicas":
+        render_music_automation()
+    elif active_tab == "ugc":
+        render_edit_placeholder("Automação UGC", "Seleccione uma plataforma de UGC na barra de navegação acima.")
+    elif active_tab == "influencer":
+        render_edit_placeholder("Automação Influencer", "Seleccione uma plataforma de influenciador na barra de navegação acima.")
+    elif active_tab == "bilibili":
+        render_bilibili_automation()
+
+
 def main():
     pipeline_video_items = [
         ("Criação de Vídeos", ":material/add_circle:", "Criação de Vídeos"),
@@ -13978,16 +14064,13 @@ def main():
         ("Niche Finder Kaggle", ":material/search:", "Niche Finder Kaggle"),
         ("Niche Finder Apify", ":material/api:", "Niche Finder Apify"),
     ]
-    automation_items = [
-        ("Automação Youtube", ":material/schedule:", "Automação Youtube"),
-        ("Automação Tiktok", ":material/schedule:", "Automação Tiktok"),
-        ("Automação Instagram", ":material/schedule:", "Automação Instagram"),
-        ("Automação Facebook", ":material/schedule:", "Automação Facebook"),
-        ("Automação Musicas", ":material/schedule:", "Automação Musicas"),
-        ("Automação UGC", ":material/schedule:", "Automação UGC"),
-        ("Automação Influencer Content", ":material/schedule:", "Automação Influencer Content"),
-        ("Automação Bilibili", ":material/schedule:", "Automação Bilibili"),
-    ]
+    # 1.1.02 — as 8 sub-páginas de Automação saíram do menu lateral e passaram a
+    # ser BOTÕES COLORIDOS no topo da própria página (render_automation_hub): o
+    # conteúdo de todas as plataformas fica acessível num único ecrã, sem
+    # expandir o menu. A categoria principal «Automação» continua no menu, na
+    # mesma posição, e os caminhos /automacao/<plataforma> continuam a funcionar
+    # como links directos (alias + seed da aba activa, mais abaixo).
+    automation_items = []
     edition_items = [
         ("Limpador de Metadados", ":material/edit_note:", "Limpador de Metadados"),
         ("Cortes", ":material/content_cut:", "Cortes"),
@@ -14008,7 +14091,6 @@ def main():
         ("Configurações", ":material/settings:", "Configurações"),
     ]
     groups = {
-        "Automação": automation_items,
         "Niche Finder": niche_finder_items,
         "Pipeline Vídeos": pipeline_video_items,
         "AI Influencers": models_ai_items,
@@ -14055,10 +14137,33 @@ def main():
         "Analista Facebook Pages": "Growth Facebook Pages",
         "Analista Bilibili": "Growth",
         "Analise Growth": "Growth",
+        # 1.1.02 — as sub-páginas de Automação deixaram de existir como itens do
+        # menu, mas os links directos (?page=Automação Tiktok) continuam a
+        # resolver: colapsam no pai «Automação» e semeiam a aba colorida certa
+        # (AUTOMATION_TAB_BY_PAGE, abaixo). Nenhuma posição do menu é alterada.
+        "Automação Youtube": "Automação",
+        "Automação Tiktok": "Automação",
+        "Automação Instagram": "Automação",
+        "Automação Facebook": "Automação",
+        "Automação Musicas": "Automação",
+        "Automação UGC": "Automação",
+        "Automação Influencer Content": "Automação",
+        "Automação Bilibili": "Automação",
         # 1.0.50 — os aliases que colapsavam as sub-abas de Growth no pai
         # (regressão da v0.8.21, commit 79a9f30) foram REMOVIDOS: o clique
         # em "Growth Youtube/Tiktok/Instagram/Bilibili" resolve agora
         # directamente para a página real, sem passar pelo pai.
+    }
+    # 1.1.02 — página antiga da Automação → aba colorida que ela deve abrir.
+    AUTOMATION_TAB_BY_PAGE = {
+        "Automação Youtube": "youtube",
+        "Automação Tiktok": "tiktok",
+        "Automação Instagram": "instagram",
+        "Automação Facebook": "facebook",
+        "Automação Musicas": "musicas",
+        "Automação UGC": "ugc",
+        "Automação Influencer Content": "influencer",
+        "Automação Bilibili": "bilibili",
     }
     all_children = [item for items in groups.values() for item in items]
     valid_targets = {item[0] for item in top_pages + all_children}
@@ -14066,12 +14171,27 @@ def main():
     # the canonical page in the URL so the open section can be restored.
     query_page = str(st.query_params.get("page") or "").strip()
     stored_page = query_page or str(st.session_state.get("page", "Início"))
+    # 1.1.02 — um link directo para uma sub-página antiga da Automação
+    # (?page=Automação Tiktok) semeia a aba colorida correspondente antes de
+    # colapsar no pai «Automação» (sem isto, o refresh voltaria ao YouTube).
+    seeded_automation_tab = AUTOMATION_TAB_BY_PAGE.get(stored_page)
     current_page = aliases.get(stored_page, stored_page)
     if current_page not in valid_targets:
         current_page = "Início"
     st.session_state["page"] = current_page
     if str(st.query_params.get("page") or "") != current_page:
         st.query_params["page"] = current_page
+    # A aba activa da Automação vive no session_state e no URL (?tab=...): sobrevive
+    # a um F5 e a um link partilhado. O ?tab= ganha sempre ao seed da página.
+    requested_tab = str(st.query_params.get("tab") or "").strip().lower()
+    if requested_tab in AUTOMATION_TAB_KEYS:
+        st.session_state["active_automation_tab"] = requested_tab
+    elif seeded_automation_tab:
+        st.session_state["active_automation_tab"] = seeded_automation_tab
+    elif current_page == "Automação":
+        st.session_state.setdefault("active_automation_tab", "youtube")
+    if current_page == "Automação" and str(st.query_params.get("tab") or "") != st.session_state.get("active_automation_tab", "youtube"):
+        st.query_params["tab"] = st.session_state.get("active_automation_tab", "youtube")
     ui_language = current_ui_language()
     current_path = nav_paths.get(current_page, "/inicio")
 
@@ -14143,14 +14263,10 @@ def main():
         "Canais YouTube": render_channels,
         "Canais Tiktok": render_tiktok_channels,
         "Facebook Pages": render_facebook_pages,
-        "Automação Youtube": render_automation,
-        "Automação Tiktok": render_tiktok_automation,
-        "Automação Instagram": lambda: render_instagram_automation(read_json("settings.json", {})),
-        "Automação Facebook": render_facebook_automation,
-        "Automação Musicas": render_music_automation,
-        "Automação UGC": lambda: None,
-        "Automação Influencer Content": lambda: None,
-        "Automação Bilibili": render_bilibili_automation,
+        # 1.1.02 — a Automação é UMA página com uma barra de botões coloridos
+        # no topo (YouTube, TikTok, Instagram, Facebook, Músicas, UGC,
+        # Influencer, Bilibili); cada botão troca o conteúdo sem sair da página.
+        "Automação": render_automation_hub,
         "Niche Finder Kaggle": render_niche_finder,
         "Kaggle": lambda: render_niche_tutorial("kaggle"),
         "Niche Finder Apify": render_niche_finder_apify,
