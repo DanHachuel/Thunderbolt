@@ -2966,7 +2966,7 @@ def _home_update_progress_fragment() -> None:
 
     - `running` -> spinner + linha de progresso (o log vive em
       `storage/logs/update.log`);
-    - `done` -> guarda o resultado e forca UM rerun completo (a pagina Inicio
+    - `done` -> guarda o resultado e força UM rerun completo (a pagina Inicio
       mostra o sucesso e reinicia o processo para carregar a versao nova);
     - `error` -> mostra a cauda do log e um botao "Tentar novamente".
     """
@@ -2989,7 +2989,10 @@ def _home_update_progress_fragment() -> None:
             restart_required=True,
         )
         st.session_state["home_update_notice_dismissed"] = False
-        st.rerun()
+        # rerun COMPLETO de proposito: a pagina Inicio tem de renderizar o aviso
+        # de sucesso e reiniciar o processo com a versao nova. Sem scope, o
+        # contrato test_no_unscoped_rerun_inside_fragments (1.0.13) falhava.
+        st.rerun(scope="app")
         return
     if state == "error":
         st.session_state["home_update_result"] = UpdateResult(
@@ -3005,7 +3008,9 @@ def _home_update_progress_fragment() -> None:
             retry = start_update(APP_VERSION)
             st.session_state["home_update_result"] = retry
             if retry.status == "running":
-                st.rerun()
+                # scope do fragmento: so ele precisa de se re-render para voltar
+                # a mostrar o spinner (um rerun completo era desnecessario).
+                st.rerun(scope="fragment")
 
 
 def _update_log_tail(lines: int = 40) -> str:
