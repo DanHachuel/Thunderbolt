@@ -13,6 +13,8 @@ não apenas que uma string existe na fonte.
 import ast
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 MAIN_SOURCE = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
@@ -258,3 +260,100 @@ def test_hub_has_no_blocking_loop_or_sleep():
             assert node.func.attr != "sleep", "espera bloqueante proibida na aba de Automação"
         assert not isinstance(node, (ast.While, ast.AsyncFor)), "laço bloqueante proibido no hub"
     assert "sleep(" not in _hub_source()
+
+
+# --------------------------------------------------------------------------
+# 5. Prova funcional: o hub chama mesmo o renderizador da aba activa
+# --------------------------------------------------------------------------
+
+class _FakeColumn:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+
+class _FakeSessionState(dict):
+    """Basta o .get que o hub usa (sem o runtime do Streamlit)."""
+
+
+class _FakeStreamlit:
+    """Streamlit mínimo para o hub: botões nunca premidos, nada é desenhado."""
+
+    session_state = _FakeSessionState()
+
+    def markdown(self, *_args, **_kwargs):
+        return None
+
+    def container(self):
+        return _FakeColumn()
+
+    def columns(self, count, gap=None):
+        return [_FakeColumn() for _ in range(count)]
+
+    def button(self, label, key=None, **_kwargs):
+        self.pressed_labels.append(label)
+        return False
+
+    pressed_labels = []
+
+
+def _hub_dispatch(tab: str) -> list[str]:
+    """Corre o hub de verdade com o Streamlit substituído e devolve o que chamou."""
+    main = pytest.importorskip("app.main", reason="app.main precisa das dependências da app")
+
+    original_st = main.st
+    called: list[str] = []
+    stubs = {
+        "render_automation": "render_automation",
+        "render_tiktok_automation": "render_tiktok_automation",
+        "render_instagram_automation": "render_instagram_automation",
+        "render_facebook_automation": "render_facebook_automation",
+        "render_music_automation": "render_music_automation",
+        "render_bilibili_automation": "render_bilibili_automation",
+        "render_edit_placeholder": "render_edit_placeholder",
+    }
+    saved = {name: getattr(main, name, None) for name in stubs}
+    fake_st = _FakeStreamlit()
+    fake_st.session_state = _FakeSessionState({"active_automation_tab": tab})
+
+    def make_stub(name):
+        def stub(*_args, **_kwargs):
+            called.append(name)
+
+        return stub
+
+    try:
+        main.st = fake_st
+        for name in stubs:
+            setattr(main, name, make_stub(stubs[name]))
+        main.render_automation_hub()
+    finally:
+        main.st = original_st
+        for name, value in saved.items():
+            setattr(main, name, value)
+    return called
+
+
+@pytest.mark.parametrize("tab,expected", [
+    ("youtube", "render_automation"),
+    ("tiktok", "render_tiktok_automation"),
+    ("instagram", "render_instagram_automation"),
+    ("facebook", "render_facebook_automation"),
+    ("musicas", "render_music_automation"),
+    ("ugc", "render_edit_placeholder"),
+    ("influencer", "render_edit_placeholder"),
+    ("bilibili", "render_bilibili_automation"),
+])
+def test_hub_renders_exactly_the_content_of_the_active_tab(tab, expected):
+    """Não é assert de string: o hub corre e chamou o renderizador certo."""
+    called = _hub_dispatch(tab)
+    assert called == [expected], f"aba {tab} chamou {called}"
+    # e só UM renderizador corre por rerun (nada de renderizar as 8 abas juntas)
+    assert len(called) == 1
+
+
+def test_hub_falls_back_to_youtube_when_the_tab_is_unknown():
+    called = _hub_dispatch("plataforma-inexistente")
+    assert called == ["render_automation"]
