@@ -106,6 +106,25 @@ jobs:
           THUNDERBOLT_HOME="$TEST_ROOT" node scripts/cli.mjs install --skip-python-deps --skip-moneyprinter
           test -d "$TEST_ROOT/storage/blueprints/importados"
 
+      # 1.1.03 - DIAGNOSTICO (nao publica nada): um PUT com 404 no npm quase
+      # sempre significa que o segredo NPM_TOKEN nao chegou ao passo (vazio,
+      # renomeado ou movido para um Environment) ou que o token perdeu a
+      # permissao de escrita. Este passo revela esse estado - comprimento do
+      # token e resultado do whoami - sem nunca mostrar o valor, para se perceber
+      # em que lado esta o bloqueio antes de culpar o codigo.
+      - name: Diagnostico de autenticacao npm (nao publica)
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::error::NPM_TOKEN vazio - o segredo nao chegou ao workflow. Verifica o nome exato ('NPM_TOKEN'), se esta ao nivel do repositorio (nao de um Environment) e se foi actualizado."
+            exit 1
+          fi
+          echo "NPM_TOKEN chegou ao passo (comprimento ${#NODE_AUTH_TOKEN})."
+          if npm whoami --registry=https://registry.npmjs.org >/dev/null 2>&1; then
+            echo "Autenticado no registry como: $(npm whoami --registry=https://registry.npmjs.org)"
+          else
+            echo "::warning::npm whoami falhou (token publish-only ou sem permissao de leitura). Segue para o publish, que e quem decide."
+          fi
+
       - name: Publish to npm
         if: ${{ github.event_name == 'workflow_dispatch' }}
         env:
