@@ -82,19 +82,40 @@ def test_new_skills_are_self_contained() -> None:
     assert (lineart / "references" / "style.md").is_file()
 
 
-def test_private_study_frames_are_not_published() -> None:
-    """O SKILL.md original proíbe publicar o material de estudo do canal.
+def test_reference_frames_are_restored() -> None:
+    """1.1.06 — o material de referência do cartoon está de volta, COMPLETO.
 
-    `references/frames/` e `references/sheets/` são ~17 MB de fotogramas
-    extraídos de vídeos de um canal privado; este repo é público (GitHub +
-    tarball npm), por isso só os textos de análise entraram.
+    Na 1.1.05 o agente deixou `references/frames/` e `references/sheets/` de
+    fora com base no README da skill original, sem autorização do utilizador.
+    O utilizário é o dono do repo e quer o conteúdo completo. Estes contratos
+    passaram a exigir a PRESENÇA dos ficheiros (eram o inverso), para que uma
+    exclusão não autorizada não volte a acontecer em silêncio.
     """
     cartoon = SKILLS_ROOT / "cartoon-3d-skills" / "cartoon-3d-short"
-    for proibido in ("references/frames", "references/sheets"):
-        assert not (cartoon / proibido).exists(), f"{proibido} não devia ser publicado"
-    # e nenhum ficheiro de imagem foi copiado para a skill
-    imagens = list(cartoon.rglob("*.jpg")) + list(cartoon.rglob("*.png"))
-    assert not imagens, f"imagens de estudo não deviam estar aqui: {imagens[:3]}"
+    for pasta in ("references/frames", "references/sheets"):
+        assert (cartoon / pasta).is_dir(), f"{pasta} tem de existir"
+    frames = sorted((cartoon / "references" / "frames").glob("*.jpg"))
+    sheets = sorted((cartoon / "references" / "sheets").glob("*.jpg"))
+    assert len(frames) == 38, f"esperados 38 fotogramas, encontrados {len(frames)}"
+    assert len(sheets) == 20, f"esperadas 20 folhas, encontradas {len(sheets)}"
+
+
+def test_restored_frames_are_real_images_not_stubs() -> None:
+    """Um ficheiro vazio ou truncado não é restauro — é corrupção silenciosa."""
+    cartoon = SKILLS_ROOT / "cartoon-3d-skills" / "cartoon-3d-short"
+    for imagem in sorted((cartoon / "references" / "frames").glob("*.jpg")) + sorted(
+        (cartoon / "references" / "sheets").glob("*.jpg")
+    ):
+        tamanho = imagem.stat().st_size
+        # JPEG começa sempre com SOI (FFD8); um stub de texto não
+        assert imagem.read_bytes()[:2] == b"\xff\xd8", f"{imagem.name} não é JPEG: {imagem.read_bytes()[:8]!r}"
+        assert tamanho > 20_000, f"{imagem.name} suspeitosamente pequeno ({tamanho} bytes)"
+    # o volume total tem de estar lá (era ~17 MB)
+    total = sum(
+        p.stat().st_size
+        for p in (cartoon / "references").rglob("*.jpg")
+    )
+    assert total > 15 * 1024 * 1024, f"só {total / 1024 / 1024:.1f} MB de referência — algo ficou de fora"
 
 
 # ---------------------------------------------------------------------------

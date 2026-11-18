@@ -18,10 +18,10 @@ assim:
 | `references/` | esta mesma pasta (`references/`) |
 
 O que **não** foi copiado para cá, de propósito:
-- `references/frames/` e `references/sheets/` — o `SKILL.md` original declara esse
-  material como estudo privado de um canal de referência e proíbe publicá-lo.
-  Este repo é publicado (GitHub + tarball npm), por isso só entraram os textos
-  de análise (`STYLE_BIBLE.md` e `reports/*.md`), cuja licença é MIT.
+- `references/frames/` e `references/sheets/` — 58 JPEG (≈17 MB). O `SKILL.md`
+  original chama a esse material "private study", mas o dono deste repositório
+  autorizou explicitamente a sua inclusão (o repo é dele e quer o conteúdo
+  completo), por isso os ficheiros estão aqui na íntegra desde a 1.1.06.
 
 
 # Cartoon 3D story short (three.js + Remotion)
@@ -31,7 +31,7 @@ Proven example: **The Bridge That Fell for a Song**. It is an original 67 s shor
 - Script, voice and sound: `storage/remotion_shorts/cartoon-3d-short/`.
 - Style research: `references/`.
 
-The style reference is a channel studied privately (`references/`: STYLE_BIBLE.md e reports/*.md — `frames/` e `sheets/` não foram copiados para este repo público).
+The style reference is a channel studied privately (`references/`: STYLE_BIBLE.md, reports/*.md, `frames/` and `sheets/` — all restored in full by the repository owner's explicit authorization, 1.1.06).
 - Those videos are private study material. Never upload, publish or send them.
 - Never copy their scripts, characters or shots. Story, characters and voice are always OUR OWN.
 - Never say the channel's name in a voice-over or description.
