@@ -37,6 +37,17 @@
       ]
     },
     {
+      "name": "cartoon-3d-skills",
+      "skills": [
+        {
+          "id": "cartoon-3d-short",
+          "name": "Cartoon 3D Short",
+          "description": "Make a ~55-70 s vertical cartoon story short in the \"2D characters in a colourful 3D world\" style (flat bean-head cartoon cards with ink outlines, painted 3D town/world with black ink lines, saturated sky, depth-of-field backgrounds, gliding cameras, voice narration, synthesized SFX + march-style music), rendered with three.js inside Remotion. Use when the user asks for another video \"like the bridge video\", \"in that cartoon 3D style\", a history/science story short with cartoon characters in 3D, or says \"use the cartoon short skill\".",
+          "folder": "cartoon-3d-skills/cartoon-3d-short"
+        }
+      ]
+    },
+    {
       "name": "data-animation-skills",
       "skills": [
         {
@@ -188,6 +199,17 @@
           "name": "Kinetic Typography",
           "description": "This skill should be used when the user asks to \"animate a headline\", \"make a kinetic typography video\", \"do a split-text reveal\", \"stagger text by character/word/line\", \"make a lyric or caption video\", \"animate a variable font weight\", \"put text on a path\", or \"create an animated title card\". Covers reveal techniques in CSS, GSAP SplitText, Framer Motion, and Remotion.",
           "folder": "kinetic-typography-skills/kinetic-typography"
+        }
+      ]
+    },
+    {
+      "name": "line-art-animation-skills",
+      "skills": [
+        {
+          "id": "line-art-animation",
+          "name": "Line Art Animation",
+          "description": "Build animated line-art components in SVG and TypeScript - thin ink lines on paper, people and animals that walk, run, cycle and react, scenes with wind, lit windows and a day/night cycle, exported to video if needed. Use this whenever someone asks for a line art (or ink, pen, doodle, hand-drawn) animation, an animated illustration or scene component, little characters doing everyday things, a living street/village/shop/park, a day-night cycle illustration, \"make it like this clip\" for a drawn animation, or a video of such a component - even if they never say \"SVG\" or \"line art\".",
+          "folder": "line-art-animation-skills/line-art-animation"
         }
       ]
     },

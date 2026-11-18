@@ -81,8 +81,10 @@ def test_remotion_style_options_match_extracted_skills_index():
     index_path = ROOT / "seed" / "remotion_skills" / "index.json"
     index = json.loads(index_path.read_text(encoding="utf-8"))
     extracted = [skill["name"] for pack in index["packs"] for skill in pack["skills"]]
-    assert len(index["packs"]) == 18
-    assert len(extracted) == 55
+    # 1.1.00 - skills «cartoon-3d-short» e «line-art-animation» vendidas de dois
+    # repos externos (MIT) e acrescentadas ao catálogo.
+    assert len(index["packs"]) == 20
+    assert len(extracted) == 57
     remotion = _constant("REMOTION_STYLE_OPTIONS")
     # 3 motores internos + todas as skills extraídas, sem duplicados.
     assert len(remotion) == 3 + len(extracted)
@@ -95,9 +97,10 @@ def test_extracted_skills_have_skill_md_on_disk():
     """Cada skill extraída é autocontida: SKILL.md obrigatório em cada pasta (fonte seed)."""
     skills_root = ROOT / "seed" / "remotion_skills"
     packs = [item for item in skills_root.iterdir() if item.is_dir()]
-    assert len(packs) == 18
+    # 1.1.00 - dois packs novos (cartoon-3d-skills, line-art-animation-skills).
+    assert len(packs) == 20
     skills = [item for pack in packs for item in pack.iterdir() if item.is_dir()]
-    assert len(skills) == 55
+    assert len(skills) == 57
     for skill_dir in skills:
         assert (skill_dir / "SKILL.md").is_file(), f"SKILL.md em falta: {skill_dir}"
 
@@ -118,8 +121,10 @@ def test_ensure_storage_copies_remotion_skills_to_runtime_storage(tmp_path, monk
     index = runtime / "index.json"
     assert index.is_file()
     skills = [item for pack in runtime.iterdir() if pack.is_dir() for item in pack.iterdir() if item.is_dir()]
-    assert len(skills) == 55
+    assert len(skills) == 57
     assert (runtime / "tiktok-video-skills" / "short-form-video" / "SKILL.md").is_file()
+    assert (runtime / "cartoon-3d-skills" / "cartoon-3d-short" / "SKILL.md").is_file()
+    assert (runtime / "line-art-animation-skills" / "line-art-animation" / "SKILL.md").is_file()
 
     # Ficheiro editado pelo utilizador não é sobrescrito num re-seed.
     marker = runtime / "tiktok-video-skills" / "short-form-video" / "SKILL.md"

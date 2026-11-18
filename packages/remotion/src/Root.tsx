@@ -7,6 +7,8 @@ import { Quiz } from "./compositions/Quiz";
 import { SocialReel } from "./compositions/SocialReel";
 import { Top10 } from "./compositions/Top10";
 import { WouldYouRather } from "./compositions/WouldYouRather";
+import { Cartoon3DShort, CARTOON_3D_FRAMES } from "./compositions/Cartoon3DShort";
+import { LineArtAnimation } from "./compositions/LineArtAnimation";
 import type { InputProps } from "./types";
 
 const DEFAULT_PROPS: InputProps = {
@@ -193,6 +195,51 @@ export const RemotionRoot: React.FC = () => (
           props as {
             questions: { durationInSeconds: number; thinkingDelaySeconds: number; revealDurationSeconds: number }[];
           },
+        ),
+      })}
+    />
+    {/* 1.1.00 - skill «cartoon-3d-short» (seed/remotion_skills/cartoon-3d-skills):
+        a timeline de `src/videos/cartoon-3d/story.ts` (vendorizada do template da
+        skill) dita os shots, as câmaras e a física da ponde. A duração é o
+        TOTAL da própria timeline (2025 f = 67,5 s), não uma estimativa. */}
+    <Composition
+      id="Cartoon3DShort"
+      component={Cartoon3DShort}
+      durationInFrames={CARTOON_3D_FRAMES}
+      fps={30}
+      width={1080}
+      height={1920}
+      defaultProps={{ title: "", narration: "" }}
+    />
+    {/* 1.1.00 - skill «line-art-animation» (seed/remotion_skills/line-art-animation-skills):
+        figuras desenhadas com a biblioteca vendida em
+        src/compositions/lineart/lib/ (gait, motion, daynight) — nunca senos livres. */}
+    <Composition
+      id="LineArtAnimation"
+      component={LineArtAnimation}
+      durationInFrames={600}
+      fps={30}
+      width={960}
+      height={540}
+      defaultProps={{
+        title: "",
+        figures: [
+          { kind: "walk", lane: 0.2, delay: 0, coat: "#b3412d", hat: true, scarf: true },
+          { kind: "shuffle", lane: 0.55, delay: 1.5, coat: "#3f6f4a", hat: false, scarf: false },
+          { kind: "run", lane: 0.95, delay: 3, coat: "#4a4f7a", hat: false, scarf: true },
+        ],
+        lanterns: [
+          { x: 180, drop: 90 },
+          { x: 760, drop: 120 },
+        ],
+        dayLengthSeconds: 20,
+      }}
+      calculateMetadata={async ({ props }) => ({
+        durationInFrames: Math.max(
+          30,
+          Math.round(
+            ((props as { dayLengthSeconds?: number }).dayLengthSeconds || 20) * 30,
+          ),
         ),
       })}
     />
