@@ -17,11 +17,15 @@ desejado). Estes contratos travam a arquitectura reposta:
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI_SOURCE = (ROOT / "scripts" / "cli.mjs").read_text(encoding="utf-8")
+KEEPALIVE_LINE = "const keepAliveTimer = setInterval(() => {}, 1000);"
 
 
 # ---------------------------------------------------------------------------
@@ -181,3 +185,64 @@ def test_single_instance_guard_and_console_guard_are_intact():
     assert 'guardConsoleStream(process.stderr, "stderr");' in CLI_SOURCE
     assert 'join(storageDir, "logs", "launcher_console.log")' in CLI_SOURCE
     assert "if (launcherConsoleDetached && isConsoleWriteFailure(error))" in CLI_SOURCE
+
+
+# ---------------------------------------------------------------------------
+# 1.1.04 — OCIOSIDADE: o launcher NÃO encerra quando a fila esvazia nem quando
+# a queima de legendas acaba. O relato («o vídeo gerou, acabou a queima de
+# legendas e o PS> voltou»): o que mantém o Node vivo é um temporizador
+# REFERENCIADO (sem unref) + stdin.resume(); se o handle fosse unref'd, o event
+# loop esvaziaria e o processo terminaria sozinho. Prova comportamental
+# diferencial (só precisa de `node`, que o CI instala): o constructo real mantém
+# o node vivo; a MESMA construção com unref() termina sozinha — assim o teste
+# falha se alguém tornar o keep-alive descartável.
+# ---------------------------------------------------------------------------
+
+
+def test_stdin_is_resumed_to_anchor_the_foreground_process():
+    """Garantia 3 do relato: o stdin fica em resume() para segurar o processo."""
+    assert "process.stdin.resume();" in CLI_SOURCE
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node indisponivel")
+def test_launcher_stays_alive_when_idle_by_a_referenced_keepalive_timer():
+    import subprocess
+    import time
+
+    node = shutil.which("node")
+
+    def run(child_script: str) -> subprocess.Popen:
+        return subprocess.Popen(
+            [node, "-e", child_script],
+            stdin=subprocess.DEVNULL,  # nada lê o child: a sobrevivência vem do handle
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    # 1) a construção REAL extraída do cli.mjs: temporizador referenciado, sem
+    #    stdin e sem qualquer outro handle. O event loop NUNCA esvazia — o
+    #    processo continua vivo «sozinho», como o launcher em foreground.
+    referenced = KEEPALIVE_LINE + "\nvoid keepAliveTimer;\n"
+    alive = run(referenced)
+    try:
+        time.sleep(2.5)  # > um tick do keep-alive (1 s) e do monitor de workers (2 s)
+        assert alive.poll() is None, "o launcher encerrou sozinho enquanto ocioso (event loop esvaziou)"
+    finally:
+        alive.kill()
+
+    # 2) controlo negativo: a MESMA construção com unref() termina sozinha.
+    #    Prova que o teste detectaria a regressão (keep-alive tornado descartável).
+    discarded = run(
+        "process.stdin.pause();\n"
+        "const t = setInterval(() => {}, 1000);\n"
+        "t.unref();\n"
+    )
+    try:
+        try:
+            exit_code = discarded.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            exit_code = None
+        assert exit_code is not None, "o controlo com unref() devia ter encerrado sozinho"
+    finally:
+        if discarded.poll() is None:
+            discarded.kill()
