@@ -104,10 +104,19 @@ def test_automation_stays_in_the_same_sidebar_position():
     positions = [top_block.index(f'"{label}"') for label in order]
     assert positions == sorted(positions)
     assert '("Automação", ":material/schedule:", "Automação")' in MAIN_SOURCE
-    # os outros grupos continuam com os seus filhos na sidebar
-    assert '"Niche Finder": niche_finder_items' in MAIN_SOURCE
-    assert '"Growth": growth_items' in MAIN_SOURCE
+    # 1.1.08 — 7 grupos passaram a hubs (botões coloridos no topo) e a sidebar
+    # ficou só com o nome principal; só AI Influencers e Configurações mantêm
+    # filhos no menu lateral (sem isso aparecia um expansível vazio).
+    assert '"Niche Finder": niche_finder_items' not in MAIN_SOURCE
+    assert '"Growth": growth_items' not in MAIN_SOURCE
+    assert '"Pipeline Vídeos": pipeline_video_items' not in MAIN_SOURCE
+    assert '"Analise Growth": growth_analysis_items' not in MAIN_SOURCE
+    assert '"AI Influencers": models_ai_items' in MAIN_SOURCE
     assert '"Configurações": settings_items' in MAIN_SOURCE
+    # as sub-páginas dos hubs continuam a ser alvos válidos de navegação
+    # (link directo, alias e seed) — só deixaram de ser itens do menu.
+    assert "hub_child_items = [" in MAIN_SOURCE
+    assert "HUB_PAGE_ROUTES = {" in MAIN_SOURCE
 
 
 # --------------------------------------------------------------------------

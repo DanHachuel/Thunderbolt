@@ -149,9 +149,18 @@ def test_growth_legacy_aliases_still_resolve_to_real_pages():
 
 
 def test_growth_is_a_page_with_real_content_tabs():
-    assert '"Growth": growth_items' in MAIN_SOURCE
-    assert 'growth_items = growth_analysis_items' in MAIN_SOURCE
+    # 1.1.08 — as 5 sub-abas do Growth deixaram de ser itens do menu lateral e
+    # passaram a ser botões coloridos no topo da própria página (hub). A
+    # página principal continua real (render_growth_pages) e cada botão chama
+    # o renderizador que a sub-aba já chamava.
+    assert '"Growth": growth_items' not in MAIN_SOURCE
+    assert "growth_items = growth_analysis_items" in MAIN_SOURCE
+    assert "GROWTH_HUB_SPECS = [" in MAIN_SOURCE
     assert "render_growth_pages" in MAIN_SOURCE
+    renderers = _renderers_map()
+    assert renderers["Growth"] == {"function": "render_growth_pages"}
+    for page in ("Growth Youtube", "Growth Tiktok", "Growth Instagram", "Growth Facebook Pages", "Growth Bilibili"):
+        assert renderers[page].get("function"), page
 
 
 def test_documentation_is_a_page_with_real_content_tabs():

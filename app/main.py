@@ -34,6 +34,7 @@ import mimetypes
 import re
 import inspect
 import time
+import unicodedata
 from urllib.parse import quote
 from contextlib import nullcontext
 from datetime import date, datetime, timezone
@@ -1207,7 +1208,13 @@ html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stAppViewC
         if (!existing) document.head.appendChild(style);
     };
     applyTheme();
-    window.setInterval(applyTheme, 500);
+    // 1.1.08 — o intervalo era recriado a CADA rerun completo (o cleanup do
+    // componente React do st.html só faz innerHTML = ""), e nenhum deles era
+    // cancelado: acumulavam-se timers a mutar o document.head a cada 500 ms,
+    // o que agrava qualquer corrida de DOM. Agora é um só — o anterior é
+    // limpo antes de criar o novo.
+    if (window.__thunderboltThemeTimer) window.clearInterval(window.__thunderboltThemeTimer);
+    window.__thunderboltThemeTimer = window.setInterval(applyTheme, 500);
 })();
 </script>
 """
@@ -1224,7 +1231,12 @@ _FLAG_RENDER_BOOTSTRAP = r"""
     const FLAG_PATTERN = /[\u{1F1E6}-\u{1F1FF}]{2}/gu;
     const toIso = (pair) => [...pair].map((character) => String.fromCharCode(65 + character.codePointAt(0) - 0x1F1E6)).join("");
     const replaceTextNode = (node) => {
-        if (!node.nodeValue || !node.parentElement || node.parentElement.closest("img,script,style,noscript,textarea,input,option")) return;
+        // 1.1.08 — os contentores de lista do Streamlit (dropdown do selectbox,
+        // menus) entram no guarda: são reconciliados por LISTA pelo React e
+        // injectar nós desconhecidos dentro deles desalinhava os filhos. A
+        // bandeira fica como emoji nativo nessas listas — o comportamento
+        // normal, sem observer.
+        if (!node.nodeValue || !node.parentElement || node.parentElement.closest('img,script,style,noscript,textarea,input,option,[role="listbox"],[role="option"],[role="menu"],[role="menuitem"]')) return;
         if (!FLAG_PATTERN.test(node.nodeValue)) {
             FLAG_PATTERN.lastIndex = 0;
             return;
@@ -1247,7 +1259,17 @@ _FLAG_RENDER_BOOTSTRAP = r"""
         }
         if (cursor === 0) return;
         if (cursor < node.nodeValue.length) fragment.appendChild(document.createTextNode(node.nodeValue.slice(cursor)));
-        node.replaceWith(fragment);
+        // 1.1.08 — NUNCA desanexar o nó de texto. A versão anterior trocava o
+        // nó por um fragmento, o que desanexava um HostText que o react-dom
+        // possui: ao remover a subárvore (fecho do dropdown, troca de aba,
+        // rerun completo) o removeChild batia num nó que já não era filho e o
+        // console mostrava "NotFoundError: Failed to execute 'removeChild' on
+        // 'Node'" — foi o erro relatado na aba "Criação de Shorts", cujo
+        // selectbox "Script Language" renderiza "Português (pt) 🇧🇷" em
+        // div[role=option]. Inserir o fragmento ANTES do nó e esvaziar o nó dá
+        // o mesmo resultado visual sem nunca desanexar o que o React criou.
+        node.parentNode.insertBefore(fragment, node);
+        node.nodeValue = "";
     };
     const scan = (root = document.body) => {
         if (!root) return;
@@ -13862,6 +13884,13 @@ def render_update_youtube_videos():
 
 
 def render_pipeline():
+    """Pipeline Vídeos: estado das filas + barra de abas coloridas (1.1.08).
+
+    Os cartões das filas continuam no topo (são o resumo da página); a barra
+    roxa abaixo deles troca o conteúdo, como na Automação. As 7 sub-páginas
+    eram itens do menu lateral — quem mudou de sítio foi o MENU, não a lógica:
+    cada botão chama exactamente o renderizador que a sub-página chamava.
+    """
     st.title("Pipeline Vídeos")
     st.caption("Estado das filas locais e dependências da cascata")
     queues = read_json("queues.json", {})
@@ -13873,23 +13902,19 @@ def render_pipeline():
                 card("Blueprints", blueprint_count, f"na biblioteca · {len(queues.get(stage, []))} tarefa(s) na fila")
             else:
                 card(stage.title(), len(queues.get(stage, [])), "fila")
+    render_hub_page("Pipeline Vídeos")
 
 
 def render_growth_pages() -> None:
-    """Render Growth and its requested real sub-tabs in the page content."""
-    st.title("Growth")
-    analysis_tab, = render_localized_tabs(["Analise Growth"])
-    with analysis_tab:
-        growth_subtabs = render_localized_tabs([
-            "Growth Youtube", "Growth Tiktok", "Growth Instagram", "Facebook Pages", "Growth Bilibili",
-        ])
-        growth_renderers = [
-            render_growth_youtube, render_growth_tiktok, render_growth_instagram,
-            render_growth_facebook_pages, render_growth_bilibili,
-        ]
-        for tab, renderer in zip(growth_subtabs, growth_renderers):
-            with tab:
-                renderer()
+    """Growth: barra de botões coloridos + analista da plataforma activa.
+
+    1.1.08 — as 5 sub-páginas estavam em `st.tabs` dentro da própria página
+    (arquivo arrumado, mas com duas barras de abas para o mesmo conteúdo).
+    Passaram a ser UMA barra de botões no topo, cada um com a cor da
+    plataforma que a Automação já usava (pedido do utilizador: "manter as
+    cores"). Os renderizadores são exactamente os mesmos.
+    """
+    render_hub_page("Growth", "Growth")
 
 
 def render_documentation_pages() -> None:
@@ -13914,6 +13939,244 @@ def render_documentation_pages() -> None:
     for tab, renderer in zip(tutorial_subtabs, tutorial_renderers):
         with tab:
             renderer()
+
+
+# ── HUB DE NAVEGAÇÃO REUTILIZÁVEL (1.1.08) ──────────────────────────────────
+# A Automação provou o padrão em 1.1.02 (render_automation_hub): em vez de
+# enterrar as sub-páginas no menu lateral, a página principal mostra uma barra
+# de botões coloridos no topo e troca o conteúdo por session_state + um único
+# st.rerun(). O utilizador pediu o mesmo para Growth, Canais/Perfis, Blueprints,
+# Niche Finder, Edição, Pipeline Vídeos e Pipeline Música.
+#
+# Este componente é esse mesmo padrão tornado genérico: quem chama passa as
+# abas e (opcionalmente) a paleta. A LÓGICA DE NEGÓCIO NÃO MUDA — cada aba
+# continua a chamar exactamente o renderizador que a sub-página chamava, com as
+# mesmas chaves de widget, os mesmos fragments e o mesmo prefixo.
+#
+# A barra da Automação NÃO foi migrada para cá: o hub dela tem contrato fino
+# (test_ui_navigation.py corre o AST de render_automation_hub) e funciona em
+# produção. Duas implementações do mesmo desenho são preferíveis a um risco de
+# regressão na única página que o utilizador já validou.
+DEFAULT_HUB_COLOR = "#8a2be2"
+# Fundos muito escuros precisam de texto branco e borda clara, senão o botão
+# desaparece no tema escuro (regra já usada no TikTok da Automação).
+DARK_HUB_COLORS = {"#000000", "#000", "black", "#111111", "#111", "#1a1a1a"}
+
+
+def _hub_slug(text: str) -> str:
+    """'Criação de Vídeos' -> 'criacao-de-videos' (chave estável, sem acentos)."""
+    normalized = unicodedata.normalize("NFKD", str(text)).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "-", normalized.lower()).strip("-")
+
+
+def _hub_tabs(specs: list[tuple[str, str, Any]]) -> list[tuple[str, str, Any]]:
+    """[(página interna, rótulo do botão, renderizador)] -> [(chave, rótulo, renderizador)].
+
+    A primeira coluna continua a ser o NOME INTERNO da página (o que aparece em
+    `renderers`, em `nav_paths` e nos aliases): a chave da aba é só o slug dele.
+    Assim um link directo para a sub-página antiga continua a conseguir semear a
+    aba colorida certa.
+    """
+    return [(_hub_slug(target), label, renderer) for target, label, renderer in specs]
+
+
+def _hub_nav_css(scope: str, palette: dict[str, str]) -> str:
+    """CSS da barra deste hub: <scope>-<aba> -> cor. Gerado, não fixo no código.
+
+    O selector exige a coluna do chip (`:has`), por isso nenhum botão do resto
+    da aplicação pode ser pintado por engano — a mesma garantia do
+    AUTOMATION_NAV_CSS.
+    """
+    rules = [
+        ".tb-hub-chip { display:none; }",
+        '[data-testid="stColumn"] .element-container:has(.tb-hub-chip) { display:none !important; margin:0 !important; padding:0 !important; }',
+    ]
+    for tab_key, color in palette.items():
+        border = (
+            "border:1px solid #ffffff !important;"
+            if color.strip().lower() in DARK_HUB_COLORS
+            else f"border-color:{color} !important;"
+        )
+        rules.append(
+            f'[data-testid="stColumn"]:has(.tb-hub-chip-{scope}-{tab_key}) button'
+            f' {{ background:{color} !important; color:#ffffff !important; {border} }}'
+        )
+    rules.append(
+        '[data-testid="stColumn"]:has(.tb-hub-chip.is-active) button { border:2px solid #ffffff !important; box-shadow:0 0 0 1px rgba(255,255,255,.35) !important; }'
+    )
+    return "<style>\n" + "\n".join(rules) + "\n</style>"
+
+
+def render_hub_navigation(
+    tabs_list: list[tuple[str, str, Any]],
+    active_tab: str,
+    colors: dict[str, str] | None = None,
+    *,
+    scope: str = "hub",
+    state_key: str = "active_hub_tab",
+):
+    """Barra de botões coloridos no topo + renderizador da aba activa.
+
+    `tabs_list` — `[(chave, rótulo, renderizador)]`. A chave identifica a aba no
+    session_state e no URL (`?hub=<scope>:<chave>`); o rótulo é o texto do botão.
+    `active_tab` — chave activa. Valor desconhecido cai na primeira aba.
+    `colors` — `{chave: cor CSS}`. `None` (ou chave ausente) usa o roxo
+    `#8a2be2`; nenhuma aba pode ficar sem cor.
+    `scope` — prefixo das classes CSS e das chaves de widget, para dois hubs na
+    mesma sessão nunca se pintarem um ao outro.
+    `state_key` — onde a aba activa é guardada no session_state.
+
+    Devolve o renderizador da aba activa (`None` só com a lista vazia). Um
+    clique num botão escreve o estado e faz UM único `st.rerun()`; clicar na
+    aba já activa não dispara nada (skill streamlit-estado: sem loop, sem
+    `time.sleep` na thread da UI).
+    """
+    tabs = [(str(key), str(label), renderer) for key, label, renderer in tabs_list]
+    if not tabs:
+        return None
+    palette = {key: str((colors or {}).get(key) or DEFAULT_HUB_COLOR) for key, _label, _renderer in tabs}
+    active = str(active_tab)
+    if active not in palette:
+        active = tabs[0][0]
+
+    st.markdown(_hub_nav_css(scope, palette), unsafe_allow_html=True)
+
+    with st.container():
+        nav_columns = st.columns(len(tabs), gap="small")
+        for column, (tab_key, label, _renderer) in zip(nav_columns, tabs):
+            with column:
+                active_class = " is-active" if tab_key == active else ""
+                st.markdown(f'<div class="tb-hub-chip tb-hub-chip-{scope}-{tab_key}{active_class}"></div>', unsafe_allow_html=True)
+                if st.button(label, key=f"tb_hub_nav_{scope}_{tab_key}", width="stretch"):
+                    if tab_key != active:
+                        st.session_state[state_key] = tab_key
+                        st.query_params["hub"] = f"{scope}:{tab_key}"
+                        # Um único rerun por clique (skill streamlit-estado):
+                        # clicar na aba já activa não dispara nada.
+                        st.rerun()
+
+    for tab_key, _label, renderer in tabs:
+        if tab_key == active:
+            return renderer
+    return None
+
+
+# 1.1.08 — as abas dos 7 hubs. O primeiro elemento de cada SPEC é o NOME
+# INTERNO da página (o que já existia em `renderers`/`nav_paths`); o segundo é
+# o rótulo CURTO do botão no topo. Cores `None` ficam roxas por omissão.
+GROWTH_HUB_SPECS = [
+    ("Growth Youtube", "Youtube", render_growth_youtube),
+    ("Growth Tiktok", "TikTok", render_growth_tiktok),
+    ("Growth Instagram", "Instagram", render_growth_instagram),
+    ("Growth Facebook Pages", "Facebook Pages", render_growth_facebook_pages),
+    ("Growth Bilibili", "Bilibili", render_growth_bilibili),
+]
+# "Manter as cores": as mesmas que a Automação usa para cada plataforma.
+GROWTH_HUB_COLORS = {
+    "growth-youtube": "#ff0000",
+    "growth-tiktok": "#000000",
+    "growth-instagram": "linear-gradient(45deg,#f09433 0%,#e6683c 25%,#dc2743 50%,#cc2366 75%,#bc1888 100%)",
+    "growth-facebook-pages": "#1877f2",
+    "growth-bilibili": "#00a1d6",
+}
+
+CHANNEL_PROFILE_HUB_SPECS = [
+    ("Canais YouTube", "YouTube", render_channels),
+    ("Canais Tiktok", "TikTok", render_tiktok_channels),
+    ("Contas Instagram", "Instagram", lambda: render_social_networks(read_json("settings.json", {}))),
+    ("Facebook Pages", "Facebook Pages", render_facebook_pages),
+]
+
+BLUEPRINT_HUB_SPECS = [
+    ("Blueprints Youtube", "Youtube", render_blueprints),
+    ("Music Blueprint", "Música", render_music_blueprints),
+    ("Thumbnail Blueprints", "Thumbnails", render_thumbnail_blueprints),
+    ("Brandings Youtube", "Brandings", render_youtube_brandings),
+    ("Prompt-Masters Tiktok", "Prompt-Masters", render_tiktok_prompt_masters),
+    ("Facebook Blueprint", "Facebook", render_facebook_blueprints),
+]
+
+NICHE_FINDER_HUB_SPECS = [
+    ("Niche Finder Kaggle", "Kaggle", render_niche_finder),
+    ("Niche Finder Apify", "Apify", render_niche_finder_apify),
+]
+
+EDITION_HUB_SPECS = [
+    ("Limpador de Metadados", "Limpador", render_metadata_cleaner),
+    ("Cortes", "Cortes", render_cuts),
+    ("Editor Python", "Editor Python", render_python_editor),
+    ("Download Mídia", "Download Mídia", render_media_download),
+]
+
+PIPELINE_VIDEO_HUB_SPECS = [
+    # O botão é curto; o TÍTULO INTERNO da página continua o de sempre.
+    ("Criação de Vídeos", "Vídeos", lambda: render_new_video("Criação de Vídeos", "new_video")),
+    ("Criação de Shorts", "Shorts", lambda: render_new_video("Criação de Shorts", "new_shorts", channel_platform="tiktok", fixed_aspect_ratio="Portrait 9:16")),
+    ("Backlog Vídeos", "Backlog", render_videos),
+    ("Roteiros", "Roteiros", render_scripts),
+    ("Thumbnails", "Thumbnails", render_thumbnails),
+    ("Upload", "Upload", render_upload),
+    ("Update Youtube Vídeos", "Update Youtube", render_update_youtube_videos),
+]
+
+PIPELINE_MUSIC_HUB_SPECS = [
+    ("Criação de Músicas", "Músicas", render_music_creation),
+    ("Music Backlog", "Backlog", render_music_backlog),
+    ("Vozes Personalizadas", "Vozes", render_custom_music_voices),
+    ("Upload Música", "Upload", render_music_upload),
+]
+
+# (página principal, scope, abas, cores) — a ordem é a do menu lateral, que
+# NÃO muda (regra de UI «Inserção de Itens»).
+HUB_PAGES: list[tuple[str, str, list[tuple[str, str, Any]], dict[str, str] | None]] = [
+    ("Growth", "growth", GROWTH_HUB_SPECS, GROWTH_HUB_COLORS),
+    ("Canais/Perfis (Vídeos)", "canais-perfis", CHANNEL_PROFILE_HUB_SPECS, None),
+    ("Blueprints", "blueprints", BLUEPRINT_HUB_SPECS, None),
+    ("Niche Finder", "niche-finder", NICHE_FINDER_HUB_SPECS, None),
+    ("Edição", "edicao", EDITION_HUB_SPECS, None),
+    ("Pipeline Vídeos", "pipeline-videos", PIPELINE_VIDEO_HUB_SPECS, None),
+    ("Pipeline Música", "pipeline-musica", PIPELINE_MUSIC_HUB_SPECS, None),
+]
+
+# Derivados canónicos das 7 páginas acima. Um link directo para uma sub-página
+# antiga continua a resolver: colapsa na página principal e semeia a aba
+# colorida certa (mesmo mecanismo do AUTOMATION_TAB_BY_PAGE da 1.1.02).
+HUB_TABS_BY_PAGE = {parent: _hub_tabs(specs) for parent, _scope, specs, _colors in HUB_PAGES}
+HUB_COLORS_BY_PAGE = {parent: dict(colors or {}) for parent, _scope, _specs, colors in HUB_PAGES}
+HUB_SCOPE_BY_PAGE = {parent: scope for parent, scope, _specs, _colors in HUB_PAGES}
+HUB_TAB_KEYS = {
+    scope: {_hub_slug(target) for target, _label, _renderer in specs}
+    for _parent, scope, specs, _colors in HUB_PAGES
+}
+HUB_PAGE_ROUTES = {
+    target: (parent, scope, _hub_slug(target))
+    for parent, scope, specs, _colors in HUB_PAGES
+    for target, _label, _renderer in specs
+}
+
+
+def render_hub_page(page: str, title: str | None = None, caption: str = "") -> None:
+    """Página completa de um hub: título + barra colorida + aba activa.
+
+    `page` é a página principal (uma das chaves de HUB_PAGES). O título é
+    omitido quando quem chama já o desenhou (caso do Pipeline Vídeos, que
+    mostra os cartões das filas antes da barra).
+    """
+    if title:
+        st.title(title)
+    if caption:
+        st.caption(caption)
+    scope = HUB_SCOPE_BY_PAGE[page]
+    state_key = f"active_hub_tab_{scope}"
+    renderer = render_hub_navigation(
+        HUB_TABS_BY_PAGE[page],
+        str(st.session_state.get(state_key, "")),
+        HUB_COLORS_BY_PAGE[page],
+        scope=scope,
+        state_key=state_key,
+    )
+    if renderer:
+        renderer()
 
 
 AUTOMATION_TAB_SPECS = [
@@ -13950,6 +14213,36 @@ AUTOMATION_NAV_CSS = """
 [data-testid="stColumn"]:has(.tb-automation-chip.is-active) button { border:2px solid #ffffff !important; box-shadow:0 0 0 1px rgba(255,255,255,.35) !important; }
 </style>
 """
+
+
+def render_channel_profiles_hub() -> None:
+    """Canais/Perfis (Vídeos): barra roxa + perfil activo (1.1.08).
+
+    Os 4 perfis eram sub-itens do menu lateral; agora são botões no topo da
+    página, com a cor roxa por omissão. Cada botão chama o renderizador que
+    a sub-página já chamava (nomes, chaves de widget e lógica intactos).
+    """
+    render_hub_page("Canais/Perfis (Vídeos)")
+
+
+def render_blueprints_hub() -> None:
+    """Blueprints: barra roxa + blueprint activo (1.1.08)."""
+    render_hub_page("Blueprints")
+
+
+def render_niche_finder_hub() -> None:
+    """Niche Finder: barra roxa + fonte de pesquisa activa (1.1.08)."""
+    render_hub_page("Niche Finder")
+
+
+def render_edition_hub() -> None:
+    """Edição: barra roxa + ferramenta de edição activa (1.1.08)."""
+    render_hub_page("Edição")
+
+
+def render_pipeline_music_hub() -> None:
+    """Pipeline Música: barra roxa + etapa activa (1.1.08)."""
+    render_hub_page("Pipeline Música")
 
 
 def render_automation_hub() -> None:
@@ -14097,18 +14390,26 @@ def main():
         ("Growth", ":material/analytics:", "Growth"),
         ("Configurações", ":material/settings:", "Configurações"),
     ]
+    # 1.1.08 — 7 grupos deixaram de ter submenus: as sub-páginas passaram a ser
+    # BOTÕES COLORIDOS no topo da própria página (render_hub_page), como a
+    # Automação fez na 1.1.02. As listas de itens continuam a existir (ordem,
+    # nomes internos e links directos), mas na sidebar fica apenas o nome
+    # principal do grupo, NA MESMA POSIÇÃO (regra de UI «Inserção de Itens»).
+    # Só AI Influencers e Configurações mantêm filhos no menu lateral.
     groups = {
-        "Niche Finder": niche_finder_items,
-        "Pipeline Vídeos": pipeline_video_items,
         "AI Influencers": models_ai_items,
-        "Blueprints": blueprint_items,
-        "Canais/Perfis (Vídeos)": channel_profile_items,
-        "Pipeline Música": music_items,
-        "Edição": edition_items,
-        "Growth": growth_items,
-        "Analise Growth": growth_analysis_items,
         "Configurações": settings_items,
     }
+    # As sub-páginas dos hubs continuam a ser alvos válidos de navegação (link
+    # directo, alias e seed), mesmo sem serem itens do menu.
+    hub_child_items = [
+        item
+        for items in (
+            growth_analysis_items, channel_profile_items, blueprint_items,
+            niche_finder_items, edition_items, pipeline_video_items, music_items,
+        )
+        for item in items
+    ]
     nav_paths = {
         "Início": "/inicio", "Automação": "/automacao", "Automação Youtube": "/automacao/youtube", "Automação Tiktok": "/automacao/tiktok", "Automação Instagram": "/automacao/instagram", "Automação Facebook": "/automacao/facebook", "Automação Musicas": "/automacao/musicas", "Automação UGC": "/automacao/ugc", "Automação Influencer Content": "/automacao/influencer-content", "Automação Bilibili": "/automacao/bilibili",
         "Niche Finder": "/niche-finder", "Niche Finder Kaggle": "/niche-finder/kaggle", "Niche Finder Apify": "/niche-finder/apify",
@@ -14161,6 +14462,13 @@ def main():
         # em "Growth Youtube/Tiktok/Instagram/Bilibili" resolve agora
         # directamente para a página real, sem passar pelo pai.
     }
+    # 1.1.08 — as sub-páginas dos 7 hubs deixaram de ser itens do menu, mas os
+    # links directos (?page=<sub-página>) continuam a resolver: colapsam na
+    # página principal e semeiam a aba colorida certa (HUB_PAGE_ROUTES).
+    # Nenhuma posição do menu é alterada.
+    aliases.update(
+        {child_page: parent for child_page, (parent, _scope, _tab) in HUB_PAGE_ROUTES.items()}
+    )
     # 1.1.02 — página antiga da Automação → aba colorida que ela deve abrir.
     AUTOMATION_TAB_BY_PAGE = {
         "Automação Youtube": "youtube",
@@ -14172,7 +14480,7 @@ def main():
         "Automação Influencer Content": "influencer",
         "Automação Bilibili": "bilibili",
     }
-    all_children = [item for items in groups.values() for item in items]
+    all_children = [item for items in groups.values() for item in items] + hub_child_items
     valid_targets = {item[0] for item in top_pages + all_children}
     # Session state is reset by a browser refresh or an application update. Keep
     # the canonical page in the URL so the open section can be restored.
@@ -14199,6 +14507,26 @@ def main():
         st.session_state.setdefault("active_automation_tab", "youtube")
     if current_page == "Automação" and str(st.query_params.get("tab") or "") != st.session_state.get("active_automation_tab", "youtube"):
         st.query_params["tab"] = st.session_state.get("active_automation_tab", "youtube")
+    # 1.1.08 — a aba activa dos 7 hubs vive no session_state e no URL
+    # (?hub=<scope>:<aba>), que sobrevive a um F5 e a um link partilhado. O
+    # ?hub= ganha sempre ao seed da sub-página; o seed só se aplica quando a
+    # página principal dona do hub é a que está aberta.
+    requested_hub = str(st.query_params.get("hub") or "").strip().lower()
+    seeded_hub_route = HUB_PAGE_ROUTES.get(stored_page)
+    if ":" in requested_hub:
+        hub_scope, hub_tab = [part.strip() for part in requested_hub.split(":", 1)]
+        if hub_tab in HUB_TAB_KEYS.get(hub_scope, set()):
+            st.session_state[f"active_hub_tab_{hub_scope}"] = hub_tab
+    elif seeded_hub_route is not None and seeded_hub_route[0] == current_page:
+        _hub_parent, hub_scope, hub_tab = seeded_hub_route
+        st.session_state[f"active_hub_tab_{hub_scope}"] = hub_tab
+    elif current_page in HUB_SCOPE_BY_PAGE:
+        hub_scope = HUB_SCOPE_BY_PAGE[current_page]
+        default_hub_tab = HUB_TABS_BY_PAGE[current_page][0][0]
+        st.session_state.setdefault(f"active_hub_tab_{hub_scope}", default_hub_tab)
+        active_hub_value = f"{hub_scope}:{st.session_state[f'active_hub_tab_{hub_scope}']}"
+        if str(st.query_params.get("hub") or "").strip().lower() != active_hub_value:
+            st.query_params["hub"] = active_hub_value
     ui_language = current_ui_language()
     current_path = nav_paths.get(current_page, "/inicio")
 
@@ -14270,6 +14598,13 @@ def main():
         "Canais YouTube": render_channels,
         "Canais Tiktok": render_tiktok_channels,
         "Facebook Pages": render_facebook_pages,
+        # 1.1.08 — 7 grupos passaram a ser UMA página com barra de botões
+        # coloridos no topo: os submenus saíram da sidebar e cada botão chama
+        # o renderizador que a sub-página já chamava.
+        "Canais/Perfis (Vídeos)": render_channel_profiles_hub,
+        "Blueprints": render_blueprints_hub,
+        "Niche Finder": render_niche_finder_hub,
+        "Pipeline Música": render_pipeline_music_hub,
         # 1.1.02 — a Automação é UMA página com uma barra de botões coloridos
         # no topo (YouTube, TikTok, Instagram, Facebook, Músicas, UGC,
         # Influencer, Bilibili); cada botão troca o conteúdo sem sair da página.
@@ -14278,7 +14613,7 @@ def main():
         "Kaggle": lambda: render_niche_tutorial("kaggle"),
         "Niche Finder Apify": render_niche_finder_apify,
         "Apify": lambda: render_niche_tutorial("apify"),
-        "Edição": lambda: render_edit_placeholder("Edição", "Seleccione uma das abas de edição no menu expansível."),
+        "Edição": render_edition_hub,
         "Limpador de Metadados": render_metadata_cleaner,
         "Cortes": render_cuts,
         "Editor Python": render_python_editor,

@@ -198,7 +198,10 @@ def test_edition_navigation_has_cleaner_cuts_and_python_editor():
     assert '("Cortes", ":material/content_cut:", "Cortes")' in source
     assert '("Editor Python", ":material/code:", "Editor Python")' in source
     assert source.index('("Limpador de Metadados", ":material/edit_note:') < source.index('("Cortes", ":material/content_cut:') < source.index('("Editor Python", ":material/code:')
-    assert '"Edição": lambda: render_edit_placeholder("Edição"' in source
+    # 1.1.08 — a Edição deixou de ser placeholder: é UMA página com barra de
+    # botões coloridos no topo (hub), como a Automação.
+    assert '"Edição": render_edition_hub' in source
+    assert "def render_edition_hub()" in source
     assert '"Cortes": render_cuts' in source
     assert 'def render_cuts()' in source
     assert 'Gerar Clips' in source
