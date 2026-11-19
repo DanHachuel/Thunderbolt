@@ -86,6 +86,7 @@ def create_channel(name: str, url: str = "", metadata: dict[str, Any] | None = N
         "default_blueprint_id": "",
         "thumbnail_blueprint_id": "",
         "default_thumbnail_blueprint_id": "",
+        "default_music_thumbnail_blueprint_id": "",
         "style_wide": "pexels",
         "voice": "",
         "default_voice": "",
@@ -289,6 +290,11 @@ def create_tasks_for_batch(batch: dict[str, Any]) -> list[dict[str, Any]]:
                 "blueprint_id": payload.get("blueprint_id") or channel.get("default_blueprint_id") or channel.get("blueprint_id", ""),
                 "blueprint_name": payload.get("blueprint_name", ""),
                 "thumbnail_blueprint_id": payload.get("thumbnail_blueprint_id") or channel.get("default_thumbnail_blueprint_id") or channel.get("thumbnail_blueprint_id") or thumbnail_blueprint_for_channel({**channel, "thumbnail_blueprint_id": ""}, payload.get("format", options.get("format", ""))).get("id", ""),
+                # Music Thumbnail Blueprint (clipes de música): a selecção explícita
+                # (payload do canal ou o campo do formulário em generation_settings)
+                # vence; o default do canal é o pré-preenchimento. Fica também no
+                # topo da tarefa para o pipeline e o "refazer" o lerem sem ambiguidade.
+                "music_thumbnail_blueprint_id": payload.get("music_thumbnail_blueprint_id") or generation_settings.get("music_thumbnail_blueprint_id") or channel.get("default_music_thumbnail_blueprint_id") or "",
                 "voice": payload.get("voice") or channel.get("default_voice") or channel.get("voice", ""),
                 "automation_on": bool(channel.get("automation_on", False)),
                 "automation_time": channel.get("automation_time", "00:00"),
@@ -888,6 +894,14 @@ def _refresh_task_channel_video_settings(task: dict[str, Any]) -> None:
         or channel.get("thumbnail_blueprint_id")
         or task.get("thumbnail_blueprint_id")
         or thumbnail_blueprint_for_channel({**channel, "thumbnail_blueprint_id": ""}, task.get("format", "")).get("id", "")
+    )
+    # Music Thumbnail Blueprint (clipes de música): a selecção explícita da
+    # tarefa vence; o default do canal é o pré-preenchimento. Sem fallback
+    # genérico — diferente do thumbnail de vídeo, que o canal comanda.
+    task["music_thumbnail_blueprint_id"] = (
+        task.get("music_thumbnail_blueprint_id")
+        or channel.get("default_music_thumbnail_blueprint_id")
+        or ""
     )
     task["blueprint_id"] = channel.get("default_blueprint_id") or channel.get("blueprint_id") or task.get("blueprint_id", "")
     if channel.get("style_wide"):

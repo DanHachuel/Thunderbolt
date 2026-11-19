@@ -809,13 +809,13 @@ from app.modules.token_optimizer.cache_manager import clear_derived_cache
 from app.modules.token_optimizer.compressor import check_installation
 from app.modules.token_optimizer.config import DEFAULTS as TOKEN_OPTIMIZER_DEFAULTS
 from app.modules.token_optimizer.metrics import get_stats as get_token_optimizer_stats
-from app.influencers_ui import render_ai_influencer_characters, render_ai_influencer_content, render_ai_influencers_api_status, render_motion_control, render_ugc_products
+from app.influencers_ui import render_ai_influencer_characters, render_ai_influencer_content, render_ai_influencers_api_status, render_motion_control, render_ugc_products, store_uploaded_media
 from app.social_auto_upload_ui import render_sau_accounts, render_social_auto_upload_settings
 from app.social_networks_ui import render_instagram_automation, render_meta_api_cards, render_social_networks
 from hermes_ui.social_auto_upload_backend import confirm_sau_upload_not_published, get_sau_upload_checkpoint, reconcile_uncertain_uploads, sau_upload_checkpoint_id, upload_video_via_sau
 from hermes_ui.blueprints import create_blueprint_from_link, list_branding_files, save_generated_blueprint
 from hermes_ui.blueprint_governance import rotation_categories
-from hermes_ui.thumbnail_blueprints import generate_thumbnail_blueprint, list_thumbnail_blueprint_documents, resolve_thumbnail_blueprint, save_thumbnail_blueprint, save_thumbnail_blueprint_pair, save_thumbnail_blueprint_pairs, thumbnail_blueprint_associations, thumbnail_blueprint_catalog, thumbnail_blueprint_for_blueprint, thumbnail_blueprint_for_channel
+from hermes_ui.thumbnail_blueprints import generate_thumbnail_blueprint, list_thumbnail_blueprint_documents, resolve_thumbnail_blueprint, save_thumbnail_blueprint, save_thumbnail_blueprint_pair, save_thumbnail_blueprint_pairs, thumbnail_blueprint_associations, thumbnail_blueprint_catalog, thumbnail_blueprint_for_blueprint, thumbnail_blueprint_for_channel, list_music_thumbnail_blueprints, music_thumbnail_blueprint_for_task
 from hermes_ui.metadata_cleaner import build_description, clean_video_metadata, list_edit_records, metadata_manifest, normalize_tags, save_edit_record, store_external_video
 from hermes_ui.python_editor import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, PythonEditorError, change_speed, editor_manifest, extract_audio, list_edit_records as list_python_editor_records, list_generated_videos, list_scripts, list_video_files, read_script, remove_audio, replace_audio, resize_video, save_edit_record as save_python_editor_record, save_script, store_uploaded_asset, trim_video
 from hermes_ui.cuts import CutsError, download_direct_video_url, generate_clips, list_generated_videos as list_cut_generated_videos, list_runs as list_cut_runs, list_video_files as list_cut_video_files, manifest_bytes as cut_manifest_bytes, store_uploaded_video, zip_run as zip_cut_run
@@ -1035,7 +1035,7 @@ VIDEO_SOURCE_LABELS.update({
     "music_clips": "Clipes de Música",
     "clips": "Clipes de Música",
 })
-UNAVAILABLE_VIDEO_SOURCES = {"music_clips"}
+UNAVAILABLE_VIDEO_SOURCES = set()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -5523,8 +5523,8 @@ def render_new_video(page_title: str = "Criação de Vídeos", prefix: str = "ne
             style_ia = generation_settings.get("style_ia", "")
             music_path = ""
             music_source = ""
-            if style == "only_music":
-                st.caption("Only Music usa uma música existente e gera apenas a thumbnail; não cria vídeo, narração ou música nova.")
+            if style in {"only_music", "music_clips"}:
+                st.caption("Only Music gera apenas a thumbnail de uma música existente; Clipes de Música cria um vídeo (imagem animada + texto) a partir da música.")
                 music_source = st.radio("Fonte da música", ["Música existente", "Upload de ficheiro"], horizontal=True, key=f"{prefix}_music_source")
                 if music_source == "Música existente":
                     local_music = list_music_files()
@@ -5544,6 +5544,26 @@ def render_new_video(page_title: str = "Criação de Vídeos", prefix: str = "ne
                             st.error(str(exc))
                     music_path = st.session_state.get(f"{prefix}_music_path", "")
                 music_path = music_path or st.session_state.get(f"{prefix}_music_path", "")
+                # Music Thumbnail Blueprint — EXCLUSIVO dos clips/thumbnails de
+                # música. Lista apenas a pasta music_thumbnails/ (nunca os
+                # Thumbnail Blueprints de vídeo FINANCE/ORACAO/etc.).
+                _music_thumb_options = list_music_thumbnail_blueprints()
+                _default_music_thumb = str((locals().get("selected_one") or {}).get("default_music_thumbnail_blueprint_id") or "")
+                if _music_thumb_options:
+                    _mt_ids = [item[0] for item in _music_thumb_options]
+                    selected_music_thumb = st.selectbox(
+                        "Music Thumbnail Blueprint",
+                        _music_thumb_options,
+                        index=_mt_ids.index(_default_music_thumb) if _default_music_thumb in _mt_ids else 0,
+                        format_func=lambda item: item[1],
+                        key=f"{prefix}_music_thumb",
+                    )
+                    generation_settings["music_thumbnail_blueprint_id"] = str(selected_music_thumb[0])
+                    if style == "music_clips":
+                        st.caption("Obrigatório para Clipes de Música; opcional para Only Music.")
+                else:
+                    generation_settings.setdefault("music_thumbnail_blueprint_id", _default_music_thumb)
+                    st.warning("Nenhum Music Thumbnail Blueprint encontrado em seed/blueprints/music_thumbnails/.")
             elif style in UNAVAILABLE_VIDEO_SOURCES:
                 if style == "music_clips":
                     st.info("Clipes de Música não está disponível nesta versão porque a pipeline completa não existe no código. Nenhuma tarefa será criada.")
@@ -5712,8 +5732,11 @@ def render_new_video(page_title: str = "Criação de Vídeos", prefix: str = "ne
                 st.stop()
             if submitted:
                 save_video_language(language)
-                if style == "only_music" and not music_path:
-                    st.error("Escolha uma música existente ou faça upload de um ficheiro antes de criar Only Music. Se a biblioteca estiver vazia, use Pipeline Música > Criação de Músicas.")
+                if style in {"only_music", "music_clips"} and not music_path:
+                    st.error("Escolha uma música existente ou faça upload de um ficheiro antes de criar a tarefa de música. Se a biblioteca estiver vazia, use Pipeline Música > Criação de Músicas.")
+                    st.stop()
+                if style == "music_clips" and not str(generation_settings.get("music_thumbnail_blueprint_id") or "").strip():
+                    st.error("Clipes de Música exige um Music Thumbnail Blueprint selecionado.")
                     st.stop()
                 if str(generation_settings.get("voiceover_mode") or "").strip().casefold() == "upload":
                     voiceover_file = Path(str(generation_settings.get("voiceover_file") or "").strip()).expanduser()

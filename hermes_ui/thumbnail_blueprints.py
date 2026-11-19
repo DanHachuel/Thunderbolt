@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .provider_routing import route_llm_json
-from .storage import BLUEPRINTS, SEED_BLUEPRINTS, SEED_THUMBNAIL_BLUEPRINTS, atomic_write, list_blueprint_files, load_blueprint_file
+from .storage import BLUEPRINTS, MUSIC_THUMBNAIL_BLUEPRINTS, SEED_BLUEPRINTS, SEED_MUSIC_THUMBNAIL_BLUEPRINTS, SEED_THUMBNAIL_BLUEPRINTS, atomic_write, list_blueprint_files, load_blueprint_file
 
 HORIZONTAL_GENERIC_THUMBNAIL_BLUEPRINT_ID = "Youtube_Generic_Thumbnail_Blueprint"
 VERTICAL_GENERIC_THUMBNAIL_BLUEPRINT_ID = "Tiktok_Generic_Thumbnail_Blueprint"
@@ -275,3 +275,65 @@ def list_thumbnail_blueprint_documents() -> list[Path]:
     folder = BLUEPRINTS / "thumbnails"
     folder.mkdir(parents=True, exist_ok=True)
     return sorted(folder.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# Music Thumbnail Blueprints — EXCLUSIVOS dos clips de música.
+#
+# Vivem numa pasta própria (seed/blueprints/music_thumbnails/ -> BLUEPRINTS/
+# music_thumbnails/), separada dos Thumbnail Blueprints de VÍDEO
+# (thumbnails/). O catálogo e o loader de vídeo (thumbnail_blueprint_catalog,
+# resolve_thumbnail_blueprint) NUNCA os vêem, e os loaders daqui só leem esta
+# pasta. É a fronteira que impede FINANCE/etc. de aparecer na Criação de
+# Músicas e impede um blueprint de música de ser usado por um vídeo Pexels/
+# Text-to-Images.
+# ---------------------------------------------------------------------------
+
+
+def list_music_thumbnail_blueprints() -> list[tuple[str, str]]:
+    """Catálogo exclusivo (id, rótulo) dos Music Thumbnail Blueprints.
+
+    O dropdown "Music Thumbnail Blueprint" da Criação de Músicas usa apenas
+    esta lista — nunca o thumbnail_blueprint_catalog de vídeo.
+    """
+    seen: set[str] = set()
+    result: list[tuple[str, str]] = []
+    for folder in (MUSIC_THUMBNAIL_BLUEPRINTS, SEED_MUSIC_THUMBNAIL_BLUEPRINTS):
+        if not folder.exists():
+            continue
+        for path in sorted(folder.glob("*.md"), key=lambda item: item.name):
+            if path.stem in seen:
+                continue
+            seen.add(path.stem)
+            result.append((path.stem, path.stem))
+    return result
+
+
+def resolve_music_thumbnail_blueprint(identifier: Any) -> dict[str, Any]:
+    """Resolve um Music Thumbnail Blueprint pelo id, lendo só esta pasta.
+
+    Devolve {} quando vazio; devolve {"id","name"} sem ``content`` quando o id
+    não existe (o chamador — pipeline de música — trata a ausência de conteúdo
+    como blueprint não selecionado).
+    """
+    wanted = str(identifier or "").strip()
+    if not wanted:
+        return {}
+    for folder in (MUSIC_THUMBNAIL_BLUEPRINTS, SEED_MUSIC_THUMBNAIL_BLUEPRINTS):
+        for path in folder.glob("*.md"):
+            if path.stem == wanted or path.name == wanted:
+                return {"id": path.stem, "name": path.stem, "path": str(path), "content": path.read_text(encoding="utf-8")}
+    return {"id": wanted, "name": wanted}
+
+
+def music_thumbnail_blueprint_for_task(channel: Mapping[str, Any], task: Mapping[str, Any]) -> dict[str, Any]:
+    """Resolve o Music Thumbnail Blueprint: tarefa primeiro, canal como default.
+
+    O canal pode definir ``default_music_thumbnail_blueprint_id`` (opcional); a
+    tarefa carrega ``music_thumbnail_blueprint_id``. Sem fallback genérico: um
+    clip de música sem blueprint selecionado permanece sem blueprint.
+    """
+    direct = str(task.get("music_thumbnail_blueprint_id") or "").strip()
+    if not direct and isinstance(channel, Mapping):
+        direct = str(channel.get("default_music_thumbnail_blueprint_id") or "").strip()
+    return resolve_music_thumbnail_blueprint(direct)

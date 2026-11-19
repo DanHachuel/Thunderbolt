@@ -53,6 +53,10 @@ LEGACY_DEFAULT_LLM_PROVIDERS = {"", "moonshot"}
 STATE = STORAGE / "state"
 BLUEPRINTS = STORAGE / "blueprints"
 MUSIC_BLUEPRINTS = BLUEPRINTS / "music"
+# Music Thumbnail Blueprints: pasta EXCLUSIVA de thumbnails de clips de música,
+# separada dos Thumbnail Blueprints de vídeo (a UI e o pipeline de música usam
+# apenas esta; o catálogo de vídeo e o de conteúdo ignoram-na).
+MUSIC_THUMBNAIL_BLUEPRINTS = BLUEPRINTS / "music_thumbnails"
 CONTENT_BLUEPRINTS = BLUEPRINTS
 TIKTOK_PROMPT_MASTERS = STORAGE / "tiktok" / "prompts_master"
 MEDIA_DOWNLOADS = STORAGE / "downloads"
@@ -60,6 +64,7 @@ NICHES_DATA = STORAGE / "data" / "niches"
 SEED_BLUEPRINTS = ROOT / "seed" / "blueprints"
 SEED_THUMBNAIL_BLUEPRINTS = SEED_BLUEPRINTS / "thumbnails"
 SEED_MUSIC_BLUEPRINTS = SEED_BLUEPRINTS / "music"
+SEED_MUSIC_THUMBNAIL_BLUEPRINTS = SEED_BLUEPRINTS / "music_thumbnails"
 SEED_CONTENT_BLUEPRINTS = SEED_BLUEPRINTS
 SEED_TIKTOK_PROMPT_MASTERS = ROOT / "seed" / "prompt_masters"
 
@@ -471,6 +476,14 @@ def seed_blueprints() -> None:
         renamed_thumbnail.replace(legacy_thumbnail)
     for source in sorted(SEED_THUMBNAIL_BLUEPRINTS.glob("*.md")):
         target = thumbnail_destination / source.name
+        if not target.exists():
+            shutil.copy2(source, target)
+    # Music Thumbnail Blueprints: seed exclusivo de clips de música (nunca
+    # misturado com os Thumbnail Blueprints de vídeo da pasta thumbnails/).
+    music_thumbnail_destination = MUSIC_THUMBNAIL_BLUEPRINTS
+    _ensure_directory(music_thumbnail_destination)
+    for source in sorted(SEED_MUSIC_THUMBNAIL_BLUEPRINTS.glob("*.md")):
+        target = music_thumbnail_destination / source.name
         if not target.exists():
             shutil.copy2(source, target)
     content_destination = CONTENT_BLUEPRINTS
@@ -1317,7 +1330,7 @@ def set_display_name(kind: str, path: Path, name: str) -> str:
 # no catálogo de Blueprints seleccionável (reproduzido em 09/10: o rglob
 # mostrava o registo de pares, o blueprint demo "Canal Hermes Demo" e
 # ficheiros das pastas de thumbnails/brandings como se fossem Blueprints).
-BLUEPRINT_EXCLUDED_FOLDERS = {"thumbnails", "brandings", "music", "conteudo"}
+BLUEPRINT_EXCLUDED_FOLDERS = {"thumbnails", "brandings", "music", "conteudo", "music_thumbnails"}
 BLUEPRINT_CONTROL_FILES = {"thumbnail_blueprint_pairs.json", "demo-content-hermes.json"}
 LEGACY_LIST_CONTROL_NAMES = {"lista.txt", "lista.txt.json"}
 

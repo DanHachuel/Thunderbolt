@@ -5,13 +5,17 @@ ROOT = Path(__file__).resolve().parents[1]
 MAIN_SOURCE = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 
 
-def test_google_images_source_is_available_but_music_clips_remain_unavailable():
-    # 0.9.52: o Remotion deixou de ser placeholder — a fonte está activa e
-    # gated pelo ambiente (get_remotion_status); só os Clipes de Música
-    # permanecem indisponíveis.
-    assert 'UNAVAILABLE_VIDEO_SOURCES = {"music_clips"}' in MAIN_SOURCE
+def test_google_images_source_is_available_and_music_clips_now_ships_a_pipeline():
+    # 0.9.52: o Remotion deixou de ser placeholder. Os Clipes de Música também
+    # deixaram de ser placeholder: a UI des-gateou music_clips e o worker tem
+    # pipeline real (hermes_ui/music_clips.py), restando apenas o campo
+    # obrigatório "Music Thumbnail Blueprint".
+    assert 'UNAVAILABLE_VIDEO_SOURCES = set()' in MAIN_SOURCE
     assert 'channel_video_source_storage(wide_style_label) == "google_images"' in MAIN_SOURCE
     assert 'style in UNAVAILABLE_VIDEO_SOURCES' in MAIN_SOURCE
+    worker_source = (ROOT / "hermes_ui" / "pipeline_worker.py").read_text(encoding="utf-8")
+    assert "run_music_clip_task(" in worker_source
+    assert "placeholder e não está disponível" not in worker_source
 
 
 def test_remotion_source_is_gated_by_environment_status():
