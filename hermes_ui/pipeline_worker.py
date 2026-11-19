@@ -82,6 +82,7 @@ from hermes_ui.thumbnail_blueprints import thumbnail_aspect_ratio_for_channel_ta
 from hermes_ui.voice_preview import synthesize_preview
 from hermes_ui.script_voice import narration_text_from_script
 from hermes_ui.only_music import run_only_music_task
+from hermes_ui.music_clips import run_music_clip_task
 from hermes_ui.channel_music import music_scope_for_channel, select_music_for_render
 from hermes_ui.text_to_images import assemble_text_to_images_video, generate_image_prompts_for_scenes, split_script_into_scenes, synthesize_text_to_images_audio
 from hermes_ui.remotion_provider import (
@@ -4016,7 +4017,12 @@ def _run_task(task: dict[str, Any]) -> dict[str, Any]:
         return _task_by_id(task_id) or task
 
     if route == "music_clips":
-        raise PipelineError("A fonte Clipes de Música é um placeholder e não está disponível nesta versão.")
+        _update(task_id, stage="video", state="doing", progress=80, error=None)
+        try:
+            updates = run_music_clip_task(_task_by_id(task_id) or task, settings, channel)
+        except (ValueError, MediaGenerationError, CreativeGenerationError) as exc:
+            raise PipelineError(f"Clipes de Música falhou: {exc}") from exc
+        return _update(task_id, **updates) or task
 
     if route == "only_music":
         _update(task_id, stage="thumbnail", state="doing", progress=82, error=None)
