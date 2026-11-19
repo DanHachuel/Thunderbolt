@@ -99,7 +99,10 @@ Pedido do utilizador (18/11/2026):
       actualizados (`test_ui_navigation.py`, `test_real_subtabs_navigation.py`,
       `test_niche_finder.py`).
 - [x] E4. `CHANGELOG.md` + bump `1.1.08` (`package.json` e `pyproject.toml`).
-- [ ] E5. Commit cirúrgico, push com rebase, publicação NPM 1.1.08.
+- [x] E5. Commit cirúrgico (10 ficheiros, 1135+/35-), push para `master`
+      (`2336b59..5293867`), dispatch do workflow sem input `version`
+      (run 1148, success) e push da tag `v1.1.08` (run 1149, success).
+      Registry: **`latest = next = 1.1.8`** (rótulo visual `1.1.08`).
 
 ## Lições a registar em `tasks/lessons.md`
 
