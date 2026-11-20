@@ -100,18 +100,20 @@ def test_sidebar_has_no_automation_children_anymore():
 def test_automation_stays_in_the_same_sidebar_position():
     """A categoria principal continua no menu, na MESMA posição (regra de UI)."""
     top_block = MAIN_SOURCE.split("    top_pages = [", 1)[1].split("    ]", 1)[0]
-    order = [label for label in ("Início", "Automação", "Niche Finder", "Canais/Perfis (Vídeos)", "Pipeline Vídeos", "Pipeline Música", "AI Influencers", "Blueprints", "Edição", "Growth", "Configurações") if f'"{label}"' in top_block]
+    order = [label for label in ("Início", "Automação", "Niche Finder", "Canais/Perfis (Vídeos)", "Pipeline Vídeos", "Pipeline Música", "UGC", "Blueprints", "Edição", "Growth", "Configurações") if f'"{label}"' in top_block]
     positions = [top_block.index(f'"{label}"') for label in order]
     assert positions == sorted(positions)
     assert '("Automação", ":material/schedule:", "Automação")' in MAIN_SOURCE
     # 1.1.08 — 7 grupos passaram a hubs (botões coloridos no topo) e a sidebar
-    # ficou só com o nome principal; só AI Influencers e Configurações mantêm
+    # ficou só com o nome principal; só Configurações mantêm
     # filhos no menu lateral (sem isso aparecia um expansível vazio).
     assert '"Niche Finder": niche_finder_items' not in MAIN_SOURCE
     assert '"Growth": growth_items' not in MAIN_SOURCE
     assert '"Pipeline Vídeos": pipeline_video_items' not in MAIN_SOURCE
     assert '"Analise Growth": growth_analysis_items' not in MAIN_SOURCE
-    assert '"AI Influencers": models_ai_items' in MAIN_SOURCE
+    # 1.1.09 - o UGC também passou a hub: nenhum grupo de hub fica no menu
+    assert '"AI Influencers": models_ai_items' not in MAIN_SOURCE
+    assert '"UGC": models_ai_items' not in MAIN_SOURCE
     assert '"Configurações": settings_items' in MAIN_SOURCE
     # as sub-páginas dos hubs continuam a ser alvos válidos de navegação
     # (link directo, alias e seed) — só deixaram de ser itens do menu.

@@ -5,9 +5,10 @@ MAIN = Path(__file__).parents[1].joinpath("app", "main.py").read_text(encoding="
 SOCIAL = Path(__file__).parents[1].joinpath("app", "social_networks_ui.py").read_text(encoding="utf-8")
 
 
-def test_blueprints_group_is_between_ai_influencers_and_editing():
+def test_blueprints_group_is_between_ugc_and_editing():
+    # 1.1.09 — "AI Influencers" passou a chamar-se "UGC" (mesma posição no menu).
     assert '("Blueprints", ":material/library_books:", "Blueprints")' in MAIN
-    assert MAIN.index('(\"AI Influencers\", ":material/smart_toy:", \"AI Influencers\")') < MAIN.index('(\"Blueprints\", ":material/library_books:", \"Blueprints\")') < MAIN.index('(\"Edição\", ":material/edit:", \"Edição\")')
+    assert MAIN.index('("UGC", ":material/smart_toy:", "UGC")') < MAIN.index('("Blueprints", ":material/library_books:", "Blueprints")') < MAIN.index('("Edição", ":material/edit:", "Edição")')
     for label in ("Blueprints Youtube", "Thumbnail Blueprints", "Brandings Youtube", "Prompt-Masters Tiktok", "Facebook Blueprint"):
         assert label in MAIN
 

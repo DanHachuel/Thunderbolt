@@ -1116,6 +1116,74 @@ async function installMoneyPrinterDependencies(moneyprinterPath) {
   await installRequirementIfNeeded(join(moneyprinterPath, "requirements.txt"), "moneyprinter_requirements_sha256", ["fastapi", "moviepy", "PIL", "numpy", "requests"], "MoneyPrinterTurbo");
 }
 
+// ---------------------------------------------------------------------------
+// Higgsfield AI (1.1.09) — AUTORIZADO EXPLICITAMENTE PELO UTILIZADOR.
+//
+// A regra do AGENTS.md proíbe tocar no instalador em tarefas de UI, e a própria
+// tarefa condicionava este passo a confirmação. O utilizador confirmou, e o
+// registo fica aqui: sem o CLI (@higgsfield/cli) as abas novas do hub UGC
+// (UGC Product Review, Ad-Creator, Ad Strategist e Hook) não geram nada.
+//
+// Regra 2 (silêncio absoluto): a saída do npm/npx nunca aparece no terminal —
+// só a etiqueta amigável; o resto vai para o install.log via runQuietTimed.
+// Regra 3 (sem skip): se um dos passos falhar, o instalador ABORTA com erro
+// claro em vez de pular silenciosamente.
+// ---------------------------------------------------------------------------
+const HIGGSFIELD_CLI_PACKAGE = "@higgsfield/cli";
+// Repositório das skills oficiais e as três que o Thunderbolt usa (de dez).
+const HIGGSFIELD_SKILLS_REPO = "higgsfield-ai/skills";
+const HIGGSFIELD_SKILLS = ["higgsfield-generate", "higgsfield-soul-id", "higgsfield-product-photoshoot"];
+// Agente de código que recebe as skills (o mesmo truque do npm-cli.js abaixo).
+const HIGGSFIELD_SKILLS_AGENT = "claude-code";
+const HIGGSFIELD_NETWORK_TIMEOUT_MS = 10 * 60 * 1000;
+
+function higgsfieldNpmTools() {
+  // Node >= 18 recusa-se a criar processos .cmd directamente (CVE-2024-27980),
+  // por isso o npm/npx são invocados via *-cli.js ao lado do node — o mesmo
+  // truque que o passo do Remotion já usa.
+  const npmBin = join(dirname(process.execPath), "node_modules", "npm", "bin");
+  return { npmCli: join(npmBin, "npm-cli.js"), npxCli: join(npmBin, "npx-cli.js") };
+}
+
+async function installHiggsfieldCli() {
+  const label = "Higgsfield: a instalar o CLI (@higgsfield/cli) no computador...";
+  const taskArgs = ["install", "-g", "--silent", "--no-audit", "--no-fund", HIGGSFIELD_CLI_PACKAGE];
+  const { npmCli } = higgsfieldNpmTools();
+  if (existsSync(npmCli)) {
+    await runQuietTimed(label, process.execPath, [npmCli, ...taskArgs], { timeoutMs: HIGGSFIELD_NETWORK_TIMEOUT_MS });
+  } else if (platform() === "win32") {
+    await runQuietTimed(label, "cmd", ["/d", "/s", "/c", `npm ${taskArgs.join(" ")}`], { timeoutMs: HIGGSFIELD_NETWORK_TIMEOUT_MS });
+  } else {
+    await runQuietTimed(label, "npm", taskArgs, { timeoutMs: HIGGSFIELD_NETWORK_TIMEOUT_MS });
+  }
+  // A instalação correu, mas o PATH deste processo foi lido no arranque: se o
+  // binário ainda não é visível, a UI avisa o utilizador em vez de falhar.
+  const probe = spawnSync(platform() === "win32" ? "where" : "which", ["higgsfield"], { stdio: "ignore", env: pythonEnvironment });
+  if (probe.status !== 0) {
+    console.log("Higgsfield: CLI instalado, mas o PATH desta sessão ainda não o vê.");
+    console.log("Abra um terminal novo e corra `higgsfield auth login` para autenticar a conta.");
+  }
+}
+
+async function installHiggsfieldSkills() {
+  const label = "Higgsfield: a instalar as skills do agente (generate, soul, product-photoshoot)...";
+  // `--yes` (npx) evita a proposta de instalar o pacote; `-y` (skills) salta as
+  // confirmações — sem um dos dois o passo ficaria à espera de input e o
+  // instalador pararia. As skills são instaladas uma a uma (não --all): o
+  // repositório tem dez e só três interessam ao Thunderbolt.
+  const taskArgs = ["--yes", "skills", "add", HIGGSFIELD_SKILLS_REPO, "-a", HIGGSFIELD_SKILLS_AGENT, "-y"];
+  for (const skill of HIGGSFIELD_SKILLS) taskArgs.push("--skill", skill);
+  const { npxCli } = higgsfieldNpmTools();
+  if (existsSync(npxCli)) {
+    await runQuietTimed(label, process.execPath, [npxCli, ...taskArgs], { timeoutMs: HIGGSFIELD_NETWORK_TIMEOUT_MS });
+  } else if (platform() === "win32") {
+    await runQuietTimed(label, "cmd", ["/d", "/s", "/c", `npx ${taskArgs.join(" ")}`], { timeoutMs: HIGGSFIELD_NETWORK_TIMEOUT_MS });
+  } else {
+    await runQuietTimed(label, "npx", taskArgs, { timeoutMs: HIGGSFIELD_NETWORK_TIMEOUT_MS });
+  }
+}
+
+
 async function main() {
   const skipMpt = args.includes("--skip-moneyprinter");
   const skipDeps = args.includes("--skip-python-deps");
@@ -1138,6 +1206,13 @@ async function main() {
   if (!skipDeps && !skipBrowsers) await installCamoufoxBrowser();
   if (!skipDeps && !skipMpt) await installMoneyPrinterDependencies(moneyprinterPath);
   if (!skipDeps) installFfmpegSeedWindows();
+  // 1.1.09 — Higgsfield AI. AUTORIZADO EXPLICITAMENTE PELO UTILIZADOR, apesar
+  // da regra do AGENTS.md que proíbe tocar no instalador em tarefas de UI: sem
+  // o CLI as abas novas do hub UGC (UGC Product Review, Ad-Creator, Ad
+  // Strategist e Hook) não geram nada. Silencioso (regra 2) e sem lógica de
+  // skip (regra 3): se falhar, aborta com erro claro.
+  if (!skipDeps) await installHiggsfieldCli();
+  if (!skipDeps) await installHiggsfieldSkills();
   writeSettings(moneyprinterPath);
   console.log("\nInstalação do Thunderbolt concluída.");
   console.log(`Pasta Thunderbolt: ${thunderboltHome}`);

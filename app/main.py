@@ -809,7 +809,16 @@ from app.modules.token_optimizer.cache_manager import clear_derived_cache
 from app.modules.token_optimizer.compressor import check_installation
 from app.modules.token_optimizer.config import DEFAULTS as TOKEN_OPTIMIZER_DEFAULTS
 from app.modules.token_optimizer.metrics import get_stats as get_token_optimizer_stats
-from app.influencers_ui import render_ai_influencer_characters, render_ai_influencer_content, render_ai_influencers_api_status, render_motion_control, render_ugc_products
+from app.influencers_ui import render_ai_influencer_characters, render_ai_influencer_content, render_ai_influencers_api_status, render_motion_control, render_ugc_products, store_uploaded_media
+from hermes_ui.higgsfield_integration import (
+    HIGGSFIELD_INSTALL_INSTRUCTIONS,
+    HIGGSFIELD_LOGIN_INSTRUCTIONS,
+    HiggsfieldError,
+)
+from hermes_ui.higgsfield_integration import auth_status as higgsfield_auth_status
+from hermes_ui.higgsfield_integration import get_generation as higgsfield_get_generation
+from hermes_ui.higgsfield_integration import submit_generation as higgsfield_submit_generation
+from hermes_ui.higgsfield_integration import submit_product_photoshoot as higgsfield_submit_product_photoshoot
 from app.social_auto_upload_ui import render_sau_accounts, render_social_auto_upload_settings
 from app.social_networks_ui import render_instagram_automation, render_meta_api_cards, render_social_networks
 from hermes_ui.social_auto_upload_backend import confirm_sau_upload_not_published, get_sau_upload_checkpoint, reconcile_uncertain_uploads, sau_upload_checkpoint_id, upload_video_via_sau
@@ -13085,6 +13094,7 @@ def render_settings():
             st.success("Configuração do backend AI Influencers guardada.")
             st.rerun()
         render_ai_influencers_api_status(effective_settings)
+        render_higgsfield_api_section()
 
     with test_upload_videos_tab:
         _render_test_upload_videos(settings)
@@ -14149,10 +14159,370 @@ PIPELINE_MUSIC_HUB_SPECS = [
     ("Upload Música", "Upload", render_music_upload),
 ]
 
+# --------------------------------------------------------------------------
+# Higgsfield AI (1.1.09) — abas novas do hub UGC.
+#
+# A geracao e feita pelo CLI (`@higgsfield/cli`), cuja autenticacao vive no
+# terminal (`higgsfield auth login`) e nao numa chave de API — ver
+# `hermes_ui/higgsfield_integration.py`. O job e criado SEM `--wait` (resposta
+# imediata) e acompanhado por um fragment `run_every`, para a thread do
+# Streamlit nunca bloquear dentro de um `st.spinner` (licao do botao
+# "Actualizar Versao" da 1.1.03).
+# --------------------------------------------------------------------------
+
+_HIGGS_JOB_POLL_SECONDS = "4s"
+# Modelos verificados na documentacao oficial do CLI (README + MODELS.md).
+_HIGGS_IMAGE_MODEL = "gpt_image_2_5"
+_HIGGS_VIDEO_MODEL = "seedance_2_5"
+# Modos da skill `product-photoshoot` (frontmatter + tabela de modos).
+_HIGGS_PHOTOSHOOT_MODES = (
+    "product_shot",
+    "lifestyle_scene",
+    "closeup_product_with_person",
+    "moodboard_pin",
+    "hero_banner",
+    "social_carousel",
+    "ad_creative_pack",
+    "virtual_model_tryout",
+    "conceptual_product",
+    "restyle",
+)
+_HIGGS_PRODUCT_MEDIA_TYPES = ["jpg", "jpeg", "png", "webp"]
+_HIGGS_AD_MEDIA_TYPES = ["jpg", "jpeg", "png", "webp", "mp4", "mov", "webm"]
+_HIGGS_HOOK_MEDIA_TYPES = ["mp4", "mov", "webm"]
+
+
+def _higgs_job_key(scope: str) -> str:
+    return f"higgs_{scope}_job_id"
+
+
+def _higgs_files_key(scope: str) -> str:
+    return f"higgs_{scope}_files"
+
+
+def render_higgsfield_api_section() -> None:
+    """Secção «Higgsfield AI» na aba AI Influencers da Configuração API (1.1.09).
+
+    O Higgsfield não usa chave de API: a autenticação vive no CLI
+    (`higgsfield auth login`, feito no terminal pelo utilizador). Por isso esta
+    secção não tem campo de API Key — mostra o estado, o que instalar e como
+    autenticar. Um botão volta a verificar o estado quando o utilizador já
+    fez o login.
+    """
+    with st.container(border=True):
+        st.subheader("Higgsfield AI")
+        st.caption(
+            "Provedor de geração usado pelas abas novas do hub UGC (UGC Product Review, Ad-Creator, "
+            "Ad Strategist e Hook). A geração corre pelo CLI do Higgsfield, por isso não há chave de API "
+            "para guardar aqui."
+        )
+        status = higgsfield_auth_status()
+        if not status["installed"]:
+            st.error("CLI do Higgsfield não encontrado no PATH.")
+            st.caption("Instale com um destes comandos no terminal:")
+            st.code(HIGGSFIELD_INSTALL_INSTRUCTIONS, language="bash")
+        elif status["authenticated"]:
+            st.success("CLI instalado e sessão autenticada.")
+            st.caption(f"Comando de verificação: `{status['command']}`")
+        else:
+            st.warning("CLI instalado, mas a sessão não está autenticada.")
+            st.caption("Corra no terminal, fora do Thunderbolt:")
+            st.code(HIGGSFIELD_LOGIN_INSTRUCTIONS, language="bash")
+        check_clicked = st.button("Verificar Status", key="higgsfield_api_check_status", width="stretch")
+        if check_clicked:
+            st.rerun()
+        with st.expander("Onde uso o Higgsfield?", expanded=False):
+            st.markdown(
+                "- **UGC Product Review** — skill `product-photoshoot` (imagens de produto por modo).\n"
+                "- **Ad-Creator** — `generate create` com os modelos de imagem/vídeo do CLI.\n"
+                "- **Ad Strategist** — `generate create` a partir do briefing e das referências.\n"
+                "- **Hook** — job `brain_activity` (Virality Predictor: força do gancho, atenção e retenção).\n"
+                "- **AI Influencers** — treino de personagem com a skill `soul-id` quando o CLI a expõe."
+            )
+
+
+def _higgs_not_ready_notice() -> bool:
+    """Mostra o que falta (CLI ou sessao) e diz se nao se pode gerar.
+
+    Nunca lanca: a UI fica utilizavel mesmo sem Higgsfield, apenas nao gera.
+    """
+    status = higgsfield_auth_status()
+    if not status["installed"]:
+        st.warning(status["detail"])
+        st.code(HIGGSFIELD_INSTALL_INSTRUCTIONS, language="bash")
+        return True
+    if not status["authenticated"]:
+        st.warning("Sessao do Higgsfield nao autenticada.")
+        st.code(HIGGSFIELD_LOGIN_INSTRUCTIONS, language="bash")
+        return True
+    return False
+
+
+def _higgs_upload_assets(
+    scope: str,
+    *,
+    folder: str,
+    label: str,
+    help_text: str,
+    extensions: list[str],
+) -> list[dict[str, Any]]:
+    """Upload multiplo + lista com remocao, guardado em session_state.
+
+    O ficheiro e persistido por `store_uploaded_media` (nome saneado + digest),
+    por isso um rerun nao duplica entradas: o destino ja contem o digest.
+    """
+    state_key = _higgs_files_key(scope)
+    records: list[dict[str, Any]] = list(st.session_state.get(state_key) or [])
+    uploaded = st.file_uploader(
+        label,
+        type=extensions,
+        accept_multiple_files=True,
+        key=f"higgs_{scope}_uploader",
+        help=help_text,
+    )
+    for item in uploaded or []:
+        name = str(getattr(item, "name", "ficheiro") or "ficheiro")
+        try:
+            path = store_uploaded_media(item, folder)
+        except Exception as exc:  # noqa: BLE001 - a UI nao pode cair por um upload
+            st.error(f"Nao foi possivel guardar {name}: {exc}")
+            continue
+        destination = str(path)
+        if not any(str(record.get("path")) == destination for record in records):
+            records.append({"name": name, "path": destination, "size": len(item.getvalue() or b"")})
+    if records != (st.session_state.get(state_key) or []):
+        st.session_state[state_key] = records
+
+    if records:
+        st.caption(f"{len(records)} ficheiro(s) pronto(s) para a geracao:")
+        for index, record in enumerate(records):
+            name_col, remove_col = st.columns([5, 1])
+            with name_col:
+                size_kb = round(int(record.get("size") or 0) / 1024)
+                st.markdown(f"- `{record.get('name')}` ({size_kb} KB)")
+            with remove_col:
+                if st.button("Remover", key=f"higgs_{scope}_remove_{index}", width="stretch"):
+                    remaining = [item for position, item in enumerate(records) if position != index]
+                    st.session_state[state_key] = remaining
+                    st.rerun()
+    return records
+
+
+def _higgs_submit(scope: str, submit) -> None:
+    """Corre a submissao e guarda o id do job; um unico rerun por clique."""
+    if _higgs_not_ready_notice():
+        return
+    try:
+        job = submit()
+    except HiggsfieldError as exc:
+        st.error(str(exc))
+        return
+    except Exception as exc:  # noqa: BLE001 - erro inesperado nao pode derrubar a aba
+        st.error(f"Falha inesperada ao falar com o Higgsfield: {exc}")
+        return
+    job_id = str(job.get("id") or "")
+    if not job_id:
+        st.error("O Higgsfield nao devolveu um identificador de job.")
+        return
+    st.session_state[_higgs_job_key(scope)] = job_id
+    st.rerun()
+
+
+def _render_higgs_job_state(scope: str) -> None:
+    """Estado do job da aba (usado dentro do fragment de polling)."""
+    job_id = str(st.session_state.get(_higgs_job_key(scope)) or "")
+    if not job_id:
+        return
+    try:
+        job = higgsfield_get_generation(job_id)
+    except HiggsfieldError as exc:
+        st.error(str(exc))
+        return
+    status = str(job.get("status") or "desconhecido")
+    st.caption(f"Job `{job_id}` · estado: **{status}**")
+    if job.get("done") and job.get("url"):
+        st.success("Geracao concluida.")
+        st.markdown(f"[Abrir resultado]({job['url']})", unsafe_allow_html=True)
+        # Estado terminal: o polling morre sozinho (1.0.16), sem rerun completo.
+        _stop_own_fragment_auto_rerun()
+        return
+    if job.get("terminal"):
+        st.error("O job terminou sem resultado. Veja o registo do Higgsfield.")
+        _stop_own_fragment_auto_rerun()
+        return
+    st.caption("A processar... a actualizar a cada poucos segundos.")
+
+
+@st.fragment(run_every=_HIGGS_JOB_POLL_SECONDS)
+def _higgs_product_review_job_panel() -> None:
+    _render_higgs_job_state("product_review")
+
+
+@st.fragment(run_every=_HIGGS_JOB_POLL_SECONDS)
+def _higgs_ad_creator_job_panel() -> None:
+    _render_higgs_job_state("ad_creator")
+
+
+@st.fragment(run_every=_HIGGS_JOB_POLL_SECONDS)
+def _higgs_ad_strategist_job_panel() -> None:
+    _render_higgs_job_state("ad_strategist")
+
+
+@st.fragment(run_every=_HIGGS_JOB_POLL_SECONDS)
+def _higgs_hook_job_panel() -> None:
+    _render_higgs_job_state("hook")
+
+
+def _higgs_clear_job(scope: str) -> None:
+    if st.button("Limpar job", key=f"higgs_{scope}_clear"):
+        st.session_state.pop(_higgs_job_key(scope), None)
+        st.rerun()
+
+
+def render_ugc_product_review() -> None:
+    """UGC Product Review: fotos/videos de produto -> imagens de review.
+
+    1.1.09 - usa a skill `product-photoshoot` do Higgsfield, cujo backend monta
+    o prompt por modo (nunca escrevemos o prompt do modelo a mao).
+    """
+    st.title("UGC Product Review")
+    st.caption("Carregue fotos ou videos do produto e gere imagens de review com o Higgsfield (skill product-photoshoot).")
+    records = _higgs_upload_assets(
+        "product_review",
+        folder="ugc_product_review",
+        label="Fotos ou videos do produto",
+        help_text="A primeira imagem e usada como referencia visual do produto.",
+        extensions=_HIGGS_AD_MEDIA_TYPES,
+    )
+    with st.form(key="higgs_product_review_form"):
+        mode = st.selectbox("Modo do photoshoot", list(_HIGGS_PHOTOSHOOT_MODES), key="higgs_product_review_mode")
+        prompt = st.text_area("Briefing do review", key="higgs_product_review_prompt", height=90, placeholder="Ex.: review de 20 segundos de um seruo facial, tom authentico, luz de manha")
+        count = st.number_input("Quantas imagens", min_value=1, max_value=8, value=2, step=1, key="higgs_product_review_count")
+        submitted = st.form_submit_button("Gerar com o Higgsfield", type="primary")
+    if submitted:
+        images = [record["path"] for record in records]
+        _higgs_submit(
+            "product_review",
+            lambda: higgsfield_submit_product_photoshoot(mode=str(mode), prompt=str(prompt), image=images[0] if images else None, count=int(count)),
+        )
+    _higgs_product_review_job_panel()
+    _higgs_clear_job("product_review")
+
+
+def render_ad_creator() -> None:
+    """Ad-Creator: imagens/videos de referencia -> criativos de anuncio."""
+    st.title("Ad-Creator")
+    st.caption("Carregue as referencias do anuncio e gere criativos de imagem ou video com o Higgsfield.")
+    records = _higgs_upload_assets(
+        "ad_creator",
+        folder="ugc_ad_creator",
+        label="Imagens ou videos de referencia",
+        help_text="Imagens servem de referencia visual; videos podem ser usados como fonte.",
+        extensions=_HIGGS_AD_MEDIA_TYPES,
+    )
+    with st.form(key="higgs_ad_creator_form"):
+        output = st.radio("Tipo de criativo", ["Imagem", "Video"], horizontal=True, key="higgs_ad_creator_output")
+        prompt = st.text_area("Prompt do anuncio", key="higgs_ad_creator_prompt", height=90, placeholder="Ex.: criativo vertical 9:16, produto em primeiro plano, fundo de cozinha iluminada")
+        model = st.text_input("Modelo do Higgsfield", value=_HIGGS_VIDEO_MODEL if output == "Video" else _HIGGS_IMAGE_MODEL, key="higgs_ad_creator_model", help="Qualquer job set type do CLI, ex.: gpt_image_2_5, nano_banana_2, seedance_2_5, kling3_0.")
+        submitted = st.form_submit_button("Gerar com o Higgsfield", type="primary")
+    if submitted:
+        paths = [record["path"] for record in records]
+        images = [path for path in paths if path.lower().endswith((".jpg", ".jpeg", ".png", ".webp"))]
+        videos = [path for path in paths if path.lower().endswith((".mp4", ".mov", ".webm"))]
+        selected_model = str(model or "").strip() or (_HIGGS_VIDEO_MODEL if output == "Video" else _HIGGS_IMAGE_MODEL)
+        _higgs_submit(
+            "ad_creator",
+            lambda: higgsfield_submit_generation(selected_model, prompt=str(prompt), image=images or None, video=videos or None),
+        )
+    _higgs_ad_creator_job_panel()
+    _higgs_clear_job("ad_creator")
+
+
+def render_ad_strategist() -> None:
+    """Ad Strategist: briefing em texto + imagens de referencia -> conceitos."""
+    st.title("Ad Strategist")
+    st.caption("Escreva o briefing da campanha, junte imagens de referencia e gere conceitos de anuncio com o Higgsfield.")
+    records = _higgs_upload_assets(
+        "ad_strategist",
+        folder="ugc_ad_strategist",
+        label="Imagens de referencia",
+        help_text="Referencias de estilo, enquadramento ou produto.",
+        extensions=_HIGGS_PRODUCT_MEDIA_TYPES,
+    )
+    with st.form(key="higgs_ad_strategist_form"):
+        briefing = st.text_area("Briefing / estrategia", key="higgs_ad_strategist_briefing", height=160, placeholder="Publico, angulo, promessa, objecoes, tom de voz, formato...")
+        variations = st.number_input("Quantos conceitos", min_value=1, max_value=6, value=3, step=1, key="higgs_ad_strategist_count")
+        submitted = st.form_submit_button("Gerar conceitos com o Higgsfield", type="primary")
+    if submitted:
+        text = str(briefing or "").strip()
+        if not text:
+            st.error("Escreva o briefing antes de gerar.")
+            return
+        images = [record["path"] for record in records]
+        _higgs_submit(
+            "ad_strategist",
+            lambda: higgsfield_submit_generation(_HIGGS_IMAGE_MODEL, prompt=text, image=images or None, params={"count": int(variations)}),
+        )
+    _higgs_ad_strategist_job_panel()
+    _higgs_clear_job("ad_strategist")
+
+
+def render_hook() -> None:
+    """Hook: carregue um video e meca a forca do gancho (Virality Predictor).
+
+    O job `brain_activity` e o tipo tecnico do Virality Predictor: analisa um
+    video acabado e devolve forca do hook, atencao, retencao e potencial viral.
+    """
+    st.title("Hook")
+    st.caption("Carregue um video para medir a forca do gancho com o Virality Predictor do Higgsfield (`brain_activity`).")
+    records = _higgs_upload_assets(
+        "hook",
+        folder="ugc_hook",
+        label="Video para analisar",
+        help_text="MP4, MOV ou WebM. O gancho e analisado nos primeiros segundos.",
+        extensions=_HIGGS_HOOK_MEDIA_TYPES,
+    )
+    submitted = st.button("Analisar gancho com o Higgsfield", type="primary", key="higgs_hook_submit")
+    if submitted:
+        videos = [record["path"] for record in records]
+        if not videos:
+            st.error("Carregue um video antes de analisar.")
+            return
+        _higgs_submit(
+            "hook",
+            lambda: higgsfield_submit_generation("brain_activity", video=videos[0]),
+        )
+    _higgs_hook_job_panel()
+    _higgs_clear_job("hook")
+
+# 1.1.09 — "AI Influencers" passou a chamar-se "UGC" (menu + router) e entrou no
+# mecanismo de hubs. A ordem é a pedida pelo utilizador: as 4 abas antigas
+# primeiro (nada de lógica removida), depois as 4 novas com upload de média.
+# O rótulo de "Personagens" passa a "AI Influencers"; o nome interno fica, para
+# os links directos (?page=Personagens) continuarem a resolver por alias.
+UGC_HUB_SPECS = [
+    ("Personagens", "AI Influencers", lambda: render_ai_influencer_characters(
+        read_json("settings.json", {}),
+        language_options=VIDEO_LANGUAGE_SELECTION_OPTIONS,
+        language_formatter=video_language_label,
+        language_normalizer=normalize_video_language,
+    )),
+    ("Geração de Conteúdo IA", "Geração de Conteúdo IA", lambda: render_ai_influencer_content(read_json("settings.json", {}))),
+    ("Motion Control", "Motion Control", lambda: render_motion_control(read_json("settings.json", {}))),
+    ("UGC Products", "UGC Products", lambda: render_ugc_products(read_json("settings.json", {}))),
+    ("UGC Product Review", "UGC Product Review", render_ugc_product_review),
+    ("Ad-Creator", "Ad-Creator", render_ad_creator),
+    ("Ad Strategist", "Ad Strategist", render_ad_strategist),
+    ("Hook", "Hook", render_hook),
+]
+
 # (página principal, scope, abas, cores) — a ordem é a do menu lateral, que
-# NÃO muda (regra de UI «Inserção de Itens»).
+# NÃO muda (regra de UI «Inserção de Itens»). O UGC fica na posição que o grupo
+# "AI Influencers" ocupava; `None` = cor roxa por omissão do hub, como os outros
+# grupos que não são por plataforma.
 HUB_PAGES: list[tuple[str, str, list[tuple[str, str, Any]], dict[str, str] | None]] = [
     ("Growth", "growth", GROWTH_HUB_SPECS, GROWTH_HUB_COLORS),
+    ("UGC", "ugc", UGC_HUB_SPECS, None),
     ("Canais/Perfis (Vídeos)", "canais-perfis", CHANNEL_PROFILE_HUB_SPECS, None),
     ("Blueprints", "blueprints", BLUEPRINT_HUB_SPECS, None),
     ("Niche Finder", "niche-finder", NICHE_FINDER_HUB_SPECS, None),
@@ -14251,6 +14621,18 @@ def render_channel_profiles_hub() -> None:
 def render_blueprints_hub() -> None:
     """Blueprints: barra roxa + blueprint activo (1.1.08)."""
     render_hub_page("Blueprints")
+
+
+def render_ugc_hub() -> None:
+    """UGC: barra de botões + aba activa (1.1.09).
+
+    O grupo chamava-se "AI Influencers" e vivia num expansível da sidebar com
+    4 sub-itens. Passa a ser uma página única ("UGC") com 8 abas no topo: as 4
+    antigas primeiro (a primeira, "Personagens", passa a mostrar-se como "AI
+    Influencers") e depois as 4 novas de upload/Higgsfield. Cada botão chama o
+    renderizador que a sub-página já chamava — nenhuma lógica de negócio mudou.
+    """
+    render_hub_page("UGC", title="UGC", caption="Crie personagens, conteúdo e criativos de UGC. A barra abaixo escolhe a área de trabalho.")
 
 
 def render_niche_finder_hub() -> None:
@@ -14407,7 +14789,7 @@ def main():
         ("Canais/Perfis (Vídeos)", ":material/video_library:", "Canais/Perfis (Vídeos)"),
         ("Pipeline Vídeos", ":material/account_tree:", "Pipeline Vídeos"),
         ("Pipeline Música", ":material/music_note:", "Pipeline Música"),
-        ("AI Influencers", ":material/smart_toy:", "AI Influencers"),
+        ("UGC", ":material/smart_toy:", "UGC"),
         ("Blueprints", ":material/library_books:", "Blueprints"),
         ("Edição", ":material/edit:", "Edição"),
         ("Growth", ":material/analytics:", "Growth"),
@@ -14419,8 +14801,10 @@ def main():
     # nomes internos e links directos), mas na sidebar fica apenas o nome
     # principal do grupo, NA MESMA POSIÇÃO (regra de UI «Inserção de Itens»).
     # Só AI Influencers e Configurações mantêm filhos no menu lateral.
+    # 1.1.09 — "AI Influencers" deixou de ter submenus na sidebar: passou a ser
+    # o hub "UGC" (botões coloridos no topo da própria página). Só o grupo
+    # «Configurações» mantém submenus.
     groups = {
-        "AI Influencers": models_ai_items,
         "Configurações": settings_items,
     }
     # As sub-páginas dos hubs continuam a ser alvos válidos de navegação (link
@@ -14430,6 +14814,7 @@ def main():
         for items in (
             growth_analysis_items, channel_profile_items, blueprint_items,
             niche_finder_items, edition_items, pipeline_video_items, music_items,
+            models_ai_items,
         )
         for item in items
     ]
@@ -14439,7 +14824,7 @@ def main():
         "Pipeline Vídeos": "/pipeline-videos", "Criação de Vídeos": "/pipeline-videos/criacao", "Criação de Shorts": "/pipeline-videos/shorts", "Backlog Vídeos": "/pipeline-videos/backlog", "Roteiros": "/pipeline-videos/roteiros", "Thumbnails": "/pipeline-videos/thumbnails", "Upload": "/pipeline-videos/upload", "Update Youtube Vídeos": "/pipeline-videos/update-youtube",
         "Pipeline Música": "/pipeline-musica", "Criação de Músicas": "/pipeline-musica/criacao", "Music Backlog": "/pipeline-musica/backlog", "Vozes Personalizadas": "/pipeline-musica/vozes-personalizadas", "Upload Música": "/pipeline-musica/upload",
         "Canais/Perfis (Vídeos)": "/canais-perfis-videos", "Canais YouTube": "/canais-perfis-videos/canais-youtube", "Canais Tiktok": "/canais-perfis-videos/canais-tiktok", "Contas Instagram": "/canais-perfis-videos/contas-instagram", "Facebook Pages": "/canais-perfis-videos/facebook-pages", "Blueprints Youtube": "/blueprints/youtube", "Music Blueprint": "/blueprints/music", "Thumbnail Blueprints": "/blueprints/thumbnails", "Brandings Youtube": "/blueprints/brandings-youtube", "Prompt-Masters Tiktok": "/blueprints/prompt-masters-tiktok", "Facebook Blueprint": "/blueprints/facebook",
-        "AI Influencers": "/ai-influencers", "Personagens": "/ai-influencers/personagens", "Geração de Conteúdo IA": "/ai-influencers/geracao-conteudo", "Motion Control": "/ai-influencers/motion-control", "UGC Products": "/ai-influencers/ugc-products",
+        "UGC": "/ugc", "Personagens": "/ai-influencers/personagens", "Geração de Conteúdo IA": "/ai-influencers/geracao-conteudo", "Motion Control": "/ai-influencers/motion-control", "UGC Products": "/ai-influencers/ugc-products",
         "Edição": "/edicao", "Limpador de Metadados": "/edicao/limpador-metadados", "Cortes": "/edicao/cortes", "Editor Python": "/edicao/editor-python", "Download Mídia": "/edicao/download-midia",
         "Growth": "/growth", "Analise Growth": "/growth/analise", "Growth Youtube": "/growth/analise/youtube", "Growth Tiktok": "/growth/analise/tiktok", "Growth Instagram": "/growth/analise/instagram", "Growth Facebook Pages": "/growth/analise/facebook-pages", "Growth Bilibili": "/growth/analise/bilibili",
         "Configurações": "/configuracoes", "MCP": "/configuracoes/mcp", "Notificações": "/configuracoes/notificacoes", "Logs": "/configuracoes/logs", "Configuração API": "/configuracoes/api", "Dependências": "/configuracoes/dependencias", "Documentação": "/configuracoes/documentacao",
@@ -14459,7 +14844,10 @@ def main():
         "Canais": "Canais YouTube",
         "Canais Youtube": "Canais YouTube",
         "Configurações Técnicas": "Configuração API",
-        "Models AI": "AI Influencers",
+        "Models AI": "UGC",
+        # 1.1.09 — o grupo chamava-se "AI Influencers" e passou a ser a página
+        # "UGC"; o nome antigo fica como alias para os links guardados.
+        "AI Influencers": "UGC",
         "Contas Google/YouTube — canais em lote": "Configuração API",
         "Contas Google": "Configuração API",
         "Analista Growth Youtube": "Growth Youtube",
@@ -14641,7 +15029,12 @@ def main():
         "Cortes": render_cuts,
         "Editor Python": render_python_editor,
         "Download Mídia": render_media_download,
-        "AI Influencers": lambda: render_edit_placeholder("AI Influencers", "Seleccione uma das abas AI Influencers no menu expansível."),
+        "UGC": render_ugc_hub,
+        # 1.1.09 — as 4 abas novas do hub UGC (Higgsfield AI).
+        "UGC Product Review": render_ugc_product_review,
+        "Ad-Creator": render_ad_creator,
+        "Ad Strategist": render_ad_strategist,
+        "Hook": render_hook,
         "Personagens": lambda: render_ai_influencer_characters(
             read_json("settings.json", {}),
             language_options=VIDEO_LANGUAGE_SELECTION_OPTIONS,

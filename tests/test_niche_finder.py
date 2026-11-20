@@ -218,9 +218,14 @@ def test_ai_influencers_navigation_has_characters_and_social_pages():
     channel_start = source.index("channel_profile_items = [")
     channel_end = source.index("    ]", channel_start)
     assert channel_start < source.index('("Contas Instagram", ":material/share:') < channel_end
-    assert '("AI Influencers", ":material/smart_toy:", "AI Influencers")' in source
-    assert '"Models AI": "AI Influencers"' in source
-    assert '"AI Influencers": lambda: render_edit_placeholder("AI Influencers"' in source
+    assert '("UGC", ":material/smart_toy:", "UGC")' in source
+    # 1.1.09 — o grupo chamava-se "AI Influencers"; o nome antigo e o "Models AI"
+    # ficam como aliases da página nova.
+    assert '"Models AI": "UGC"' in source
+    assert '"AI Influencers": "UGC"' in source
+    # o UGC passou a ser hub: quem desenha a página é o renderizador do hub
+    assert '"UGC": render_ugc_hub' in source
+    assert 'def render_ugc_hub() -> None:' in source
     assert '"Personagens": lambda: render_ai_influencer_characters' in source
     assert '"Geração de Conteúdo IA": lambda: render_ai_influencer_content' in source
     assert '"Contas Instagram": lambda: render_social_networks' in source

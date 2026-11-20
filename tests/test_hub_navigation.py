@@ -20,7 +20,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 MAIN_SOURCE = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 
-# Os 7 hubs pedidos: página principal -> scope.
+# Os hubs pedidos: página principal -> scope. 1.1.09 acrescentou o "UGC" (o
+# antigo grupo "AI Influencers") com 8 abas.
 EXPECTED_HUB_PAGES = {
     "Growth": "growth",
     "Canais/Perfis (Vídeos)": "canais-perfis",
@@ -29,6 +30,7 @@ EXPECTED_HUB_PAGES = {
     "Edição": "edicao",
     "Pipeline Vídeos": "pipeline-videos",
     "Pipeline Música": "pipeline-musica",
+    "UGC": "ugc",
 }
 
 # O que cada hub tem de oferecer (rótulo do botão -> página interna de sempre).
@@ -41,6 +43,9 @@ EXPECTED_HUB_BUTTONS = {
     # Pedido explícito: botões "Vídeos" e "Shorts", títulos internos intactos.
     "Pipeline Vídeos": ["Vídeos", "Shorts", "Backlog", "Roteiros", "Thumbnails", "Upload", "Update Youtube"],
     "Pipeline Música": ["Músicas", "Backlog", "Vozes", "Upload"],
+    # 1.1.09 — as 4 antigas primeiro (a primeira, "Personagens", mostra-se como
+    # "AI Influencers") e depois as 4 novas de upload/Higgsfield.
+    "UGC": ["AI Influencers", "Geração de Conteúdo IA", "Motion Control", "UGC Products", "UGC Product Review", "Ad-Creator", "Ad Strategist", "Hook"],
 }
 
 DEFAULT_COLOR = "#8a2be2"
@@ -123,7 +128,8 @@ HUB_SPEC_VARIABLES = {
     "Edição": "EDITION_HUB_SPECS",
     "Pipeline Vídeos": "PIPELINE_VIDEO_HUB_SPECS",
     "Pipeline Música": "PIPELINE_MUSIC_HUB_SPECS",
-}
+        "UGC": "UGC_HUB_SPECS",
+    }
 
 
 @pytest.mark.parametrize("page,scope", sorted(EXPECTED_HUB_PAGES.items()))
@@ -192,16 +198,21 @@ def test_business_logic_renderers_are_untouched_and_still_wired():
 # --------------------------------------------------------------------------
 
 def test_sidebar_keeps_only_the_group_names():
-    """Os 7 grupos deixaram de ter filhos no menu lateral."""
+    """Todos os grupos de hub deixaram de ter filhos no menu lateral."""
     groups_block = MAIN_SOURCE.split("    groups = {", 1)[1].split("\n    }", 1)[0]
     for page in EXPECTED_HUB_PAGES:
         assert f'"{page}": ' not in groups_block, f"{page} ainda tem filhos na sidebar"
-    # quem mantém submenus é só AI Influencers e Configurações
-    assert '"AI Influencers": models_ai_items' in groups_block
+    # 1.1.09 — o UGC (antigo "AI Influencers") também passou a hub: quem mantém
+    # submenus na sidebar agora é só «Configurações».
+    assert '"AI Influencers": models_ai_items' not in groups_block
+    assert '"UGC": models_ai_items' not in groups_block
     assert '"Configurações": settings_items' in groups_block
     # as listas de itens continuam a existir (ordem, nomes e links directos)
-    for items in ("niche_finder_items", "channel_profile_items", "blueprint_items", "edition_items", "pipeline_video_items", "music_items", "growth_analysis_items"):
+    for items in ("niche_finder_items", "channel_profile_items", "blueprint_items", "edition_items", "pipeline_video_items", "music_items", "growth_analysis_items", "models_ai_items"):
         assert f"    {items} = [" in MAIN_SOURCE, items
+    # e a lista de itens dos hubs passa a incluir as do UGC
+    hub_items_block = MAIN_SOURCE.split("hub_child_items = [", 1)[1].split("]", 1)[0]
+    assert "models_ai_items" in hub_items_block
 
 
 def test_group_positions_in_the_sidebar_are_unchanged():

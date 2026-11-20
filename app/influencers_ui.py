@@ -377,6 +377,16 @@ def _store_uploaded_file(uploaded: Any, folder: str) -> Path:
     return destination
 
 
+def store_uploaded_media(uploaded: Any, folder: str) -> Path:
+    """Versao publica de `_store_uploaded_file`, partilhada com `app/main.py`.
+
+    1.1.09 - as abas novas do hub UGC (UGC Product Review, Ad-Creator, Ad
+    Strategist e Hook) precisam do mesmo guardar-seguro-de-upload: nome saneado,
+    digest no nome do ficheiro e nada de confiar no nome que vem do browser.
+    """
+    return _store_uploaded_file(uploaded, folder)
+
+
 def _workflow_owner(repository: Any) -> str:
     return ensure_standalone_content_owner(repository)
 

@@ -122,8 +122,12 @@ def test_tutorial_reference_is_packaged_and_contains_meta_setup_sections():
     assert "Be part of a growing community" not in tutorial
 
 
-def test_ai_influencers_is_visible_with_real_character_and_content_renderers():
-    assert '("AI Influencers", ":material/smart_toy:", "AI Influencers")' in MAIN_SOURCE
+def test_ugc_is_visible_with_real_character_and_content_renderers():
+    # 1.1.09 — "AI Influencers" passou a ser a página "UGC" (hub); os
+    # renderizadores reais das sub-abas continuam ligados.
+    assert '("UGC", ":material/smart_toy:", "UGC")' in MAIN_SOURCE
+    assert '"UGC": render_ugc_hub' in MAIN_SOURCE
+    assert '("AI Influencers", ":material/smart_toy:", "AI Influencers")' not in MAIN_SOURCE
     assert 'with st.expander(ui_text(label, ui_language), expanded=has_active_descendant(target), icon=icon):' in MAIN_SOURCE
     assert '"Personagens": lambda: render_ai_influencer_characters' in MAIN_SOURCE
     assert '"Geração de Conteúdo IA": lambda: render_ai_influencer_content' in MAIN_SOURCE

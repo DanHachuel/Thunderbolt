@@ -18,7 +18,7 @@ class NavigationReorganizationTests(unittest.TestCase):
             '"Canais/Perfis (Vídeos)"',
             '"Pipeline Vídeos"',
             '"Pipeline Música"',
-            '"AI Influencers"',
+            '"UGC"',
             '"Edição"',
             '"Growth"',
             '"Configurações"',
