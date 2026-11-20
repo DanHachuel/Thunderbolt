@@ -8133,6 +8133,105 @@ def _thumbnail_editor_context(record: dict[str, Any]) -> tuple[dict[str, Any], d
     return channel, blueprint
 
 
+# ── PAGINAÇÃO EM BARRA DE BOTÕES (1.1.09) ───────────────────────────────────
+# Pedido do utilizador: o menu suspenso «Página X de Y» da lista de vídeos da
+# Automação e da galeria de thumbnails dava dois cliques para chegar a uma
+# página longe. Passa a ser uma barra horizontal de números clicáveis
+# (`❮ 1 2 3 4 5 … 9 ❯`), com a página activa destacada e reticências quando há
+# muitas páginas. NADA da fatiação muda: quem chama continua a calcular
+# `records[(pagina - 1) * page_size : ...]` exactamente como antes.
+PAGINATION_VISIBLE_TAIL = 3
+
+
+def _pagination_page_numbers(current_page: int, total_pages: int) -> list[int | str]:
+    """Números (e reticências) que a barra mostra — pura, sem Streamlit.
+
+    Até 7 páginas mostra todas; a partir da 8 usa reticências:
+    `1 … 4 5 6 … 10` quando a activa está no meio, `1 2 3 4 5 … 10` no início e
+    `1 … 7 8 9 10` no fim. O `"…"` devolvido no meio da lista é apenas um
+    marcador visual (não é clicável).
+    """
+    if total_pages <= 1:
+        return []
+    if total_pages <= 7:
+        return list(range(1, total_pages + 1))
+    current = min(max(current_page, 1), total_pages)
+    if current <= 4:
+        return [1, 2, 3, 4, 5, "…", total_pages]
+    if current >= total_pages - PAGINATION_VISIBLE_TAIL:
+        return [1, "…"] + list(range(total_pages - 5, total_pages + 1))
+    return [1, "…", current - 1, current, current + 1, "…", total_pages]
+
+
+def render_pagination(current_page: int, total_pages: int, key_prefix: str) -> int:
+    """Barra de paginação horizontal; devolve a página escolhida.
+
+    `key_prefix` isola as chaves dos botões (`{key_prefix}_prev`,
+    `{key_prefix}_page_{n}`, `{key_prefix}_next`) para duas barras na mesma
+    página nunca colidirem. O botão da página activa leva `type="primary"`.
+
+    Não faz rerun nem escreve estado: quem chama sabe em que escopo vive e é
+    quem decide (regra M5 da 1.0.96).
+    """
+    if total_pages <= 1:
+        return current_page
+    pages = _pagination_page_numbers(current_page, total_pages)
+    # Pesos das colunas: setas estreitas, números médios, reticências finas —
+    # a barra fica compacta sem CSS global, para não pintar mais nenhum botão.
+    weights = [0.6] + [0.35 if page == "…" else 0.5 for page in pages] + [0.6]
+    columns = st.columns(weights, gap="small")
+    new_page = current_page
+
+    with columns[0]:
+        if st.button("❮", key=f"{key_prefix}_prev", disabled=current_page <= 1, help="Página anterior"):
+            new_page = current_page - 1
+    for column, page in zip(columns[1:-1], pages):
+        with column:
+            if isinstance(page, str):
+                st.markdown(page, help=None)
+                continue
+            if st.button(
+                str(page),
+                key=f"{key_prefix}_page_{page}",
+                type="primary" if page == current_page else "secondary",
+            ):
+                if page != current_page:
+                    new_page = page
+    with columns[-1]:
+        if st.button("❯", key=f"{key_prefix}_next", disabled=current_page >= total_pages, help="Página seguinte"):
+            new_page = current_page + 1
+    return new_page
+
+
+def _render_page_navigation(current_page: int, total_pages: int, state_key: str) -> int:
+    """Clamp da página + barra de botões + session_state; devolve a página a usar.
+
+    Substitui o antigo `st.selectbox` das listas paginadas. Mantém a MESMA chave
+    de session_state (é ela que as funções de fatiação lêem) e escreve o clamp de
+    volta — sem o selectbox a chave fica livre e o valor já não pode ficar preso
+    acima do novo total quando a lista encolhe.
+
+    **Não chama `st.rerun()`:** o escopo certo depende de onde a barra está.
+    Quem chama compara o devolvido com o que pediu e rerunna no seu próprio
+    escopo — `st.rerun()` numa página normal, `st.rerun(scope="fragment")`
+    quando a barra vive dentro de um fragmento (a lista da Automação YouTube
+    vive, e um rerun completo ali recarregaria a página inteira a cada clique:
+    regra M5, 1.0.96).
+    """
+    try:
+        page = min(max(int(current_page), 1), max(1, total_pages))
+    except (TypeError, ValueError):
+        page = 1
+    if st.session_state.get(state_key) != page:
+        st.session_state[state_key] = page
+    if total_pages > 1:
+        chosen = render_pagination(page, total_pages, key_prefix=state_key)
+        if chosen != page:
+            st.session_state[state_key] = chosen
+            return chosen
+    return page
+
+
 def render_thumbnails():
     st.title("Thumbnails")
     st.caption("Biblioteca de thumbnails associadas às tarefas da pipeline. Cada acção preserva a imagem anterior no histórico local.")
@@ -8144,19 +8243,18 @@ def render_thumbnails():
     settings = read_json("settings.json", {})
     page_size = 24
     page_count = max(1, (len(records) + page_size - 1) // page_size)
-    current_page = st.session_state.get("thumbnail_gallery_page", 1)
+    requested_page = st.session_state.get("thumbnail_gallery_page", 1)
     try:
-        current_page = min(max(int(current_page), 1), page_count)
+        requested_page = int(requested_page)
     except (TypeError, ValueError):
-        current_page = 1
+        requested_page = 1
     if page_count > 1:
-        current_page = st.selectbox(
-            "Página de thumbnails",
-            options=list(range(1, page_count + 1)),
-            index=current_page - 1,
-            format_func=lambda value: f"Página {value} de {page_count}",
-            key="thumbnail_gallery_page",
-        )
+        # 1.1.09 — a paginação passou de selectbox a barra de botões. A galeria
+        # é página normal, por isso o rerun é completo (sem scope).
+        current_page = _render_page_navigation(requested_page, page_count, "thumbnail_gallery_page")
+        if current_page != requested_page:
+            # Um único rerun por clique (skill streamlit-estado).
+            st.rerun()
         start = (current_page - 1) * page_size
         visible_records = records[start : start + page_size]
         st.caption(f"A mostrar {start + 1}–{min(start + page_size, len(records))} de {len(records)} thumbnails.")
@@ -8665,19 +8763,19 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False, tasks: li
             st.info("Ainda não existem vídeos nesta sub aba.")
         page_size = 12
         page_count = max(1, (len(tasks) + page_size - 1) // page_size)
-        current_page = st.session_state.get("youtube_automation_page", 1)
+        requested_page = st.session_state.get("youtube_automation_page", 1)
         try:
-            current_page = min(max(int(current_page), 1), page_count)
+            requested_page = int(requested_page)
         except (TypeError, ValueError):
-            current_page = 1
+            requested_page = 1
         if page_count > 1:
-            current_page = st.selectbox(
-                "Página de vídeos cadastrados",
-                options=list(range(1, page_count + 1)),
-                index=current_page - 1,
-                format_func=lambda value: f"Página {value} de {page_count}",
-                key="youtube_automation_page",
-            )
+            # 1.1.09 — a paginação passou de selectbox a barra de botões.
+            # Esta lista vive dentro de um @st.fragment (_render_youtube_automation_cards),
+            # por isso o rerun TEM de ser escopado: um rerun completo aqui
+            # recarregaria a página inteira a cada clique num número (regra M5, 1.0.96).
+            current_page = _render_page_navigation(requested_page, page_count, "youtube_automation_page")
+            if current_page != requested_page:
+                st.rerun(scope="fragment")
             start = (current_page - 1) * page_size
             visible_tasks = tasks[start : start + page_size]
             st.caption(f"A mostrar {start + 1}–{min(start + page_size, len(tasks))} de {len(tasks)} vídeos.")

@@ -111,5 +111,8 @@ def test_thumbnail_gallery_is_paginated_to_avoid_unbounded_initial_render():
     thumbnails = MAIN_SOURCE.split("def render_thumbnails():", 1)[1].split("def render_automation():", 1)[0]
 
     assert "page_size = 24" in thumbnails
-    assert '"Página de thumbnails"' in thumbnails
     assert "visible_records = records[start : start + page_size]" in thumbnails
+    # 1.1.09 — o selectbox «Página X de Y» deu lugar a uma barra de botões.
+    assert '_render_page_navigation(requested_page, page_count, "thumbnail_gallery_page")' in thumbnails
+    assert '"Página de thumbnails"' not in thumbnails
+    assert 'format_func=lambda value: f"Página {value} de {page_count}"' not in thumbnails

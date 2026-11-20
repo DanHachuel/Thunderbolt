@@ -77,3 +77,31 @@ contrato fino (AST/1 rerun) e funciona em produção. **Regra:** quando um pedid
 de componente reutilizável colide com um contrato de teste apertado de algo já
 validado em produção, duplicar o desenho é aceitável — desde que a razão fique
 escrita no código (e foi).
+
+## 6. Componente usado dentro e fora de fragmento: quem chama é que rerunna (1.1.09)
+
+A barra de paginação nova (`render_pagination`) é usada em dois sítios de
+naturezas diferentes: a galeria de Thumbnails é uma **página normal**, e a lista
+da Automação YouTube vive **dentro** de um `@st.fragment`
+(`_render_youtube_automation_cards`).
+
+- **Armadilha 1 — rerun dentro do componente:**
+  `tests/test_audit_fixes_1_0_96.py::test_no_unscoped_rerun_inside_fragments`
+  varre o módulo inteiro, determina a função envolvente de cada `st.rerun()` sem
+  scope e falha se ela for **alcançável** a partir de um fragmento (por
+  transitividade de chamadas). A primeira versão desta paginação caiu aí:
+  `[(8194, '_render_page_navigation')]`.
+- **Regra:** um componente reutilizável que precisa de rerun deve **devolver a
+  intenção** — `_render_page_navigation` grava o `session_state` e devolve a
+  página escolhida, sem rerunnar — e o **chamador** faz o `st.rerun()` no escopo
+  certo: `st.rerun()` em página normal, `st.rerun(scope="fragment")` dentro de
+  fragmento. Um rerun completo disparado de dentro de um fragmento recarrega a
+  página inteira a cada clique (regra M5, 1.0.96).
+- **Armadilha 2 — comparar com o que já foi gravado:** se o componente escreveu
+  `session_state[chave]`, a comparação `if devolvido != st.session_state.get(chave)`
+  é **sempre falsa** e o rerun nunca dispara. Guardar o valor pedido **antes** da
+  chamada e comparar com esse (`requested_page`).
+- **Armadilha 3 — worktree destruída por reinício do servidor:** uma suite correu
+  num checkout incompleto e deu 278 falhas fantasma. Antes de confiar numa suite
+  num worktree, confirmar que os ficheiros estão todos (258 em `tests/`) e que
+  `git status` responde.
