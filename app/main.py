@@ -13916,25 +13916,19 @@ def render_update_youtube_videos():
                     st.error(result.message)
 
 
-def render_pipeline():
-    """Pipeline Vídeos: estado das filas + barra de abas coloridas (1.1.08).
+def render_pipeline() -> None:
+    """Pipeline Vídeos: barra de abas coloridas (1.1.11).
 
-    Os cartões das filas continuam no topo (são o resumo da página); a barra
-    roxa abaixo deles troca o conteúdo, como na Automação. As 7 sub-páginas
-    eram itens do menu lateral — quem mudou de sítio foi o MENU, não a lógica:
-    cada botão chama exactamente o renderizador que a sub-página chamava.
+    1.1.11 — os blocos de KPI das filas (NICHE, BLUEPRINTS, …, UPLOAD) saíram
+    desta página, a pedido do utilizador: eles já aparecem em Início e na
+    Automação, e aqui só duplicavam. A página volta a ter apenas o título e a
+    barra de botões (Vídeos, Shorts, Backlog, …), como antes dos hubs.
+
+    A lógica de contagem NÃO foi tocada: `render_dashboard` (Início) continua a
+    desenhar os mesmos cartões a partir de `STAGES` — só a chamada daqui foi
+    removida.
     """
     st.title("Pipeline Vídeos")
-    st.caption("Estado das filas locais e dependências da cascata")
-    queues = read_json("queues.json", {})
-    blueprint_count = len(list_blueprint_files())
-    cols = st.columns(len(STAGES))
-    for col, stage in zip(cols, STAGES):
-        with col:
-            if stage == "blueprint":
-                card("Blueprints", blueprint_count, f"na biblioteca · {len(queues.get(stage, []))} tarefa(s) na fila")
-            else:
-                card(stage.title(), len(queues.get(stage, [])), "fila")
     render_hub_page("Pipeline Vídeos")
 
 
