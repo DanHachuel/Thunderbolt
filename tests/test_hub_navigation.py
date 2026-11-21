@@ -177,6 +177,41 @@ def test_pipeline_videos_buttons_keep_the_internal_page_titles():
     assert 'render_new_video("Criação de Vídeos", "new_video")' in specs
 
 
+# --------------------------------------------------------------------------
+# 2b. KPI das filas: fora do Pipeline Vídeos, intactos em Início/Automação
+# --------------------------------------------------------------------------
+
+def test_pipeline_videos_page_no_longer_shows_the_queue_kpi_blocks():
+    """1.1.11 — os blocos de KPI (NICHE, BLUEPRINTS, …, UPLOAD) saíram daqui.
+
+    Pedido do utilizador: eles já aparecem em Início e na Automação, e nesta
+    página só duplicavam. A página fica só com o título e a barra de botões.
+    """
+    pipeline = MAIN_SOURCE.split("def render_pipeline(", 1)[1].split("\ndef ", 1)[0]
+    assert "st.columns(len(STAGES))" not in pipeline
+    assert 'st.caption("Estado das filas locais e dependências da cascata")' not in pipeline
+    assert 'read_json("queues.json"' not in pipeline
+    assert "list_blueprint_files()" not in pipeline
+    assert 'st.title("Pipeline Vídeos")' in pipeline
+    assert 'render_hub_page("Pipeline Vídeos")' in pipeline
+
+
+def test_dashboard_keeps_the_same_queue_kpi_blocks():
+    """O Início NÃO muda: os cartões das filas continuam a ser desenhados lá."""
+    dashboard = MAIN_SOURCE.split("def render_dashboard(", 1)[1].split("\ndef ", 1)[0]
+    assert "for row_start in range(0, len(STAGES), 3):" in dashboard
+    assert "zip(queue_cols, STAGES[row_start:row_start + 3])" in dashboard
+    assert 'card(ui_text(stage.title(), ui_language), len(queues.get(stage, [])), ui_text("fila", ui_language))' in dashboard
+    # e a contagem continua a vir do mesmo sítio (lógica intacta)
+    assert "summary = pipeline_summary()" in dashboard
+
+
+def test_stage_blocks_are_drawn_in_exactly_one_place():
+    """Só o dashboard percorre STAGES — nada de segunda barra de KPI."""
+    assert MAIN_SOURCE.count("st.columns(len(STAGES))") == 0
+    assert MAIN_SOURCE.count("for row_start in range(0, len(STAGES), 3):") == 1
+
+
 def test_business_logic_renderers_are_untouched_and_still_wired():
     """Nenhuma função de negócio foi renomeada (assinatura intacta)."""
     for name in (
