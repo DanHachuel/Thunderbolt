@@ -278,7 +278,12 @@ def test_all_pip_and_browser_steps_have_a_timeout():
         in INSTALLER_SOURCE
     )
     assert '"-m", "pip", "install"' in INSTALLER_SOURCE
-    assert INSTALLER_SOURCE.count("await runQuietTimed(") == 6
+    # Nenhum passo pesado pode voltar ao helper sem tempo limite. A contagem só
+    # pode crescer (a 1.1.10 acrescentou os 2 passos do Higgsfield); o que está
+    # realmente travado é a AUSÊNCIA do `await runQuiet(` — foi a contagem fixa
+    # em 6 que quebrou sem haver regressão real.
+    assert "await runQuiet(" not in INSTALLER_SOURCE
+    assert INSTALLER_SOURCE.count("await runQuietTimed(") >= 6
     assert INSTALLER_SOURCE.count("{ timeoutMs: BROWSER_INSTALL_TIMEOUT_MS }") == 3
     assert "const PIP_INSTALL_TIMEOUT_MS = 5 * 60 * 1000;" in INSTALLER_SOURCE
     assert "const BROWSER_INSTALL_TIMEOUT_MS = 10 * 60 * 1000;" in INSTALLER_SOURCE
