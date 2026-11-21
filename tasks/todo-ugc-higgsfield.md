@@ -132,4 +132,38 @@ Pedido do utilizador (18/11/2026), tarefa em 4 fases:
 
 ## Revisão
 
-(a preencher no fim)
+**Publicado: 1.1.10** (`latest=1.1.10`, `next=1.1.10`; tarball verificado).
+Commits: `46b3c45 feat(ui)`, `5920afd chore(bump)`, `0bcc543 test(install)`.
+
+- Suite correu LIMPA (export do HEAD, sem o trabalho não commitado da sessão
+  paralela): **2423 passed, 4 skipped, 0 falhas** — o mesmo que o CI viu.
+- Os 5 auditores a 0, incluindo o de escopo com a excepção cirúrgica documentada.
+- Tarball publicado confirmado: hub UGC, sidebar "UGC", aba "AI Influencers",
+  as 4 abas novas, a secção Higgsfield na Configuração API, o módulo
+  `higgsfield_integration`, o `store_uploaded_media`, os 2 passos do instalador
+  e o `npx skills`.
+
+### Bugs reais apanhados pelos testes (não pela leitura)
+
+1. Flags de média sem o nome (`--image`) no `submit_generation`.
+2. `TimeoutExpired`/`OSError` a escapar como excepção crua em vez de
+   `HiggsfieldError` (só `auth_status` tratava).
+3. `--image` duplicado no `train_soul` (somava as flags duas vezes).
+4. `UGC_HUB_SPECS` referenciava funções definidas ABAIXO dele — o módulo não
+   importava. O bloco do Higgsfield foi movido para antes dos specs.
+5. O contrato do instalador travava uma contagem fixa (6) que a 1.1.10 aumentou
+   para 8 sem regressão real — passou a travar a AUSÊNCIA do `await runQuiet(`.
+6. `npx skills add` é interactivo por omissão: sem `-y`/`--yes` o instalador
+   ficaria à espera de input (verificado na documentação antes de usar).
+
+### Lições para tasks/lessons.md
+
+- Numa árvore PARTILHADA, `git apply --cached --unidiff-zero` posiciona os hunks
+  pelo número de linha NOVO: com a sessão paralela a adicionar ~94 linhas antes
+  do meu hunk, a inserção caiu no bloco errado (meio do Telegram). Com `-U3` o
+  git ancora pelo conteúdo e acerta.
+- `git diff | tar -x` pelo PowerShell corrompe binário; `git archive` tem de ser
+  extraído por Python (`tarfile`).
+- Antes de publicar, correr a suite num EXPORT limpo do HEAD: as falhas locais
+  podem vir de trabalho não commitado de outra sessão (foi o que fez a primeira
+  corrida do CI falhar sem haver regressão minha).
