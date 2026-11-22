@@ -92,9 +92,18 @@ def test_theme_labels_are_available_for_all_supported_languages():
 
 
 def test_theme_fix_keeps_native_streamlit_toolbar_and_platform_chip_identity_colors():
+    # O chrome nativo do Streamlit não é escondido nem re-estilizado: os botões
+    # (Deploy, menu) e o conteúdo da barra ficam como são.
     assert "stAppDeployButton" not in MAIN_SOURCE
     assert "stMainMenu" not in MAIN_SOURCE
-    assert "stToolbar" not in MAIN_SOURCE
+    # 1.1.13 — a única excepção é o FUNDO da barra: o pedido do fundo
+    # holográfico pede `[data-testid="stToolbar"] { background-color:transparent }`
+    # para o gradiente aparecer também atrás dela. Nada de `display`, nada de
+    # `visibility`, nada de mexer nos botões.
+    assert '[data-testid="stToolbar"] {' in MAIN_SOURCE
+    assert "background-color:transparent !important" in MAIN_SOURCE
+    assert "stToolbar\"] { display" not in MAIN_SOURCE
+    assert "stToolbar\"] { visibility" not in MAIN_SOURCE
     assert '[data-testid="stMultiSelectTagsContainer"] span[data-tag][aria-label="YouTube"] { background:#ff0000 !important; }' in MAIN_SOURCE
     assert '[data-testid="stMultiSelectTagsContainer"] span[data-tag][aria-label="TikTok"] { background:#000000 !important; }' in MAIN_SOURCE
 
@@ -108,8 +117,16 @@ def test_growth_labels_have_translation_entries():
 def test_theme_bootstrap_uses_streamlit_html_without_deprecated_components():
     assert "_THEME_BOOTSTRAP =" in MAIN_SOURCE
     assert "st.html(_THEME_BOOTSTRAP" in MAIN_SOURCE
+    # 1.1.13 — o fundo holográfico precisa de JS no CLIENTE (a escolha do tema
+    # claro vive no localStorage, e com a config sem `theme.base` o servidor diz
+    # sempre "dark", pelo que um gate em Python nunca dispararia — era o relato
+    # do fundo branco). O `st.html` do bootstrap não serve: o sanitizador do
+    # Streamlit retira-lhe os `<script>` — medido no browser, o `<div>`
+    # sobrevive e o `<script>` desaparece. A excepção é UM iframe, marcado pelo
+    # nome da constante; qualquer outro `srcdoc` continua proibido.
+    assert MAIN_SOURCE.count('<iframe srcdoc="') == 1
+    assert "_HOLOGRAPHIC_THEME_IFRAME" in MAIN_SOURCE
     assert "st.iframe(" not in MAIN_SOURCE
-    assert "srcdoc=" not in MAIN_SOURCE
     assert "components.html" not in MAIN_SOURCE
     assert "components.v1.html" not in MAIN_SOURCE
 
