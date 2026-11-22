@@ -1175,6 +1175,130 @@ except Exception:
 st.set_page_config(page_title="Thunderbolt", page_icon="T", layout="wide", initial_sidebar_state="expanded")
 
 theme_base = (st.get_option("theme.base") or "dark").lower()
+
+# ---------------------------------------------------------------------------
+# 1.1.11 — FUNDO HOLOGRÁFICO (mesh gradient) no tema CLARO.
+#
+# Pedido do utilizador: manchas pastéis de rosa/azul/verde/amarelo que se movem
+# lentamente, com a sidebar BRANCA e os cards em vidro para o texto não se
+# perder no fundo colorido.
+#
+# PORQUE UM <iframe srcdoc> E NÃO O BOOTSTRAP JS DE BAIXO: o sanitizador do
+# `st.html` RETIRA os `<script>` desse conteúdo (verificado no browser — o `<div>`
+# sobrevive, o `<script>` desaparece), e é por isso que esse bootstrap nunca
+# correu: com a config sem `theme.base`, o fundo claro nunca entrava e a página
+# ficava BRANCA, que era o relato. Um `<iframe srcdoc=...>` passa o sanitizador
+# inteiro e o script lá dentro corre com acesso same-origin ao documento pai —
+# medido, não presumido: ele muda o `title` do pai.
+#
+# O iframe detecta o tema REAL (escolha explícita no localStorage; sem escolha,
+# a cor do TEXTO renderizada, que o holográfico nunca toca) e injecta ou retira
+# o CSS no `<head>` do pai. Tema escuro = CSS fora, tema do Streamlit intacto.
+#
+# `.st-emotion-cache-1r6slb0` (do pedido original) foi deixado de propósito: é
+# uma classe GERADA pelo Emotion a cada build do Streamlit — deixaria de
+# corresponder sem aviso. Os seletores estáveis fazem o mesmo trabalho.
+# ---------------------------------------------------------------------------
+_HOLOGRAPHIC_MESH_CSS = """
+html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+    background-color:#fafafa !important;
+    background-image:
+        radial-gradient(at 0% 0%, #ffc6ff 0px, transparent 50%),
+        radial-gradient(at 100% 0%, #bde0fe 0px, transparent 50%),
+        radial-gradient(at 100% 100%, #fdffb6 0px, transparent 50%),
+        radial-gradient(at 0% 100%, #caffbf 0px, transparent 50%),
+        radial-gradient(at 50% 50%, #a2d2ff 0px, transparent 50%) !important;
+    background-size:150% 150% !important;
+    background-attachment:fixed !important;
+    animation:thunderbolt-holographic 20s ease-in-out infinite alternate !important;
+}
+[data-testid="stAppViewContainer"] > .main,
+[data-testid="stHeader"],
+[data-testid="stToolbar"] {
+    background-color:transparent !important;
+}
+[data-testid="stSidebar"] {
+    background-color:#ffffff !important;
+    background-image:none !important;
+    border-right:1px solid rgba(0,0,0,0.05) !important;
+    box-shadow:4px 0 15px rgba(0,0,0,0.03) !important;
+}
+/* 4. VIDRO NO CONTEUDO — para o texto não se perder no fundo colorido.
+   O selector original do pedido (stVerticalBlock > div > stVerticalBlock) não
+   casa com o DOM real: entre os blocos há DOIS níveis (stVerticalBlock >
+   div[stHorizontalBlock] > div[stLayoutWrapper] > stVerticalBlock), medido no
+   browser. O contentor principal (stMainBlockContainer) é estável, é um só, e
+   dá o mesmo efeito de vidro sem depender da profundidade do layout. */
+[data-testid="stMainBlockContainer"] {
+    background:rgba(255,255,255,0.75) !important;
+    backdrop-filter:blur(12px) !important;
+    -webkit-backdrop-filter:blur(12px) !important;
+    border-radius:12px !important;
+    border:1px solid rgba(255,255,255,0.8) !important;
+    box-shadow:0 4px 20px rgba(0,0,0,0.04) !important;
+}
+@keyframes thunderbolt-holographic {
+    0% { background-position:0% 0%; }
+    50% { background-color:#fdfbfb; }
+    100% { background-position:100% 100%; }
+}
+"""
+
+# O JS corre DENTRO do iframe. Tem de usar só aspas simples (o CSS vai no
+# atributo `srcdoc`, delimitado por aspas duplas) e nenhuma sequência de escape
+# — daí a cor ser lida com um caractere de classe em vez de `\d`.
+_HOLOGRAPHIC_THEME_JS = """
+(function () {
+    var STYLE_ID = 'tb-holographic-light';
+    var CSS = `__HOLOGRAPHIC_CSS__`;
+    var theme = function () {
+        var stored = 'System';
+        try {
+            stored = JSON.parse(parent.localStorage.getItem('stActiveTheme-/-v2') || '\"System\"');
+        } catch (error) {
+            stored = 'System';
+        }
+        if (stored === 'Light') return 'light';
+        if (stored === 'Dark') return 'dark';
+        // Sem escolha explicita, segue o que esta RENDERIZADO: a cor do TEXTO,
+        // que o holografico nunca toca. Texto claro = tema escuro.
+        var color = parent.getComputedStyle(parent.document.body).color || '';
+        var parts = color.replace(/[^0-9,]/g, '').split(',');
+        if (parts.length < 3) return 'dark';
+        var r = Number(parts[0]);
+        var g = Number(parts[1]);
+        var b = Number(parts[2]);
+        return (0.299 * r + 0.587 * g + 0.114 * b) >= 128 ? 'dark' : 'light';
+    };
+    var apply = function () {
+        var doc = parent.document;
+        var existing = doc.getElementById(STYLE_ID);
+        if (theme() !== 'light') {
+            if (existing) existing.remove();
+            return;
+        }
+        if (existing) return;
+        var style = doc.createElement('style');
+        style.id = STYLE_ID;
+        style.textContent = CSS;
+        doc.head.appendChild(style);
+    };
+    apply();
+    setInterval(apply, 500);
+})();
+"""
+
+# As aspas duplas do CSS têm de ser entidades HTML: sem isso o atributo
+# `srcdoc` fechava a meio do CSS. `chr(34)` evita a armadilha de quoting.
+_HOLOGRAPHIC_THEME_IFRAME = (
+    '<iframe srcdoc="'
+    + '<script>'
+    + _HOLOGRAPHIC_THEME_JS.replace("__HOLOGRAPHIC_CSS__", _HOLOGRAPHIC_MESH_CSS).replace(chr(34), chr(38) + 'quot;')
+    + '</script>'
+    + '" style="display:none" aria-hidden="true"></iframe>'
+)
+st.markdown(_HOLOGRAPHIC_THEME_IFRAME, unsafe_allow_html=True)
+
 _THEME_BOOTSTRAP = """
 <script>
 (() => {
