@@ -253,12 +253,17 @@ def test_pipeline_worker_remains_available_for_progress_updates():
 def test_streamlit_restart_loop_is_bounded():
     source = (Path(__file__).resolve().parents[1] / "scripts" / "cli.mjs").read_text(encoding="utf-8")
     start = source.index("function startStreamlit()")
-    end = source.index("startStreamlit();", start)
+    # 1.1.14 — `rindex` e não `index`: o ramo de OOM passou a conter também um
+    # `startStreamlit();` (dentro do setTimeout de 5 s), e o `index` apanhá-lo-ia
+    # e cortaria o bloco antes do disjuntor. A chamada de arranque é a ÚLTIMA.
+    end = source.rindex("startStreamlit();", start)
     block = source[start:end]
 
     assert "streamlitAutoRestartDisabled" in block
     assert "streamlitFailureCount >= 5" in block
     assert "Math.min(2 ** streamlitFailureCount, 32) * 1000" in block
+    # e o atalho de OOM continua a contar para esse mesmo disjuntor
+    assert "streamlitFailureCount += 1;" in block
 
 
 def test_home_update_now_runs_in_the_background_without_blocking_the_page():

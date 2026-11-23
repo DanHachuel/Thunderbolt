@@ -28,5 +28,9 @@ def test_posted_classification_requires_remote_confirmation_or_manual_upload_ok(
 
 
 def test_pipeline_and_posted_views_are_partitioned():
-    assert 'tasks = [task for task in all_tasks if _youtube_task_is_posted(task) is posted_only]' in APP
+    # 1.1.14 — a partição continua a ser por identidade (`is posted_only`, não
+    # por verdadeiro/falso); o que se acrescentou foi o dedupe por id à volta,
+    # para uma entrada repetida não renderizar o card duas vezes.
+    assert "if _youtube_task_is_posted(task) is posted_only]" in APP
+    assert "_dedupe_automation_tasks(" in APP
     assert 'st.subheader("Videos Postados" if posted_only else "Pipeline")' in APP
