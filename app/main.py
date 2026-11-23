@@ -28,6 +28,7 @@ sys.stderr = _force_utf8_stream(sys.stderr)
 
 import hashlib
 import logging
+import logging.handlers
 from html import escape
 import json
 import mimetypes
@@ -76,6 +77,17 @@ class _FragmentGoneNoiseFilter(logging.Filter):
 _app_session_logger = logging.getLogger("streamlit.runtime.app_session")
 if not any(isinstance(item, _FragmentGoneNoiseFilter) for item in _app_session_logger.filters):
     _app_session_logger.addFilter(_FragmentGoneNoiseFilter())
+
+# 1.1.14 — «Couldn't find fragment with id» / «The fragment with id ... does not
+# exist anymore»: o timer de um fragment morre (tarefa que chegou ao fim,
+# fragmento evicto num rerun completo) e o runtime REGISTA o aviso a cada tick
+# perdido. É ruido de depuracao do Streamlit, nao um erro do Thunderbolt. O
+# filtro de cima ja cobria o `app_session`; na 1.65 do Streamlit a linha sai
+# tambem por `streamlit.runtime.fragment`, e sem isto o terminal do launcher
+# enche-se de linhas iguais durante uma noite de automacao.
+_fragment_logger = logging.getLogger("streamlit.runtime.fragment")
+if not any(isinstance(item, _FragmentGoneNoiseFilter) for item in _fragment_logger.filters):
+    _fragment_logger.addFilter(_FragmentGoneNoiseFilter())
 
 
 def _has_script_context() -> bool:
@@ -129,7 +141,17 @@ def _ensure_automation_logger_handlers() -> None:
     try:
         log_dir = _automation_log_storage_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(log_dir / "automation.log", encoding="utf-8")
+        # 1.1.14 — rotação de 5 MB (3 cópias), como o `update.log` do
+        # `update_manager`. Sem ela, um servidor que fica dias de pé (o relato
+        # das 48 h) escreve a telemetria de cada card a cada 3 s num único
+        # ficheiro: o `automation.log` crescia sem limite no disco do
+        # utilizador. O `RotatingFileHandler` roda no write, sem thread extra.
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_dir / "automation.log",
+            maxBytes=5 * 1024 * 1024,
+            backupCount=3,
+            encoding="utf-8",
+        )
         file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
         file_handler._thunderbolt_automation_handler = True  # type: ignore[attr-defined]
@@ -8623,7 +8645,12 @@ def _render_tiktok_automation_task_list(
             if tasks is not None
             else load_automation_tasks_for_platform("tiktok")
         )
-        tiktok_tasks = [task for task in tiktok_tasks if _automation_task_is_posted(task) is posted_only]
+        # 1.1.14 — mesmo dedupe por id do YouTube: entradas repetidas renderizavam o
+        # card duas vezes e o Streamlit levantava StreamlitDuplicateElementKey
+        # (o botao de download da thumbnail era o mais visivel no terminal).
+        tiktok_tasks = _dedupe_automation_tasks(
+            [task for task in tiktok_tasks if _automation_task_is_posted(task) is posted_only]
+        )
         tiktok_channels_by_id = {
             str(channel.get("id")): channel
             for channel in read_json("channels.json", [])
@@ -8863,6 +8890,27 @@ def _automation_task_is_posted(task: dict[str, Any]) -> bool:
     return _youtube_task_is_posted(task)
 
 
+def _dedupe_automation_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Uma tarefa por id, na ordem da lista (1.1.14).
+
+    Sem isto, uma entrada repetida no catalogo (ou a mesma tarefa a entrar nas
+    duas sub-abas por um estado ambiguo) renderiza o card DUAS vezes no mesmo
+    passo — e o Streamlit levanta `StreamlitDuplicateElementKey` para cada
+    widget do card; o `automation_download_thumbnail_{id}` era o que aparecia
+    no terminal. Como o card é identico, a segunda cópia não perdia nada a ser
+    descartada.
+    """
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for task in tasks:
+        task_id = str(task.get("id") or "")
+        if not task_id or task_id in seen:
+            continue
+        seen.add(task_id)
+        unique.append(task)
+    return unique
+
+
 def _render_youtube_automation_task_list(*, posted_only: bool = False, tasks: list[dict[str, Any]] | None = None):
         if not _has_script_context():
             return
@@ -8882,7 +8930,13 @@ def _render_youtube_automation_task_list(*, posted_only: bool = False, tasks: li
         # 0.9.95: a lista vem já carregada pela aba (1 leitura por rerun);
         # o fallback serve chamadas isoladas da função.
         all_tasks = tasks if tasks is not None else load_automation_tasks_for_platform("youtube")
-        tasks = [task for task in all_tasks if _youtube_task_is_posted(task) is posted_only]
+        # 1.1.14 — dedupe por id ANTES de escolher a página: duas entradas com o
+        # mesmo id renderizavam o card duas vezes e o Streamlit levantava
+        # StreamlitDuplicateElementKey (o botao de download da thumbnail era o
+        # que mais se via no terminal).
+        tasks = _dedupe_automation_tasks(
+            [task for task in all_tasks if _youtube_task_is_posted(task) is posted_only]
+        )
         if not tasks:
             st.info("Ainda não existem vídeos nesta sub aba.")
         page_size = 12

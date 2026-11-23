@@ -35,3 +35,10 @@ enableStaticServing = true
 
 [logger]
 hideWelcomeMessage = true
+# 1.1.14 — o crash das 48 h veio acompanhado de um terminal inundado de linhas
+# iguais (chave duplicada, fragmento evicto). Nível `error` mantém o que é
+# verdadeiramente um erro e deita fora o ruído de depuração, que numa sessão
+# longa acumula no buffer do console e na memória do processo. O launcher
+# injecta o mesmo valor por ambiente (STREAMLIT_LOGGER_LEVEL), o que vale também
+# para a cópia em `storage/`.
+level = "error"

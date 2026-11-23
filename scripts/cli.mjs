@@ -1368,6 +1368,11 @@ let pipelineAutoRestartDisabled = false;
 let streamlitFailureCount = 0;
 let streamlitStableTimer = null;
 let streamlitAutoRestartDisabled = false;
+// 1.1.14 — memória. O relato: 48 horas de uso contínuo e o processo foi morto
+// por OOM (o Windows/Node mata sem cerimónia, e o código de saída pode ser 137,
+// -9/SIGKILL ou simplesmente nada). A linha de stderr que menciona memória é o
+// sinal mais fiável, e é guardado aqui para o handler de saída o usar.
+let streamlitOomSeen = false;
 let workerDependencyFailureReported = false;
 let pipelineDependencyFailureReported = false;
 let queueWorkersDependencyFailureReported = false;
@@ -1967,7 +1972,7 @@ function startStreamlit() {
   child = spawn(python, [streamlitBootstrap, "run", main, "--server.port", String(backendPort), "--server.address", "127.0.0.1"], {
     cwd: executionRoot,
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...runtimeEnv, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", PYTHONLEGACYWINDOWSSTDIO: "1", CLICK_NO_WIN_CONSOLE: "1", THUNDERBOLT_LAUNCHER_RESTART: "1" },
+    env: { ...runtimeEnv, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1", PYTHONLEGACYWINDOWSSTDIO: "1", CLICK_NO_WIN_CONSOLE: "1", THUNDERBOLT_LAUNCHER_RESTART: "1", STREAMLIT_LOGGER_LEVEL: "error" },
     // 1.0.80 - janela de consola suprimida (CREATE_NO_WINDOW nas flags)
     windowsHide: true,
     // 1.0.75: grupo próprio também para o servidor da interface — era o único
@@ -1982,6 +1987,13 @@ function startStreamlit() {
   child.stdout?.on("data", (chunk) => {
     if (!shuttingDown) process.stdout.write(chunk);
   });  child.stderr?.on("data", (chunk) => {
+    // 1.1.14 — um OOM deixa rasto no stderr antes de o processo morrer
+    // (MemoryError, "Cannot allocate memory", o kills do Windows). Guarda-se o
+    // sinal para o handler de saída poder distinguir "morreu por memória" de
+    // "morreu por falha de arranque".
+    if (/memoryerror|out of memory|cannot allocate memory|killed|heap out of memory/i.test(String(chunk))) {
+      streamlitOomSeen = true;
+    }
     if (!shuttingDown) process.stderr.write(chunk);
   });
   child.on("error", (error) => {
@@ -2045,6 +2057,21 @@ function startStreamlit() {
     // recuperada. Isto também cobre encerramentos espontâneos no Windows,
     // onde o processo filho pode terminar sem entregar um código útil.
     console.error(`Thunderbolt: Streamlit terminou inesperadamente (código ${code ?? "-"}, sinal ${signal ?? "-"}); a tentar recuperar.`);
+    // 1.1.14 — morte por MEMÓRIA: não é uma falha de arranque, é a stack que
+    // esteve de pé durante horas/dias e foi morta (relato das 48 h). A
+    // recuperação tem de ser imediata e dizê-lo em português, em vez de esperar
+    // pelo backoff exponencial. Continua a contar para o disjuntor: um OOM em
+    // loop tem de parar a recuperação, como qualquer outra falha.
+    if (streamlitOomSeen || code === 137 || signal === "SIGKILL") {
+      console.error("[SISTEMA] O servidor caiu (OOM). A reiniciar em 5 segundos...");
+      streamlitOomSeen = false;
+      streamlitFailureCount += 1;
+      streamlitRestartTimer = setTimeout(() => {
+        streamlitRestartTimer = null;
+        startStreamlit();
+      }, 5000);
+      return;
+    }
     streamlitFailureCount += 1;
     if (streamlitFailureCount >= 5) {
       streamlitAutoRestartDisabled = true;
