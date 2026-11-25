@@ -8,9 +8,11 @@ MAIN_SOURCE = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
 
 class AutomationCardsTests(unittest.TestCase):
     def test_automation_video_cards_have_start_and_stop_controls(self):
-        self.assertIn('key=f"automation_start_{task_id}"', MAIN_SOURCE)
-        self.assertIn('key=f"automation_stop_{task_id}"', MAIN_SOURCE)
-        self.assertIn('key=f"automation_delete_{task[\'id\']}"', MAIN_SOURCE)
+        # 1.1.15 — as chaves passaram a levar a variante do card (live/idle), para os
+        # dois fragmentos não registarem o mesmo widget duas vezes.
+        self.assertIn('key=f"automation_start_{task_id}_{card_variant}"', MAIN_SOURCE)
+        self.assertIn('key=f"automation_stop_{task_id}_{card_variant}"', MAIN_SOURCE)
+        self.assertIn('key=f"automation_delete_{task[\'id\']}_{card_variant}"', MAIN_SOURCE)
         self.assertIn('delete_task(task["id"])', MAIN_SOURCE)
         self.assertIn('st.button("Apagar"', MAIN_SOURCE)
         self.assertIn('def _start_pipeline_task(task_id: str, state: str) -> bool:', MAIN_SOURCE)

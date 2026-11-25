@@ -73,15 +73,26 @@ def test_the_dedupe_keeps_the_first_of_each_id_and_drops_the_rest():
     assert resultado[0]["topic"] == "um"  # ficou a PRIMEIRA ocorrência
 
 
-def test_download_button_keys_stay_per_task():
-    """A chave continua única por tarefa — o dedupe é o que garante o 1-por-card."""
-    assert 'key=f"automation_download_thumbnail_{task[\'id\']}"' in MAIN_SOURCE
+def test_download_button_keys_carry_the_card_variant():
+    """1.1.15 — a chave passa a levar a variante do card (live/idle).
+
+    O dedupe por id não bastava: o card é desenhado por DOIS fragmentos e, na
+    transição viva→terminal, o timer do live podia disparar mais um tick enquanto
+    o idle já estava montado — as mesmas chaves duas vezes no mesmo ecrã. A
+    variante torna-as únicas entre os dois.
+    """
+    card = MAIN_SOURCE.split("def _youtube_task_card_body", 1)[1].split("\ndef ", 1)[0]
+    assert "key=f\"automation_download_thumbnail_{task['id']}_{card_variant}\"" in card
+    assert "key=f\"automation_download_video_{task['id']}_{card_variant}\"" in card
+    assert "key=f\"automation_start_{task_id}_{card_variant}\"" in card
+    assert "key=f\"automation_delete_{task['id']}_{card_variant}\"" in card
+    # e a variante chega mesmo aos dois fragmentos
+    live = MAIN_SOURCE.split("def _youtube_task_card_live", 1)[1].split("\ndef ", 1)[0]
+    idle = MAIN_SOURCE.split("def _youtube_task_card_idle", 1)[1].split("\n@st.fragment", 1)[0]
+    assert 'card_variant="live"' in live
+    assert 'card_variant="idle"' in idle
+    # o TikTok (que tem o mesmo par de fragmentos) mantém a chave por tarefa
     assert 'key=f"tiktok_automation_download_thumbnail_{task_id}"' in MAIN_SOURCE
-    # o dispatch live/idle continua a ser um if/else (uma variante por passo)
-    lista = MAIN_SOURCE.split("def _render_youtube_automation_task_list", 1)[1].split("\ndef ", 1)[0]
-    assert "if _catalog_task_state(task) in _VIDEO_TASK_LIVE_STATES:" in lista
-    assert "_youtube_task_card_live(task_id)" in lista
-    assert "_youtube_task_card_idle(task_id)" in lista
 
 
 # ------------------------------------------------------------------- memória

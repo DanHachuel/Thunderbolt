@@ -9092,7 +9092,7 @@ def _video_task_status_icon(task: dict[str, Any]) -> str:
     return ""
 
 
-def _youtube_task_card_body(task_id: str) -> str:
+def _youtube_task_card_body(task_id: str, *, card_variant: str = "idle") -> str:
     """Renderiza o card da tarefa YouTube com dados FRESCOS; devolve o estado.
 
     0.9.96 (recuperação): card ORIGINAL preservado por inteiro — thumbnail,
@@ -9100,6 +9100,16 @@ def _youtube_task_card_body(task_id: str) -> str:
     sem intermediários. 1.0.15: o card passou a reler o tasks.json em cada
     execução (memo partilhado), pelo que o trabalho do worker aparece aqui
     sem F5. Tarefa ausente → devolve "" e o wrapper live força o rerun.
+
+    1.1.15 — `card_variant` ("live"/"idle") entra nas chaves dos widgets. O
+    dispatcher já era um if/else (uma variante por passo), mas quando uma tarefa
+    passa de viva a terminal o fragmento LIVE ainda está montado e o seu timer
+    de 3 s pode disparar mais um tick enquanto o passo seguinte já montou o
+    IDLE — os dois desenhavam o mesmo card com as mesmas chaves e o Streamlit
+    levantava StreamlitDuplicateElementKey (o vídeo aparecia duplicado no
+    ecrã). A variante torna as chaves únicas entre os dois fragmentos; todos os
+    widgets do cartão são botões/download_button, nenhum guarda valor entre
+    renders, pelo que a chave adicional não faz perder nada ao utilizador.
     """
     task = _live_task_by_id(task_id)
     if task is None:
@@ -9144,7 +9154,7 @@ def _youtube_task_card_body(task_id: str) -> str:
                     data=_file_bytes(thumbnail_path),
                     file_name=_automation_download_name("Thumbnail", task, thumbnail_path, ".png"),
                     mime="image/png",
-                    key=f"automation_download_thumbnail_{task['id']}",
+                    key=f"automation_download_thumbnail_{task['id']}_{card_variant}",
                     width="stretch",
                     disabled=thumbnail_path is None,
                 )
@@ -9155,7 +9165,7 @@ def _youtube_task_card_body(task_id: str) -> str:
                     data=prompt_data,
                     file_name=_automation_download_name("Thumbnail-Prompt", task, thumbnail_prompt_path, ".txt"),
                     mime="application/json" if thumbnail_prompt_path else "text/plain",
-                    key=f"automation_download_thumbnail_prompt_{task['id']}",
+                    key=f"automation_download_thumbnail_prompt_{task['id']}_{card_variant}",
                     width="stretch",
                     disabled=thumbnail_prompt_path is None and not thumbnail_prompt,
                 )
@@ -9173,11 +9183,11 @@ def _youtube_task_card_body(task_id: str) -> str:
             has_subtitles = bool(task.get("has_subtitles"))
             start_col, stop_col, delete_col = st.columns(3)
             with start_col:
-                if st.button("Start", key=f"automation_start_{task_id}", width="stretch", disabled=not _can_start_video_task(task, state)):
+                if st.button("Start", key=f"automation_start_{task_id}_{card_variant}", width="stretch", disabled=not _can_start_video_task(task, state)):
                     if _start_pipeline_task(task_id, state):
                         st.rerun(scope="fragment")
             with stop_col:
-                if st.button("Stop", key=f"automation_stop_{task_id}", width="stretch", disabled=state != "doing"):
+                if st.button("Stop", key=f"automation_stop_{task_id}_{card_variant}", width="stretch", disabled=state != "doing"):
                     stop_task_by_user(task_id)
                     _invalidate_live_tasks_snapshot()
                     st.rerun(scope="fragment")
@@ -9188,7 +9198,7 @@ def _youtube_task_card_body(task_id: str) -> str:
                     data=_file_bytes(script_path),
                     file_name=_automation_download_name("Script", task, script_path, ".md"),
                     mime="text/markdown",
-                    key=f"automation_download_script_{task['id']}",
+                    key=f"automation_download_script_{task['id']}_{card_variant}",
                     width="stretch",
                     disabled=script_path is None,
                 )
@@ -9199,7 +9209,7 @@ def _youtube_task_card_body(task_id: str) -> str:
                         data=b"",
                         file_name="video.mp4",
                         mime="video/mp4",
-                        key=f"automation_download_video_{task['id']}",
+                        key=f"automation_download_video_{task['id']}_{card_variant}",
                         width="stretch",
                         disabled=True,
                     )
@@ -9221,7 +9231,7 @@ def _youtube_task_card_body(task_id: str) -> str:
                     if not st.session_state.get(prepare_key):
                         if st.button(
                             "Preparar Vídeo para download",
-                            key=f"automation_prepare_video_button_{task_id}",
+                            key=f"automation_prepare_video_button_{task_id}_{card_variant}",
                             width="stretch",
                             help="O ficheiro (que pode ter mais de 100 MB) só é lido quando pede o download — assim a página nunca trava.",
                         ):
@@ -9239,7 +9249,7 @@ def _youtube_task_card_body(task_id: str) -> str:
                                     data=video_stream,
                                     file_name=download_name,
                                     mime="video/mp4",
-                                    key=f"automation_download_video_{task_id}",
+                                    key=f"automation_download_video_{task_id}_{card_variant}",
                                     width="stretch",
                                 )
                         except (OSError, PermissionError):
@@ -9251,7 +9261,7 @@ def _youtube_task_card_body(task_id: str) -> str:
             with upload_legend_col:
                 if st.button(
                     "Upload",
-                    key=f"automation_upload_{task['id']}",
+                    key=f"automation_upload_{task['id']}_{card_variant}",
                     type="primary",
                     width="stretch",
                     disabled=not upload_ready or upload_ok,
@@ -9265,11 +9275,11 @@ def _youtube_task_card_body(task_id: str) -> str:
                 # 1.0.33: botão «Legendar» — queima legendas num vídeo pronto
                 # sem re-renderizar (1-2 min vs 10+ de um «Refazer Vídeo»).
                 if video_path is None:
-                    st.button("Legendar", key=f"automation_subtitles_{task['id']}", width="stretch", disabled=True)
+                    st.button("Legendar", key=f"automation_subtitles_{task['id']}_{card_variant}", width="stretch", disabled=True)
                 elif has_subtitles:
                     st.button(
                         "✓ Legendado",
-                        key=f"automation_subtitles_{task['id']}",
+                        key=f"automation_subtitles_{task['id']}_{card_variant}",
                         width="stretch",
                         disabled=True,
                         help="O vídeo já tem legendas queimadas.",
@@ -9277,7 +9287,7 @@ def _youtube_task_card_body(task_id: str) -> str:
                 else:
                     if st.button(
                         "Legendar",
-                        key=f"automation_subtitles_{task['id']}",
+                        key=f"automation_subtitles_{task['id']}_{card_variant}",
                         width="stretch",
                         help="Queima legendas no vídeo pronto sem re-renderizar (~1-2 min). Usa o roteiro salvo e o estilo de legendas do canal.",
                     ):
@@ -9290,7 +9300,7 @@ def _youtube_task_card_body(task_id: str) -> str:
                     # a flag? O utilizador congela o botão sem voltar a queimar.
                     if st.button(
                         "Marcar como Legendado",
-                        key=f"automation_subtitles_override_{task['id']}",
+                        key=f"automation_subtitles_override_{task['id']}_{card_variant}",
                         width="stretch",
                         help="Vídeo antigo que já tem legenda? Marque manualmente para congelar o botão «Legendar» deste vídeos.",
                     ):
@@ -9306,15 +9316,19 @@ def _youtube_task_card_body(task_id: str) -> str:
                 checked_upload_ok = st.checkbox(
                     "Upload ok",
                     value=upload_ok,
-                    key=f"automation_upload_ok_{task['id']}",
+                    key=f"automation_upload_ok_{task['id']}_{card_variant}",
                     disabled=not upload_ready,
                     help="Marque depois de concluir manualmente o upload do vídeo.",
                 )
             with regen_check_col:
                 force_audio_regen = st.checkbox(
                     "Regenerar Áudio (TTS)",
-                    value=bool(st.session_state.get(f"automation_force_audio_{task['id']}")),
-                    key=f"automation_force_audio_{task['id']}",
+                    # 1.1.15 — lê pela MESMA chave do widget (com a variante). Antes
+                    # lia `automation_force_audio_{id}`, que só existia porque o
+                    # widget escrevia nela; com a variante na chave do widget, a
+                    # leitura tem de a acompanhar ou o valor perder-se-ia.
+                    value=bool(st.session_state.get(f"automation_force_audio_{task['id']}_{card_variant}")),
+                    key=f"automation_force_audio_{task['id']}_{card_variant}",
                     help="Descarta a narração actual e força uma síntese TTS nova no próximo «Refazer Vídeo». Deixe desmarcado para reaproveitar o áudio existente.",
                 )
             if checked_upload_ok != upload_ok:
@@ -9323,7 +9337,7 @@ def _youtube_task_card_body(task_id: str) -> str:
                 st.rerun(scope="fragment")
             if st.button(
                 "Refazer Vídeo",
-                key=f"automation_remake_video_{task['id']}",
+                key=f"automation_remake_video_{task['id']}_{card_variant}",
                 icon=":material/refresh:",
                 type="primary",
                 width="stretch",
@@ -9334,14 +9348,14 @@ def _youtube_task_card_body(task_id: str) -> str:
                     st.rerun(scope="fragment")
             with delete_col:
                 confirm_delete_key = f"automation_confirm_delete_{task['id']}"
-                if st.button("Apagar", key=f"automation_delete_{task['id']}", width="stretch", disabled=state == "doing"):
+                if st.button("Apagar", key=f"automation_delete_{task['id']}_{card_variant}", width="stretch", disabled=state == "doing"):
                     st.session_state[confirm_delete_key] = True
                     st.rerun(scope="fragment")
                 if st.session_state.get(confirm_delete_key):
                     st.warning("Remover este vídeo da fila? Os ficheiros de artefactos serão preservados.")
                     confirm_col, cancel_col = st.columns(2)
                     with confirm_col:
-                        if st.button("Confirmar", key=f"automation_confirm_delete_button_{task['id']}", width="stretch", type="primary"):
+                        if st.button("Confirmar", key=f"automation_confirm_delete_button_{task['id']}_{card_variant}", width="stretch", type="primary"):
                             try:
                                 delete_task(task["id"])
                                 st.session_state.pop(confirm_delete_key, None)
@@ -9350,7 +9364,7 @@ def _youtube_task_card_body(task_id: str) -> str:
                             except ValueError as exc:
                                 st.error(str(exc))
                     with cancel_col:
-                        if st.button("Cancelar", key=f"automation_cancel_delete_{task['id']}", width="stretch"):
+                        if st.button("Cancelar", key=f"automation_cancel_delete_{task['id']}_{card_variant}", width="stretch"):
                             st.session_state.pop(confirm_delete_key, None)
                             st.rerun(scope="fragment")
     return _catalog_task_state(task)
@@ -9365,8 +9379,20 @@ def _youtube_task_card_live(task_id: str) -> None:
     estado final já renderizado, sem rerun da página, sem destruir os outros
     cards e sem a chuva de avisos "fragment does not exist anymore" que o
     antigo rerun completo de página causava no terminal do launcher.
+
+    1.1.15 — a CAUSA RAIZ do vídeo duplicado: quando a tarefa passa a terminal,
+    o passo seguinte passa a desenhar essa tarefa pelo fragmento IDLE, mas ESTE
+    fragmento ainda estava montado e o seu timer podia disparar mais um tick —
+    os dois
+    desenhavam o mesmo card e o Streamlit levantava StreamlitDuplicateElementKey.
+    A guarda recusa o desenho quando a tarefa já não está viva: quem a renderiza
+    a partir daí é só o IDLE.
     """
-    state = _youtube_task_card_body(task_id)
+    task = _live_task_by_id(task_id)
+    if task is not None and _catalog_task_state(task) not in _VIDEO_TASK_LIVE_STATES:
+        _stop_own_fragment_auto_rerun()
+        return
+    state = _youtube_task_card_body(task_id, card_variant="live")
     if state not in _VIDEO_TASK_LIVE_STATES:
         _stop_own_fragment_auto_rerun()
 
@@ -9374,7 +9400,7 @@ def _youtube_task_card_live(task_id: str) -> None:
 @st.fragment
 def _youtube_task_card_idle(task_id: str) -> None:
     """Estados terminais: render único, sem loop de rede (run_every=None implícito)."""
-    _youtube_task_card_body(task_id)
+    _youtube_task_card_body(task_id, card_variant="idle")
 
 
 @st.fragment

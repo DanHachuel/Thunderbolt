@@ -68,7 +68,11 @@ def test_live_cards_stop_polling_when_the_task_reaches_a_terminal_state():
     assert "st.rerun(" not in backlog_live
 
     youtube_live = MAIN_SOURCE.split("def _youtube_task_card_live(", 1)[1].split("@st.fragment\ndef _youtube_task_card_idle(", 1)[0]
-    assert "state = _youtube_task_card_body(task_id)" in youtube_live
+    # 1.1.15 — o card passou a levar a variante (live/idle) nas chaves
+    assert 'state = _youtube_task_card_body(task_id, card_variant="live")' in youtube_live
+    # e a guarda de causa-raiz: não desenha uma tarefa que já não está viva
+    assert "_catalog_task_state(task) not in _VIDEO_TASK_LIVE_STATES:" in youtube_live
+    assert "return" in youtube_live
     assert "if state not in _VIDEO_TASK_LIVE_STATES:" in youtube_live
     assert "_stop_own_fragment_auto_rerun()" in youtube_live
     assert "st.rerun(" not in youtube_live
