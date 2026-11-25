@@ -56,7 +56,9 @@ def test_youtube_automation_video_download_uses_a_safe_standard_button():
     block = MAIN_SOURCE.split("def _youtube_task_card_body(", 1)[1].split("return _catalog_task_state(task)", 1)[0]
     assert '"Baixar Vídeo"' in block
     assert "data=video_stream" in block
-    assert 'key=f"automation_download_video_{task_id}"' in block
+    # 1.1.15 — a chave do widget leva a variante do card (live/idle), para os
+    # dois fragmentos não registarem o mesmo botão duas vezes.
+    assert 'key=f"automation_download_video_{task_id}_{card_variant}"' in block
     # o link azul e o fluxo «Preparar download» saíram do card
     assert "st.markdown(download_link" not in block
     assert '"Preparar download"' not in block

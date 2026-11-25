@@ -36,7 +36,11 @@ def test_video_download_is_lazy_not_read_on_every_render():
     assert 'prepare_key = f"automation_prepare_video_{task_id}"' in CARD_BLOCK
     assert "if not st.session_state.get(prepare_key):" in CARD_BLOCK
     assert "st.session_state[prepare_key] = True" in CARD_BLOCK
-    assert 'key=f"automation_prepare_video_button_{task_id}"' in CARD_BLOCK
+    assert 'key=f"automation_prepare_video_button_{task_id}_{card_variant}"' in CARD_BLOCK
+    # 1.1.15 — a chave do WIDGET leva a variante (live/idle), mas o ESTADO não:
+    # o «Preparar» clicado no card vivo continua preparado quando a tarefa
+    # passa a terminal e o card muda de fragmento.
+    assert 'prepare_key = f"automation_prepare_video_{task_id}"' in CARD_BLOCK
 
 
 def test_prepare_button_tells_the_user_why():
